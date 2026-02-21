@@ -218,6 +218,120 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         # 安全边际 = (内在价值 - 当前股价) / 内在价值
         margin_of_safety = (intrinsic_value_per_share - current_price) / intrinsic_value_per_share
 
+    # --- 因子打分逻辑 (Factor Scoring 0-100) ---
+    def clamp_score(score: float) -> int:
+        return int(max(0, min(100, score)))
+
+    # 1. Value 分数 (依据 PE = Price / (TTM Net Income / Shares Out) 计算)
+    value_score = 50
+    if shares_out > 0 and ttm_net_income > 0 and current_price > 0:
+        eps = ttm_net_income / shares_out
+        pe = current_price / eps
+        if pe <= 0:
+            value_score = 10  # 亏损企业给低分
+        elif pe < 15:
+            value_score = 90
+        elif pe < 25:
+            value_score = 70
+        elif pe < 50:
+            value_score = 50
+        else:
+            value_score = 30
+    elif ttm_net_income <= 0:
+        value_score = 20
+        
+    # 2. Quality 分数 (依据 ROE 映射)
+    quality_score = 50
+    if total_equity > 0:
+        if roe > 0.20:
+            quality_score = 90
+        elif roe > 0.15:
+            quality_score = 75
+        elif roe > 0.10:
+            quality_score = 60
+        elif roe > 0.05:
+            quality_score = 40
+        else:
+            quality_score = 20
+
+    # 3. Growth 分数 (由于 TTM 循环顺序为近期在前，提取记录 [0] 和 [1] 或 [4] 测算增长率)
+    growth_score = 50
+    if len(records) > 1:
+        # 简化处理：由于可能是季度数据或年度，取第 0 份与其之前的做对比
+        # 如果是季度，1 个季度前可能受季节性影响，更为准确的做法是同比 (Yoy)，这里做简化的环比映射或近邻对比
+        curr_rev = _safe_float(records[0].income_statement.get('totalRevenue', records[0].revenue) if records[0].income_statement else records[0].revenue)
+        prev_rev = _safe_float(records[1].income_statement.get('totalRevenue', records[1].revenue) if records[1].income_statement else records[1].revenue)
+        
+        if prev_rev > 0:
+            growth_rate = (curr_rev - prev_rev) / prev_rev
+            if growth_rate > 0.20:
+                growth_score = 90
+            elif growth_rate > 0.10:
+                growth_score = 75
+            elif growth_rate > 0:
+                growth_score = 60
+            elif growth_rate > -0.10:
+                growth_score = 40
+            else:
+                growth_score = 20
+                
+    # 4. Health 分数 (依据资产负债率 Total Liabilities / Total Assets 计算)
+    health_score = 50
+    if total_assets > 0:
+        debt_ratio = total_liab / total_assets
+        if debt_ratio < 0.3:
+            health_score = 90
+        elif debt_ratio < 0.5:
+            health_score = 75
+        elif debt_ratio < 0.7:
+            health_score = 50
+        elif debt_ratio < 0.9:
+            health_score = 30
+        else:
+            health_score = 10
+            
+    # 5. Momentum 分数 (查询最近的 MA 和 RSI 进行打分)
+    momentum_score = 50
+    if latest_price_rec:
+        try:
+            # Re-calculating moving averages precisely for the latest date would typically be cached,
+            # but we can fetch the last 60 days of prices to get MA50 and MA20 quickly for this factor.
+            mo_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(60)
+            mo_res = await db.execute(mo_stmt)
+            mo_recs = list(mo_res.scalars().all())
+            
+            if len(mo_recs) >= 50:
+                closes = [float(r.close) for r in mo_recs if r.close is not None]
+                closes.reverse() # 变成升序，最近一天在最后
+                import pandas as pd
+                import pandas_ta_classic as ta
+                
+                s_closes = pd.Series(closes)
+                ma20 = ta.sma(s_closes, length=20).iloc[-1]
+                ma50 = ta.sma(s_closes, length=50).iloc[-1]
+                rsi = ta.rsi(s_closes, length=14).iloc[-1]
+                
+                m_score = 50
+                # MA 趋势加分
+                if not pd.isna(ma20) and not pd.isna(ma50):
+                    if current_price > ma20: m_score += 15
+                    if current_price > ma50: m_score += 15
+                    if ma20 > ma50: m_score += 10
+                
+                # RSI 状态
+                if not pd.isna(rsi):
+                    if 40 <= rsi <= 70:
+                        m_score += 10
+                    elif rsi > 70:  # 超买，可能面临回调
+                        m_score -= 10
+                    elif rsi < 30:  # 超卖，可能有反弹动能
+                        m_score += 10
+                        
+                momentum_score = clamp_score(m_score)
+        except Exception as e:
+            logger.warning(f"Momentum scoring failed for {ticker}: {e}")
+            momentum_score = 50
+
     return {
         "ttm": {
             "revenue": ttm_revenue,
@@ -240,5 +354,12 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
                 "wacc": wacc,
                 "perpetual_growth": perpetual_growth
             }
+        },
+        "factor_scores": {
+            "value": value_score,
+            "quality": quality_score,
+            "growth": growth_score,
+            "health": health_score,
+            "momentum": momentum_score
         }
     }

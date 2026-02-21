@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { ValuationMetrics } from '@/lib/api';
-import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, Percent, Scale } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, Percent, Scale, Target } from 'lucide-react';
+import FactorRadarChart from './FactorRadarChart';
 
 interface ValuationDashboardProps {
     metrics: ValuationMetrics;
@@ -11,7 +12,7 @@ interface ValuationDashboardProps {
 const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
     if (!metrics) return null;
 
-    const { ttm, valuation } = metrics;
+    const { ttm, valuation, factor_scores } = metrics;
 
     // 美化数字格式化函数
     const formatCompact = (num: number) => {
@@ -123,6 +124,21 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
                     </div>
                 </div>
             </div>
+
+            {/* 5. 多因子评分系统 (Multi-Factor Scoring) - 雷达图展示 */}
+            {factor_scores && (
+                <div className="md:col-span-2 lg:col-span-4 bg-[#151922] border border-gray-800 rounded-xl p-6 shadow-inner hover:border-gray-700 transition mt-4 w-full">
+                    <div className="flex items-center gap-2 mb-2">
+                        <div className="p-2 bg-indigo-500/10 rounded-lg transition">
+                            <Target className="text-indigo-400" size={20} />
+                        </div>
+                        <h4 className="text-base font-bold text-gray-200 tracking-wide">Multi-Factor Scoring (0-100)</h4>
+                    </div>
+                    
+                    {/* 插入 ECharts 雷达图模块 */}
+                    <FactorRadarChart scores={factor_scores} />
+                </div>
+            )}
 
         </div>
     );
