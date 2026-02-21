@@ -1,0 +1,9 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+sqlalchemy>=2.0.0
+asyncpg>=0.28.0
+httpx>=0.24.0
+pandas>=2.0.0
+pydantic-settings>=2.0.0
+pandas-ta-classic
+greenlet>=3.0.0
