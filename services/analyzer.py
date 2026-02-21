@@ -4,10 +4,10 @@ from typing import Optional, Dict, Any
 
 import pandas as pd
 import pandas_ta_classic as ta
-from sqlalchemy import select, asc
+from sqlalchemy import select, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Ticker, DailyPrice
+from models import Ticker, DailyPrice, FinancialStatement
 
 logger = logging.getLogger(__name__)
 
@@ -114,3 +114,131 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession) -> Optional[Dic
     }
     
     return response_data
+
+# ------------------------------------------------------------------------
+# 基本面估值服务 (Fundamental Valuation)
+# ------------------------------------------------------------------------
+
+async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[Dict[str, Any]]:
+    """
+    计算 TTM 核心指标与简易 DCF (现金流折现) 模型估值。
+    """
+    ticker = ticker.upper()
+    
+    # 优先尝试获取最近 4 个季度的报表
+    stmt_q = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker,
+        FinancialStatement.period == "Quarterly"
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(4)
+    result_q = await db.execute(stmt_q)
+    records = list(result_q.scalars().all())
+    
+    # 如果没有季度报表，则退而求其次获取最近 1 个年度报表
+    if not records:
+        stmt_y = select(FinancialStatement).where(
+            FinancialStatement.ticker == ticker,
+            FinancialStatement.period == "Yearly"
+        ).order_by(FinancialStatement.fiscal_date.desc()).limit(1)
+        result_y = await db.execute(stmt_y)
+        records = list(result_y.scalars().all())
+        
+    if not records:
+        logger.warning(f"No financial statements found for {ticker}")
+        return None
+
+    def _safe_float(val) -> float:
+        try:
+            return float(val) if val is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    ttm_revenue = 0.0
+    ttm_net_income = 0.0
+    ttm_fcf = 0.0
+    
+    # 遍历计算 TTM (Trailing Twelve Months) 累计值
+    for rec in records:
+        # 获取当年/季的数据
+        inc_stmt = rec.income_statement or {}
+        cf_stmt = rec.cash_flow or {}
+        
+        # 处理可能以字符串存在的数据
+        ttm_revenue += _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
+        ttm_net_income += _safe_float(inc_stmt.get('netIncome', rec.net_income))
+        ttm_fcf += _safe_float(cf_stmt.get('freeCashFlow', 0))
+
+    # 取最近一期资产负债表(Point-in-time)
+    latest_bs = records[0].balance_sheet or {}
+    
+    total_assets = _safe_float(latest_bs.get('totalAssets'))
+    total_liab = _safe_float(latest_bs.get('totalLiab', latest_bs.get('totalLiabilities')))
+    total_equity = _safe_float(latest_bs.get('totalStockholderEquity'))
+    shares_out = _safe_float(latest_bs.get('commonStockSharesOutstanding'))
+    cash_equiv = _safe_float(latest_bs.get('cashAndCashEquivalents'))
+    total_debt = _safe_float(latest_bs.get('totalDebt'))
+    
+    # ROE 计算
+    roe = (ttm_net_income / total_equity) if total_equity > 0 else 0.0
+
+    # DCF 模型参数
+    fcf_growth_rate = 0.10      # 10% 未来5年复合增长率
+    wacc = 0.09                 # 9% 折现率
+    perpetual_growth = 0.025    # 2.5% 永续增长率
+    
+    dcf_5yr_sum = 0.0
+    
+    # 计算前5年自由现金流折现
+    if ttm_fcf > 0:
+        for i in range(1, 6):
+            proj_fcf = ttm_fcf * ((1 + fcf_growth_rate) ** i)
+            pv_fcf = proj_fcf / ((1 + wacc) ** i)
+            dcf_5yr_sum += pv_fcf
+            
+        # 计算终值折现 (Terminal Value)
+        terminal_value = (ttm_fcf * ((1 + fcf_growth_rate) ** 5) * (1 + perpetual_growth)) / (wacc - perpetual_growth)
+        pv_tv = terminal_value / ((1 + wacc) ** 5)
+        
+        # 企业价值 与 股权价值
+        enterprise_value = dcf_5yr_sum + pv_tv
+        equity_value = enterprise_value + cash_equiv - total_debt
+    else:
+        equity_value = 0.0
+        
+    intrinsic_value_per_share = (equity_value / shares_out) if shares_out > 0 else 0.0
+
+    # 获取最新股价以计算安全边际
+    price_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(1)
+    price_result = await db.execute(price_stmt)
+    latest_price_rec = price_result.scalar_one_or_none()
+    
+    current_price = _safe_float(latest_price_rec.close) if latest_price_rec else 0.0
+    margin_of_safety = 0.0
+    
+    if intrinsic_value_per_share > 0 and current_price > 0:
+        # 安全边际 = (内在价值 - 当前股价) / 内在价值
+        margin_of_safety = (intrinsic_value_per_share - current_price) / intrinsic_value_per_share
+
+    return {
+        "ttm": {
+            "revenue": ttm_revenue,
+            "net_income": ttm_net_income,
+            "free_cash_flow": ttm_fcf,
+            "roe": roe
+        },
+        "balance_sheet_latest": {
+            "total_assets": total_assets,
+            "total_liabilities": total_liab,
+            "total_stockholder_equity": total_equity,
+            "shares_outstanding": shares_out
+        },
+        "valuation": {
+            "dcf_intrinsic_value_per_share": intrinsic_value_per_share,
+            "current_price": current_price,
+            "margin_of_safety": margin_of_safety,
+            "assumptions": {
+                "fcf_growth_rate_5yr": fcf_growth_rate,
+                "wacc": wacc,
+                "perpetual_growth": perpetual_growth
+            }
+        }
+    }

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Search, Activity, AlertCircle } from 'lucide-react';
 import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
+import ValuationDashboard from '@/components/ValuationDashboard';
 
 export default function Home() {
   const [ticker, setTicker] = useState('');
@@ -143,6 +144,13 @@ export default function Home() {
                 </p>
               </div>
             </div>
+
+            {/* Valuation Dashboard Panel */}
+            {stockData.valuation_metrics && (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both delay-300">
+                <ValuationDashboard metrics={stockData.valuation_metrics} />
+              </div>
+            )}
 
             {/* Interactive Chart Container */}
             <div className="bg-[#191D26] border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">

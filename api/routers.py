@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from services.data_sync import sync_ticker_data
-from services.analyzer import get_analyzed_stock_data
+from services.analyzer import get_analyzed_stock_data, get_fundamental_valuation
 
 router = APIRouter()
 
@@ -35,5 +35,8 @@ async def read_stock_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
             status_code=404, 
             detail=f"No data found for ticker: {ticker}. Please ensure you have synchronized it first."
         )
+        
+    valuation = await get_fundamental_valuation(ticker, db)
+    data["valuation_metrics"] = valuation
     
     return data
