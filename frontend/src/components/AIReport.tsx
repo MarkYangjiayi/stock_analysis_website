@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, RefreshCw, AlertTriangle } from 'lucide-react';
-import { fetchAIReport } from '@/lib/api';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 interface AIReportProps {
     ticker: string;
@@ -18,13 +19,39 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
     const loadReport = async () => {
         setLoading(true);
         setError(null);
+        setReport(""); // Clear previous report content for streaming
+
         try {
-            const data = await fetchAIReport(ticker);
-            setReport(data.report);
+            const response = await fetch(`${API_BASE_URL}/api/stocks/${ticker}/report`);
+
+            if (!response.ok) {
+                throw new Error(`Error ${response.status}: Failed to generate investment brief.`);
+            }
+            if (!response.body) {
+                throw new Error("No response body returned from the stream.");
+            }
+
+            setLoading(false); // Stop the main loading spinner early, text starts appearing
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let isDone = false;
+            let currentText = "";
+
+            while (!isDone) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    isDone = true;
+                    break;
+                }
+                const chunkMessage = decoder.decode(value, { stream: true });
+                currentText += chunkMessage;
+                setReport(currentText);
+            }
+
         } catch (err: any) {
             console.error("Failed to fetch AI report:", err);
             setError(err.message || 'Failed to generate investment brief.');
-        } finally {
             setLoading(false);
         }
     };
@@ -45,7 +72,7 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
                     </div>
                     <div>
                         <h3 className="text-lg font-bold text-gray-100 whitespace-nowrap">AI Quant Analyst</h3>
-                        <p className="text-xs font-semibold text-indigo-400/80 tracking-widest uppercase mt-0.5">Gemini 1.5 Flash</p>
+                        <p className="text-xs font-semibold text-indigo-400/80 tracking-widest uppercase mt-0.5">Gemini 2.5 Flash</p>
                     </div>
                 </div>
 

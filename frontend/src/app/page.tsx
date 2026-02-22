@@ -6,6 +6,7 @@ import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
 import ValuationDashboard from '@/components/ValuationDashboard';
 import AIReport from '@/components/AIReport';
+import FinancialTrendChart from '@/components/FinancialTrendChart';
 
 export default function Home() {
   const [ticker, setTicker] = useState('');
@@ -172,6 +173,9 @@ export default function Home() {
                 <StockChart data={stockData.historical_data} />
               </div>
             </div>
+
+            {/* Financial Trends Chart */}
+            <FinancialTrendChart data={stockData.historical_financials} />
           </div>
         )}
 

@@ -14,7 +14,8 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         logger.error("GEMINI_API_KEY environment variable is missing.")
-        return "Error: LLM API key not configured. Cannot generate report."
+        yield "Error: LLM API key not configured. Cannot generate report."
+        return
 
     try:
         # 每次调用时独立初始化 Client
@@ -54,13 +55,15 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         4. 语气专业、客观，避免强烈的买卖推荐。
         """
 
-        response = client.models.generate_content(
+        response_stream = await client.aio.models.generate_content_stream(
             model='gemini-2.5-flash',
             contents=prompt,
         )
         
-        return response.text
+        async for chunk in response_stream:
+            if chunk.text:
+                yield chunk.text
         
     except Exception as e:
         logger.error(f"Error generating report for {ticker}: {e}")
-        return f"Error generating report: {str(e)}"
+        yield f"Error generating report: {str(e)}"

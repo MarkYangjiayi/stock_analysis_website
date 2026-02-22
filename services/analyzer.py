@@ -107,10 +107,51 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession) -> Optional[Dic
 
         historical_data = df.to_dict(orient='records')
 
-    # 4. 组装返回结果
+    # 4. 异步查询历史财报以提供前端图表数据 (过去20个季度或过去5年)
+    stmt_q = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker,
+        FinancialStatement.period == "Quarterly"
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(20)
+    result_q = await db.execute(stmt_q)
+    fs_records = list(result_q.scalars().all())
+
+    if not fs_records:
+        stmt_y = select(FinancialStatement).where(
+            FinancialStatement.ticker == ticker,
+            FinancialStatement.period == "Yearly"
+        ).order_by(FinancialStatement.fiscal_date.desc()).limit(5)
+        result_y = await db.execute(stmt_y)
+        fs_records = list(result_y.scalars().all())
+
+    historical_financials = []
+    fs_records.reverse()  # 翻转为升序排列 (最老的数据在前)
+    
+    def _safe_float(val) -> float:
+        try:
+            return float(val) if val is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    for rec in fs_records:
+        inc_stmt = rec.income_statement or {}
+        rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
+        ni = _safe_float(inc_stmt.get('netIncome', rec.net_income))
+        gp = _safe_float(inc_stmt.get('grossProfit', 0.0))
+        
+        gross_margin = (gp / rev) if rev > 0 else 0.0
+        
+        historical_financials.append({
+            "date": rec.fiscal_date.isoformat() if hasattr(rec.fiscal_date, 'isoformat') else str(rec.fiscal_date),
+            "revenue": rev,
+            "net_income": ni,
+            "gross_margin": gross_margin
+        })
+
+    # 5. 组装返回结果
     response_data = {
         "profile": profile,
-        "historical_data": historical_data
+        "historical_data": historical_data,
+        "historical_financials": historical_financials
     }
     
     return response_data

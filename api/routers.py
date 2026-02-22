@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -59,7 +60,6 @@ async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
     valuation = await get_fundamental_valuation(ticker, db)
     data["valuation_metrics"] = valuation
     
-    report_markdown = await generate_stock_report(ticker, data)
+    report_generator = generate_stock_report(ticker, data)
     
-    return {"report": report_markdown}
-
+    return StreamingResponse(report_generator, media_type="text/event-stream")
