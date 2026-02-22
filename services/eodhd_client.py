@@ -119,3 +119,22 @@ async def get_eod_historical_data(ticker: str, from_date: Optional[str] = None, 
         params["to"] = to_date
         
     return await _fetch_from_eodhd(endpoint="eod", ticker=ticker, params=params)
+
+
+async def get_bulk_eod_prices(exchange: str = "US", date_str: Optional[str] = None) -> Optional[list]:
+    """
+    获取指定交易所全部股票的某一天的批量日终行情
+    """
+    logger.info(f"Fetching bulk EOD prices for exchange {exchange} on {date_str or 'latest'}...")
+    params = {}
+    if date_str:
+        params["date"] = date_str
+    return await _fetch_from_eodhd(endpoint="eod-bulk-last-day", ticker=exchange, params=params)
+
+
+async def get_bulk_fundamentals(exchange: str = "US") -> Optional[list]:
+    """
+    获取指定交易所的批量基本面数据信息 (Sector, Industry, PE, PB, Market Cap)
+    """
+    logger.info(f"Fetching bulk fundamentals for exchange {exchange}...")
+    return await _fetch_from_eodhd(endpoint="bulk-fundamentals", ticker=exchange)
