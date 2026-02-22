@@ -138,6 +138,25 @@ export default function Home() {
             </div>
           )}
 
+          {/* Loading State Overlay */}
+          {loading && (
+            <div className="flex flex-col items-center justify-center py-24 space-y-8 animate-in fade-in zoom-in duration-500">
+              <div className="relative flex items-center justify-center">
+                <div className="w-20 h-20 border-4 border-emerald-500/20 rounded-full animate-ping absolute"></div>
+                <div className="w-20 h-20 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-[spin_1.5s_linear_infinite] relative z-10 shadow-[0_0_15px_rgba(16,185,129,0.5)]"></div>
+                <Search className="absolute text-emerald-500/50 animate-pulse z-0" size={24} />
+              </div>
+              <div className="text-center space-y-3">
+                <h3 className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">
+                  INITIALIZING
+                </h3>
+                <p className="text-gray-400 text-sm max-w-sm mx-auto leading-relaxed bg-[#191d26] p-4 rounded-xl border border-gray-800 shadow-inner">
+                  首次查询该股票，正在从上游数据源<span className="text-emerald-400 font-bold">同步十年财务与行情数据</span>，请稍候...
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Data Visualization Dashboard */}
           {stockData && !loading && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both delay-100">
