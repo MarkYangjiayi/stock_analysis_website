@@ -404,3 +404,28 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
             "momentum": momentum_score
         }
     }
+
+
+async def batch_get_factor_scores(tickers: list[str], db: AsyncSession) -> list[Dict[str, Any]]:
+    """
+    Concurrently evaluate and gather factor scores for a list of tickers.
+    Gracefully handles missing data by returning default zero scores.
+    """
+    async def fetch_score(ticker: str):
+        try:
+            val = await get_fundamental_valuation(ticker, db)
+            if val and "factor_scores" in val:
+                return {"ticker": ticker.upper(), "factor_scores": val["factor_scores"]}
+        except Exception as e:
+            logger.error(f"Error fetching factor scores for {ticker}: {e}")
+            
+        return {
+            "ticker": ticker.upper(), 
+            "factor_scores": {
+                "value": 0, "quality": 0, "growth": 0, "health": 0, "momentum": 0
+            }
+        }
+
+    tasks = [fetch_score(ticker) for ticker in tickers]
+    results = await asyncio.gather(*tasks)
+    return list(results)

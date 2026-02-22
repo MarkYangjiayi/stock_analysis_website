@@ -1,13 +1,29 @@
+from typing import List
+from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from services.data_sync import sync_ticker_data
-from services.analyzer import get_analyzed_stock_data, get_fundamental_valuation
+from services.analyzer import get_analyzed_stock_data, get_fundamental_valuation, batch_get_factor_scores
 from services.ai_assistant import generate_stock_report
 
 router = APIRouter()
+
+class BatchFactorsRequest(BaseModel):
+    tickers: List[str]
+
+@router.post("/api/stocks/batch-factors", tags=["Stocks Analysis Read"])
+async def read_batch_factors(request: BatchFactorsRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Fetch fundamental multi-factor scores for a batch of tickers concurrently.
+    """
+    if not request.tickers:
+        return []
+    results = await batch_get_factor_scores(request.tickers, db)
+    return results
 
 @router.post("/api/stocks/{ticker}/sync", tags=["Stocks Synchronization"])
 async def sync_stock_data(ticker: str, db: AsyncSession = Depends(get_db)):
