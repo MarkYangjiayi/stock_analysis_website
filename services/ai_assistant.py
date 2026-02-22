@@ -1,0 +1,66 @@
+import os
+from google import genai
+import logging
+
+from core.config import settings
+
+logger = logging.getLogger(__name__)
+
+async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
+    """
+    Generates a concise markdown investment report using Gemini 1.5 Flash.
+    Initializes the client PER REQUEST to ensure concurrency safety and config isolation.
+    """
+    api_key = settings.GEMINI_API_KEY
+    if not api_key:
+        logger.error("GEMINI_API_KEY environment variable is missing.")
+        return "Error: LLM API key not configured. Cannot generate report."
+
+    try:
+        # 每次调用时独立初始化 Client
+        client = genai.Client(api_key=api_key)
+        
+        profile = analysis_data.get('profile', {})
+        valuation = analysis_data.get('valuation_metrics', {})
+        factors = valuation.get('factor_scores', {})
+        
+        company_name = profile.get('Name', ticker)
+        industry = profile.get('Industry', 'Unknown')
+        
+        prompt = f"""
+        你是一位华尔街资深量化分析师。请根据以下我提供的美股最新基本面与多因子打分数据，为 {company_name} ({ticker}) 撰写一份专业的投资简报。
+        
+        【数据总览】
+        - 行业: {industry}
+        - 最新股价: ${valuation.get('valuation', {}).get('current_price', 'N/A')}
+        - DCF 内在价值估算: ${valuation.get('valuation', {}).get('dcf_intrinsic_value_per_share', 'N/A')}
+        - 估值安全边际: {valuation.get('valuation', {}).get('margin_of_safety', 0) * 100:.1f}%
+        
+        【多因子得分 (0-100)】
+        - 价值 (Value): {factors.get('value', 'N/A')}
+        - 质量 (Quality): {factors.get('quality', 'N/A')}
+        - 成长 (Growth): {factors.get('growth', 'N/A')}
+        - 健康 (Health): {factors.get('health', 'N/A')}
+        - 动量 (Momentum): {factors.get('momentum', 'N/A')}
+        
+        【要求】
+        1. 使用 Markdown 格式排版。
+        2. 全文字数控制在 500 字左右，言简意赅。
+        3. 必须包含以下四个标准模块：
+           - **核心观点**: 一段话总结该股目前的投资吸引力。
+           - **估值诊断**: 结合 DCF 和安全边际，评判当前股价是否被低估或高估。
+           - **因子解读**: 挑出得分最高和最低的因子进行专业点评，无需罗列所有分数。
+           - **潜在风险**: 基于行业或低分因子，指出可能面临的风险。
+        4. 语气专业、客观，避免强烈的买卖推荐。
+        """
+
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        
+        return response.text
+        
+    except Exception as e:
+        logger.error(f"Error generating report for {ticker}: {e}")
+        return f"Error generating report: {str(e)}"

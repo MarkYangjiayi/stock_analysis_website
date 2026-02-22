@@ -5,6 +5,7 @@ import { Search, Activity, AlertCircle } from 'lucide-react';
 import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
 import ValuationDashboard from '@/components/ValuationDashboard';
+import AIReport from '@/components/AIReport';
 
 export default function Home() {
   const [ticker, setTicker] = useState('');
@@ -145,10 +146,17 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Valuation Dashboard Panel */}
+            {/* Valuation Dashboard Panel & AI Report Card grid */}
             {stockData.valuation_metrics && (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both delay-300">
-                <ValuationDashboard metrics={stockData.valuation_metrics} />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both delay-300 items-start">
+                <div className="lg:col-span-2 flex w-full">
+                  <ValuationDashboard metrics={stockData.valuation_metrics} />
+                </div>
+                <div className="lg:col-span-1 flex w-full">
+                  <div className="w-full flex h-[620px]">
+                    <AIReport ticker={stockData.profile.ticker} />
+                  </div>
+                </div>
               </div>
             )}
 

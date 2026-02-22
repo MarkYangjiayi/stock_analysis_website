@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from services.data_sync import sync_ticker_data
 from services.analyzer import get_analyzed_stock_data, get_fundamental_valuation
+from services.ai_assistant import generate_stock_report
 
 router = APIRouter()
 
@@ -40,3 +41,25 @@ async def read_stock_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     data["valuation_metrics"] = valuation
     
     return data
+
+@router.get("/api/stocks/{ticker}/report", tags=["AI Report Generation"])
+async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
+    """
+    Generate an AI investment brief based on latest quantitive data points.
+    """
+    ticker = ticker.upper()
+    data = await get_analyzed_stock_data(ticker, db)
+    
+    if not data:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No data found for ticker: {ticker}. Please ensure you have synchronized it first."
+        )
+        
+    valuation = await get_fundamental_valuation(ticker, db)
+    data["valuation_metrics"] = valuation
+    
+    report_markdown = await generate_stock_report(ticker, data)
+    
+    return {"report": report_markdown}
+
