@@ -44,15 +44,27 @@ async def sync_stock_data(ticker: str, db: AsyncSession = Depends(get_db)):
 async def read_stock_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     读取指定股票的基础 Profile 以及经过量化分析 (MA, RSI, MACD等) 后的最近 300 天日 K 线数据。
+    实现了 Read-Through 策略: 如果本地数据陈旧或不存在，自动触发获取。
     """
     ticker = ticker.upper()
     data = await get_analyzed_stock_data(ticker, db)
     
     if not data:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"No data found for ticker: {ticker}. Please ensure you have synchronized it first."
-        )
+        # Cache Miss: Trigger cold start data synchronization
+        success = await sync_ticker_data(ticker, db)
+        if not success:
+            raise HTTPException(
+                status_code=503, 
+                detail=f"Data for {ticker} not found and external synchronization failed. Please try again later."
+            )
+        # Attempt to read again after synchronization
+        data = await get_analyzed_stock_data(ticker, db)
+        
+        if not data:
+             raise HTTPException(
+                status_code=500, 
+                detail=f"Synchronization succeeded but analytics extraction failed for {ticker}."
+            )
         
     valuation = await get_fundamental_valuation(ticker, db)
     data["valuation_metrics"] = valuation
@@ -63,15 +75,24 @@ async def read_stock_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
 async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Generate an AI investment brief based on latest quantitive data points.
+    Includes read-through automatic synchronization.
     """
     ticker = ticker.upper()
     data = await get_analyzed_stock_data(ticker, db)
     
     if not data:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"No data found for ticker: {ticker}. Please ensure you have synchronized it first."
-        )
+        success = await sync_ticker_data(ticker, db)
+        if not success:
+            raise HTTPException(
+                status_code=503, 
+                detail=f"Data for {ticker} not found and external synchronization failed."
+            )
+        data = await get_analyzed_stock_data(ticker, db)
+        if not data:
+             raise HTTPException(
+                status_code=500, 
+                detail=f"Synchronization succeeded but analytics extraction failed for {ticker}."
+            )
         
     valuation = await get_fundamental_valuation(ticker, db)
     data["valuation_metrics"] = valuation
