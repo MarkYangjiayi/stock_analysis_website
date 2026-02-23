@@ -151,28 +151,36 @@ export default function ScreenerPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-950 text-gray-100 p-6 font-sans">
-            <div className="max-w-7xl mx-auto space-y-6">
+        <div className="min-h-screen bg-[#0E1117] text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
+            <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
 
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-gray-800 pb-4">
-                    <h1 className="text-3xl font-light tracking-wide text-white">Stock <span className="text-blue-500 font-semibold">Screener</span></h1>
-                    <div className="text-sm text-gray-400">
+                    <div className="flex items-center gap-4">
+                        <Link href="/" className="text-gray-400 hover:text-white transition-colors">
+                            <span className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">
+                                Quantify
+                            </span>
+                        </Link>
+                        <span className="text-gray-600 text-xl font-light">/</span>
+                        <h1 className="text-2xl font-bold tracking-wide text-white"><span className="text-emerald-400">Screener</span></h1>
+                    </div>
+                    <div className="text-sm font-medium text-emerald-400/80 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
                         {loading ? "Scanning market..." : `Matches: ${totalCount.toLocaleString()}`}
                     </div>
                 </div>
 
                 {/* Filter Panel */}
-                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                <div className="bg-[#191D26] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
                     {/* Tabs */}
-                    <div className="flex border-b border-gray-800 bg-gray-800/50">
+                    <div className="flex border-b border-gray-800 bg-[#151922]">
                         {tabs.map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === tab
-                                    ? "text-blue-400 border-b-2 border-blue-500 bg-gray-900"
-                                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                                className={`px-6 py-4 text-sm font-bold tracking-wide transition-all ${activeTab === tab
+                                    ? "text-emerald-400 border-b-2 border-emerald-500 bg-[#191D26]"
+                                    : "text-gray-400 hover:text-gray-200 hover:bg-[#1E222D]"
                                     }`}
                             >
                                 {tab}
@@ -190,7 +198,7 @@ export default function ScreenerPage() {
                                 <select
                                     value={filters.sort_by}
                                     onChange={(e) => handleFilterChange("sort_by", e.target.value)}
-                                    className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                    className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                 >
                                     <option value="market_cap">Market Cap</option>
                                     <option value="pe_ratio">P/E Ratio</option>
@@ -210,7 +218,7 @@ export default function ScreenerPage() {
                                 <select
                                     value={filters.sort_desc}
                                     onChange={(e) => handleFilterChange("sort_desc", e.target.value)}
-                                    className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                    className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                 >
                                     <option value="desc">Descending</option>
                                     <option value="asc">Ascending</option>
@@ -225,7 +233,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.sector}
                                             onChange={(e) => handleFilterChange("sector", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="Technology">Technology</option>
@@ -240,7 +248,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.market_cap}
                                             onChange={(e) => handleFilterChange("market_cap", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="mega">Mega (&gt; $200B)</option>
@@ -260,7 +268,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.pe}
                                             onChange={(e) => handleFilterChange("pe", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="under15">Value (&lt; 15)</option>
@@ -272,7 +280,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.roe}
                                             onChange={(e) => handleFilterChange("roe", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="over15">Good (&gt; 15%)</option>
@@ -284,7 +292,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.debt_to_equity}
                                             onChange={(e) => handleFilterChange("debt_to_equity", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="under1">Healthy (&lt; 1.0)</option>
@@ -296,7 +304,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.sales_growth_5yr}
                                             onChange={(e) => handleFilterChange("sales_growth_5yr", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="over10">Growing (&gt; 10%)</option>
@@ -308,7 +316,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.gross_margin}
                                             onChange={(e) => handleFilterChange("gross_margin", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="over30">Wide (&gt; 30%)</option>
@@ -320,7 +328,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.fcf}
                                             onChange={(e) => handleFilterChange("fcf", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="positive">Positive (&gt; 0)</option>
@@ -338,7 +346,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.price_ma50}
                                             onChange={(e) => handleFilterChange("price_ma50", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="above">Price &gt; MA50 (Bullish)</option>
@@ -350,7 +358,7 @@ export default function ScreenerPage() {
                                         <select
                                             value={filters.rsi}
                                             onChange={(e) => handleFilterChange("rsi", e.target.value)}
-                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="oversold">Oversold (&lt; 30)</option>
@@ -364,10 +372,10 @@ export default function ScreenerPage() {
                 </div>
 
                 {/* Results Table */}
-                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                <div className="bg-[#191D26] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-gray-800/80 text-gray-400 font-medium">
+                            <thead className="bg-[#141820] text-gray-400 font-medium">
                                 <tr>
                                     <th className="px-6 py-4 rounded-tl-xl">Ticker</th>
                                     <th className="px-6 py-4">Company</th>
@@ -390,27 +398,31 @@ export default function ScreenerPage() {
                                     </tr>
                                 ) : (
                                     results.map((stock: any) => (
-                                        <tr key={stock.ticker} className="hover:bg-gray-800/50 transition-colors group">
-                                            <td className="px-6 py-4 font-bold text-blue-400 group-hover:text-blue-300">
-                                                <Link href={`/stock/${stock.ticker.split('.')[0]}`}>
+                                        <tr key={stock.ticker} className="hover:bg-gray-800/40 border-b border-gray-800/50 transition-colors group">
+                                            <td className="px-6 py-4 font-bold text-emerald-400 group-hover:text-emerald-300">
+                                                <Link href={`/?ticker=${stock.ticker}`}>
                                                     {stock.ticker.split('.')[0]}
                                                 </Link>
                                             </td>
                                             <td className="px-6 py-4 text-gray-300 truncate max-w-[200px]" title={stock.name}>{stock.name || "-"}</td>
-                                            <td className="px-6 py-4 text-gray-400 truncate max-w-[120px]">{stock.sector || "-"}</td>
-                                            <td className="px-6 py-4 text-gray-200">{formatMarketCap(stock.market_cap)}</td>
-                                            <td className="px-6 py-4 font-medium">${stock.close?.toFixed(2) || "-"}</td>
-                                            <td className="px-6 py-4 text-orange-300">{formatPE(stock.pe_ratio)}</td>
-                                            <td className={`px-6 py-4 font-medium ${stock.roe > 0.15 ? 'text-green-400' : 'text-gray-400'}`}>
+                                            <td className="px-6 py-4 text-gray-400 truncate max-w-[120px]">
+                                                <span className="bg-[#2B2B43] px-2 py-1 rounded border border-gray-700 shadow-sm text-xs">
+                                                    {stock.sector || "-"}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
+                                            <td className="px-6 py-4 font-bold text-white">${stock.close?.toFixed(2) || "-"}</td>
+                                            <td className="px-6 py-4 text-gray-300">{formatPE(stock.pe_ratio)}</td>
+                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-400' : 'text-gray-400'}`}>
                                                 {stock.roe ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className={`px-6 py-4 font-medium ${stock.debt_to_equity < 1.0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity < 1.0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : "-"}
                                             </td>
-                                            <td className="px-6 py-4 text-gray-400">
+                                            <td className="px-6 py-4 text-gray-300">
                                                 {stock.gross_margin ? `${(stock.gross_margin * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className="px-6 py-4 text-gray-400">
+                                            <td className="px-6 py-4 text-gray-300">
                                                 {stock.sales_growth_5yr ? `${(stock.sales_growth_5yr * 100).toFixed(1)}%` : "-"}
                                             </td>
                                         </tr>
@@ -421,22 +433,22 @@ export default function ScreenerPage() {
                     </div>
 
                     {/* Pagination Footer */}
-                    <div className="p-4 border-t border-gray-800 flex items-center justify-between bg-gray-900/50">
-                        <span className="text-gray-500 text-sm">
+                    <div className="p-4 flex items-center justify-between bg-[#141820]">
+                        <span className="text-gray-500 text-sm font-medium">
                             Showing {results.length > 0 ? page * limit + 1 : 0} to {Math.min((page + 1) * limit, totalCount)} of {totalCount}
                         </span>
                         <div className="flex gap-2">
                             <button
                                 onClick={handlePrevPage}
                                 disabled={page === 0 || loading}
-                                className="px-4 py-2 bg-gray-800 text-gray-300 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                                className="px-5 py-2.5 bg-[#151922] text-gray-300 rounded border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-bold shadow-sm"
                             >
                                 Previous
                             </button>
                             <button
                                 onClick={handleNextPage}
                                 disabled={(page + 1) * limit >= totalCount || loading}
-                                className="px-4 py-2 bg-gray-800 text-gray-300 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                                className="px-5 py-2.5 bg-[#151922] text-gray-300 rounded border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-bold shadow-sm"
                             >
                                 Next
                             </button>

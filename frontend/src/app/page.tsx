@@ -71,6 +71,19 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const qTicker = params.get('ticker');
+      if (qTicker) {
+        executeSearch(qTicker);
+        // Clean up the URL state
+        window.history.replaceState({}, '', '/');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     await executeSearch(ticker);
@@ -120,7 +133,7 @@ export default function Home() {
             <button
               type="submit"
               disabled={loading || !ticker.trim()}
-              className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-500/20 disabled:text-emerald-500/40 text-white min-w-[140px] px-8 py-4 rounded-xl font-bold transition-all shadow-lg active:scale-[0.98]"
+              className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-500/20 disabled:text-emerald-500/40 text-white min-w-[140px] px-8 py-4 rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.5)] active:scale-[0.98]"
             >
               {loading ? (
                 <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white" />
@@ -129,6 +142,14 @@ export default function Home() {
               )}
             </button>
           </form>
+
+          {/* Screener Entry Section */}
+          <div className="text-center animate-in fade-in zoom-in-95 duration-500 delay-200 fill-mode-both">
+            <a href="/screener" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-emerald-500/30 text-emerald-400 font-medium hover:bg-emerald-500/10 transition-colors shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+              <Activity size={18} />
+              Open Global Market Screener
+            </a>
+          </div>
 
           {/* State Banners */}
           {error && (
