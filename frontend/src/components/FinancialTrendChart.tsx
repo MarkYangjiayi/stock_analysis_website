@@ -58,9 +58,37 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
             grid: {
                 left: '3%',
                 right: '4%',
-                bottom: '3%',
+                bottom: '12%',
                 containLabel: true
             },
+            dataZoom: [
+                {
+                    type: 'inside',
+                    startValue: Math.max(0, dates.length - 20),
+                    endValue: dates.length - 1
+                },
+                {
+                    type: 'slider',
+                    bottom: 0,
+                    startValue: Math.max(0, dates.length - 20),
+                    endValue: dates.length - 1,
+                    textStyle: { color: '#9ca3af' },
+                    borderColor: '#374151',
+                    fillerColor: 'rgba(52, 211, 153, 0.2)', // emerald-400
+                    handleStyle: {
+                        color: '#10b981',
+                        borderColor: '#059669'
+                    },
+                    dataBackground: {
+                        lineStyle: { color: '#4b5563' },
+                        areaStyle: { color: '#374151' }
+                    },
+                    selectedDataBackground: {
+                        lineStyle: { color: '#10b981' },
+                        areaStyle: { color: '#059669' }
+                    }
+                }
+            ],
             xAxis: [
                 {
                     type: 'category',

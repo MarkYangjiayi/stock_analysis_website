@@ -1,16 +1,26 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, IChartApi, ISeriesApi, CrosshairMode } from 'lightweight-charts';
+import { createChart, ColorType, IChartApi, ISeriesApi, CrosshairMode, PriceScaleMode } from 'lightweight-charts';
 import { HistoricalDataPoint } from '@/lib/api';
 
 interface StockChartProps {
     data: HistoricalDataPoint[];
+    interval?: string;
+    onIntervalChange?: (interval: string) => void;
+    isLoading?: boolean;
 }
 
-const StockChart: React.FC<StockChartProps> = ({ data }) => {
+const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onIntervalChange, isLoading }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
+
+    // Maintain refs to series so they can be updated dynamically
+    const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+    const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+    const ma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const ma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+
     const [tooltipData, setTooltipData] = useState<{
         visible: boolean;
         date: string;
@@ -23,12 +33,13 @@ const StockChart: React.FC<StockChartProps> = ({ data }) => {
         ma50?: number;
         x: number;
         y: number;
+        containerWidth: number;
     } | null>(null);
 
+    // Initial Chart Creation
     useEffect(() => {
-        if (!chartContainerRef.current || data.length === 0) return;
+        if (!chartContainerRef.current) return;
 
-        // 1. Setup the main chart
         const chart = createChart(chartContainerRef.current, {
             layout: {
                 background: { type: ColorType.Solid, color: '#1E222D' },
@@ -49,13 +60,13 @@ const StockChart: React.FC<StockChartProps> = ({ data }) => {
             },
             rightPriceScale: {
                 borderColor: '#2B2B43',
+                mode: PriceScaleMode.Logarithmic,
             },
         });
 
         chartRef.current = chart;
 
-        // 2. Add Candlestick Series
-        const candlestickSeries = chart.addCandlestickSeries({
+        candlestickSeriesRef.current = chart.addCandlestickSeries({
             upColor: '#26a69a',
             downColor: '#ef5350',
             borderVisible: false,
@@ -63,66 +74,95 @@ const StockChart: React.FC<StockChartProps> = ({ data }) => {
             wickDownColor: '#ef5350',
         });
 
-        // Formatting data for lightweight charts
-        // Time must be a string YYYY-MM-DD
-        const candleData = data.map((d) => ({
+        volumeSeriesRef.current = chart.addHistogramSeries({
+            color: '#26a69a',
+            priceFormat: { type: 'volume' },
+            priceScaleId: '',
+        });
+
+        chart.priceScale('').applyOptions({
+            scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+            },
+        });
+
+        ma20SeriesRef.current = chart.addLineSeries({
+            color: '#2962FF',
+            lineWidth: 2,
+            crosshairMarkerVisible: false,
+        });
+
+        ma50SeriesRef.current = chart.addLineSeries({
+            color: '#FF9800',
+            lineWidth: 2,
+            crosshairMarkerVisible: false,
+        });
+
+        const handleResize = () => {
+            if (chartContainerRef.current && chartRef.current) {
+                chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            chart.remove();
+            chartRef.current = null;
+        };
+    }, []);
+
+    // Data Update Effect (triggers when `data` changes instead of tearing down instance)
+    useEffect(() => {
+        if (!data || data.length === 0 || !chartRef.current) return;
+
+        // Filter out any points that might have null/undefined values for essential properties
+        const validCandleData = data.filter(d =>
+            d.open != null && d.high != null && d.low != null && d.close != null
+        );
+
+        const candleData = validCandleData.map((d) => ({
             time: d.date,
             open: d.open,
             high: d.high,
             low: d.low,
             close: d.close,
         }));
-        candlestickSeries.setData(candleData as any);
 
-        // 3. Add Volume Histogram overlay
-        const volumeSeries = chart.addHistogramSeries({
-            color: '#26a69a',
-            priceFormat: { type: 'volume' },
-            priceScaleId: '', // Blank targets overlay
-        });
-
-        // Lightweight Charts 4.0: Set price scale margins on the main chart priceScale options
-        chart.priceScale('').applyOptions({
-            scaleMargins: {
-                top: 0.8, // Push to bottom 20%
-                bottom: 0,
-            },
-        });
-
-        const volumeData = data.map((d) => ({
+        const volumeData = validCandleData.map((d) => ({
             time: d.date,
-            value: d.volume,
+            value: d.volume != null ? d.volume : 0,
             color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
         }));
-        volumeSeries.setData(volumeData as any);
-
-        // 4. Add Moving Averages (MA20 and MA50)
-        const ma20Series = chart.addLineSeries({
-            color: '#2962FF',
-            lineWidth: 2,
-            crosshairMarkerVisible: false,
-        });
-
-        const ma50Series = chart.addLineSeries({
-            color: '#FF9800',
-            lineWidth: 2,
-            crosshairMarkerVisible: false,
-        });
 
         const ma20Data = data.filter(d => d.MA20 != null).map(d => ({
             time: d.date,
             value: d.MA20 as number,
         }));
+
         const ma50Data = data.filter(d => d.MA50 != null).map(d => ({
             time: d.date,
             value: d.MA50 as number,
         }));
 
-        ma20Series.setData(ma20Data as any);
-        ma50Series.setData(ma50Data as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        candlestickSeriesRef.current?.setData(candleData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        volumeSeriesRef.current?.setData(volumeData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ma20SeriesRef.current?.setData(ma20Data as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ma50SeriesRef.current?.setData(ma50Data as any);
 
-        // 5. Crosshair interactive tooltip handling
-        chart.subscribeCrosshairMove((param) => {
+        // Make sure newly loaded long-timeline data fits on screen gracefully
+        chartRef.current.timeScale().fitContent();
+
+        // Subscribe inside so it has access to latest closures
+        const chart = chartRef.current;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const crosshairHandler = (param: any) => {
             if (
                 param.point === undefined ||
                 !param.time ||
@@ -136,7 +176,6 @@ const StockChart: React.FC<StockChartProps> = ({ data }) => {
             }
 
             const activeDate = param.time as string;
-            // 找到原始数组中的当前 hover 日期的数据
             const rawData = data.find(d => d.date === activeDate);
 
             if (rawData) {
@@ -152,37 +191,52 @@ const StockChart: React.FC<StockChartProps> = ({ data }) => {
                     ma50: rawData.MA50,
                     x: param.point.x,
                     y: param.point.y,
+                    containerWidth: chartContainerRef.current?.clientWidth || Number.POSITIVE_INFINITY,
                 });
             }
-        });
-
-        // Resize observer pattern
-        const handleResize = () => {
-            if (chartContainerRef.current && chartRef.current) {
-                chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
-            }
         };
 
-        window.addEventListener('resize', handleResize);
+        chart.subscribeCrosshairMove(crosshairHandler);
 
-        // Cleanup on unmount
         return () => {
-            window.removeEventListener('resize', handleResize);
-            chart.remove();
-        };
+            chart.unsubscribeCrosshairMove(crosshairHandler);
+        }
     }, [data]);
 
     return (
-        <div
-            ref={chartContainerRef}
-            className="w-full relative shadow-sm rounded-lg overflow-hidden border border-gray-800"
-        >
+        <div className="w-full relative shadow-sm rounded-lg overflow-hidden border border-gray-800">
+            {/* Interval Switcher UI */}
+            {onIntervalChange && (
+                <div className="absolute top-4 left-4 z-20 flex bg-[#151922] border border-gray-700/80 rounded-lg shadow-2xl p-1 gap-1 backdrop-blur-md">
+                    {['1d', '1wk', '1mo'].map(intv => (
+                        <button
+                            key={intv}
+                            onClick={() => onIntervalChange(intv)}
+                            disabled={isLoading}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${interval === intv
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800 border border-transparent'
+                                }`}
+                        >
+                            {intv === '1d' ? 'D' : intv === '1wk' ? 'W' : 'M'}
+                        </button>
+                    ))}
+                    {isLoading && (
+                        <div className="flex items-center justify-center px-2">
+                            <div className="animate-spin h-3.5 w-3.5 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full"></div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div ref={chartContainerRef} className="w-full h-full" />
+
             {/* Tooltip Overlay */}
             {tooltipData && tooltipData.visible && (
                 <div
-                    className="absolute z-20 pointer-events-none bg-[#151922]/90 backdrop-blur-sm border border-gray-700/50 rounded-lg p-3 text-sm shadow-xl"
+                    className="absolute z-30 pointer-events-none bg-[#151922]/90 backdrop-blur-md border border-gray-700/50 rounded-lg p-3 text-sm shadow-xl"
                     style={{
-                        left: Math.min(tooltipData.x + 15, chartContainerRef.current!.clientWidth - 180),
+                        left: Math.min(tooltipData.x + 15, tooltipData.containerWidth - 180),
                         top: Math.max(10, tooltipData.y - 120),
                     }}
                 >

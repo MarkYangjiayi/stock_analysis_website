@@ -1,55 +1,61 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, RefreshCw, AlertTriangle } from 'lucide-react';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+import { API_BASE_URL } from '@/lib/api';
 
 interface AIReportProps {
     ticker: string;
 }
 
 const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
-    const [report, setReport] = useState<string | null>(null);
+    const [report, setReport] = useState<string>('');
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const loadReport = async () => {
+        setReport('');
         setLoading(true);
         setError(null);
-        setReport(""); // Clear previous report content for streaming
+
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/stocks/${ticker}/report`);
+            const response = await fetch(`${API_BASE_URL}/api/stocks/${ticker}/report`, {
+                signal: controller.signal
+            });
 
             if (!response.ok) {
-                throw new Error(`Error ${response.status}: Failed to generate investment brief.`);
-            }
-            if (!response.body) {
-                throw new Error("No response body returned from the stream.");
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `HTTP Error ${response.status}`);
             }
 
-            setLoading(false); // Stop the main loading spinner early, text starts appearing
+            if (!response.body) throw new Error("No response body");
+
+            setLoading(false);
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
-            let isDone = false;
-            let currentText = "";
+            let done = false;
 
-            while (!isDone) {
-                const { value, done } = await reader.read();
-                if (done) {
-                    isDone = true;
-                    break;
+            while (!done) {
+                const { value, done: readerDone } = await reader.read();
+                done = readerDone;
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true });
+                    setReport(prev => prev + chunk);
                 }
-                const chunkMessage = decoder.decode(value, { stream: true });
-                currentText += chunkMessage;
-                setReport(currentText);
             }
-
         } catch (err: any) {
+            if (err.name === 'AbortError') return;
             console.error("Failed to fetch AI report:", err);
             setError(err.message || 'Failed to generate investment brief.');
             setLoading(false);
@@ -60,6 +66,11 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
         if (ticker) {
             loadReport();
         }
+        return () => {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ticker]);
 

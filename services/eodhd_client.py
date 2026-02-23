@@ -35,6 +35,7 @@ async def _fetch_from_eodhd(endpoint: str, ticker: str, params: Optional[Dict[st
     
     # 强制加上 API_TOKEN
     params["api_token"] = EODHD_API_KEY
+    print(f"EODHD_API_KEY is {EODHD_API_KEY}")
     params["fmt"] = "json"  # 强制要求 JSON 格式返回
 
     url = f"{EODHD_BASE_URL}/{endpoint}/{ticker}"
@@ -119,3 +120,46 @@ async def get_eod_historical_data(ticker: str, from_date: Optional[str] = None, 
         params["to"] = to_date
         
     return await _fetch_from_eodhd(endpoint="eod", ticker=ticker, params=params)
+
+
+async def get_bulk_eod_prices(exchange: str = "US", date_str: Optional[str] = None) -> Optional[list]:
+    """
+    获取指定交易所全部股票的某一天的批量日终行情
+    """
+    logger.info(f"Fetching bulk EOD prices for exchange {exchange} on {date_str or 'latest'}...")
+    params = {}
+    if date_str:
+        params["date"] = date_str
+    return await _fetch_from_eodhd(endpoint="eod-bulk-last-day", ticker=exchange, params=params)
+
+
+async def get_bulk_fundamentals(exchange: str = "US") -> Optional[list]:
+    """
+    获取指定交易所的批量基本面数据信息 (Sector, Industry, PE, PB, Market Cap)
+    """
+    logger.info(f"Fetching bulk fundamentals for exchange {exchange}...")
+    return await _fetch_from_eodhd(endpoint="bulk-fundamentals", ticker=exchange)
+
+
+async def get_index_components(index_ticker: str) -> list[str]:
+    """
+    Fetches the constituent tickers of a given index.
+    
+    Args:
+        index_ticker: The index symbol (e.g., 'GSPC.INDX' for S&P 500)
+    Returns:
+        List of ticker strings (e.g., ['AAPL.US', 'MSFT.US'])
+    """
+    logger.info(f"Fetching components for index {index_ticker}...")
+    data = await get_fundamental_data(index_ticker)
+    
+    components = []
+    if data and "Components" in data:
+        for symbol_index, component_data in data["Components"].items():
+            code = component_data.get("Code")
+            exchange = component_data.get("Exchange")
+            if code and exchange:
+                components.append(f"{code}.{exchange}")
+    
+    logger.info(f"Found {len(components)} components for {index_ticker}")
+    return components

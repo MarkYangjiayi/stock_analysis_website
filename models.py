@@ -117,3 +117,43 @@ class ComputedMetric(Base):
     __table_args__ = (
         UniqueConstraint("ticker", "date", name="uix_computed_metrics_ticker_date"),
     )
+
+
+class StockScreenerSnapshot(Base):
+    """
+    5. stock_screener_snapshot (全市场横截面数据快照表)
+    此表专为 Stock Screener 构建，通过 Bulk API 后台任务每日清洗注入。
+    """
+    __tablename__ = "stock_screener_snapshot"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    date: Mapped[dt_date] = mapped_column(Date, index=True)
+    
+    # 基础与分类
+    name: Mapped[Optional[str]] = mapped_column(String)
+    sector: Mapped[Optional[str]] = mapped_column(String, index=True)
+    industry: Mapped[Optional[str]] = mapped_column(String, index=True)
+    
+    # 基本面指标
+    market_cap: Mapped[Optional[Decimal]] = mapped_column(Numeric, index=True)
+    pe_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    pb_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    dividend_yield: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    roe: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    debt_to_equity: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    fcf: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    gross_margin: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    sales_growth_5yr: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    
+    # 技术面指标 (通过近60天K线运算)
+    close: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    volume: Mapped[Optional[int]] = mapped_column(BigInteger)
+    ma20: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    ma50: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    rsi_14: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+
+    # 联合唯一索引支持 UPSERT
+    __table_args__ = (
+        UniqueConstraint("ticker", "date", name="uix_screener_snapshot_ticker_date"),
+    )
