@@ -150,8 +150,26 @@ export default function ScreenerPage() {
         return num.toFixed(2);
     };
 
+    const totalPages = Math.ceil(totalCount / limit);
+
+    const generatePagination = () => {
+        if (totalPages <= 7) {
+            return Array.from({ length: totalPages }, (_, i) => i);
+        }
+
+        if (page < 4) {
+            return [0, 1, 2, 3, 4, '...', totalPages - 1];
+        }
+
+        if (page > totalPages - 5) {
+            return [0, '...', totalPages - 5, totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1];
+        }
+
+        return [0, '...', page - 1, page, page + 1, '...', totalPages - 1];
+    };
+
     return (
-        <div className="min-h-screen bg-[#0E1117] text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
+        <div className="h-full w-full overflow-y-auto bg-[#0E1117] text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
             <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
 
                 {/* Header */}
@@ -433,26 +451,59 @@ export default function ScreenerPage() {
                     </div>
 
                     {/* Pagination Footer */}
-                    <div className="p-4 flex items-center justify-between bg-[#141820]">
+                    <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 bg-[#141820]">
                         <span className="text-gray-500 text-sm font-medium">
                             Showing {results.length > 0 ? page * limit + 1 : 0} to {Math.min((page + 1) * limit, totalCount)} of {totalCount}
                         </span>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={handlePrevPage}
-                                disabled={page === 0 || loading}
-                                className="px-5 py-2.5 bg-[#151922] text-gray-300 rounded border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-bold shadow-sm"
-                            >
-                                Previous
-                            </button>
-                            <button
-                                onClick={handleNextPage}
-                                disabled={(page + 1) * limit >= totalCount || loading}
-                                className="px-5 py-2.5 bg-[#151922] text-gray-300 rounded border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-bold shadow-sm"
-                            >
-                                Next
-                            </button>
-                        </div>
+
+                        {totalPages > 0 && (
+                            <div className="flex items-center gap-1">
+                                {/* Prev Button */}
+                                <button
+                                    onClick={handlePrevPage}
+                                    disabled={page === 0 || loading}
+                                    className="px-3 py-2 bg-[#151922] text-gray-400 rounded-lg border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                    &lt;
+                                </button>
+
+                                {/* Page Numbers */}
+                                {generatePagination().map((item, index) => {
+                                    if (item === '...') {
+                                        return (
+                                            <span key={`ellipsis-${index}`} className="px-3 text-gray-500">
+                                                ...
+                                            </span>
+                                        );
+                                    }
+
+                                    const pageNum = item as number;
+                                    const isActive = pageNum === page;
+
+                                    return (
+                                        <button
+                                            key={`page-${pageNum}`}
+                                            onClick={() => setPage(pageNum)}
+                                            className={`min-w-[40px] h-10 flex items-center justify-center rounded-lg border text-sm font-bold transition-all ${isActive
+                                                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                                                    : 'bg-[#151922] text-gray-400 border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400'
+                                                }`}
+                                        >
+                                            {pageNum + 1}
+                                        </button>
+                                    );
+                                })}
+
+                                {/* Next Button */}
+                                <button
+                                    onClick={handleNextPage}
+                                    disabled={page >= totalPages - 1 || loading}
+                                    className="px-3 py-2 bg-[#151922] text-gray-400 rounded-lg border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                    &gt;
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
