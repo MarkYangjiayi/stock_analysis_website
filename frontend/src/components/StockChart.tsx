@@ -33,6 +33,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         ma50?: number;
         x: number;
         y: number;
+        containerWidth: number;
     } | null>(null);
 
     // Initial Chart Creation
@@ -146,9 +147,13 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             value: d.MA50 as number,
         }));
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         candlestickSeriesRef.current?.setData(candleData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         volumeSeriesRef.current?.setData(volumeData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ma20SeriesRef.current?.setData(ma20Data as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ma50SeriesRef.current?.setData(ma50Data as any);
 
         // Make sure newly loaded long-timeline data fits on screen gracefully
@@ -156,6 +161,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
 
         // Subscribe inside so it has access to latest closures
         const chart = chartRef.current;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const crosshairHandler = (param: any) => {
             if (
                 param.point === undefined ||
@@ -185,6 +191,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                     ma50: rawData.MA50,
                     x: param.point.x,
                     y: param.point.y,
+                    containerWidth: chartContainerRef.current?.clientWidth || Number.POSITIVE_INFINITY,
                 });
             }
         };
@@ -229,7 +236,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                 <div
                     className="absolute z-30 pointer-events-none bg-[#151922]/90 backdrop-blur-md border border-gray-700/50 rounded-lg p-3 text-sm shadow-xl"
                     style={{
-                        left: Math.min(tooltipData.x + 15, chartContainerRef.current?.clientWidth ? chartContainerRef.current.clientWidth - 180 : Number.POSITIVE_INFINITY),
+                        left: Math.min(tooltipData.x + 15, tooltipData.containerWidth - 180),
                         top: Math.max(10, tooltipData.y - 120),
                     }}
                 >

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Search, Activity, AlertCircle, Plus, Check } from 'lucide-react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Search, Activity, AlertCircle, Plus, Check, BarChart2 } from 'lucide-react';
 import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
 import ValuationDashboard from '@/components/ValuationDashboard';
@@ -9,7 +10,8 @@ import AIReport from '@/components/AIReport';
 import FinancialTrendChart from '@/components/FinancialTrendChart';
 import WatchlistSidebar from '@/components/WatchlistSidebar';
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams();
   const [ticker, setTicker] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -90,26 +92,20 @@ export default function Home() {
     setIsChartLoading(false);
   };
 
+  // URL-driven state initialization
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const qTicker = params.get('ticker');
-      if (qTicker) {
-        executeSearch(qTicker);
-        // Clean up the URL state
-        window.history.replaceState({}, '', '/');
-      }
+    const qTicker = searchParams.get('ticker');
+    if (qTicker) {
+      executeSearch(qTicker);
+    } else if (!ticker && watchlist.length > 0) {
+      // If no URL ticker AND no current ticker, fallback to the first item in watchlist
+      // executeSearch(watchlist[0]); // Optional auto-load. Left commented intentionally to show empty state.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await executeSearch(ticker);
-  };
+  }, [searchParams]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0E1117] text-gray-100 font-sans selection:bg-emerald-500/30">
+    <div className="flex h-full w-full overflow-hidden bg-[#0E1117] text-gray-100 font-sans selection:bg-emerald-500/30">
       <div className="hidden md:block h-full z-50">
         <WatchlistSidebar
           currentTicker={ticker}
@@ -119,56 +115,22 @@ export default function Home() {
           onRemove={handleRemoveWatchlist}
         />
       </div>
-      <main className="flex-1 overflow-y-auto p-6 md:p-8 relative">
-        <div className="max-w-6xl mx-auto space-y-12 pb-12">
-          {/* Header Section */}
-          <div className="text-center space-y-4 pt-8 animate-in fade-in slide-in-from-top-4 duration-700">
-            <div className="flex items-center justify-center space-x-3 text-emerald-400">
-              <Activity strokeWidth={2.5} size={48} />
-              <h1 className="text-5xl font-extrabold tracking-tight text-white drop-shadow-md">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">Quantify</span> Platform
-              </h1>
-            </div>
-            <p className="text-gray-400 text-lg font-medium max-w-xl mx-auto">
-              Professional Grade Stock Analysis with Lightweight Charts & Real-time MACD/RSI Computations.
-            </p>
-          </div>
+      <main className="flex-1 overflow-y-auto p-4 md:p-6 relative">
+        <div className="max-w-7xl mx-auto space-y-8 pb-12">
 
-          {/* Search Bar Section */}
-          <form onSubmit={handleSearch} className="max-w-3xl mx-auto flex flex-col sm:flex-row gap-4 relative z-10 animate-in fade-in zoom-in-95 duration-500 delay-150 fill-mode-both">
-            <div className="relative flex-1 group">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 to-teal-500 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
-              <div className="relative flex items-center bg-[#151922] rounded-xl border border-gray-800 transition-all focus-within:border-emerald-500/50">
-                <Search className="absolute left-5 text-gray-400 group-focus-within:text-emerald-400 transition-colors" size={22} />
-                <input
-                  type="text"
-                  value={ticker}
-                  onChange={(e) => setTicker(e.target.value)}
-                  placeholder="Enter stock ticker (e.g., AAPL.US, TSLA.US)"
-                  className="w-full bg-transparent text-white placeholder-gray-500 pl-14 pr-4 py-4 rounded-xl focus:outline-none text-lg h-full"
-                />
+          {/* Empty State */}
+          {!ticker && !loading && !error && !stockData && (
+            <div className="flex flex-col items-center justify-center h-[70vh] text-center space-y-6 animate-in fade-in zoom-in duration-700">
+              <div className="relative">
+                <div className="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full" />
+                <div className="bg-[#151922] p-6 rounded-3xl border border-gray-800 shadow-2xl relative z-10">
+                  <BarChart2 size={64} strokeWidth={1.5} className="text-emerald-400/80 mb-4 mx-auto" />
+                  <h2 className="text-3xl font-extrabold text-white tracking-tight">Financial Analysis Terminal</h2>
+                  <p className="text-gray-400 mt-3 text-lg">Use the top search bar or select a ticker from your watchlist to begin.</p>
+                </div>
               </div>
             </div>
-            <button
-              type="submit"
-              disabled={loading || !ticker.trim()}
-              className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-500/20 disabled:text-emerald-500/40 text-white min-w-[140px] px-8 py-4 rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.5)] active:scale-[0.98]"
-            >
-              {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white" />
-              ) : (
-                'Analyze'
-              )}
-            </button>
-          </form>
-
-          {/* Screener Entry Section */}
-          <div className="text-center animate-in fade-in zoom-in-95 duration-500 delay-200 fill-mode-both">
-            <a href="/screener" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-emerald-500/30 text-emerald-400 font-medium hover:bg-emerald-500/10 transition-colors shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-              <Activity size={18} />
-              Open Global Market Screener
-            </a>
-          </div>
+          )}
 
           {/* State Banners */}
           {error && (
@@ -308,5 +270,17 @@ export default function Home() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-full items-center justify-center bg-[#0E1117]">
+        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
