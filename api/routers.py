@@ -83,13 +83,13 @@ async def sync_stock_data(ticker: str, db: AsyncSession = Depends(get_db)):
     return {"message": f"Successfully synchronized data for {ticker}", "ticker": ticker}
 
 @router.get("/api/stocks/{ticker}", tags=["Stocks Analysis Read"])
-async def read_stock_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
+async def read_stock_analysis(ticker: str, interval: str = "1d", db: AsyncSession = Depends(get_db)):
     """
-    读取指定股票的基础 Profile 以及经过量化分析 (MA, RSI, MACD等) 后的最近 300 天日 K 线数据。
+    读取指定股票的基础 Profile 以及经过量化分析 (MA, RSI, MACD等) 后的全量历史时间序列。
     实现了 Read-Through 策略: 如果本地数据陈旧或不存在，自动触发获取。
     """
     ticker = ticker.upper()
-    data = await get_analyzed_stock_data(ticker, db)
+    data = await get_analyzed_stock_data(ticker, db, interval)
     
     if not data:
         # Cache Miss: Trigger cold start data synchronization
@@ -100,7 +100,7 @@ async def read_stock_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
                 detail=f"Data for {ticker} not found and external synchronization failed. Please try again later."
             )
         # Attempt to read again after synchronization
-        data = await get_analyzed_stock_data(ticker, db)
+        data = await get_analyzed_stock_data(ticker, db, interval)
         
         if not data:
              raise HTTPException(

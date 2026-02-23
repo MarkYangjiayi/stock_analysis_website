@@ -15,6 +15,9 @@ export default function Home() {
   const [error, setError] = useState('');
   const [stockData, setStockData] = useState<StockDataResponse | null>(null);
 
+  const [chartInterval, setChartInterval] = useState('1d');
+  const [isChartLoading, setIsChartLoading] = useState(false);
+
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const DEFAULT_WATCHLIST = ['AAPL.US', 'AMAT.US', 'ASTS.US', 'UNH.US'];
 
@@ -48,17 +51,23 @@ export default function Home() {
     saveWatchlist(watchlist.filter(t => t !== tickerToRemove));
   };
 
-  const executeSearch = async (searchTicker: string) => {
+  const executeSearch = async (searchTicker: string, intervalToFetch: string = '1d') => {
     if (!searchTicker.trim()) return;
 
-    setLoading(true);
-    setError('');
-    setStockData(null);
-    setTicker(searchTicker);
+    // Full load only for a completely new ticker
+    const isNewTicker = searchTicker !== ticker;
+    if (isNewTicker) {
+      setLoading(true);
+      setError('');
+      setStockData(null);
+      setTicker(searchTicker);
+      setChartInterval('1d');
+      intervalToFetch = '1d';
+    }
 
     try {
-      // Send GET /api/stocks/{ticker}
-      const data = await fetchStockData(searchTicker.toUpperCase());
+      // Send GET /api/stocks/{ticker}?interval=...
+      const data = await fetchStockData(searchTicker.toUpperCase(), intervalToFetch);
       setStockData(data);
     } catch (err: any) {
       if (err.response?.status === 404) {
@@ -67,8 +76,18 @@ export default function Home() {
         setError(err.message || 'Failed to fetch stock data');
       }
     } finally {
-      setLoading(false);
+      if (isNewTicker) {
+        setLoading(false);
+      }
     }
+  };
+
+  const handleIntervalChange = async (newInterval: string) => {
+    if (newInterval === chartInterval || !ticker) return;
+    setChartInterval(newInterval);
+    setIsChartLoading(true);
+    await executeSearch(ticker, newInterval);
+    setIsChartLoading(false);
   };
 
   useEffect(() => {
@@ -271,8 +290,13 @@ export default function Home() {
                     Interactive K-Line View
                   </div>
                 </div>
-                <div className="p-0 sm:p-4 bg-[#1E222D]">
-                  <StockChart data={stockData.historical_data} />
+                <div className="p-0 sm:p-4 bg-[#1E222D] relative">
+                  <StockChart
+                    data={stockData.historical_data}
+                    interval={chartInterval}
+                    onIntervalChange={handleIntervalChange}
+                    isLoading={isChartLoading}
+                  />
                 </div>
               </div>
 
