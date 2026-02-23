@@ -4,10 +4,10 @@ from typing import Optional, Dict, Any
 
 import pandas as pd
 import pandas_ta_classic as ta
-from sqlalchemy import select, asc, desc
+from sqlalchemy import select, asc, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Ticker, DailyPrice, FinancialStatement
+from models import Ticker, DailyPrice, FinancialStatement, StockScreenerSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -429,3 +429,169 @@ async def batch_get_factor_scores(tickers: list[str], db: AsyncSession) -> list[
     tasks = [fetch_score(ticker) for ticker in tickers]
     results = await asyncio.gather(*tasks)
     return list(results)
+
+async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
+    """
+    Dynamically filters the `StockScreenerSnapshot` table based on a variety of parameters.
+    Supports min/max conditions, exact match for sector/industry, sorting, and pagination.
+    """
+    stmt = select(StockScreenerSnapshot)
+    count_stmt = select(func.count(StockScreenerSnapshot.id))
+    
+    conditions = []
+    
+    if request_data.get("market_cap_min") is not None:
+        conditions.append(StockScreenerSnapshot.market_cap >= request_data["market_cap_min"])
+    if request_data.get("market_cap_max") is not None:
+        conditions.append(StockScreenerSnapshot.market_cap <= request_data["market_cap_max"])
+        
+    if request_data.get("pe_min") is not None:
+        conditions.append(StockScreenerSnapshot.pe_ratio >= request_data["pe_min"])
+    if request_data.get("pe_max") is not None:
+        conditions.append(StockScreenerSnapshot.pe_ratio <= request_data["pe_max"])
+        
+    if request_data.get("pb_min") is not None:
+        conditions.append(StockScreenerSnapshot.pb_ratio >= request_data["pb_min"])
+    if request_data.get("pb_max") is not None:
+        conditions.append(StockScreenerSnapshot.pb_ratio <= request_data["pb_max"])
+        
+    if request_data.get("sector") is not None and request_data.get("sector"):
+        conditions.append(StockScreenerSnapshot.sector == request_data["sector"])
+    if request_data.get("industry") is not None and request_data.get("industry"):
+        conditions.append(StockScreenerSnapshot.industry == request_data["industry"])
+        
+    if request_data.get("rsi_14_min") is not None:
+        conditions.append(StockScreenerSnapshot.rsi_14 >= request_data["rsi_14_min"])
+    if request_data.get("rsi_14_max") is not None:
+        conditions.append(StockScreenerSnapshot.rsi_14 <= request_data["rsi_14_max"])
+        
+    if request_data.get("volume_min") is not None:
+        conditions.append(StockScreenerSnapshot.volume >= request_data["volume_min"])
+        
+    if request_data.get("price_min") is not None:
+        conditions.append(StockScreenerSnapshot.close >= request_data["price_min"])
+    if request_data.get("price_max") is not None:
+        conditions.append(StockScreenerSnapshot.close <= request_data["price_max"])
+        
+    if request_data.get("dividend_yield_min") is not None:
+        conditions.append(StockScreenerSnapshot.dividend_yield >= request_data["dividend_yield_min"])
+        
+    if request_data.get("price_above_ma50"):
+        conditions.append(StockScreenerSnapshot.close > StockScreenerSnapshot.ma50)
+        
+    if request_data.get("price_below_ma50"):
+        conditions.append(StockScreenerSnapshot.close < StockScreenerSnapshot.ma50)
+        
+    if request_data.get("roe_min") is not None:
+        conditions.append(StockScreenerSnapshot.roe >= request_data["roe_min"])
+        
+    if request_data.get("debt_to_equity_max") is not None:
+        conditions.append(StockScreenerSnapshot.debt_to_equity <= request_data["debt_to_equity_max"])
+        
+    if request_data.get("fcf_min") is not None:
+        conditions.append(StockScreenerSnapshot.fcf >= request_data["fcf_min"])
+        
+    if request_data.get("gross_margin_min") is not None:
+        conditions.append(StockScreenerSnapshot.gross_margin >= request_data["gross_margin_min"])
+        
+    if request_data.get("sales_growth_5yr_min") is not None:
+        conditions.append(StockScreenerSnapshot.sales_growth_5yr >= request_data["sales_growth_5yr_min"])
+
+    if conditions:
+        stmt = stmt.where(*conditions)
+        count_stmt = count_stmt.where(*conditions)
+        
+    # getting total count
+    total_count_res = await db.execute(count_stmt)
+    total_count = total_count_res.scalar_one_or_none() or 0
+    
+    # sorting
+    sort_col_name = request_data.get("sort_by", "market_cap")
+    # prevent injection or arbitrary column names by checking if column exists
+    if hasattr(StockScreenerSnapshot, sort_col_name):
+        sort_column = getattr(StockScreenerSnapshot, sort_col_name)
+    else:
+        sort_column = StockScreenerSnapshot.market_cap
+        
+    if request_data.get("sort_desc", True):
+        stmt = stmt.order_by(desc(sort_column).nulls_last())
+    else:
+        stmt = stmt.order_by(asc(sort_column).nulls_last())
+        
+    # pagination
+    limit = request_data.get("limit", 50)
+    offset = request_data.get("offset", 0)
+    
+    stmt = stmt.limit(limit).offset(offset)
+    
+    # execute
+    result = await db.execute(stmt)
+    records = result.scalars().all()
+    
+    # Pre-fetch on-the-fly fundamental valuations for any records missing market_cap or pe_ratio
+    async def fetch_valuation_for_missing(ticker: str):
+        try:
+            val = await get_fundamental_valuation(ticker, db)
+            return ticker, val
+        except Exception:
+            return ticker, None
+
+    tickers_to_fetch = [r.ticker for r in records if r.market_cap is None or r.pe_ratio is None]
+    valuation_map = {}
+    if tickers_to_fetch:
+        val_tasks = [fetch_valuation_for_missing(t) for t in tickers_to_fetch]
+        val_results = await asyncio.gather(*val_tasks)
+        for t, val in val_results:
+            valuation_map[t] = val
+
+    items = []
+    for r in records:
+        market_cap = float(r.market_cap) if r.market_cap is not None else None
+        pe_ratio = float(r.pe_ratio) if r.pe_ratio is not None else None
+        
+        # Hydrate fundamentals dynamically if missing and we have local financial statement data
+        if (market_cap is None or pe_ratio is None) and r.ticker in valuation_map:
+            val = valuation_map[r.ticker]
+            if val:
+                shares_out = val.get('balance_sheet_latest', {}).get('shares_outstanding', 0)
+                ttm_net_income = val.get('ttm', {}).get('net_income', 0)
+                current_price = float(r.close) if r.close is not None else 0
+                
+                if market_cap is None and shares_out > 0 and current_price > 0:
+                    market_cap = shares_out * current_price
+                    
+                if pe_ratio is None and shares_out > 0 and ttm_net_income > 0 and current_price > 0:
+                    eps = ttm_net_income / shares_out
+                    if eps > 0:
+                        pe_ratio = current_price / eps
+                    else:
+                        pe_ratio = -1 # Indicate negative P/E
+        
+        items.append({
+            "ticker": r.ticker,
+            "name": r.name,
+            "sector": r.sector,
+            "industry": r.industry,
+            "market_cap": market_cap,
+            "pe_ratio": pe_ratio,
+            "pb_ratio": float(r.pb_ratio) if r.pb_ratio is not None else None,
+            "dividend_yield": float(r.dividend_yield) if r.dividend_yield is not None else None,
+            "roe": float(r.roe) if r.roe is not None else None,
+            "debt_to_equity": float(r.debt_to_equity) if r.debt_to_equity is not None else None,
+            "fcf": float(r.fcf) if r.fcf is not None else None,
+            "gross_margin": float(r.gross_margin) if r.gross_margin is not None else None,
+            "sales_growth_5yr": float(r.sales_growth_5yr) if r.sales_growth_5yr is not None else None,
+            "close": float(r.close) if r.close is not None else None,
+            "volume": r.volume,
+            "ma20": float(r.ma20) if r.ma20 is not None else None,
+            "ma50": float(r.ma50) if r.ma50 is not None else None,
+            "rsi_14": float(r.rsi_14) if r.rsi_14 is not None else None,
+            "date": str(r.date)
+        })
+        
+    return {
+        "total": total_count,
+        "items": items,
+        "limit": limit,
+        "offset": offset
+    }

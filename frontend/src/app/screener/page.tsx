@@ -1,0 +1,450 @@
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import Link from 'next/link';
+import debounce from 'lodash.debounce';
+
+export default function ScreenerPage() {
+    const [activeTab, setActiveTab] = useState("Descriptive");
+    const [filters, setFilters] = useState({
+        sector: "",
+        market_cap: "",
+        pe: "",
+        rsi: "",
+        price_ma50: "",
+        roe: "",
+        debt_to_equity: "",
+        fcf: "",
+        gross_margin: "",
+        sales_growth_5yr: "",
+        sort_by: "market_cap",
+        sort_desc: "desc",
+    });
+
+    const [results, setResults] = useState([]);
+    const [totalCount, setTotalCount] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(0);
+    const limit = 50;
+
+    const tabs = ["Descriptive", "Fundamental", "Technical"];
+
+    const buildApiPayload = () => {
+        const payload: any = {
+            limit,
+            offset: page * limit,
+            sort_by: filters.sort_by,
+            sort_desc: filters.sort_desc === "desc",
+        };
+
+        if (filters.sector) payload.sector = filters.sector;
+
+        if (filters.market_cap) {
+            if (filters.market_cap === "mega") payload.market_cap_min = 200000000000;
+            if (filters.market_cap === "large") { payload.market_cap_min = 10000000000; payload.market_cap_max = 200000000000; }
+            if (filters.market_cap === "mid") { payload.market_cap_min = 2000000000; payload.market_cap_max = 10000000000; }
+            if (filters.market_cap === "small") payload.market_cap_max = 2000000000;
+        }
+
+        if (filters.pe) {
+            if (filters.pe === "under15") payload.pe_max = 15;
+            if (filters.pe === "over50") payload.pe_min = 50;
+        }
+
+        if (filters.rsi) {
+            if (filters.rsi === "oversold") payload.rsi_14_max = 30;
+            if (filters.rsi === "overbought") payload.rsi_14_min = 70;
+        }
+
+        if (filters.price_ma50) {
+            if (filters.price_ma50 === "above") payload.price_above_ma50 = true;
+            if (filters.price_ma50 === "below") payload.price_below_ma50 = true;
+        }
+
+        if (filters.roe) {
+            if (filters.roe === "over15") payload.roe_min = 0.15;
+            if (filters.roe === "over30") payload.roe_min = 0.30;
+        }
+
+        if (filters.debt_to_equity) {
+            if (filters.debt_to_equity === "under1") payload.debt_to_equity_max = 1.0;
+            if (filters.debt_to_equity === "under05") payload.debt_to_equity_max = 0.5;
+        }
+
+        if (filters.fcf) {
+            if (filters.fcf === "positive") payload.fcf_min = 0;
+            if (filters.fcf === "high") payload.fcf_min = 1000000000;
+        }
+
+        if (filters.gross_margin) {
+            if (filters.gross_margin === "over30") payload.gross_margin_min = 0.30;
+            if (filters.gross_margin === "over50") payload.gross_margin_min = 0.50;
+        }
+
+        if (filters.sales_growth_5yr) {
+            if (filters.sales_growth_5yr === "over10") payload.sales_growth_5yr_min = 0.10;
+            if (filters.sales_growth_5yr === "over20") payload.sales_growth_5yr_min = 0.20;
+        }
+
+        return payload;
+    };
+
+    const fetchResults = async () => {
+        setLoading(true);
+        try {
+            const payload = buildApiPayload();
+            const res = await fetch("http://127.0.0.1:8000/api/stocks/screener", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setResults(data.items || []);
+                setTotalCount(data.total || 0);
+            } else {
+                console.error("Failed to fetch screener results");
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Safe debounced fetch logic
+    const debouncedFetch = useCallback(debounce(() => fetchResults(), 300), [filters, page]);
+
+    useEffect(() => {
+        debouncedFetch();
+        return () => debouncedFetch.cancel();
+    }, [debouncedFetch]);
+
+    const handleFilterChange = (key: string, value: string) => {
+        setFilters((prev) => ({ ...prev, [key]: value }));
+        setPage(0); // Reset to page 0 on any filter change
+    };
+
+    const handleNextPage = () => {
+        if ((page + 1) * limit < totalCount) setPage(p => p + 1);
+    };
+
+    const handlePrevPage = () => {
+        if (page > 0) setPage(p => p - 1);
+    };
+
+    const formatMarketCap = (value: any) => {
+        if (value === null || value === undefined) return "-";
+        const num = Number(value);
+        if (isNaN(num)) return "-";
+        if (num >= 1e12) return (num / 1e12).toFixed(2) + "T";
+        if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
+        if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
+        return num.toLocaleString();
+    };
+
+    const formatPE = (value: any) => {
+        if (value === null || value === undefined) return "-";
+        const num = Number(value);
+        if (isNaN(num) || num <= 0) return "-";
+        return num.toFixed(2);
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-950 text-gray-100 p-6 font-sans">
+            <div className="max-w-7xl mx-auto space-y-6">
+
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-gray-800 pb-4">
+                    <h1 className="text-3xl font-light tracking-wide text-white">Stock <span className="text-blue-500 font-semibold">Screener</span></h1>
+                    <div className="text-sm text-gray-400">
+                        {loading ? "Scanning market..." : `Matches: ${totalCount.toLocaleString()}`}
+                    </div>
+                </div>
+
+                {/* Filter Panel */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                    {/* Tabs */}
+                    <div className="flex border-b border-gray-800 bg-gray-800/50">
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === tab
+                                    ? "text-blue-400 border-b-2 border-blue-500 bg-gray-900"
+                                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                                    }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Tab Content */}
+                    <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+
+                            {/* Common Controls (Always Visible) */}
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500 uppercase font-semibold">Sort By</label>
+                                <select
+                                    value={filters.sort_by}
+                                    onChange={(e) => handleFilterChange("sort_by", e.target.value)}
+                                    className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                >
+                                    <option value="market_cap">Market Cap</option>
+                                    <option value="pe_ratio">P/E Ratio</option>
+                                    <option value="roe">ROE</option>
+                                    <option value="debt_to_equity">Debt to Equity</option>
+                                    <option value="sales_growth_5yr">5Yr Sales Gwth</option>
+                                    <option value="gross_margin">Gross Margin</option>
+                                    <option value="fcf">Free Cash Flow</option>
+                                    <option value="volume">Volume</option>
+                                    <option value="rsi_14">RSI (14)</option>
+                                    <option value="close">Price</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500 uppercase font-semibold">Order</label>
+                                <select
+                                    value={filters.sort_desc}
+                                    onChange={(e) => handleFilterChange("sort_desc", e.target.value)}
+                                    className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                >
+                                    <option value="desc">Descending</option>
+                                    <option value="asc">Ascending</option>
+                                </select>
+                            </div>
+
+                            {/* Descriptive Tab */}
+                            {activeTab === "Descriptive" && (
+                                <>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">Sector</label>
+                                        <select
+                                            value={filters.sector}
+                                            onChange={(e) => handleFilterChange("sector", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="Technology">Technology</option>
+                                            <option value="Healthcare">Healthcare</option>
+                                            <option value="Financial Services">Financial Services</option>
+                                            <option value="Consumer Cyclical">Consumer Cyclical</option>
+                                            <option value="Industrials">Industrials</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">Market Cap</label>
+                                        <select
+                                            value={filters.market_cap}
+                                            onChange={(e) => handleFilterChange("market_cap", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="mega">Mega (&gt; $200B)</option>
+                                            <option value="large">Large ($10B - $200B)</option>
+                                            <option value="mid">Mid ($2B - $10B)</option>
+                                            <option value="small">Small (&lt; $2B)</option>
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Fundamental Tab */}
+                            {activeTab === "Fundamental" && (
+                                <>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">P/E Ratio</label>
+                                        <select
+                                            value={filters.pe}
+                                            onChange={(e) => handleFilterChange("pe", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="under15">Value (&lt; 15)</option>
+                                            <option value="over50">Growth (&gt; 50)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">Return on Equity</label>
+                                        <select
+                                            value={filters.roe}
+                                            onChange={(e) => handleFilterChange("roe", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="over15">Good (&gt; 15%)</option>
+                                            <option value="over30">Exceptional (&gt; 30%)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">Debt to Equity</label>
+                                        <select
+                                            value={filters.debt_to_equity}
+                                            onChange={(e) => handleFilterChange("debt_to_equity", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="under1">Healthy (&lt; 1.0)</option>
+                                            <option value="under05">Conservative (&lt; 0.5)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">5Yr Sales Growth</label>
+                                        <select
+                                            value={filters.sales_growth_5yr}
+                                            onChange={(e) => handleFilterChange("sales_growth_5yr", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="over10">Growing (&gt; 10%)</option>
+                                            <option value="over20">High Growth (&gt; 20%)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">Gross Margin</label>
+                                        <select
+                                            value={filters.gross_margin}
+                                            onChange={(e) => handleFilterChange("gross_margin", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="over30">Wide (&gt; 30%)</option>
+                                            <option value="over50">Moat (&gt; 50%)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">FCF (Free Cash Flow)</label>
+                                        <select
+                                            value={filters.fcf}
+                                            onChange={(e) => handleFilterChange("fcf", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="positive">Positive (&gt; 0)</option>
+                                            <option value="high">Cash Cow (&gt; 1B)</option>
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Technical Tab */}
+                            {activeTab === "Technical" && (
+                                <>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">Price vs MA50</label>
+                                        <select
+                                            value={filters.price_ma50}
+                                            onChange={(e) => handleFilterChange("price_ma50", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="above">Price &gt; MA50 (Bullish)</option>
+                                            <option value="below">Price &lt; MA50 (Bearish)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500 uppercase font-semibold">RSI (14)</label>
+                                        <select
+                                            value={filters.rsi}
+                                            onChange={(e) => handleFilterChange("rsi", e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-blue-500"
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="oversold">Oversold (&lt; 30)</option>
+                                            <option value="overbought">Overbought (&gt; 70)</option>
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Results Table */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm whitespace-nowrap">
+                            <thead className="bg-gray-800/80 text-gray-400 font-medium">
+                                <tr>
+                                    <th className="px-6 py-4 rounded-tl-xl">Ticker</th>
+                                    <th className="px-6 py-4">Company</th>
+                                    <th className="px-6 py-4">Sector</th>
+                                    <th className="px-6 py-4">Market Cap</th>
+                                    <th className="px-6 py-4">Price</th>
+                                    <th className="px-6 py-4">P/E</th>
+                                    <th className="px-6 py-4">ROE</th>
+                                    <th className="px-6 py-4">D/E</th>
+                                    <th className="px-6 py-4">Gross Margin</th>
+                                    <th className="px-6 py-4">5Y SG</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800">
+                                {results.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
+                                            {loading ? "Cruising the markets..." : "No stocks match your strict criteria."}
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    results.map((stock: any) => (
+                                        <tr key={stock.ticker} className="hover:bg-gray-800/50 transition-colors group">
+                                            <td className="px-6 py-4 font-bold text-blue-400 group-hover:text-blue-300">
+                                                <Link href={`/stock/${stock.ticker.split('.')[0]}`}>
+                                                    {stock.ticker.split('.')[0]}
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-300 truncate max-w-[200px]" title={stock.name}>{stock.name || "-"}</td>
+                                            <td className="px-6 py-4 text-gray-400 truncate max-w-[120px]">{stock.sector || "-"}</td>
+                                            <td className="px-6 py-4 text-gray-200">{formatMarketCap(stock.market_cap)}</td>
+                                            <td className="px-6 py-4 font-medium">${stock.close?.toFixed(2) || "-"}</td>
+                                            <td className="px-6 py-4 text-orange-300">{formatPE(stock.pe_ratio)}</td>
+                                            <td className={`px-6 py-4 font-medium ${stock.roe > 0.15 ? 'text-green-400' : 'text-gray-400'}`}>
+                                                {stock.roe ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
+                                            </td>
+                                            <td className={`px-6 py-4 font-medium ${stock.debt_to_equity < 1.0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : "-"}
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-400">
+                                                {stock.gross_margin ? `${(stock.gross_margin * 100).toFixed(1)}%` : "-"}
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-400">
+                                                {stock.sales_growth_5yr ? `${(stock.sales_growth_5yr * 100).toFixed(1)}%` : "-"}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination Footer */}
+                    <div className="p-4 border-t border-gray-800 flex items-center justify-between bg-gray-900/50">
+                        <span className="text-gray-500 text-sm">
+                            Showing {results.length > 0 ? page * limit + 1 : 0} to {Math.min((page + 1) * limit, totalCount)} of {totalCount}
+                        </span>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handlePrevPage}
+                                disabled={page === 0 || loading}
+                                className="px-4 py-2 bg-gray-800 text-gray-300 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                            >
+                                Previous
+                            </button>
+                            <button
+                                onClick={handleNextPage}
+                                disabled={(page + 1) * limit >= totalCount || loading}
+                                className="px-4 py-2 bg-gray-800 text-gray-300 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    );
+}

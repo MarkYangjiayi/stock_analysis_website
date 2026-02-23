@@ -17,58 +17,148 @@ from services import eodhd_client
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+async def fetch_target_universe_fundamentals(tickers: set) -> list:
+    """
+    Fetch individual fundamental data for a set of tickers concurrently, 
+    respecting EODHD rate limits via a Semaphore.
+    """
+    logger.info(f"Starting concurrent fetch for {len(tickers)} fundamental profiles...")
+    
+    semaphore = asyncio.Semaphore(15) # Safe concurrency limit for EODHD 100k tier
+    results = []
+    
+    async def fetch_single(ticker: str):
+        async with semaphore:
+            data = await eodhd_client.get_fundamental_data(ticker)
+            if data:
+                # EODHD individual fundamental has a different structure:
+                # General: { Code, Type, Name, Exchange, CurrencyCode... }
+                # Highlights: { MarketCapitalization, PERatio, DividendYield... }
+                # Valuation: { TrailingPE, ForwardPE, PriceBookMRQ... }
+                
+                gen = data.get("General", {})
+                hl = data.get("Highlights", {})
+                val = data.get("Valuation", {})
+                fin = data.get("Financials", {})
+                
+                # FCF
+                latest_cf = {}
+                try: latest_cf = list(fin.get("Cash_Flow", {}).get("yearly", {}).values())[0]
+                except: pass
+                
+                # Debt to Equity
+                latest_bs = {}
+                try: latest_bs = list(fin.get("Balance_Sheet", {}).get("quarterly", {}).values())[0]
+                except: pass
+                total_debt = hl.get("TotalDebt") or latest_bs.get("shortLongTermDebtTotal") or latest_bs.get("totalDebt")
+                total_equity = latest_bs.get("totalStockholderEquity")
+                debt_to_equity = None
+                try: 
+                     d = float(total_debt); e = float(total_equity)
+                     if e > 0: debt_to_equity = d / e 
+                except: pass
+                
+                # Gross Margin & Sales Growth
+                inc_yearly = fin.get("Income_Statement", {}).get("yearly", {})
+                latest_inc = {}
+                try: latest_inc = list(inc_yearly.values())[0]
+                except: pass
+                
+                gross_margin = None
+                try:
+                    gp = float(hl.get("GrossProfitTTM") or latest_inc.get("grossProfit") or 0)
+                    rev = float(hl.get("RevenueTTM") or latest_inc.get("totalRevenue") or 0)
+                    if rev > 0: gross_margin = gp / rev
+                except: pass
+                
+                sales_growth_5yr = None
+                try:
+                    inc_vals = list(inc_yearly.values())
+                    if len(inc_vals) >= 4:
+                         idx = min(len(inc_vals) - 1, 4)
+                         rev_new = float(inc_vals[0].get("totalRevenue") or 0)
+                         rev_old = float(inc_vals[idx].get("totalRevenue") or 0)
+                         if rev_old > 0 and rev_new > 0:
+                              sales_growth_5yr = (rev_new / rev_old) ** (1/idx) - 1
+                except: pass
+                
+                results.append({
+                    "code": gen.get("Code", ticker.split('.')[0]),
+                    "exchange": gen.get("Exchange", "US"),
+                    "ticker": ticker,
+                    "Name": gen.get("Name"),
+                    "Sector": gen.get("Sector"),
+                    "Industry": gen.get("Industry"),
+                    "MarketCapitalization": hl.get("MarketCapitalization"),
+                    "PERatio": hl.get("PERatio") or val.get("TrailingPE"),
+                    "PriceToBook": val.get("PriceBookMRQ"),
+                    "DividendYield": hl.get("DividendYield"),
+                    "ROE": hl.get("ReturnOnEquityTTM"),
+                    "DebtToEquity": debt_to_equity,
+                    "FCF": latest_cf.get("freeCashFlow"),
+                    "GrossMargin": gross_margin,
+                    "SalesGrowth5yr": sales_growth_5yr
+                })
+
+    tasks = [fetch_single(t) for t in tickers]
+    
+    # Run tasks with progress logging
+    total_tasks = len(tasks)
+    chunk_size = 500
+    for i in range(0, total_tasks, chunk_size):
+        chunk = tasks[i:i+chunk_size]
+        await asyncio.gather(*chunk)
+        logger.info(f"Fetched fundamentals: {min(i+chunk_size, total_tasks)} / {total_tasks}")
+        
+    return results
+
 async def fetch_and_merge_bulk_data(target_date: str = None) -> pd.DataFrame:
     """
-    并发抓取 Bulk EOD Prices 和 Bulk Fundamentals 并合并清洗为一个 Pandas DataFrame。
+    1. Fetch Index Constituents for S&P 500 and Russell 2000.
+    2. Concurrently fetch bulk EOD closing prices for all US stocks.
+    3. Filter bulk prices to only our target index constituents.
+    4. Concurrently fetch detailed fundamentals for the target constituents INDIVIDUALLY to save costs.
+    5. Merge and return.
     """
-    logger.info("Initializing concurrent EODHD bulk fetches...")
+    logger.info("Fetching target index universes (S&P 500 and Russell 2000)...")
     
-    # asyncio.gather concurrently awaits both HTTP endpoints
-    prices_task = eodhd_client.get_bulk_eod_prices(exchange="US", date_str=target_date)
-    fundamentals_task = eodhd_client.get_bulk_fundamentals(exchange="US")
+    sp500_task = eodhd_client.get_index_components("GSPC.INDX")
+    russell_task = eodhd_client.get_index_components("RUT.INDX")
     
-    eod_data, fundamental_data = await asyncio.gather(prices_task, fundamentals_task)
+    sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
+    target_tickers = set(sp500_tickers + russell_tickers)
+    logger.info(f"Total unique target tickers from S&P 500 and Russell 2000: {len(target_tickers)}")
+
+    # Fetch daily bulk prices (still free/fast)
+    eod_data = await eodhd_client.get_bulk_eod_prices(exchange="US", date_str=target_date)
     
     if not eod_data:
         raise ValueError("Failed to retrieve bulk EOD data.")
-    if not fundamental_data:
-        logger.warning("Failed to retrieve bulk fundamental data (possibly 403 Forbidden). Proceeding with EOD prices only.")
-        fundamental_data = []
-        
-    logger.info(f"Retrieved {len(eod_data)} EOD records and {len(fundamental_data)} Fundamental records.")
 
-    # EODHD eod bulk API has "code" for ticker name without exchange (e.g. "AAPL") and "exchange_short_name" (e.g. "US")
-    # For daily prices bulk, the API returns objects: { "code": "AAPL", "date": "2024-10-10", "close": 150.0 ... }
     df_eod = pd.DataFrame(eod_data)
     
-    # Only keep major US exchanges for standard screener (NYSE, NASDAQ, AMEX etc. are all bundled as US usually, but sometimes OTC is there too)
     if df_eod.empty or 'code' not in df_eod.columns:
         raise ValueError("EOD bulk data format error or empty.")
-
-    # Synthesize the exact ticker symbol used in our DB (e.g. "AAPL.US")
+        
     if 'exchange_short_name' in df_eod.columns:
         df_eod['ticker'] = df_eod['code'] + '.' + df_eod['exchange_short_name']
     else:
         df_eod['ticker'] = df_eod['code'] + '.US'
         
-    # Bulk Fundamentals API returns key as Ticker without ".US" usually: {"AAPL": {"Sector": "...", "Industry": "...", "MarketCapitalization": 123...}, ...} 
-    # OR returns list if requested via some interfaces. EODHD bulk-fundamentals typically returns an object with ticker as key.
-    # We defensively handle both object and list shapes
-    if isinstance(fundamental_data, dict) and fundamental_data:
-        df_fund = pd.DataFrame.from_dict(fundamental_data, orient='index')
-        df_fund['code'] = df_fund.index
-    elif isinstance(fundamental_data, list) and fundamental_data:
+    # HUGE OPTIMIZATION: Discard all prices that are NOT in our target index universe
+    df_eod = df_eod[df_eod['ticker'].isin(target_tickers)]
+    logger.info(f"Filtered EOD prices down to {len(df_eod)} target index constituents.")
+
+    # Now fetch fundamental data individually for our optimized target list
+    fundamental_data = await fetch_target_universe_fundamentals(target_tickers)
+    
+    if fundamental_data:
         df_fund = pd.DataFrame(fundamental_data)
     else:
-        df_fund = pd.DataFrame(columns=['code', 'Name', 'Sector', 'Industry', 'MarketCapitalization', 'PE', 'PB', 'DividendYield'])
+        df_fund = pd.DataFrame(columns=['ticker', 'Name', 'Sector', 'Industry', 'MarketCapitalization', 'PERatio', 'PriceToBook', 'DividendYield', 'ROE', 'DebtToEquity', 'FCF', 'GrossMargin', 'SalesGrowth5yr'])
         
-    if not df_fund.empty and 'code' in df_fund.columns:
-        df_fund['ticker'] = df_fund['code'] + '.US'
-    else:
-        df_fund['ticker'] = pd.Series(dtype='str')
-    
-    # Merge datasets on 'ticker' using LEFT JOIN so that we keep all prices even if fundamentals are missing
-    logger.info("Merging EOD prices and fundamentals...")
+    # Merge datasets on 'ticker'
+    logger.info("Merging targeted EOD prices and fundamentals...")
     df_merged = pd.merge(df_eod, df_fund, on="ticker", how="left")
     
     return df_merged
@@ -132,13 +222,20 @@ async def run_screener_pipeline(target_date: str = None):
         if df_merged.empty:
             logger.warning("Merged dataset is empty. Skipping.")
             return
+            
+        # VERY IMPORTANT: EODHD bulk sometimes returns overlapping duplicates for the same day
+        df_merged = df_merged.drop_duplicates(subset=['ticker'])
 
         # Prepare mapping of basic columns depending on EODHD exact json keys
         # The dictionary extraction must be robust to missing keys
         def _safe_float(val):
             try:
-                if pd.isna(val): return None
-                return float(val)
+                if pd.isna(val) or pd.isnull(val): return None
+                fval = float(val)
+                import math
+                if math.isinf(fval) or math.isnan(fval):
+                    return None
+                return fval
             except:
                 return None
                 
@@ -162,13 +259,18 @@ async def run_screener_pipeline(target_date: str = None):
             volume_num = row.get('volume')
             
             # Fundamentals Fields
-            name = _safe_str(row.get('name')) or _safe_str(row.get('Name'))
-            sector = _safe_str(row.get('Sector'))
-            industry = _safe_str(row.get('Industry'))
-            market_cap = _safe_float(row.get('MarketCapitalization') or row.get('market_capitalization'))
-            pe = _safe_float(row.get('PE') or row.get('TrailingPE') or row.get('pe'))
-            pb = _safe_float(row.get('PB') or row.get('PriceToBook'))
-            yield_pct = _safe_float(row.get('DividendYield') or row.get('dividend_yield'))
+            name = _safe_str(row.get('name')) or _safe_str(row.get('Name')) or _safe_str(row.get('Company'))
+            sector = _safe_str(row.get('Sector')) or _safe_str(row.get('sector'))
+            industry = _safe_str(row.get('Industry')) or _safe_str(row.get('industry'))
+            market_cap = _safe_float(row.get('MarketCapitalization')) or _safe_float(row.get('market_capitalization')) or _safe_float(row.get('MarketCap'))
+            pe = _safe_float(row.get('PERatio')) or _safe_float(row.get('PE')) or _safe_float(row.get('TrailingPE')) or _safe_float(row.get('pe'))
+            pb = _safe_float(row.get('PriceToBook')) or _safe_float(row.get('PB')) or _safe_float(row.get('PBRatio'))
+            yield_pct = _safe_float(row.get('DividendYield')) or _safe_float(row.get('dividend_yield')) or _safe_float(row.get('Yield'))
+            roe = _safe_float(row.get('ROE'))
+            debt_to_equity = _safe_float(row.get('DebtToEquity'))
+            fcf = _safe_float(row.get('FCF'))
+            gross_margin = _safe_float(row.get('GrossMargin'))
+            sales_growth_5yr = _safe_float(row.get('SalesGrowth5yr'))
             
             records_to_upsert.append({
                 "ticker": ticker,
@@ -180,6 +282,11 @@ async def run_screener_pipeline(target_date: str = None):
                 "pe_ratio": pe,
                 "pb_ratio": pb,
                 "dividend_yield": yield_pct,
+                "roe": roe,
+                "debt_to_equity": debt_to_equity,
+                "fcf": fcf,
+                "gross_margin": gross_margin,
+                "sales_growth_5yr": sales_growth_5yr,
                 "close": close_price,
                 "volume": int(volume_num) if pd.notna(volume_num) else None,
                 "ma20": None,
@@ -194,6 +301,10 @@ async def run_screener_pipeline(target_date: str = None):
         async with async_session_maker() as db, db.begin():
             # First, ensure all tickers exist in Tickers table to avoid foreign key violations in DailyPrice
             ticker_list = list(set([r['ticker'] for r in records_to_upsert]))
+            
+            logger.info("Purging old screener data not in the current target universe...")
+            from sqlalchemy import delete
+            await db.execute(delete(StockScreenerSnapshot).where(StockScreenerSnapshot.ticker.not_in(ticker_list)))
             
             # Fetch existing tickers in chunks to avoid max bind parameter limits
             existing_tickers = set()
@@ -227,12 +338,12 @@ async def run_screener_pipeline(target_date: str = None):
                  logger.info("Upserting latest EOD prices to local daily_prices table...")
                  for i in range(0, len(daily_price_inserts), 1000):
                      chunk = daily_price_inserts[i:i+1000]
-                     stmt_dp = insert(DailyPrice).values(chunk)
+                     stmt_dp = insert(DailyPrice)
                      stmt_dp = stmt_dp.on_conflict_do_update(
                          index_elements=['ticker', 'date'],
                          set_={"close": stmt_dp.excluded.close, "volume": stmt_dp.excluded.volume}
                      )
-                     await db.execute(stmt_dp)
+                     await db.execute(stmt_dp, chunk)
                      
             # 2b. Compute Local Technical Indicators
             df_technicals = await calculate_technicals_locally(db, ticker_list)
@@ -262,19 +373,50 @@ async def run_screener_pipeline(target_date: str = None):
                 chunk = records_to_upsert[i:i + chunk_size]
                 
                 clean_chunk = []
+                import math
                 for record in chunk:
                     clean_record = {}
                     for k, v in record.items():
                         if pd.isna(v):
                             clean_record[k] = None
+                        elif isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
+                            clean_record[k] = None
                         elif hasattr(v, 'item'):
-                            clean_record[k] = v.item()
+                            # Extract native Python types from numpy wrappers
+                            val = v.item()
+                            if isinstance(val, float) and (math.isinf(val) or math.isnan(val)):
+                                clean_record[k] = None
+                            else:
+                                clean_record[k] = val
                         else:
                             clean_record[k] = v
                     clean_chunk.append(clean_record)
                 
-                stmt = insert(StockScreenerSnapshot).values(clean_chunk)
-                await db.execute(stmt)
+                if len(clean_chunk) > 0:
+                    stmt = insert(StockScreenerSnapshot).values(clean_chunk)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=['ticker', 'date'],
+                        set_={
+                            "name": stmt.excluded.name,
+                            "sector": stmt.excluded.sector,
+                            "industry": stmt.excluded.industry,
+                            "market_cap": stmt.excluded.market_cap,
+                            "pe_ratio": stmt.excluded.pe_ratio,
+                            "pb_ratio": stmt.excluded.pb_ratio,
+                            "dividend_yield": stmt.excluded.dividend_yield,
+                            "roe": stmt.excluded.roe,
+                            "debt_to_equity": stmt.excluded.debt_to_equity,
+                            "fcf": stmt.excluded.fcf,
+                            "gross_margin": stmt.excluded.gross_margin,
+                            "sales_growth_5yr": stmt.excluded.sales_growth_5yr,
+                            "close": stmt.excluded.close,
+                            "volume": stmt.excluded.volume,
+                            "ma20": stmt.excluded.ma20,
+                            "ma50": stmt.excluded.ma50,
+                            "rsi_14": stmt.excluded.rsi_14
+                        }
+                    )
+                    await db.execute(stmt)
                 
         logger.info(f"Successfully processed Screener snapshot job.")
 

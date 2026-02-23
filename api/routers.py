@@ -1,5 +1,5 @@
-from typing import List
-from pydantic import BaseModel
+from typing import List, Optional
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -7,13 +7,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from services.data_sync import sync_ticker_data
-from services.analyzer import get_analyzed_stock_data, get_fundamental_valuation, batch_get_factor_scores
+from services.analyzer import (
+    get_analyzed_stock_data, 
+    get_fundamental_valuation, 
+    batch_get_factor_scores,
+    filter_screener_stocks
+)
 from services.ai_assistant import generate_stock_report
 
 router = APIRouter()
 
 class BatchFactorsRequest(BaseModel):
     tickers: List[str]
+
+class ScreenerRequest(BaseModel):
+    market_cap_min: Optional[float] = None
+    market_cap_max: Optional[float] = None
+    pe_min: Optional[float] = None
+    pe_max: Optional[float] = None
+    pb_min: Optional[float] = None
+    pb_max: Optional[float] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    rsi_14_min: Optional[float] = None
+    rsi_14_max: Optional[float] = None
+    volume_min: Optional[int] = None
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    dividend_yield_min: Optional[float] = None
+    price_above_ma50: Optional[bool] = None
+    price_below_ma50: Optional[bool] = None
+    roe_min: Optional[float] = None
+    debt_to_equity_max: Optional[float] = None
+    fcf_min: Optional[float] = None
+    gross_margin_min: Optional[float] = None
+    sales_growth_5yr_min: Optional[float] = None
+    
+    # Sorting and Pagination
+    sort_by: Optional[str] = "market_cap" # e.g., "market_cap", "pe_ratio", "volume", "rsi_14", "close"
+    sort_desc: Optional[bool] = True
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+@router.post("/api/stocks/screener", tags=["Stocks Analysis Read"])
+async def read_stock_screener(request: ScreenerRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Dynamically scan the market and filter stocks across fundamental and technical dimensions.
+    """
+    results = await filter_screener_stocks(request.model_dump(), db)
+    return results
 
 @router.post("/api/stocks/batch-factors", tags=["Stocks Analysis Read"])
 async def read_batch_factors(request: BatchFactorsRequest, db: AsyncSession = Depends(get_db)):

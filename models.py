@@ -140,6 +140,11 @@ class StockScreenerSnapshot(Base):
     pe_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     pb_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     dividend_yield: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    roe: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    debt_to_equity: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    fcf: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    gross_margin: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    sales_growth_5yr: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     
     # 技术面指标 (通过近60天K线运算)
     close: Mapped[Optional[Decimal]] = mapped_column(Numeric)
