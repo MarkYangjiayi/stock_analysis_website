@@ -67,6 +67,9 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             "volume": float(rec.volume) if rec.volume is not None else 0.0
         } for rec in price_records])
 
+        # 在应用前复权前，剔除完全没有收盘价的无效/停牌数据行 (防止后续为 None 导致前端挂掉)
+        df.dropna(subset=['close'], inplace=True)
+
         # 应用前复权逻辑 (Backward Adjustment for Splits/Dividends)
         df['adj_factor'] = df.apply(
             lambda r: (r['adjusted_close'] / r['close']) if pd.notnull(r['close']) and r['close'] > 0 and pd.notnull(r['adjusted_close']) else 1.0,

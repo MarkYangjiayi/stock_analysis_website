@@ -91,8 +91,17 @@ async def read_stock_analysis(ticker: str, interval: str = "1d", db: AsyncSessio
     ticker = ticker.upper()
     data = await get_analyzed_stock_data(ticker, db, interval)
     
+    # Check if data exists AND if the profile is fully hydrated (sector is populated).
+    # The Screener daily job inserts bare-bones Ticker records (just the ticker string), 
+    # so we must trigger a sync if the profile is incomplete.
+    needs_sync = False
     if not data:
-        # Cache Miss: Trigger cold start data synchronization
+        needs_sync = True
+    elif not data.get("profile", {}).get("sector"):
+        needs_sync = True
+
+    if needs_sync:
+        # Cache Miss or Incomplete Ticker: Trigger cold start data synchronization
         success = await sync_ticker_data(ticker, db)
         if not success:
             raise HTTPException(

@@ -117,7 +117,12 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     useEffect(() => {
         if (!data || data.length === 0 || !chartRef.current) return;
 
-        const candleData = data.map((d) => ({
+        // Filter out any points that might have null/undefined values for essential properties
+        const validCandleData = data.filter(d =>
+            d.open != null && d.high != null && d.low != null && d.close != null
+        );
+
+        const candleData = validCandleData.map((d) => ({
             time: d.date,
             open: d.open,
             high: d.high,
@@ -125,9 +130,9 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             close: d.close,
         }));
 
-        const volumeData = data.map((d) => ({
+        const volumeData = validCandleData.map((d) => ({
             time: d.date,
-            value: d.volume,
+            value: d.volume != null ? d.volume : 0,
             color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
         }));
 
