@@ -14,6 +14,8 @@ from services.analyzer import (
     filter_screener_stocks
 )
 from services.ai_assistant import generate_stock_report
+from services.news_fetcher import fetch_yahoo_news
+from services.anomaly_detector import scan_and_analyze_anomalies
 
 router = APIRouter()
 
@@ -151,3 +153,21 @@ async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
     report_generator = generate_stock_report(ticker, data)
     
     return StreamingResponse(report_generator, media_type="text/event-stream")
+
+@router.get("/api/stocks/{ticker}/news")
+async def get_stock_news(ticker: str):
+    """"
+    Returns the latest news for a given stock ticker from the past 72 hours.
+    Empty array is returned if no news or an error occurs.
+    """
+    news_items = fetch_yahoo_news(ticker)
+    return news_items
+
+@router.get("/api/market/anomalies")
+async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
+    """
+    Returns a list of anomalous stock price movements with AI-generated attribution reports.
+    Executes synchronously in the request path for MVP.
+    """
+    anomalies = await scan_and_analyze_anomalies(db, limit_count=3)
+    return anomalies

@@ -67,3 +67,38 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
     except Exception as e:
         logger.error(f"Error generating report for {ticker}: {e}")
         yield f"Error generating report: {str(e)}"
+
+async def generate_anomaly_attribution(ticker: str, price_change: float, news_list: list) -> str:
+    """
+    Generates a concise attribution report for a stock price anomaly using Gemini 1.5 Flash.
+    Initializes the client PER REQUEST to ensure concurrency safety.
+    """
+    api_key = settings.GEMINI_API_KEY
+    if not api_key:
+        logger.error("GEMINI_API_KEY environment variable is missing.")
+        return "Error: LLM API key not configured."
+
+    try:
+        # 每次调用时独立初始化 Client
+        client = genai.Client(api_key=api_key)
+        
+        prompt = f"""
+        你是一个华尔街量化分析师。今日开盘，{ticker} 股价异动，涨跌幅为 {price_change}%。
+        以下是过去 24 小时的相关新闻摘要：
+        {news_list}
+        
+        请严格根据这些新闻，分析导致该股票异动的最核心原因。
+        如果新闻中没有明确原因，请回复‘缺乏明确新闻催化剂，可能为资金面或技术面行为’。
+        输出要求专业、简洁，不超过 150 字。
+        """
+
+        response = await client.aio.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        
+        return response.text or "无法生成归因分析"
+        
+    except Exception as e:
+        logger.error(f"Error generating anomaly attribution for {ticker}: {e}")
+        return f"Error generation attribution: {str(e)}"

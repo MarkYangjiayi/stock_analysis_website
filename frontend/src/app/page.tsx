@@ -7,6 +7,7 @@ import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
 import ValuationDashboard from '@/components/ValuationDashboard';
 import AIReport from '@/components/AIReport';
+import NewsFeed from '@/components/NewsFeed';
 import FinancialTrendChart from '@/components/FinancialTrendChart';
 import WatchlistSidebar from '@/components/WatchlistSidebar';
 
@@ -230,15 +231,18 @@ function HomeContent() {
                 </div>
               </div>
 
-              {/* Valuation Dashboard Panel & AI Report Card grid */}
+              {/* Valuation Dashboard Panel & Intelligence Column */}
               {stockData.valuation_metrics && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both delay-300 items-start">
                   <div className="lg:col-span-2 flex w-full">
                     <ValuationDashboard metrics={stockData.valuation_metrics} />
                   </div>
-                  <div className="lg:col-span-1 flex w-full">
-                    <div className="w-full flex h-[620px]">
+                  <div className="lg:col-span-1 flex flex-col w-full gap-6 h-full">
+                    <div className="w-full flex h-[350px]">
                       <AIReport ticker={stockData.profile.ticker} />
+                    </div>
+                    <div className="w-full flex h-[450px]">
+                      <NewsFeed ticker={stockData.profile.ticker} />
                     </div>
                   </div>
                 </div>
