@@ -42,15 +42,15 @@ export default function AnomaliesPage() {
             <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-gray-800 pb-6 relative overflow-hidden">
-                    <div className="absolute -left-10 -top-10 w-40 h-40 bg-purple-500/10 blur-[50px] rounded-full pointer-events-none" />
+                    <div className="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/10 blur-[50px] rounded-full pointer-events-none" />
                     <div className="flex items-center gap-4 relative z-10">
                         <div className="p-3 bg-[#151922] rounded-xl border border-gray-800 shadow-inner">
-                            <Activity className="text-purple-400" size={28} />
+                            <Activity className="text-emerald-400" size={28} />
                         </div>
                         <div>
                             <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
                                 Market Anomalies
-                                <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent italic tracking-normal ml-1">
+                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 italic tracking-normal ml-1">
                                     & AI Attribution
                                 </span>
                             </h1>
@@ -63,10 +63,10 @@ export default function AnomaliesPage() {
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-6 animate-in fade-in duration-500">
                         <div className="relative w-32 h-32 flex items-center justify-center">
-                            <div className="absolute inset-0 border-[3px] border-purple-500/20 rounded-full"></div>
-                            <div className="absolute inset-0 border-[3px] border-transparent border-t-purple-400 rounded-full animate-spin [animation-duration:1.5s]"></div>
-                            <div className="absolute inset-2 border-[3px] border-transparent border-b-blue-400 rounded-full animate-spin [animation-duration:2s] [animation-direction:reverse]"></div>
-                            <ScanSearch size={40} className="text-purple-400/80 animate-pulse" />
+                            <div className="absolute inset-0 border-[3px] border-emerald-500/20 rounded-full"></div>
+                            <div className="absolute inset-0 border-[3px] border-transparent border-t-emerald-400 rounded-full animate-spin [animation-duration:1.5s]"></div>
+                            <div className="absolute inset-2 border-[3px] border-transparent border-b-teal-400 rounded-full animate-spin [animation-duration:2s] [animation-direction:reverse]"></div>
+                            <ScanSearch size={40} className="text-emerald-400/80 animate-pulse" />
                         </div>
                         <div className="space-y-2">
                             <h3 className="text-xl font-bold text-gray-200">Quantum Radar Active</h3>
@@ -91,7 +91,7 @@ export default function AnomaliesPage() {
                             return (
                                 <div
                                     key={idx}
-                                    className="group bg-[#151922] border border-gray-800 rounded-2xl overflow-hidden shadow-xl hover:border-gray-700 transition-all duration-300"
+                                    className="group bg-[#191D26] border border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:border-gray-700 transition-all duration-300"
                                 >
                                     {/* Card Header */}
                                     <div className="p-5 border-b border-gray-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#181C25]">
@@ -99,7 +99,7 @@ export default function AnomaliesPage() {
                                             <div className="bg-[#0E1117] px-3 py-1.5 rounded-lg border border-gray-800 shadow-inner flex items-center gap-2">
                                                 <Link
                                                     href={`/?ticker=${item.ticker}`}
-                                                    className="font-bold text-gray-200 hover:text-purple-400 transition-colors tracking-wide"
+                                                    className="font-bold text-gray-200 hover:text-emerald-400 transition-colors tracking-wide"
                                                 >
                                                     {item.ticker.replace('.US', '')}
                                                 </Link>
@@ -107,9 +107,9 @@ export default function AnomaliesPage() {
                                             <span className="text-gray-400 font-medium text-sm sm:text-base line-clamp-1">{item.company_name}</span>
                                         </div>
 
-                                        <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full font-bold shadow-lg ${isPositive
-                                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
-                                                : 'bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)]'
+                                        <div className={`flex items-center gap-2 font-bold ${isPositive
+                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-lg'
+                                            : 'bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 rounded-lg'
                                             }`}>
                                             <Icon size={18} strokeWidth={2.5} />
                                             <span className="text-lg tracking-tight">
@@ -119,36 +119,39 @@ export default function AnomaliesPage() {
                                     </div>
 
                                     {/* AI Analysis Area */}
-                                    <div className="p-5 sm:p-6 bg-gradient-to-b from-[#11141B] to-[#151922] relative">
-                                        <div className="flex gap-4 items-start">
-                                            <div className="shrink-0 mt-1 p-2 bg-purple-500/10 rounded-lg border border-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.1)]">
-                                                <Sparkles className="text-purple-400" size={20} />
-                                            </div>
-                                            <div className="flex-1 space-y-4">
-                                                <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed text-[15px]">
-                                                    {item.ai_analysis.split('\n').map((paragraph, pIdx) => (
-                                                        <p key={pIdx} className="mb-2 last:mb-0">{paragraph}</p>
-                                                    ))}
+                                    <div className="p-5 sm:p-6 bg-[#181C25]">
+                                        <div className="bg-[#151922] border-l-2 border-emerald-500/50 rounded-r-xl p-5 relative overflow-hidden">
+                                            <div className="absolute -top-10 -left-10 w-32 h-32 bg-emerald-500/10 blur-[50px] pointer-events-none" />
+                                            <div className="flex gap-4 items-start relative z-10">
+                                                <div className="shrink-0 mt-1 p-2 bg-[#0E1117] border border-gray-800 rounded-lg">
+                                                    <Sparkles className="text-emerald-400" size={20} />
                                                 </div>
-
-                                                {/* News Sources Footer */}
-                                                {item.top_news_links && item.top_news_links.length > 0 && (
-                                                    <div className="pt-4 mt-2 border-t border-gray-800/60 flex flex-wrap items-center gap-3">
-                                                        <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Catalyst Sources:</span>
-                                                        {item.top_news_links.map((link, lIdx) => (
-                                                            <a
-                                                                key={lIdx}
-                                                                href={link}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="flex items-center gap-1.5 text-xs text-purple-400/80 hover:text-purple-300 bg-purple-500/5 hover:bg-purple-500/10 px-2 py-1 rounded border border-purple-500/10 transition-colors"
-                                                            >
-                                                                News {lIdx + 1}
-                                                                <ExternalLink size={10} />
-                                                            </a>
+                                                <div className="flex-1 space-y-4">
+                                                    <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed text-[15px]">
+                                                        {item.ai_analysis.split('\n').map((paragraph, pIdx) => (
+                                                            <p key={pIdx} className="mb-2 last:mb-0">{paragraph}</p>
                                                         ))}
                                                     </div>
-                                                )}
+
+                                                    {/* News Sources Footer */}
+                                                    {item.top_news_links && item.top_news_links.length > 0 && (
+                                                        <div className="pt-4 mt-2 border-t border-gray-800/60 flex flex-wrap items-center gap-3">
+                                                            <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Catalyst Sources:</span>
+                                                            {item.top_news_links.map((link, lIdx) => (
+                                                                <a
+                                                                    key={lIdx}
+                                                                    href={link}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-3 py-1.5 rounded-full transition-all"
+                                                                >
+                                                                    News {lIdx + 1}
+                                                                    <ExternalLink size={10} />
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

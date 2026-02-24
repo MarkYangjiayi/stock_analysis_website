@@ -169,5 +169,5 @@ async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
     Returns a list of anomalous stock price movements with AI-generated attribution reports.
     Executes synchronously in the request path for MVP.
     """
-    anomalies = await scan_and_analyze_anomalies(db, limit_count=3)
+    anomalies = await scan_and_analyze_anomalies(db, limit_count=10)
     return anomalies

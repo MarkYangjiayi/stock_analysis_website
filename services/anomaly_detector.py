@@ -32,7 +32,7 @@ async def scan_and_analyze_anomalies(db: AsyncSession, limit_count: int = 5):
             select(StockScreenerSnapshot.ticker, StockScreenerSnapshot.name)
             .where(StockScreenerSnapshot.date == latest_date)
             .order_by(StockScreenerSnapshot.market_cap.desc().nullslast())
-            .limit(100)
+            .limit(500)
         )
         universe_result = await db.execute(universe_query)
         universe = universe_result.all()
