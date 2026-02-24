@@ -1,13 +1,17 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { fetchMarketAnomalies, AnomalyReport } from "@/lib/api";
+import { fetchMarketAnomalies } from "@/lib/api";
 import { Sparkles, TrendingUp, TrendingDown, ExternalLink, Activity, ScanSearch } from "lucide-react";
 import Link from "next/link";
+import { useAppStore } from "@/store/useAppStore";
 
 export default function AnomaliesPage() {
-    const [anomalies, setAnomalies] = useState<AnomalyReport[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data: anomalies, lastFetchTime, setAnomaliesData } = useAppStore();
+
+    // Determine initial loading state: true if no cache available, false if cache exists
+    const hasCache = anomalies.length > 0 && lastFetchTime !== null;
+    const [loading, setLoading] = useState(!hasCache);
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -16,9 +20,23 @@ export default function AnomaliesPage() {
 
         const loadData = async () => {
             try {
-                const data = await fetchMarketAnomalies();
+                // 5 minute TTL (Time to live) check
+                const CACHE_TTL = 5 * 60 * 1000;
+                const now = Date.now();
+
+                if (anomalies.length > 0 && lastFetchTime && (now - lastFetchTime < CACHE_TTL)) {
+                    // Valid cache exists, nothing to do
+                    if (isMounted) {
+                        setLoading(false);
+                    }
+                    return;
+                }
+
+                if (isMounted) setLoading(true);
+
+                const rawData = await fetchMarketAnomalies();
                 if (isMounted) {
-                    setAnomalies(data);
+                    setAnomaliesData(rawData);
                     setError("");
                 }
             } catch (err) {
@@ -35,7 +53,7 @@ export default function AnomaliesPage() {
             isMounted = false;
             controller.abort();
         };
-    }, []);
+    }, [anomalies.length, lastFetchTime, setAnomaliesData]);
 
     return (
         <div className="h-full w-full overflow-y-auto bg-[#0E1117] text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">

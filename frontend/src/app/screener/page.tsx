@@ -1,31 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from 'next/link';
 import debounce from 'lodash.debounce';
+import { useAppStore } from '@/store/useAppStore';
 
 export default function ScreenerPage() {
     const [activeTab, setActiveTab] = useState("Descriptive");
-    const [filters, setFilters] = useState({
-        sector: "",
-        market_cap: "",
-        pe: "",
-        rsi: "",
-        price_ma50: "",
-        roe: "",
-        debt_to_equity: "",
-        fcf: "",
-        gross_margin: "",
-        sales_growth_5yr: "",
-        sort_by: "market_cap",
-        sort_desc: "desc",
-    });
+    const { filters, results, totalCount, page, setScreenerState } = useAppStore();
 
-    const [results, setResults] = useState([]);
-    const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
-    const [page, setPage] = useState(0);
     const limit = 50;
+
+    // Use a ref to track initial mount
+    const isFirstRender = useRef(true);
 
     const tabs = ["Descriptive", "Fundamental", "Technical"];
 
@@ -100,8 +88,7 @@ export default function ScreenerPage() {
             });
             if (res.ok) {
                 const data = await res.json();
-                setResults(data.items || []);
-                setTotalCount(data.total || 0);
+                setScreenerState({ results: data.items || [], totalCount: data.total || 0 });
             } else {
                 console.error("Failed to fetch screener results");
             }
@@ -116,21 +103,31 @@ export default function ScreenerPage() {
     const debouncedFetch = useCallback(debounce(() => fetchResults(), 300), [filters, page]);
 
     useEffect(() => {
+        // Condition: If this is the FIRST render and we already have cached results, DO NOT fetch.
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            if (results.length > 0) {
+                return; // Use cache
+            }
+        }
+
         debouncedFetch();
         return () => debouncedFetch.cancel();
-    }, [debouncedFetch]);
+    }, [debouncedFetch, results.length]);
 
     const handleFilterChange = (key: string, value: string) => {
-        setFilters((prev) => ({ ...prev, [key]: value }));
-        setPage(0); // Reset to page 0 on any filter change
+        setScreenerState({
+            filters: { ...filters, [key]: value },
+            page: 0 // Reset to page 0 on any filter change
+        });
     };
 
     const handleNextPage = () => {
-        if ((page + 1) * limit < totalCount) setPage(p => p + 1);
+        if ((page + 1) * limit < totalCount) setScreenerState({ page: page + 1 });
     };
 
     const handlePrevPage = () => {
-        if (page > 0) setPage(p => p - 1);
+        if (page > 0) setScreenerState({ page: page - 1 });
     };
 
     const formatMarketCap = (value: any) => {
@@ -483,10 +480,10 @@ export default function ScreenerPage() {
                                     return (
                                         <button
                                             key={`page-${pageNum}`}
-                                            onClick={() => setPage(pageNum)}
+                                            onClick={() => setScreenerState({ page: pageNum })}
                                             className={`min-w-[40px] h-10 flex items-center justify-center rounded-lg border text-sm font-bold transition-all ${isActive
-                                                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                                                    : 'bg-[#151922] text-gray-400 border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400'
+                                                ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                                                : 'bg-[#151922] text-gray-400 border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400'
                                                 }`}
                                         >
                                             {pageNum + 1}
