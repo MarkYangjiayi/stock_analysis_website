@@ -163,3 +163,22 @@ async def get_index_components(index_ticker: str) -> list[str]:
     
     logger.info(f"Found {len(components)} components for {index_ticker}")
     return components
+
+async def get_bulk_realtime_prices(exchange: str = "US") -> Optional[list[Dict[str, Any]]]:
+    """
+    Fetches real-time prices for an entire exchange (e.g., US) in one API call.
+    The EODHD API allows fetching all live data by passing `ex=US` alongside a dummy ticker.
+    """
+    logger.info(f"Fetching bulk real-time prices for exchange {exchange}...")
+    
+    dummy_ticker = "AAPL.US"
+    params = {"ex": exchange}
+        
+    response_data = await _fetch_from_eodhd(endpoint="real-time", ticker=dummy_ticker, params=params)
+    
+    if response_data is None:
+        return None
+        
+    if isinstance(response_data, list):
+        return response_data
+    return []
