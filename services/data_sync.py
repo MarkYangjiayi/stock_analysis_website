@@ -4,7 +4,7 @@ from typing import Optional
 
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.sqlite import insert
 
 from models import Ticker, DailyPrice, FinancialStatement
 from services import eodhd_client

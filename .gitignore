@@ -185,3 +185,11 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# SQLite Database Files
+*.db
+*.db-shm
+*.db-wal
+
+# Docker Persistent Volumes
+data/

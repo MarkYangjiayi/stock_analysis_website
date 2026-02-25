@@ -1,21 +1,38 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import event
+import os
 from core.config import settings
 
 # ------------------------------------------------------------------------
 # 异步数据库连接配置 (Async Database Connection Configuration)
 # ------------------------------------------------------------------------
 
-# 注意：使用 asyncpg 驱动，协议为 postgresql+asyncpg://
+# 注意：目前切换为了 SQLite 驱动 sqlite+aiosqlite:///
 DATABASE_URL = settings.DATABASE_URL
 
+# 若为 SQLite 数据库，确保该文件夹存在以进行持久化映射
+if DATABASE_URL.startswith("sqlite"):
+    # extract path from sqlite+aiosqlite:///./data/quantify_local.db
+    db_path = DATABASE_URL.split("///")[-1]
+    if db_path.startswith("./"):
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
 # 1. 创建异步引擎 (Engine)
+# SQLite 支持 check_same_thread=False 来适应多线程的 FastAPI
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
-    pool_size=5,
-    max_overflow=10,
+    connect_args={"check_same_thread": False},
 )
+
+# 注册连接事件配置 SQLite 高性能 WAL 模式
+@event.listens_for(engine.sync_engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL;")
+    cursor.execute("PRAGMA synchronous=NORMAL;")
+    cursor.close()
 
 # 2. 创建异步 Session 工厂
 async_session_maker = async_sessionmaker(

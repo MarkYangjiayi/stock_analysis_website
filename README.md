@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Python-3.9-blue?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/Next.js-16+-black?style=flat-square&logo=next.js" alt="Next.js">
   <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi" alt="FastAPI">
-  <img src="https://img.shields.io/badge/PostgreSQL-15+-336791?style=flat-square&logo=postgresql" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
 </div>
 
@@ -24,7 +24,7 @@
 ## 🚀 核心功能亮点 (Features)
 
 *   **📈 全市场数据同步 & 落地**
-    异步对接 EODHD API 海量金融数据源，支持拉取美股/A股等全球市场的历史日 K 线数据与季度/年度权威财务报表。通过 `asyncpg` + `SQLAlchemy` 实现并发极致性能，稳健存入 PostgreSQL 15 本地数据湖。
+    异步对接 EODHD API 海量金融数据源，支持拉取美股/A股等全球市场的历史日 K 线数据与季度/年度权威财务报表。底层已全面切转至极轻量的 **SQLite** 数据底座，并在 FastAPI 异步启动层注入了 `PRAGMA journal_mode=WAL` (预写式日志) 钩子，实现了极低服务器开销与高并发读写的完美平衡。
 *   **🧠 硬核多因子估值引擎 (Screener)**
     自研基本面财务分析引擎。内置经典的 DCF (现金流折现模型) 测算股票绝对内在价值 (`Intrinsic Value`) 与安全边际 (`Margin of Safety`)。创新的五维多因子雷达：覆盖 `Value (价值)`、`Quality (质量)`、`Growth (成长)`、`Health (健康)` 与 `Momentum (动量)` 维度，让优质公司显像化。
 *   **🤖 Streaming AI 流式智能研报**
@@ -33,7 +33,10 @@
     完美集成顶级图表库体系。使用 **TradingView Lightweight Charts** 高性能渲染带交互的蜡烛图、成交量潮，并支持动态挂载服务端实时算出的 `MACD`、`RSI`、`MA20/50` 指标。使用 **ECharts** 构建震撼的双 Y 轴（历史金额对比+毛利率走势）柱线复合财务趋势图。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
     内置暗黑悬浮侧边栏。支持自定义极客自选股，与前端 LocalStorage 永久绑定。对接后端独库并发 `Batch Factors` 评分接口，支持一键依照特定因子（如高成长、低估值）进行列表横向截面降序排名。
-
+*   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
+    构建了企业级高可用推送路由，完美支持**飞书 (Lark) 富文本卡片**穿透。
+    *   **Scheduled Daily Reporter**: 依托 `APScheduler` 时钟锁死美东时区，在每个工作日开盘与收盘后，自动唤醒 AI 撰写大盘异动速递并投递至群聊。
+    *   **Real-time WebSocket Monitor**: FastAPI 在后台挂载了永久存活的盯盘精灵 Daemon。直接接入毫秒级 WebSocket 行情流，基于内存级队列维护股票滑动窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）的短线异动实时预警并防重复滋扰（冷却池）**。
 ---
 
 ## 🛠 技术栈概览 (Tech Stack)
@@ -41,8 +44,8 @@
 ### Backend (Data & Core Analysis)
 *   **Language**: Python 3.9+
 *   **Web Framework**: FastAPI (高性能异步通信)
-*   **ORM / DB Driver**: SQLAlchemy 2.0 (Async Engine), `asyncpg`
-*   **Database**: PostgreSQL 15 关系型数据底座
+*   **ORM / DB Driver**: SQLAlchemy 2.0 (Async Engine), `aiosqlite`
+*   **Database**: SQLite (WAL 模式并发优化)
 *   **Quant & Analytics**: `pandas`, `pandas-ta-classic` (技术指标换算)
 *   **AI SDK**: `google-genai` (Gemini API 官方套件)
 
@@ -87,21 +90,13 @@ stock_analysis_website/
 ### 环境前置要求
 *   已安装 Node.js (v18+) & NPM / Yarn
 *   已安装 Python 3.9 或更高版本
-*   已安装并在后台运行 PostgreSQL 15+
+*   *(无需安装任何外部数据库，系统内置了对 SQLite 的全自动化支持)*
 
-### 1. 克隆项目与配置数据库
-
+### 1. 克隆项目
 ```bash
 # 获取源码
 git clone https://github.com/YourUsername/QuantDashboard.git
 cd QuantDashboard
-
-# 打开 psql (或您喜欢的 PG 客户端)
-psql -U postgres
-# 创建对应的本库表 (替换为您自有的设定)
-CREATE DATABASE quant_db;
-CREATE USER quant_user WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE quant_db TO quant_user;
 ```
 
 ### 2. 配置环境变量
@@ -111,14 +106,10 @@ GRANT ALL PRIVILEGES ON DATABASE quant_db TO quant_user;
 ```bash
 cp .env.example .env
 ```
-打开 `.env` 并填入属于您的授权信息与本地库连接：
+打开 `.env` 并填入属于您的授权信息（**注意：您无需配置数据库，QuantDashboard 在第一次启动时会自动在本地生成 `quantify_local.db`**）：
 ```env
-# Database Credentials
-DB_USER=quant_user
-DB_PASSWORD=your_secure_password
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_NAME=quant_db
+# Database connection setup (Auto-creates SQLite file)
+DATABASE_URL="sqlite+aiosqlite:///./quantify_local.db"
 
 # EODHD API Key (Financial Data Provider)
 EODHD_API_KEY=your_eodhd_api_key

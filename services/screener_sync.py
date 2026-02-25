@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 import pandas as pd
 import pandas_ta_classic as ta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy import select, and_, func
 
 from models import StockScreenerSnapshot, DailyPrice, Ticker

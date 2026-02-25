@@ -36,6 +36,7 @@ async def scan_and_analyze_anomalies(db: AsyncSession, limit_count: int = 5):
         )
         universe_result = await db.execute(universe_query)
         universe = universe_result.all()
+        logger.info(f"Anomaly scan: target universe length = {len(universe)}")
         
         if not universe:
             logger.warning("Universe is empty.")
@@ -45,6 +46,8 @@ async def scan_and_analyze_anomalies(db: AsyncSession, limit_count: int = 5):
         
         # Step 2: Fetch real-time prices for all US stocks in one API call
         all_realtime_data = await get_bulk_realtime_prices("US")
+        logger.info(f"Anomaly scan: fetched {len(all_realtime_data) if all_realtime_data else 0} realtime quotes.")
+        
         if not all_realtime_data:
             logger.warning("Failed to fetch bulk real-time prices.")
             return []
