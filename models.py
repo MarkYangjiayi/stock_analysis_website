@@ -12,8 +12,8 @@ from sqlalchemy import (
     BigInteger,
     ForeignKey,
     UniqueConstraint,
+    JSON,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -85,10 +85,10 @@ class FinancialStatement(Base):
     revenue: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     net_income: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     
-    # 完整原始报表存入 JSONB
-    income_statement: Mapped[Optional[Any]] = mapped_column(JSONB)
-    balance_sheet: Mapped[Optional[Any]] = mapped_column(JSONB)
-    cash_flow: Mapped[Optional[Any]] = mapped_column(JSONB)
+    # 完整原始报表存入 JSON
+    income_statement: Mapped[Optional[Any]] = mapped_column(JSON)
+    balance_sheet: Mapped[Optional[Any]] = mapped_column(JSON)
+    cash_flow: Mapped[Optional[Any]] = mapped_column(JSON)
 
     # 联合唯一索引
     __table_args__ = (
