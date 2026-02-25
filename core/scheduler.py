@@ -4,6 +4,7 @@ import pytz
 from datetime import datetime, timedelta
 
 from services.daily_reporter import generate_morning_briefing, generate_post_market_summary
+from services.screener_sync import run_screener_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +15,18 @@ scheduler = AsyncIOScheduler(timezone=ny_tz)
 
 def start_scheduler():
     """Starts the global APScheduler instance and registers daily jobs."""
-    logger.info("Starting APScheduler for Notifications...")
+    logger.info("Starting APScheduler for Notifications and Data Sync...")
     
+    # 0. Daily Screener Sync: Tue-Sat 02:00 AM EST (Fetches data after market close from Mon-Fri)
+    scheduler.add_job(
+        run_screener_pipeline,
+        'cron',
+        day_of_week='tue-sat',
+        hour=2,
+        minute=0,
+        id="daily_screener_sync",
+        replace_existing=True
+    )
     # 1. Morning Briefing: Mon-Fri 09:35 EST
     scheduler.add_job(
         generate_morning_briefing,
