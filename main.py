@@ -3,6 +3,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
 from api.routers import router as api_router
+from services.notifications import NotificationManager
+from core.scheduler import start_scheduler, shutdown_scheduler
+from services.ws_monitor import ws_monitor
+import asyncio
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -10,10 +17,25 @@ async def lifespan(app: FastAPI):
     print("Initializing application and database...")
     await init_db()
     
+    # Trigger startup notification
+    await NotificationManager.broadcast(
+        title="System Status",
+        content="Quantify Platform API Server Started. 🚀",
+        channels=["feishu"]
+    )
+    
+    # Start the Daily Reporter APScheduler
+    start_scheduler()
+    
+    # Start the WebSocket Monitor background task
+    monitor_task = asyncio.create_task(ws_monitor.start())
+    
     yield
     
     # 关闭时执行 (如有需要释放的资源可以放这里)
     print("Shutting down application...")
+    shutdown_scheduler()
+    monitor_task.cancel()
 
 # 初始化 FastAPI 实例，挂载 lifespan 生命周期
 app = FastAPI(

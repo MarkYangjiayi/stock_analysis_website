@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     EODHD_API_KEY: str = "demo"
     EODHD_BASE_URL: str = "https://eodhd.com/api"
     GEMINI_API_KEY: str = "demo"
+    
+    # Notifications
+    FEISHU_WEBHOOK_URL: str = ""
 
     # 指定配置加载来源：.env 文件
     model_config = SettingsConfigDict(

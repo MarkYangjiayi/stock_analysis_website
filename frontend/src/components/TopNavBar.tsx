@@ -20,6 +20,7 @@ export default function TopNavBar() {
     const navLinks = [
         { name: 'Analysis', path: '/' },
         { name: 'Screener', path: '/screener' },
+        { name: 'Anomalies', path: '/anomalies' },
     ];
 
     return (
