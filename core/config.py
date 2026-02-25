@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """
     
     # 数据库连接配置
-    DATABASE_URL: str = "sqlite+aiosqlite:///./quantify_local.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./data/quantify_local.db"
     
     # EODHD API 配置
     EODHD_API_KEY: str = "demo"

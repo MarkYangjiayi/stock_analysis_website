@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import event
+import os
 from core.config import settings
 
 # ------------------------------------------------------------------------
@@ -8,6 +9,13 @@ from core.config import settings
 
 # 注意：目前切换为了 SQLite 驱动 sqlite+aiosqlite:///
 DATABASE_URL = settings.DATABASE_URL
+
+# 若为 SQLite 数据库，确保该文件夹存在以进行持久化映射
+if DATABASE_URL.startswith("sqlite"):
+    # extract path from sqlite+aiosqlite:///./data/quantify_local.db
+    db_path = DATABASE_URL.split("///")[-1]
+    if db_path.startswith("./"):
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 # 1. 创建异步引擎 (Engine)
 # SQLite 支持 check_same_thread=False 来适应多线程的 FastAPI

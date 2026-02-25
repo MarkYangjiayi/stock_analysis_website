@@ -190,3 +190,6 @@ Temporary Items
 *.db
 *.db-shm
 *.db-wal
+
+# Docker Persistent Volumes
+data/
