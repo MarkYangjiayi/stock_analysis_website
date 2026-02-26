@@ -17,7 +17,7 @@ services:
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
       - ALL_PROXY=socks5h://warp:9091
-      - NO_PROXY=localhost,127.0.0.1
+      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com
     depends_on:
       - warp
 
