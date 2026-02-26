@@ -15,7 +15,7 @@ jobs:
       - name: Build Docker Images (利用 GitHub 的 7GB 内存狂飙)
         run: |
           docker build -t quantify-backend:latest .
-          docker build -t quantify-frontend:latest ./frontend
+          docker build --build-arg NEXT_PUBLIC_API_URL=http://${{ secrets.SERVER_IP }}:8000 -t quantify-frontend:latest ./frontend
           docker save quantify-backend:latest quantify-frontend:latest | gzip > images.tar.gz
 
       - name: Transfer Images to Aliyun (自动空投)
