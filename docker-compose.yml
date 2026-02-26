@@ -1,6 +1,10 @@
-version: '3.8'
-
 services:
+# 1. 新增的 WARP 代理容器
+  warp:
+    image: sjlleo/warp-socks  # 这是开源社区专门为绕过 AI 封锁封装的 WARP SOCKS5 镜像
+    container_name: quantify_warp
+    restart: always
+
   backend:
     image: quantify-backend:latest
     ports:
@@ -8,6 +12,15 @@ services:
     env_file: .env
     volumes:
       - ./data:/app/data
+    environment:
+      # 2. 告诉后端，所有的外网请求都通过 SOCKS5 协议扔给 warp 容器的 1080 端口
+      - HTTP_PROXY=socks5h://warp:1080
+      - HTTPS_PROXY=socks5h://warp:1080
+      - ALL_PROXY=socks5h://warp:1080
+      # 3. 护城河：本地请求绝对不要走代理！
+      - NO_PROXY=localhost,127.0.0.1
+    depends_on:
+      - warp # 确保外挂先启动
 
   frontend:
     image: quantify-frontend:latest
