@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from 'next/link';
 import debounce from 'lodash.debounce';
 import { useAppStore } from '@/store/useAppStore';
+import { API_BASE_URL } from '@/lib/api';
 
 export default function ScreenerPage() {
     const [activeTab, setActiveTab] = useState("Descriptive");
@@ -81,7 +82,7 @@ export default function ScreenerPage() {
         setLoading(true);
         try {
             const payload = buildApiPayload();
-            const res = await fetch("http://127.0.0.1:8000/api/stocks/screener", {
+            const res = await fetch(`${API_BASE_URL}/api/stocks/screener`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
