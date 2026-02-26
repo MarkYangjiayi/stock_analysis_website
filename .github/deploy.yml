@@ -1,0 +1,41 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main # 如果你的主分支叫 master，请改成 master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Images (利用 GitHub 的 7GB 内存狂飙)
+        run: |
+          docker build -t quantify-backend:latest .
+          docker build -t quantify-frontend:latest ./frontend
+          docker save quantify-backend:latest quantify-frontend:latest | gzip > images.tar.gz
+
+      - name: Transfer Images to Aliyun (自动空投)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "images.tar.gz"
+          target: "/home/admin/stock_analysis_website"
+
+      - name: Deploy on Aliyun (自动换弹重启)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/admin/stock_analysis_website
+            sudo docker load -i images.tar.gz
+            sudo docker compose down
+            sudo docker compose up -d
+            rm images.tar.gz # 打扫战场，释放磁盘空间

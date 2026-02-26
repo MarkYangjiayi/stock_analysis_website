@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: .
+    image: quantify-backend:latest
     ports:
       - "8000:8000"
     env_file: .env
@@ -11,8 +10,7 @@ services:
       - ./data:/app/data
 
   frontend:
-    build:
-      context: ./frontend
+    image: quantify-frontend:latest
     ports:
       - "3000:3000"
     depends_on:
