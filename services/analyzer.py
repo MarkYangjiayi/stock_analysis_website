@@ -644,7 +644,7 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
         "offset": offset
     }
 
-def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: int = 14, tail_length: int = 10) -> list[dict]:
+def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: int = 14) -> list[dict]:
     """
     计算相对轮动图 (RRG) 的核心指标: RS-Ratio 和 RS-Momentum。
     """
@@ -682,11 +682,11 @@ def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: i
     
     df['rs_momentum'] = 100 + ((df['rs_ratio'] - ratio_sma) / ratio_std) * 10
     
-    # 5. 剔除 NaN 值，并截取最后 tail_length 天的数据
+    # 5. 剔除 NaN 值，不再截取 tail_length，返回计算出的所有有效历史日期
     df_cleaned = df.dropna(subset=['rs_ratio', 'rs_momentum'])
     logger.info(f"RRG DEBUG: After computing SMA/StdDev and dropna(), remaining valid rows: {len(df_cleaned)}")
     
-    df = df_cleaned.tail(tail_length).copy()
+    df = df_cleaned.copy()
     
     # 针对 date 进行字符串转换
     df['date'] = df['date'].astype(str)
@@ -698,18 +698,22 @@ async def get_rrg_data_for_tickers(
     tickers: list[str],
     db_session: AsyncSession,
     benchmark: str = 'SPY',
-    tail_length: int = 10
+    history_days: int = 252
 ) -> dict:
     """
-    提取指定 tickers 列表和 benchmark 过去 100 个交易日的历史 K 线数据
-    计算并返回它们各自的 RRG (相对轮动图) 轨迹数据。
+    提取指定 tickers 列表和 benchmark 的历史 K 线数据，
+    拉取过去 (history_days + 100) 个交易日的数据，以确保充足的均线预热窗口。
+    计算并返回它们各自的 RRG (相对轮动图) 轨迹有效数据。
     """
     tickers_to_fetch = set([t.upper() for t in tickers] + [benchmark.upper()])
     
     # 因为 AsyncSession 不支持在同一个 session 生命周期内真正的并发 execute，这里采用串行查询
     data_frames = {}
+    
+    # 扩大数据抓取边界：所需展现的历史天数 + 100 天滑动窗口前置预热天数
+    fetch_limit = history_days + 100
     for t in tickers_to_fetch:
-        stmt = select(DailyPrice).where(DailyPrice.ticker == t).order_by(desc(DailyPrice.date)).limit(100)
+        stmt = select(DailyPrice).where(DailyPrice.ticker == t).order_by(desc(DailyPrice.date)).limit(fetch_limit)
         res = await db_session.execute(stmt)
         records = res.scalars().all()
         
@@ -758,9 +762,13 @@ async def get_rrg_data_for_tickers(
             
         ticker_df = data_frames[t_upper]
         
-        # 将构造好的两份 DataFrame 交由 calculate_rrg 函数处理
-        result = calculate_rrg(ticker_df, benchmark_df, window=14, tail_length=tail_length)
+        # 将构造好的两份 DataFrame 交由 calculate_rrg 函数处理 (无需传入 tail_length，返回所有有效点)
+        result = calculate_rrg(ticker_df, benchmark_df, window=14)
+        
         if result:
+            # 只截取用户最终所需的 history_days 长度发送回前端（计算好的最近一年）
+            result = result[-history_days:]
+            
             # 如果配置了映射名，使用更友好的行业名称作为客户端显示的键
             display_name = SECTOR_MAP.get(t_upper, t_upper)
             rrg_data[display_name] = result

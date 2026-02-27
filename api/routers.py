@@ -177,7 +177,7 @@ async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
 async def get_rrg(
     tickers: str,
     benchmark: str = "SPY",
-    tail_length: int = 10,
+    history_days: int = 252,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -196,7 +196,7 @@ async def get_rrg(
             tickers=ticker_list,
             db_session=db,
             benchmark=benchmark,
-            tail_length=tail_length
+            history_days=history_days
         )
         return data  # FastAPI会自动序列化为JSONResponse
     except Exception as e:

@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
+import * as echarts from 'echarts/core';
 
 export interface RRGDataPoint {
     date: string;
@@ -19,6 +20,8 @@ interface RRGChartProps {
     data: RRGResponse | null;
     // 控制尾部显示长度，默认为 10
     tailLength?: number;
+    // 时光机：当前所在的全局日期索引
+    currentDayIndex?: number;
 }
 
 // 预设的亮丽颜色数组
@@ -28,7 +31,7 @@ const BRAND_COLORS = [
     '#b224ef', '#00a8f3', '#ff512f', '#dd2476', '#a1c4fd'
 ];
 
-export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
+export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRGChartProps) {
 
     const option = useMemo(() => {
         // 默认空图表占位
@@ -43,50 +46,81 @@ export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
         const legendData: string[] = [];
         let colorIndex = 0;
 
-        // 1. 遍历并截取所需尾部长度的数据，并以此计算坐标轴的最大 / 最小值
+        // 1. 遍历计算极大极小值 (必须使用全量原始数据，确保坐标轴绝对锁死不随 tailLength 抖动)
         Object.entries(data.data).forEach(([ticker, seriesData]) => {
-            // 若无有效数据跳过
             if (!seriesData || seriesData.length === 0) return;
 
             legendData.push(ticker);
 
-            // 根据 tailLength 控制尾巴长短
-            const slicedTrajectory = seriesData.slice(-tailLength);
-
-            slicedTrajectory.forEach(point => {
+            // 计算边界：用所有的历史数据，找到物理最大边界，保证拖动 timeline 时坐标系绝对静止
+            seriesData.forEach(point => {
                 if (point.rs_ratio < minRatio) minRatio = point.rs_ratio;
                 if (point.rs_ratio > maxRatio) maxRatio = point.rs_ratio;
                 if (point.rs_momentum < minMomentum) minMomentum = point.rs_momentum;
                 if (point.rs_momentum > maxMomentum) maxMomentum = point.rs_momentum;
             });
 
+            // 时光机截断：确定当前的时间节点窗口
+            const effectiveEndIndex = currentDayIndex !== undefined ? currentDayIndex + 1 : seriesData.length;
+
+            // 找出当前的最后一个节点（Head Point，头）
+            const lastDataNode = seriesData[effectiveEndIndex - 1];
+            if (!lastDataNode) return;
+            const lastPoint = [lastDataNode.rs_ratio, lastDataNode.rs_momentum, lastDataNode.date, ticker];
+
+            // 截取过去尾巴长度的轨迹段 (Line Data)
+            const startIndex = Math.max(0, effectiveEndIndex - tailLength);
+            const slicedTrajectory = seriesData.slice(startIndex, effectiveEndIndex);
+
             const themeColor = BRAND_COLORS[colorIndex % BRAND_COLORS.length];
             colorIndex++;
 
-            // 转换为 ECharts 数据格式 `[rs_ratio, rs_momentum, date, ticker]`
+            // 转换为 ECharts 数据格式
             const lineData = slicedTrajectory.map(pt => [pt.rs_ratio, pt.rs_momentum, pt.date, ticker]);
-            const lastPoint = lineData[lineData.length - 1];
 
-            // A. 创建拖尾线(Line Series)
+            // A. 创建拖尾线 (使用 Custom 系列实现真实的路径渐变)
             dynamicSeries.push({
-                name: ticker, // 必须同名，图例才能成组控制
-                type: 'line',
+                name: ticker,
+                type: 'custom',
+                animation: false,
                 data: lineData,
-                smooth: true,
-                symbol: 'none',
-                lineStyle: {
-                    width: 3,
-                    color: themeColor,
-                    opacity: 0.5,
-                    shadowColor: themeColor,
-                    shadowBlur: 10
+                renderItem: function (params: any, api: any) {
+                    const idx = params.dataIndex;
+                    // 第一个点没有前一个点，无法连线，直接跳过
+                    if (idx === 0) return;
+
+                    // 获取上一个点和当前点的屏幕绝对坐标
+                    const pt1 = api.coord([api.value(0, idx - 1), api.value(1, idx - 1)]);
+                    const pt2 = api.coord([api.value(0, idx), api.value(1, idx)]);
+
+                    // 基于时间序列计算透明度：最旧的线段接近 0.1，最新的线段接近 1.0
+                    const totalPoints = lineData.length;
+                    const opacity = 0.1 + 0.9 * (idx / (totalPoints - 1));
+
+                    return {
+                        type: 'line',
+                        shape: {
+                            x1: pt1[0], y1: pt1[1],
+                            x2: pt2[0], y2: pt2[1]
+                        },
+                        style: {
+                            stroke: themeColor,
+                            lineWidth: 3,
+                            opacity: opacity,
+                            lineCap: 'round',
+                            lineJoin: 'round',
+                            shadowColor: themeColor,
+                            shadowBlur: 2
+                        }
+                    };
                 }
             });
 
             // B. 创建头部的点(Scatter Series)
             dynamicSeries.push({
-                name: ticker, // 必须同名，图例才能成组控制
+                name: ticker,
                 type: 'scatter',
+                animation: false,
                 data: [lastPoint],
                 symbolSize: 12,
                 itemStyle: {
@@ -117,7 +151,7 @@ export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
         // 取较大的那个作为统一的单侧跨度，留出 1.05 的 padding 防止点贴边
         const maxDeviation = Math.max(maxDeviationRatio, maxDeviationMomentum) * 1.05;
 
-        // 向下兼容最小跨度 1.0，使用 Math.ceil() 向上取整，确保 ECharts 坐标轴刻度数字为干净整数
+        // 向下兼容最小跨度 1.0，使用 Math.ceil() 向上取整
         const finalDeviation = Math.max(Math.ceil(maxDeviation), 1.0);
 
         const axisMin = 100 - finalDeviation;
@@ -125,6 +159,8 @@ export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
 
         // 绘制基础配置
         return {
+            // 动画更新配置：关闭更新动画，提升 Slider 拖拉时的纯粹重绘体验，防蠕动
+            animationDurationUpdate: 0,
             title: {
                 text: 'Relative Rotation Graph (RRG)',
                 left: 'center',
@@ -175,7 +211,7 @@ export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
             grid: {
                 left: '5%',
                 right: '5%',
-                bottom: '15%', // 给 legend 腾出空间
+                bottom: '15%',
                 top: '12%',
                 containLabel: true
             },
@@ -272,7 +308,7 @@ export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
                 ...dynamicSeries
             ]
         };
-    }, [data, tailLength]);
+    }, [data, tailLength, currentDayIndex]);
 
     return (
         <div className="w-full h-[600px] bg-slate-900 rounded-lg p-4 shadow-lg border border-slate-800 relative">
@@ -280,7 +316,8 @@ export default function RRGChart({ data, tailLength = 10 }: RRGChartProps) {
                 option={option}
                 style={{ height: '100%', width: '100%' }}
                 theme="dark"
-                notMerge={true}
+                // 关键修复：设置为 false 允许 ECharts 保留用户手动点击过的 Legend 状态，而不是在重新渲染尾巴时被覆盖
+                notMerge={false}
                 lazyUpdate={true}
             />
 
