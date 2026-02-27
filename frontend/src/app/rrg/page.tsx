@@ -15,6 +15,27 @@ export default function RealRRGWidget() {
     // 全局日期列表与时光机当前索引
     const [dateList, setDateList] = useState<string[]>([]);
     const [currentDayIndex, setCurrentDayIndex] = useState<number>(0);
+    const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
+    // 自动播放时光机逻辑
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (isPlaying) {
+            interval = setInterval(() => {
+                setCurrentDayIndex((prev) => {
+                    // 如果已经播放到最后一天，则停止播放
+                    if (prev >= dateList.length - 1) {
+                        setIsPlaying(false);
+                        return prev;
+                    }
+                    return prev + 1;
+                });
+            }, 150); // 150ms 的回放速度
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [isPlaying, dateList.length]);
 
     useEffect(() => {
         const fetchRRG = async () => {
@@ -74,9 +95,37 @@ export default function RealRRGWidget() {
                     {/* 第一排：主时间轴 Timeline Slider */}
                     <div className="flex flex-col gap-3 border-b border-slate-800 pb-5">
                         <div className="flex items-center justify-between">
-                            <label htmlFor="timeline-slider" className="text-slate-200 font-bold tracking-wide flex items-center gap-2">
-                                历史回放 (Timeline)
-                            </label>
+                            <div className="flex items-center gap-4">
+                                <label htmlFor="timeline-slider" className="text-slate-200 font-bold tracking-wide flex items-center gap-2">
+                                    历史回放 (Timeline)
+                                </label>
+                                <button
+                                    onClick={() => {
+                                        // 如果当前已经是最后一天，点击播放时重置到 60 天前（或第0天）再播
+                                        if (!isPlaying && currentDayIndex >= dateList.length - 1) {
+                                            setCurrentDayIndex(Math.max(0, dateList.length - 60));
+                                        }
+                                        setIsPlaying(!isPlaying);
+                                    }}
+                                    disabled={dateList.length === 0}
+                                    className={`px-4 py-1.5 rounded-md text-sm font-bold flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isPlaying
+                                            ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-900/20'
+                                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
+                                        }`}
+                                >
+                                    {isPlaying ? (
+                                        <>
+                                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                            暂停
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                            播放
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                             <span className="text-emerald-400 font-mono font-bold bg-emerald-900/40 px-3 py-1.5 rounded-md border border-emerald-800/50 shadow-inner">
                                 当前日期: {dateList.length > 0 ? dateList[currentDayIndex] : '--'}
                             </span>

@@ -665,22 +665,27 @@ def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: i
     if df.empty:
         return []
         
-    # 2. 计算 Relative Strength (RS)
+    # 2. 计算 Relative Strength (RS) 并进行初次 EMA 平滑过滤噪音
     df['rs'] = df['close_ticker'] / df['close_bench']
+    smoothed_rs = df['rs'].ewm(span=14, adjust=False).mean()
     
-    # 3. 计算 RS-Ratio
-    rs_rolling = df['rs'].rolling(window=window)
+    # 3. 计算 RS-Ratio (X轴)
+    rs_rolling = smoothed_rs.rolling(window=window)
     rs_sma = rs_rolling.mean()
     rs_std = rs_rolling.std()
     
-    df['rs_ratio'] = 100 + ((df['rs'] - rs_sma) / rs_std) * 10
+    rs_ratio_raw = 100 + ((smoothed_rs - rs_sma) / rs_std) * 10
+    # 二次平滑：对生成的 Ratio 进行轻度 EMA 平滑，防止 X 轴剧烈跳变
+    df['rs_ratio'] = rs_ratio_raw.ewm(span=5, adjust=False).mean()
     
-    # 4. 计算 RS-Momentum
+    # 4. 计算 RS-Momentum (Y轴)
     ratio_rolling = df['rs_ratio'].rolling(window=window)
     ratio_sma = ratio_rolling.mean()
     ratio_std = ratio_rolling.std()
     
-    df['rs_momentum'] = 100 + ((df['rs_ratio'] - ratio_sma) / ratio_std) * 10
+    rs_momentum_raw = 100 + ((df['rs_ratio'] - ratio_sma) / ratio_std) * 10
+    # 二次平滑：对生成的 Momentum 也进行轻度 EMA 平滑
+    df['rs_momentum'] = rs_momentum_raw.ewm(span=5, adjust=False).mean()
     
     # 5. 剔除 NaN 值，不再截取 tail_length，返回计算出的所有有效历史日期
     df_cleaned = df.dropna(subset=['rs_ratio', 'rs_momentum'])
