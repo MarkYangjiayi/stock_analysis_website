@@ -643,3 +643,132 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
         "limit": limit,
         "offset": offset
     }
+
+def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: int = 14, tail_length: int = 10) -> list[dict]:
+    """
+    计算相对轮动图 (RRG) 的核心指标: RS-Ratio 和 RS-Momentum。
+    """
+    if ticker_df.empty or benchmark_df.empty:
+        return []
+
+    # 1. 根据 'date' 进行 inner merge 对齐数据
+    df = pd.merge(
+        ticker_df[['date', 'close']], 
+        benchmark_df[['date', 'close']], 
+        on='date', 
+        how='inner', 
+        suffixes=('_ticker', '_bench')
+    )
+    
+    logger.info(f"RRG DEBUG: After inner merge (date alignment), remaining rows: {len(df)}")
+    
+    if df.empty:
+        return []
+        
+    # 2. 计算 Relative Strength (RS)
+    df['rs'] = df['close_ticker'] / df['close_bench']
+    
+    # 3. 计算 RS-Ratio
+    rs_rolling = df['rs'].rolling(window=window)
+    rs_sma = rs_rolling.mean()
+    rs_std = rs_rolling.std()
+    
+    df['rs_ratio'] = 100 + ((df['rs'] - rs_sma) / rs_std) * 10
+    
+    # 4. 计算 RS-Momentum
+    ratio_rolling = df['rs_ratio'].rolling(window=window)
+    ratio_sma = ratio_rolling.mean()
+    ratio_std = ratio_rolling.std()
+    
+    df['rs_momentum'] = 100 + ((df['rs_ratio'] - ratio_sma) / ratio_std) * 10
+    
+    # 5. 剔除 NaN 值，并截取最后 tail_length 天的数据
+    df_cleaned = df.dropna(subset=['rs_ratio', 'rs_momentum'])
+    logger.info(f"RRG DEBUG: After computing SMA/StdDev and dropna(), remaining valid rows: {len(df_cleaned)}")
+    
+    df = df_cleaned.tail(tail_length).copy()
+    
+    # 针对 date 进行字符串转换
+    df['date'] = df['date'].astype(str)
+    
+    # 6. 返回规范的列表字典格式
+    return df[['date', 'rs_ratio', 'rs_momentum']].to_dict(orient='records')
+
+async def get_rrg_data_for_tickers(
+    tickers: list[str],
+    db_session: AsyncSession,
+    benchmark: str = 'SPY',
+    tail_length: int = 10
+) -> dict:
+    """
+    提取指定 tickers 列表和 benchmark 过去 100 个交易日的历史 K 线数据
+    计算并返回它们各自的 RRG (相对轮动图) 轨迹数据。
+    """
+    tickers_to_fetch = set([t.upper() for t in tickers] + [benchmark.upper()])
+    
+    # 因为 AsyncSession 不支持在同一个 session 生命周期内真正的并发 execute，这里采用串行查询
+    data_frames = {}
+    for t in tickers_to_fetch:
+        stmt = select(DailyPrice).where(DailyPrice.ticker == t).order_by(desc(DailyPrice.date)).limit(100)
+        res = await db_session.execute(stmt)
+        records = res.scalars().all()
+        
+        logger.info(f"RRG DEBUG: Fetched {len(records)} K-line records for ticker {t} from DB.")
+        
+        if not records:
+            continue
+            
+        # 转换为 DataFrame，为了更好的对比精度，优先使用并提取调整后收盘价
+        df = pd.DataFrame([{
+            'date': r.date,
+            'close': float(r.adjusted_close) if r.adjusted_close is not None else (float(r.close) if r.close is not None else 0.0)
+        } for r in records])
+        
+        # 摘取出来的数据是倒序(desc)，反转回升序以匹配时序演变
+        df = df.iloc[::-1].reset_index(drop=True)
+        # 强转日期时间格式，保障 merge 正确对齐
+        df['date'] = pd.to_datetime(df['date'])
+        
+        data_frames[t] = df
+
+    benchmark_upper = benchmark.upper()
+    current_time = pd.Timestamp.now().isoformat()
+    
+    if benchmark_upper not in data_frames:
+        return {
+            "benchmark": benchmark_upper,
+            "update_time": current_time,
+            "data": {}
+        }
+        
+    benchmark_df = data_frames[benchmark_upper]
+    
+    SECTOR_MAP = {
+        "XLK.US": "Technology", "XLF.US": "Financials", "XLV.US": "Health Care",
+        "XLY.US": "Cons. Discret.", "XLP.US": "Cons. Staples", "XLE.US": "Energy",
+        "XLI.US": "Industrials", "XLB.US": "Materials", "XLU.US": "Utilities",
+        "XLRE.US": "Real Estate", "XLC.US": "Comm. Svcs"
+    }
+    
+    rrg_data = {}
+    for t in tickers:
+        t_upper = t.upper()
+        if t_upper == benchmark_upper or t_upper not in data_frames:
+            continue
+            
+        ticker_df = data_frames[t_upper]
+        
+        # 将构造好的两份 DataFrame 交由 calculate_rrg 函数处理
+        result = calculate_rrg(ticker_df, benchmark_df, window=14, tail_length=tail_length)
+        if result:
+            # 如果配置了映射名，使用更友好的行业名称作为客户端显示的键
+            display_name = SECTOR_MAP.get(t_upper, t_upper)
+            rrg_data[display_name] = result
+            
+    return {
+        "benchmark": benchmark_upper,
+        "update_time": current_time,
+        "data": rrg_data
+    }
+
+

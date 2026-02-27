@@ -192,3 +192,7 @@ Temporary Items
 
 # Docker Persistent Volumes
 data/
+
+# 
+deploy_key
+deploy_key.pub

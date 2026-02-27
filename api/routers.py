@@ -11,7 +11,8 @@ from services.analyzer import (
     get_analyzed_stock_data, 
     get_fundamental_valuation, 
     batch_get_factor_scores,
-    filter_screener_stocks
+    filter_screener_stocks,
+    get_rrg_data_for_tickers
 )
 from services.ai_assistant import generate_stock_report
 from services.news_fetcher import fetch_yahoo_news
@@ -171,3 +172,33 @@ async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
     """
     anomalies = await scan_and_analyze_anomalies(db, limit_count=10)
     return anomalies
+
+@router.get("/api/v1/rrg", tags=["Stocks Analysis Read"])
+async def get_rrg(
+    tickers: str,
+    benchmark: str = "SPY",
+    tail_length: int = 10,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get Relative Rotation Graph (RRG) data for a list of tickers against a benchmark.
+    `tickers` should be a comma-separated string, e.g., "AAPL,MSFT,NVDA".
+    """
+    if not tickers or not tickers.strip():
+        raise HTTPException(status_code=400, detail="Parameter 'tickers' cannot be empty.")
+        
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="No valid tickers extracted from input.")
+        
+    try:
+        data = await get_rrg_data_for_tickers(
+            tickers=ticker_list,
+            db_session=db,
+            benchmark=benchmark,
+            tail_length=tail_length
+        )
+        return data  # FastAPI会自动序列化为JSONResponse
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to calculate RRG data: {str(e)}")
+
