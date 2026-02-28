@@ -31,7 +31,7 @@ class Ticker(Base):
     """
     __tablename__ = "tickers"
 
-    ticker: Mapped[str] = mapped_column(String, primary_key=True, index=True, doc="股票代码 (例: AAPL.US)")
+    ticker: Mapped[str] = mapped_column(String, primary_key=True, index=True, unique=True, doc="股票代码 (例: AAPL.US)")
     name: Mapped[Optional[str]] = mapped_column(String)
     exchange: Mapped[Optional[str]] = mapped_column(String)
     sector: Mapped[Optional[str]] = mapped_column(String)
