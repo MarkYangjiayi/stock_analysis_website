@@ -34,14 +34,14 @@ async def cleanup_duplicates():
             """))
 
             # 2. 针对 stock_screener_snapshot 表
-            # 存在相同的 ticker + date 组合时，保留最小 ID 的那一条记录
+            # 保证每只股票(ticker)在 Screener 中只存在最新的一条记录，去除不同日期的重复
             logger.info("Cleaning up 'stock_screener_snapshot' table...")
             await session.execute(text("""
                 DELETE FROM stock_screener_snapshot 
                 WHERE id NOT IN (
-                    SELECT MIN(id)
+                    SELECT MAX(id)
                     FROM stock_screener_snapshot
-                    GROUP BY ticker, date
+                    GROUP BY ticker
                 );
             """))
 
