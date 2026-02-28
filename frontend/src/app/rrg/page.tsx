@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import RRGChart, { RRGResponse } from '@/components/RRGChart';
 import { Loader2 } from 'lucide-react';
+import { API_BASE_URL } from '@/lib/api';
 
 export default function RealRRGWidget() {
     const [rrgData, setRrgData] = useState<RRGResponse | null>(null);
@@ -19,7 +20,7 @@ export default function RealRRGWidget() {
 
     // 自动播放时光机逻辑
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let interval: ReturnType<typeof setInterval>;
         if (isPlaying) {
             interval = setInterval(() => {
                 setCurrentDayIndex((prev) => {
@@ -45,7 +46,7 @@ export default function RealRRGWidget() {
 
                 // 拼接真实的 FastAPI 端点进行请求
                 // 改为 11 大行业板块 ETF 代码，请求一整年 (252个交易日) 的大规模数据
-                const endpoint = "http://127.0.0.1:8000/api/v1/rrg?tickers=XLK.US,XLF.US,XLV.US,XLY.US,XLP.US,XLE.US,XLI.US,XLB.US,XLU.US,XLRE.US,XLC.US&benchmark=SPY&history_days=252";
+                const endpoint = `${API_BASE_URL}/api/v1/rrg?tickers=XLK.US,XLF.US,XLV.US,XLY.US,XLP.US,XLE.US,XLI.US,XLB.US,XLU.US,XLRE.US,XLC.US&benchmark=SPY&history_days=252`;
 
                 const response = await fetch(endpoint);
 
