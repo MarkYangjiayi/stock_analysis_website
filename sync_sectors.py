@@ -6,7 +6,7 @@ import os
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Add the project root to the path so we can import modules
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import async_session_maker
 from services.data_sync import sync_ticker_data
