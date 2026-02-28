@@ -21,6 +21,7 @@ export default function TopNavBar() {
         { name: 'Analysis', path: '/' },
         { name: 'Screener', path: '/screener' },
         { name: 'Anomalies', path: '/anomalies' },
+        { name: 'Market Rotation', path: '/rrg' },
     ];
 
     return (
