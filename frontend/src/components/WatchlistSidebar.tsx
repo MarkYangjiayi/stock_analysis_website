@@ -88,16 +88,16 @@ const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSe
     // Before mounting on client, render a placeholder with same dimensions to avoid hydration mismatch
     if (!mounted) {
         return (
-            <div className="w-72 bg-[#151922] border-r border-gray-800 flex flex-col h-full shrink-0"></div>
+            <div className="w-72 bg-white dark:bg-[#151922] border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shrink-0 transition-colors duration-300"></div>
         );
     }
 
     return (
-        <div className="w-72 bg-[#151922] border-r border-gray-800 flex flex-col h-full shrink-0">
-            <div className="p-5 border-b border-gray-800 relative space-y-4">
-                <div className="flex items-center gap-3 text-gray-200 font-extrabold tracking-wide">
-                    <div className="p-2 bg-emerald-500/10 rounded-lg">
-                        <TrendingUp className="text-emerald-400" size={18} />
+        <div className="w-72 bg-white dark:bg-[#151922] border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shrink-0 transition-colors duration-300">
+            <div className="p-5 border-b border-gray-200 dark:border-gray-800 relative space-y-4 transition-colors duration-300">
+                <div className="flex items-center gap-3 text-slate-800 dark:text-gray-200 font-extrabold tracking-wide">
+                    <div className="p-2 bg-emerald-100 dark:bg-emerald-500/10 rounded-lg">
+                        <TrendingUp className="text-emerald-600 dark:text-emerald-400" size={18} />
                     </div>
                     <h2>Watchlist</h2>
                 </div>
@@ -108,7 +108,7 @@ const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSe
                         value={newTicker}
                         onChange={(e) => setNewTicker(e.target.value)}
                         placeholder="Add ticker..."
-                        className="w-full bg-[#1e222d] text-white placeholder-gray-500 text-sm px-4 py-2.5 rounded-xl border border-gray-800 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
+                        className="w-full bg-slate-50 dark:bg-[#1e222d] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 text-sm px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-800 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-sm dark:shadow-inner"
                     />
                     <button
                         type="submit"
@@ -121,11 +121,11 @@ const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSe
 
                 {/* Sort Dropdown */}
                 <div className="flex items-center gap-2 pt-2">
-                    <ArrowUpDown size={14} className="text-gray-500 shrink-0" />
+                    <ArrowUpDown size={14} className="text-slate-400 dark:text-gray-500 shrink-0" />
                     <select
                         value={sortBy}
                         onChange={(e) => setSortBy(e.target.value as SortDimension)}
-                        className="w-full bg-[#1e222d] text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg border border-gray-800 focus:outline-none focus:border-emerald-500/50 appearance-none cursor-pointer hover:bg-[#252a36] transition-colors"
+                        className="w-full bg-slate-50 dark:bg-[#1e222d] text-slate-600 dark:text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 focus:outline-none focus:border-emerald-500/50 appearance-none cursor-pointer hover:bg-slate-100 dark:hover:bg-[#252a36] transition-colors"
                         style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: `right 0.5rem center`, backgroundRepeat: `no-repeat`, backgroundSize: `1.5em 1.5em`, paddingRight: `2rem` }}
                     >
                         <option value="Default">Added Order</option>
@@ -169,8 +169,8 @@ const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSe
                             key={ticker}
                             onClick={() => onSelectTicker(ticker)}
                             className={`group flex items-center justify-between px-4 py-3.5 rounded-xl cursor-pointer transition-all duration-200 border-l-4 ${isSelected
-                                ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400 font-bold shadow-sm'
-                                : 'border-transparent text-gray-300 hover:bg-[#1e222d] hover:text-gray-100'
+                                ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+                                : 'border-transparent text-slate-600 dark:text-gray-300 hover:bg-slate-50 dark:hover:bg-[#1e222d] hover:text-slate-900 dark:hover:text-gray-100'
                                 }`}
                         >
                             <span className="tracking-wider text-sm whitespace-nowrap overflow-hidden text-ellipsis mr-2">{ticker}</span>
@@ -178,7 +178,7 @@ const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSe
                             <div className="flex items-center gap-2">
                                 {/* Score Badge */}
                                 {isMissingData ? (
-                                    <div className="flex items-center justify-center gap-1 text-[10px] font-mono px-2 py-1 rounded border bg-gray-800 text-gray-500 border-gray-700 whitespace-nowrap" title="Sync required to view score">
+                                    <div className="flex items-center justify-center gap-1 text-[10px] font-mono px-2 py-1 rounded border bg-slate-100 text-slate-400 border-slate-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700 whitespace-nowrap" title="Sync required to view score">
                                         <CloudOff size={10} /> <span>No Data</span>
                                     </div>
                                 ) : (
@@ -204,10 +204,10 @@ const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSe
                 })}
                 {watchlist.length === 0 && (
                     <div className="text-center py-10 flex flex-col items-center justify-center space-y-2 opacity-60">
-                        <div className="w-12 h-12 rounded-full bg-gray-800/50 flex items-center justify-center mb-2">
-                            <TrendingUp className="text-gray-600" size={20} />
+                        <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-gray-800/50 flex items-center justify-center mb-2">
+                            <TrendingUp className="text-slate-400 dark:text-gray-600" size={20} />
                         </div>
-                        <p className="text-gray-500 text-sm font-medium">Empty Watchlist</p>
+                        <p className="text-slate-500 dark:text-gray-500 text-sm font-medium">Empty Watchlist</p>
                     </div>
                 )}
             </div>

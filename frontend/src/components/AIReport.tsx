@@ -75,14 +75,14 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
     }, [ticker]);
 
     return (
-        <div className="bg-[#151922] border border-gray-800 rounded-xl p-6 shadow-inner w-full mt-4 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-4 border-b border-gray-800/80 pb-4">
+        <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-inner w-full mt-4 flex flex-col h-full">
+            <div className="flex items-center justify-between mb-4 border-b border-gray-200 dark:border-gray-800/80 pb-4">
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-xl">
                         <Bot className="text-indigo-400" size={24} />
                     </div>
                     <div>
-                        <h3 className="text-lg font-bold text-gray-100 whitespace-nowrap">AI Quant Analyst</h3>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-gray-100 whitespace-nowrap">AI Quant Analyst</h3>
                         <p className="text-xs font-semibold text-indigo-400/80 tracking-widest uppercase mt-0.5">Gemini 2.5 Flash</p>
                     </div>
                 </div>
@@ -90,7 +90,7 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
                 <button
                     onClick={loadReport}
                     disabled={loading}
-                    className="p-2 hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50 text-gray-400 hover:text-white"
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50 text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
                     title="Regenerate Report"
                 >
                     <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
@@ -101,7 +101,7 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
                 {loading ? (
                     <div className="h-full flex flex-col items-center justify-center space-y-4 py-12">
                         <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-                        <p className="text-sm font-medium text-gray-400 animate-pulse">🤖 AI 正在深度分析财报与因子数据...</p>
+                        <p className="text-sm font-medium text-slate-500 dark:text-gray-400 animate-pulse">🤖 AI 正在深度分析财报与因子数据...</p>
                     </div>
                 ) : error ? (
                     <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-4 flex flex-col items-center justify-center text-center h-full">
@@ -115,18 +115,18 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
                         </button>
                     </div>
                 ) : report ? (
-                    <div className="prose prose-invert prose-sm max-w-none pb-8 pr-2
-                        prose-headings:text-gray-200 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
-                        prose-p:text-gray-300 prose-p:leading-relaxed prose-p:mb-4
-                        prose-li:text-gray-300
-                        prose-strong:text-indigo-300
-                        prose-hr:border-gray-800">
+                    <div className="prose dark:prose-invert prose-sm max-w-none pb-8 pr-2
+                        prose-headings:text-slate-800 dark:prose-headings:text-gray-200 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
+                        prose-p:text-slate-700 dark:prose-p:text-gray-300 prose-p:leading-relaxed prose-p:mb-4
+                        prose-li:text-slate-700 dark:prose-li:text-gray-300
+                        prose-strong:text-indigo-600 dark:prose-strong:text-indigo-300
+                        prose-hr:border-gray-200 dark:prose-hr:border-gray-800">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {report}
                         </ReactMarkdown>
                     </div>
                 ) : (
-                    <div className="text-center py-8 text-gray-500">No report available.</div>
+                    <div className="text-center py-8 text-slate-500 dark:text-gray-500">No report available.</div>
                 )}
             </div>
         </div>

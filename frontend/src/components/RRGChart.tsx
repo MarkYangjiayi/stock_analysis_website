@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
+import { useTheme } from 'next-themes';
 
 export interface RRGDataPoint {
     date: string;
@@ -32,6 +33,14 @@ const BRAND_COLORS = [
 ];
 
 export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRGChartProps) {
+    const { resolvedTheme } = useTheme();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const isDark = resolvedTheme === 'dark';
 
     const option = useMemo(() => {
         // 默认空图表占位
@@ -138,7 +147,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                     color: themeColor,
                     fontWeight: 'bold',
                     fontSize: 14,
-                    textBorderColor: '#000',
+                    textBorderColor: isDark ? '#000' : '#fff',
                     textBorderWidth: 2
                 }
             });
@@ -166,7 +175,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 left: 'center',
                 top: 10,
                 textStyle: {
-                    color: '#ccc',
+                    color: isDark ? '#ccc' : '#475569',
                     fontSize: 16
                 }
             },
@@ -175,19 +184,19 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 bottom: 15, // 放置在底部
                 data: legendData,
                 textStyle: {
-                    color: '#e2e8f0', // slate-200
+                    color: isDark ? '#e2e8f0' : '#475569', // slate-200
                     fontSize: 12
                 },
                 pageIconColor: '#3b82f6',
                 pageTextStyle: {
-                    color: '#e2e8f0'
+                    color: isDark ? '#e2e8f0' : '#475569'
                 }
             },
             tooltip: {
                 trigger: 'item',
-                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                borderColor: '#334155',
-                textStyle: { color: '#f8fafc' },
+                backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                borderColor: isDark ? '#334155' : '#cbd5e1',
+                textStyle: { color: isDark ? '#f8fafc' : '#0f172a' },
                 formatter: function (params: any) {
                     if (Array.isArray(params.value)) {
                         const ratio = params.value[0].toFixed(2);
@@ -195,14 +204,17 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                         const dt = params.value[2];
                         const tck = params.value[3];
 
+                        const dateColor = isDark ? 'text-slate-300' : 'text-slate-500';
+                        const valColor = isDark ? 'text-white' : 'text-black';
+
                         return `
               <div class="font-bold flex items-center gap-2 mb-1">
                 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${params.color};"></span>
                 ${tck}
               </div>
-              <div class="text-sm text-slate-300">Date: ${dt}</div>
-              <div class="text-sm text-slate-300">RS-Ratio: <span class="text-white">${ratio}</span></div>
-              <div class="text-sm text-slate-300">RS-Momentum: <span class="text-white">${momentum}</span></div>
+              <div class="text-sm ${dateColor}">Date: ${dt}</div>
+              <div class="text-sm ${dateColor}">RS-Ratio: <span class="${valColor}">${ratio}</span></div>
+              <div class="text-sm ${dateColor}">RS-Momentum: <span class="${valColor}">${momentum}</span></div>
             `;
                     }
                     return params.seriesName;
@@ -221,7 +233,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 name: 'RS-Ratio',
                 nameLocation: 'middle',
                 nameGap: 30,
-                nameTextStyle: { color: '#888' },
+                nameTextStyle: { color: isDark ? '#888' : '#64748b' },
                 min: axisMin,
                 max: axisMax,
                 axisLine: { show: false },
@@ -229,18 +241,18 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 splitLine: {
                     show: true,
                     lineStyle: {
-                        color: '#333',
+                        color: isDark ? '#333' : '#e2e8f0',
                         type: 'dashed'
                     }
                 },
-                axisLabel: { color: '#888' }
+                axisLabel: { color: isDark ? '#888' : '#64748b' }
             },
             yAxis: {
                 type: 'value',
                 name: 'RS-Momentum',
                 nameLocation: 'middle',
                 nameGap: 30,
-                nameTextStyle: { color: '#888' },
+                nameTextStyle: { color: isDark ? '#888' : '#64748b' },
                 min: axisMin,
                 max: axisMax,
                 axisLine: { show: false },
@@ -248,11 +260,11 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 splitLine: {
                     show: true,
                     lineStyle: {
-                        color: '#333',
+                        color: isDark ? '#333' : '#e2e8f0',
                         type: 'dashed'
                     }
                 },
-                axisLabel: { color: '#888' }
+                axisLabel: { color: isDark ? '#888' : '#64748b' }
             },
             // 4 & 5. 背景象限 和 准星线
             series: [
@@ -308,14 +320,18 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 ...dynamicSeries
             ]
         };
-    }, [data, tailLength, currentDayIndex]);
+    }, [data, tailLength, currentDayIndex, isDark]);
+
+    if (!mounted) {
+        return <div className="w-full h-[600px] bg-white dark:bg-slate-900 rounded-lg p-4 shadow-lg border border-gray-200 dark:border-slate-800 relative" />;
+    }
 
     return (
-        <div className="w-full h-[600px] bg-slate-900 rounded-lg p-4 shadow-lg border border-slate-800 relative">
+        <div className="w-full h-[600px] bg-white dark:bg-slate-900 rounded-lg p-4 shadow-lg border border-gray-200 dark:border-slate-800 relative">
             <ReactECharts
                 option={option}
                 style={{ height: '100%', width: '100%' }}
-                theme="dark"
+                theme={isDark ? "dark" : undefined}
                 // 关键修复：设置为 false 允许 ECharts 保留用户手动点击过的 Legend 状态，而不是在重新渲染尾巴时被覆盖
                 notMerge={false}
                 lazyUpdate={true}
