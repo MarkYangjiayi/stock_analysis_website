@@ -56,23 +56,23 @@ export default function AnomaliesPage() {
     }, [anomalies.length, lastFetchTime, setAnomaliesData]);
 
     return (
-        <div className="h-full w-full overflow-y-auto bg-[#0E1117] text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
+        <div className="h-full w-full overflow-y-auto bg-slate-50 dark:bg-[#0E1117] text-slate-900 dark:text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
             <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-gray-800 pb-6 relative overflow-hidden">
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-6 relative overflow-hidden">
                     <div className="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/10 blur-[50px] rounded-full pointer-events-none" />
                     <div className="flex items-center gap-4 relative z-10">
-                        <div className="p-3 bg-[#151922] rounded-xl border border-gray-800 shadow-inner">
+                        <div className="p-3 bg-white dark:bg-[#151922] rounded-xl border border-gray-200 dark:border-gray-800 shadow-inner">
                             <Activity className="text-emerald-400" size={28} />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+                            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
                                 Market Anomalies
                                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 italic tracking-normal ml-1">
                                     & AI Attribution
                                 </span>
                             </h1>
-                            <p className="text-gray-400 text-sm mt-1">Real-time daily variance scanning powered by predictive language models.</p>
+                            <p className="text-slate-500 dark:text-gray-400 text-sm mt-1">Real-time daily variance scanning powered by predictive language models.</p>
                         </div>
                     </div>
                 </div>
@@ -87,8 +87,8 @@ export default function AnomaliesPage() {
                             <ScanSearch size={40} className="text-emerald-400/80 animate-pulse" />
                         </div>
                         <div className="space-y-2">
-                            <h3 className="text-xl font-bold text-gray-200">Quantum Radar Active</h3>
-                            <p className="text-gray-500 text-sm max-w-sm">AI is scanning the global network for news catalysts to attribute multi-sigma price deviations...</p>
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-gray-200">Quantum Radar Active</h3>
+                            <p className="text-slate-500 dark:text-gray-500 text-sm max-w-sm">AI is scanning the global network for news catalysts to attribute multi-sigma price deviations...</p>
                         </div>
                     </div>
                 ) : error ? (
@@ -96,7 +96,7 @@ export default function AnomaliesPage() {
                         <p className="text-red-400 font-medium">{error}</p>
                     </div>
                 ) : anomalies.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-[40vh] text-gray-500 space-y-4">
+                    <div className="flex flex-col items-center justify-center h-[40vh] text-slate-500 dark:text-gray-500 space-y-4">
                         <Activity size={48} className="opacity-30" />
                         <p className="text-lg">No significant market anomalies detected today.</p>
                     </div>
@@ -109,20 +109,20 @@ export default function AnomaliesPage() {
                             return (
                                 <div
                                     key={idx}
-                                    className="group bg-[#191D26] border border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:border-gray-700 transition-all duration-300"
+                                    className="group bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:border-gray-200 dark:border-gray-700 transition-all duration-300"
                                 >
                                     {/* Card Header */}
-                                    <div className="p-5 border-b border-gray-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#181C25]">
+                                    <div className="p-5 border-b border-gray-200 dark:border-gray-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-[#181C25]">
                                         <div className="flex items-center gap-4">
-                                            <div className="bg-[#0E1117] px-3 py-1.5 rounded-lg border border-gray-800 shadow-inner flex items-center gap-2">
+                                            <div className="bg-slate-50 dark:bg-[#0E1117] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-800 shadow-inner flex items-center gap-2">
                                                 <Link
                                                     href={`/?ticker=${item.ticker}`}
-                                                    className="font-bold text-gray-200 hover:text-emerald-400 transition-colors tracking-wide"
+                                                    className="font-bold text-slate-800 dark:text-gray-200 hover:text-emerald-400 transition-colors tracking-wide"
                                                 >
                                                     {item.ticker.replace('.US', '')}
                                                 </Link>
                                             </div>
-                                            <span className="text-gray-400 font-medium text-sm sm:text-base line-clamp-1">{item.company_name}</span>
+                                            <span className="text-slate-500 dark:text-gray-400 font-medium text-sm sm:text-base line-clamp-1">{item.company_name}</span>
                                         </div>
 
                                         <div className={`flex items-center gap-2 font-bold ${isPositive
@@ -137,15 +137,15 @@ export default function AnomaliesPage() {
                                     </div>
 
                                     {/* AI Analysis Area */}
-                                    <div className="p-5 sm:p-6 bg-[#181C25]">
-                                        <div className="bg-[#151922] border-l-2 border-emerald-500/50 rounded-r-xl p-5 relative overflow-hidden">
+                                    <div className="p-5 sm:p-6 bg-slate-50 dark:bg-[#181C25]">
+                                        <div className="bg-white dark:bg-[#151922] border-l-2 border-emerald-500/50 rounded-r-xl p-5 relative overflow-hidden">
                                             <div className="absolute -top-10 -left-10 w-32 h-32 bg-emerald-500/10 blur-[50px] pointer-events-none" />
                                             <div className="flex gap-4 items-start relative z-10">
-                                                <div className="shrink-0 mt-1 p-2 bg-[#0E1117] border border-gray-800 rounded-lg">
+                                                <div className="shrink-0 mt-1 p-2 bg-slate-50 dark:bg-[#0E1117] border border-gray-200 dark:border-gray-800 rounded-lg">
                                                     <Sparkles className="text-emerald-400" size={20} />
                                                 </div>
                                                 <div className="flex-1 space-y-4">
-                                                    <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed text-[15px]">
+                                                    <div className="prose prose-invert max-w-none text-slate-700 dark:text-gray-300 leading-relaxed text-[15px]">
                                                         {item.ai_analysis.split('\n').map((paragraph, pIdx) => (
                                                             <p key={pIdx} className="mb-2 last:mb-0">{paragraph}</p>
                                                         ))}
@@ -153,8 +153,8 @@ export default function AnomaliesPage() {
 
                                                     {/* News Sources Footer */}
                                                     {item.top_news_links && item.top_news_links.length > 0 && (
-                                                        <div className="pt-4 mt-2 border-t border-gray-800/60 flex flex-wrap items-center gap-3">
-                                                            <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Catalyst Sources:</span>
+                                                        <div className="pt-4 mt-2 border-t border-gray-200 dark:border-gray-800/60 flex flex-wrap items-center gap-3">
+                                                            <span className="text-xs font-mono text-slate-500 dark:text-gray-500 uppercase tracking-wider">Catalyst Sources:</span>
                                                             {item.top_news_links.map((link, lIdx) => (
                                                                 <a
                                                                     key={lIdx}

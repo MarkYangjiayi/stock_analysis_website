@@ -33,22 +33,22 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
 
             {/* 1. DCF 估值卡片 */}
-            <div className="bg-[#151922] border border-gray-800 rounded-xl p-5 shadow-inner hover:border-gray-700 transition flex flex-col justify-between group">
+            <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-5 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all flex flex-col justify-between group">
                 <div className="flex items-center gap-2 mb-3">
-                    <div className="p-2 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition">
-                        <Scale className="text-blue-400" size={18} />
+                    <div className="p-2 bg-blue-50 dark:bg-blue-500/10 rounded-lg group-hover:bg-blue-100 dark:group-hover:bg-blue-500/20 transition">
+                        <Scale className="text-blue-600 dark:text-blue-400" size={18} />
                     </div>
-                    <h4 className="text-sm font-semibold text-gray-400 tracking-wide">DCF Valuation</h4>
+                    <h4 className="text-sm font-semibold text-slate-500 dark:text-gray-400 tracking-wide">DCF Valuation</h4>
                 </div>
                 <div>
                     <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-white">
-                            <span className="text-lg text-gray-500 mr-1">$</span>
+                        <span className="text-3xl font-black text-slate-900 dark:text-white">
+                            <span className="text-lg text-slate-400 dark:text-gray-500 mr-1">$</span>
                             {valuation.dcf_intrinsic_value_per_share.toFixed(2)}
                         </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2 font-medium flex items-center gap-1">
-                        Current Price: <span className={isUndervalued ? 'text-emerald-400/80 font-bold' : 'text-rose-400/80 font-bold'}>
+                    <p className="text-xs text-slate-500 dark:text-gray-500 mt-2 font-medium flex items-center gap-1">
+                        Current Price: <span className={isUndervalued ? 'text-emerald-500 dark:text-emerald-400/80 font-bold' : 'text-rose-500 dark:text-rose-400/80 font-bold'}>
                             ${valuation.current_price.toFixed(2)}
                         </span>
                     </p>
@@ -56,23 +56,23 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
             </div>
 
             {/* 2. 安全边际 (Margin of Safety) */}
-            <div className="bg-[#151922] border border-gray-800 rounded-xl p-5 shadow-inner hover:border-gray-700 transition flex flex-col justify-between group">
+            <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-5 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all flex flex-col justify-between group">
                 <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-lg transition ${valuation.margin_of_safety > 0 ? 'bg-emerald-500/10 group-hover:bg-emerald-500/20' : 'bg-rose-500/10 group-hover:bg-rose-500/20'}`}>
-                            {valuation.margin_of_safety > 0 ? <TrendingUp className="text-emerald-400" size={18} /> : <TrendingDown className="text-rose-400" size={18} />}
+                        <div className={`p-2 rounded-lg transition ${valuation.margin_of_safety > 0 ? 'bg-emerald-50 dark:bg-emerald-500/10 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/20' : 'bg-rose-50 dark:bg-rose-500/10 group-hover:bg-rose-100 dark:group-hover:bg-rose-500/20'}`}>
+                            {valuation.margin_of_safety > 0 ? <TrendingUp className="text-emerald-600 dark:text-emerald-400" size={18} /> : <TrendingDown className="text-rose-600 dark:text-rose-400" size={18} />}
                         </div>
-                        <h4 className="text-sm font-semibold text-gray-400 tracking-wide">Margin of Safety</h4>
+                        <h4 className="text-sm font-semibold text-slate-500 dark:text-gray-400 tracking-wide">Margin of Safety</h4>
                     </div>
                 </div>
                 <div>
-                    <span className={`text-4xl font-black ${mosColorClass} drop-shadow-md`}>
+                    <span className={`text-4xl font-black ${mosColorClass} drop-shadow-sm dark:drop-shadow-md`}>
                         {(valuation.margin_of_safety * 100).toFixed(1)}%
                     </span>
                     {/* 简易水平进度指示条 */}
-                    <div className="w-full h-1.5 bg-gray-800 rounded-full mt-3 overflow-hidden">
+                    <div className="w-full h-1.5 bg-slate-100 dark:bg-gray-800 rounded-full mt-3 overflow-hidden">
                         <div
-                            className={`h-full ${valuation.margin_of_safety > 0 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-rose-600 to-rose-400'}`}
+                            className={`h-full ${valuation.margin_of_safety > 0 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 dark:from-emerald-600 dark:to-emerald-400' : 'bg-gradient-to-r from-rose-500 to-rose-400 dark:from-rose-600 dark:to-rose-400'}`}
                             style={{ width: `${Math.min(Math.max(Math.abs(valuation.margin_of_safety * 100), 5), 100)}%` }}
                         />
                     </div>
@@ -80,21 +80,21 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
             </div>
 
             {/* 3. 盈利能力 (Revenue & Net Income) */}
-            <div className="bg-[#151922] border border-gray-800 rounded-xl p-5 shadow-inner hover:border-gray-700 transition flex flex-col justify-between group">
+            <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-5 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all flex flex-col justify-between group">
                 <div className="flex items-center gap-2 mb-3">
-                    <div className="p-2 bg-purple-500/10 rounded-lg group-hover:bg-purple-500/20 transition">
-                        <DollarSign className="text-purple-400" size={18} />
+                    <div className="p-2 bg-purple-50 dark:bg-purple-500/10 rounded-lg group-hover:bg-purple-100 dark:group-hover:bg-purple-500/20 transition">
+                        <DollarSign className="text-purple-600 dark:text-purple-400" size={18} />
                     </div>
-                    <h4 className="text-sm font-semibold text-gray-400 tracking-wide">TTM Earnings</h4>
+                    <h4 className="text-sm font-semibold text-slate-500 dark:text-gray-400 tracking-wide">TTM Earnings</h4>
                 </div>
                 <div className="space-y-2">
-                    <div className="flex justify-between items-end border-b border-gray-800/80 pb-1">
-                        <span className="text-xs text-gray-500 font-medium">Revenue</span>
-                        <span className="text-lg font-bold text-gray-200">{formatCompact(ttm.revenue)}</span>
+                    <div className="flex justify-between items-end border-b border-gray-100 dark:border-gray-800/80 pb-1">
+                        <span className="text-xs text-slate-500 dark:text-gray-500 font-medium">Revenue</span>
+                        <span className="text-lg font-bold text-slate-900 dark:text-gray-200">{formatCompact(ttm.revenue)}</span>
                     </div>
-                    <div className="flex justify-between items-end border-b border-gray-800/80 pb-1">
-                        <span className="text-xs text-gray-500 font-medium">Net Income</span>
-                        <span className={`text-lg font-bold ${ttm.net_income > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className="flex justify-between items-end border-b border-gray-100 dark:border-gray-800/80 pb-1">
+                        <span className="text-xs text-slate-500 dark:text-gray-500 font-medium">Net Income</span>
+                        <span className={`text-lg font-bold ${ttm.net_income > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                             {formatCompact(ttm.net_income)}
                         </span>
                     </div>
@@ -102,23 +102,23 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
             </div>
 
             {/* 4. ROE 与现金盈余 (Return on Equity & FCF) */}
-            <div className="bg-[#151922] border border-gray-800 rounded-xl p-5 shadow-inner hover:border-gray-700 transition flex flex-col justify-between group">
+            <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-5 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all flex flex-col justify-between group">
                 <div className="flex items-center gap-2 mb-3">
-                    <div className="p-2 bg-amber-500/10 rounded-lg group-hover:bg-amber-500/20 transition">
-                        <Activity className="text-amber-400" size={18} />
+                    <div className="p-2 bg-amber-50 dark:bg-amber-500/10 rounded-lg group-hover:bg-amber-100 dark:group-hover:bg-amber-500/20 transition">
+                        <Activity className="text-amber-500 dark:text-amber-400" size={18} />
                     </div>
-                    <h4 className="text-sm font-semibold text-gray-400 tracking-wide">Efficiency</h4>
+                    <h4 className="text-sm font-semibold text-slate-500 dark:text-gray-400 tracking-wide">Efficiency</h4>
                 </div>
                 <div className="space-y-2">
-                    <div className="flex justify-between items-end border-b border-gray-800/80 pb-1">
-                        <span className="text-xs text-gray-500 font-medium flex items-center gap-1">ROE <Percent size={10} /></span>
+                    <div className="flex justify-between items-end border-b border-gray-100 dark:border-gray-800/80 pb-1">
+                        <span className="text-xs text-slate-500 dark:text-gray-500 font-medium flex items-center gap-1">ROE <Percent size={10} /></span>
                         <span className={`text-lg font-bold ${roeColorClass}`}>
                             {(ttm.roe * 100).toFixed(2)}%
                         </span>
                     </div>
-                    <div className="flex justify-between items-end border-b border-gray-800/80 pb-1">
-                        <span className="text-xs text-gray-500 font-medium flex items-center gap-1">FCF <Wallet size={12} /></span>
-                        <span className={`text-lg font-bold text-gray-200`}>
+                    <div className="flex justify-between items-end border-b border-gray-100 dark:border-gray-800/80 pb-1">
+                        <span className="text-xs text-slate-500 dark:text-gray-500 font-medium flex items-center gap-1">FCF <Wallet size={12} /></span>
+                        <span className={`text-lg font-bold text-slate-900 dark:text-gray-200`}>
                             {formatCompact(ttm.free_cash_flow)}
                         </span>
                     </div>
@@ -127,14 +127,14 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
 
             {/* 5. 多因子评分系统 (Multi-Factor Scoring) - 雷达图展示 */}
             {factor_scores && (
-                <div className="md:col-span-2 lg:col-span-4 bg-[#151922] border border-gray-800 rounded-xl p-6 shadow-inner hover:border-gray-700 transition mt-4 w-full">
+                <div className="md:col-span-2 lg:col-span-4 bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all mt-4 w-full">
                     <div className="flex items-center gap-2 mb-2">
-                        <div className="p-2 bg-indigo-500/10 rounded-lg transition">
-                            <Target className="text-indigo-400" size={20} />
+                        <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg transition">
+                            <Target className="text-indigo-600 dark:text-indigo-400" size={20} />
                         </div>
-                        <h4 className="text-base font-bold text-gray-200 tracking-wide">Multi-Factor Scoring (0-100)</h4>
+                        <h4 className="text-base font-bold text-slate-900 dark:text-gray-200 tracking-wide">Multi-Factor Scoring (0-100)</h4>
                     </div>
-                    
+
                     {/* 插入 ECharts 雷达图模块 */}
                     <FactorRadarChart scores={factor_scores} />
                 </div>

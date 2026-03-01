@@ -167,19 +167,19 @@ export default function ScreenerPage() {
     };
 
     return (
-        <div className="h-full w-full overflow-y-auto bg-[#0E1117] text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
+        <div className="h-full w-full overflow-y-auto bg-slate-50 dark:bg-[#0E1117] text-slate-900 dark:text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
             <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
 
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-gray-800 pb-4">
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-4">
                     <div className="flex items-center gap-4">
-                        <Link href="/" className="text-gray-400 hover:text-white transition-colors">
+                        <Link href="/" className="text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors">
                             <span className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">
                                 Quantify
                             </span>
                         </Link>
-                        <span className="text-gray-600 text-xl font-light">/</span>
-                        <h1 className="text-2xl font-bold tracking-wide text-white"><span className="text-emerald-400">Screener</span></h1>
+                        <span className="text-slate-600 dark:text-gray-600 text-xl font-light">/</span>
+                        <h1 className="text-2xl font-bold tracking-wide text-slate-900 dark:text-white"><span className="text-emerald-400">Screener</span></h1>
                     </div>
                     <div className="text-sm font-medium text-emerald-400/80 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
                         {loading ? "Scanning market..." : `Matches: ${totalCount.toLocaleString()}`}
@@ -187,16 +187,16 @@ export default function ScreenerPage() {
                 </div>
 
                 {/* Filter Panel */}
-                <div className="bg-[#191D26] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+                <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
                     {/* Tabs */}
-                    <div className="flex border-b border-gray-800 bg-[#151922]">
+                    <div className="flex border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151922]">
                         {tabs.map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
                                 className={`px-6 py-4 text-sm font-bold tracking-wide transition-all ${activeTab === tab
-                                    ? "text-emerald-400 border-b-2 border-emerald-500 bg-[#191D26]"
-                                    : "text-gray-400 hover:text-gray-200 hover:bg-[#1E222D]"
+                                    ? "text-emerald-400 border-b-2 border-emerald-500 bg-white dark:bg-[#191D26]"
+                                    : "text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200 hover:bg-slate-100 dark:bg-[#1E222D]"
                                     }`}
                             >
                                 {tab}
@@ -210,11 +210,11 @@ export default function ScreenerPage() {
 
                             {/* Common Controls (Always Visible) */}
                             <div className="space-y-1">
-                                <label className="text-xs text-gray-500 uppercase font-semibold">Sort By</label>
+                                <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Sort By</label>
                                 <select
                                     value={filters.sort_by}
                                     onChange={(e) => handleFilterChange("sort_by", e.target.value)}
-                                    className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                    className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                 >
                                     <option value="market_cap">Market Cap</option>
                                     <option value="pe_ratio">P/E Ratio</option>
@@ -230,11 +230,11 @@ export default function ScreenerPage() {
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-xs text-gray-500 uppercase font-semibold">Order</label>
+                                <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Order</label>
                                 <select
                                     value={filters.sort_desc}
                                     onChange={(e) => handleFilterChange("sort_desc", e.target.value)}
-                                    className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                    className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                 >
                                     <option value="desc">Descending</option>
                                     <option value="asc">Ascending</option>
@@ -245,11 +245,11 @@ export default function ScreenerPage() {
                             {activeTab === "Descriptive" && (
                                 <>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">Sector</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Sector</label>
                                         <select
                                             value={filters.sector}
                                             onChange={(e) => handleFilterChange("sector", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="Technology">Technology</option>
@@ -260,11 +260,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">Market Cap</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Market Cap</label>
                                         <select
                                             value={filters.market_cap}
                                             onChange={(e) => handleFilterChange("market_cap", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="mega">Mega (&gt; $200B)</option>
@@ -280,11 +280,11 @@ export default function ScreenerPage() {
                             {activeTab === "Fundamental" && (
                                 <>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">P/E Ratio</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">P/E Ratio</label>
                                         <select
                                             value={filters.pe}
                                             onChange={(e) => handleFilterChange("pe", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="under15">Value (&lt; 15)</option>
@@ -292,11 +292,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">Return on Equity</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Return on Equity</label>
                                         <select
                                             value={filters.roe}
                                             onChange={(e) => handleFilterChange("roe", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="over15">Good (&gt; 15%)</option>
@@ -304,11 +304,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">Debt to Equity</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Debt to Equity</label>
                                         <select
                                             value={filters.debt_to_equity}
                                             onChange={(e) => handleFilterChange("debt_to_equity", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="under1">Healthy (&lt; 1.0)</option>
@@ -316,11 +316,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">5Yr Sales Growth</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">5Yr Sales Growth</label>
                                         <select
                                             value={filters.sales_growth_5yr}
                                             onChange={(e) => handleFilterChange("sales_growth_5yr", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="over10">Growing (&gt; 10%)</option>
@@ -328,11 +328,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">Gross Margin</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Gross Margin</label>
                                         <select
                                             value={filters.gross_margin}
                                             onChange={(e) => handleFilterChange("gross_margin", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="over30">Wide (&gt; 30%)</option>
@@ -340,11 +340,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">FCF (Free Cash Flow)</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">FCF (Free Cash Flow)</label>
                                         <select
                                             value={filters.fcf}
                                             onChange={(e) => handleFilterChange("fcf", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="positive">Positive (&gt; 0)</option>
@@ -358,11 +358,11 @@ export default function ScreenerPage() {
                             {activeTab === "Technical" && (
                                 <>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">Price vs MA50</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Price vs MA50</label>
                                         <select
                                             value={filters.price_ma50}
                                             onChange={(e) => handleFilterChange("price_ma50", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="above">Price &gt; MA50 (Bullish)</option>
@@ -370,11 +370,11 @@ export default function ScreenerPage() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500 uppercase font-semibold">RSI (14)</label>
+                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">RSI (14)</label>
                                         <select
                                             value={filters.rsi}
                                             onChange={(e) => handleFilterChange("rsi", e.target.value)}
-                                            className="w-full bg-[#151922] border border-gray-700 text-sm rounded-xl px-4 py-3 text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
                                         >
                                             <option value="">Any</option>
                                             <option value="oversold">Oversold (&lt; 30)</option>
@@ -388,10 +388,10 @@ export default function ScreenerPage() {
                 </div>
 
                 {/* Results Table */}
-                <div className="bg-[#191D26] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+                <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-[#141820] text-gray-400 font-medium">
+                            <thead className="bg-slate-50 dark:bg-[#141820] text-slate-500 dark:text-gray-400 font-medium">
                                 <tr>
                                     <th className="px-6 py-4 rounded-tl-xl">Ticker</th>
                                     <th className="px-6 py-4">Company</th>
@@ -405,40 +405,40 @@ export default function ScreenerPage() {
                                     <th className="px-6 py-4">5Y SG</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-800">
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                                 {results.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
+                                        <td colSpan={10} className="px-6 py-12 text-center text-slate-500 dark:text-gray-500">
                                             {loading ? "Cruising the markets..." : "No stocks match your strict criteria."}
                                         </td>
                                     </tr>
                                 ) : (
                                     results.map((stock: any) => (
-                                        <tr key={stock.ticker} className="hover:bg-gray-800/40 border-b border-gray-800/50 transition-colors group">
+                                        <tr key={stock.ticker} className="hover:bg-slate-100 dark:hover:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800/50 transition-colors group">
                                             <td className="px-6 py-4 font-bold text-emerald-400 group-hover:text-emerald-300">
                                                 <Link href={`/?ticker=${stock.ticker}`}>
                                                     {stock.ticker.split('.')[0]}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 text-gray-300 truncate max-w-[200px]" title={stock.name}>{stock.name || "-"}</td>
-                                            <td className="px-6 py-4 text-gray-400 truncate max-w-[120px]">
-                                                <span className="bg-[#2B2B43] px-2 py-1 rounded border border-gray-700 shadow-sm text-xs">
+                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300 truncate max-w-[200px]" title={stock.name}>{stock.name || "-"}</td>
+                                            <td className="px-6 py-4 text-slate-500 dark:text-gray-400 truncate max-w-[120px]">
+                                                <span className="bg-slate-200 dark:bg-[#2B2B43] px-2 py-1 rounded border border-gray-200 dark:border-gray-700 shadow-sm text-xs">
                                                     {stock.sector || "-"}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
-                                            <td className="px-6 py-4 font-bold text-white">${stock.close?.toFixed(2) || "-"}</td>
-                                            <td className="px-6 py-4 text-gray-300">{formatPE(stock.pe_ratio)}</td>
-                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-400' : 'text-gray-400'}`}>
+                                            <td className="px-6 py-4 text-slate-800 dark:text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
+                                            <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">${stock.close?.toFixed(2) || "-"}</td>
+                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">{formatPE(stock.pe_ratio)}</td>
+                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
                                                 {stock.roe ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
                                             </td>
                                             <td className={`px-6 py-4 font-bold ${stock.debt_to_equity < 1.0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : "-"}
                                             </td>
-                                            <td className="px-6 py-4 text-gray-300">
+                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
                                                 {stock.gross_margin ? `${(stock.gross_margin * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className="px-6 py-4 text-gray-300">
+                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
                                                 {stock.sales_growth_5yr ? `${(stock.sales_growth_5yr * 100).toFixed(1)}%` : "-"}
                                             </td>
                                         </tr>
@@ -449,8 +449,8 @@ export default function ScreenerPage() {
                     </div>
 
                     {/* Pagination Footer */}
-                    <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 bg-[#141820]">
-                        <span className="text-gray-500 text-sm font-medium">
+                    <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50 dark:bg-[#141820]">
+                        <span className="text-slate-500 dark:text-gray-500 text-sm font-medium">
                             Showing {results.length > 0 ? page * limit + 1 : 0} to {Math.min((page + 1) * limit, totalCount)} of {totalCount}
                         </span>
 
@@ -460,7 +460,7 @@ export default function ScreenerPage() {
                                 <button
                                     onClick={handlePrevPage}
                                     disabled={page === 0 || loading}
-                                    className="px-3 py-2 bg-[#151922] text-gray-400 rounded-lg border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                    className="px-3 py-2 bg-white dark:bg-[#151922] text-slate-500 dark:text-gray-400 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 >
                                     &lt;
                                 </button>
@@ -469,7 +469,7 @@ export default function ScreenerPage() {
                                 {generatePagination().map((item, index) => {
                                     if (item === '...') {
                                         return (
-                                            <span key={`ellipsis-${index}`} className="px-3 text-gray-500">
+                                            <span key={`ellipsis-${index}`} className="px-3 text-slate-500 dark:text-gray-500">
                                                 ...
                                             </span>
                                         );
@@ -483,8 +483,8 @@ export default function ScreenerPage() {
                                             key={`page-${pageNum}`}
                                             onClick={() => setScreenerState({ page: pageNum })}
                                             className={`min-w-[40px] h-10 flex items-center justify-center rounded-lg border text-sm font-bold transition-all ${isActive
-                                                ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                                                : 'bg-[#151922] text-gray-400 border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400'
+                                                ? 'bg-emerald-500 text-slate-900 dark:text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                                                : 'bg-white dark:bg-[#151922] text-slate-500 dark:text-gray-400 border-gray-200 dark:border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400'
                                                 }`}
                                         >
                                             {pageNum + 1}
@@ -496,7 +496,7 @@ export default function ScreenerPage() {
                                 <button
                                     onClick={handleNextPage}
                                     disabled={page >= totalPages - 1 || loading}
-                                    className="px-3 py-2 bg-[#151922] text-gray-400 rounded-lg border border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                    className="px-3 py-2 bg-white dark:bg-[#151922] text-slate-500 dark:text-gray-400 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 >
                                     &gt;
                                 </button>

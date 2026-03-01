@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi, CrosshairMode, PriceScaleMode } from 'lightweight-charts';
 import { HistoricalDataPoint } from '@/lib/api';
+import { useTheme } from 'next-themes';
 
 interface StockChartProps {
     data: HistoricalDataPoint[];
@@ -14,6 +15,7 @@ interface StockChartProps {
 const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onIntervalChange, isLoading }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
+    const { resolvedTheme } = useTheme();
 
     // Maintain refs to series so they can be updated dynamically
     const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -36,18 +38,23 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         containerWidth: number;
     } | null>(null);
 
-    // Initial Chart Creation
+    // 1. Initial Chart Creation (Only runs once)
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
+        const isDark = resolvedTheme === 'dark';
+        const backgroundColor = isDark ? '#191D26' : '#ffffff';
+        const textColor = isDark ? '#D9D9D9' : '#334155';
+        const gridColor = isDark ? '#2B2B43' : '#e2e8f0';
+
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: ColorType.Solid, color: '#1E222D' },
-                textColor: '#D9D9D9',
+                background: { type: ColorType.Solid, color: backgroundColor },
+                textColor: textColor,
             },
             grid: {
-                vertLines: { color: '#2B2B43' },
-                horzLines: { color: '#2B2B43' },
+                vertLines: { color: gridColor },
+                horzLines: { color: gridColor },
             },
             width: chartContainerRef.current.clientWidth,
             height: 480,
@@ -56,10 +63,10 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             },
             timeScale: {
                 timeVisible: true,
-                borderColor: '#2B2B43',
+                borderColor: gridColor,
             },
             rightPriceScale: {
-                borderColor: '#2B2B43',
+                borderColor: gridColor,
                 mode: PriceScaleMode.Logarithmic,
             },
         });
@@ -112,9 +119,37 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             chart.remove();
             chartRef.current = null;
         };
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run once on mount
 
-    // Data Update Effect (triggers when `data` changes instead of tearing down instance)
+    // 2. Dynamic Theme Update (Applies options without recreating chart)
+    useEffect(() => {
+        if (!chartRef.current) return;
+
+        const isDark = resolvedTheme === 'dark';
+        const backgroundColor = isDark ? '#191D26' : '#ffffff';
+        const textColor = isDark ? '#D9D9D9' : '#334155';
+        const gridColor = isDark ? '#2B2B43' : '#e2e8f0';
+
+        chartRef.current.applyOptions({
+            layout: {
+                background: { type: ColorType.Solid, color: backgroundColor },
+                textColor: textColor,
+            },
+            grid: {
+                vertLines: { color: gridColor },
+                horzLines: { color: gridColor },
+            },
+            timeScale: {
+                borderColor: gridColor,
+            },
+            rightPriceScale: {
+                borderColor: gridColor,
+            },
+        });
+    }, [resolvedTheme]);
+
+    // 3. Data Update Effect (triggers when `data` changes instead of tearing down instance)
     useEffect(() => {
         if (!data || data.length === 0 || !chartRef.current) return;
 
@@ -204,10 +239,10 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     }, [data]);
 
     return (
-        <div className="w-full relative shadow-sm rounded-lg overflow-hidden border border-gray-800">
+        <div className="w-full relative shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800">
             {/* Interval Switcher UI */}
             {onIntervalChange && (
-                <div className="absolute top-4 left-4 z-20 flex bg-[#151922] border border-gray-700/80 rounded-lg shadow-2xl p-1 gap-1 backdrop-blur-md">
+                <div className="absolute top-4 left-4 z-20 flex bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700/80 rounded-lg shadow-2xl p-1 gap-1 backdrop-blur-md">
                     {['1d', '1wk', '1mo'].map(intv => (
                         <button
                             key={intv}
@@ -215,7 +250,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                             disabled={isLoading}
                             className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${interval === intv
                                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-                                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800 border border-transparent'
+                                : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-gray-800 border border-transparent'
                                 }`}
                         >
                             {intv === '1d' ? 'D' : intv === '1wk' ? 'W' : 'M'}
@@ -234,26 +269,26 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             {/* Tooltip Overlay */}
             {tooltipData && tooltipData.visible && (
                 <div
-                    className="absolute z-30 pointer-events-none bg-[#151922]/90 backdrop-blur-md border border-gray-700/50 rounded-lg p-3 text-sm shadow-xl"
+                    className="absolute z-30 pointer-events-none bg-white dark:bg-[#151922]/90 backdrop-blur-md border border-gray-200 dark:border-gray-700/50 rounded-lg p-3 text-sm shadow-xl"
                     style={{
                         left: Math.min(tooltipData.x + 15, tooltipData.containerWidth - 180),
                         top: Math.max(10, tooltipData.y - 120),
                     }}
                 >
-                    <div className="font-bold border-b border-gray-700 pb-1 mb-2 text-gray-200">
+                    <div className="font-bold border-b border-gray-200 dark:border-gray-700 pb-1 mb-2 text-slate-800 dark:text-gray-200">
                         {tooltipData.date}
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                        <span className="text-gray-400">O:</span>
-                        <span className="text-right text-gray-200">{tooltipData.open.toFixed(2)}</span>
-                        <span className="text-gray-400">H:</span>
-                        <span className="text-right text-gray-200">{tooltipData.high.toFixed(2)}</span>
-                        <span className="text-gray-400">L:</span>
-                        <span className="text-right text-gray-200">{tooltipData.low.toFixed(2)}</span>
-                        <span className="text-gray-400">C:</span>
-                        <span className="text-right text-gray-200">{tooltipData.close.toFixed(2)}</span>
-                        <span className="text-gray-400 mt-1">Vol:</span>
-                        <span className="text-right text-gray-200 mt-1">{(tooltipData.volume / 1000000).toFixed(2)}M</span>
+                        <span className="text-slate-500 dark:text-gray-400">O:</span>
+                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.open.toFixed(2)}</span>
+                        <span className="text-slate-500 dark:text-gray-400">H:</span>
+                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.high.toFixed(2)}</span>
+                        <span className="text-slate-500 dark:text-gray-400">L:</span>
+                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.low.toFixed(2)}</span>
+                        <span className="text-slate-500 dark:text-gray-400">C:</span>
+                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.close.toFixed(2)}</span>
+                        <span className="text-slate-500 dark:text-gray-400 mt-1">Vol:</span>
+                        <span className="text-right text-slate-800 dark:text-gray-200 mt-1">{(tooltipData.volume / 1000000).toFixed(2)}M</span>
                         {tooltipData.ma20 && (
                             <>
                                 <span className="text-[#2962FF] font-medium mt-1">MA20:</span>

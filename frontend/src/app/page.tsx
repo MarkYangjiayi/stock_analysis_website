@@ -106,7 +106,7 @@ function HomeContent() {
   }, [searchParams]);
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-[#0E1117] text-gray-100 font-sans selection:bg-emerald-500/30">
+    <div className="flex h-full w-full overflow-hidden bg-slate-50 dark:bg-[#0E1117] text-slate-900 dark:text-gray-100 font-sans selection:bg-emerald-500/30 transition-colors duration-300">
       <div className="hidden md:block h-full z-50">
         <WatchlistSidebar
           currentTicker={ticker}
@@ -124,10 +124,10 @@ function HomeContent() {
             <div className="flex flex-col items-center justify-center h-[70vh] text-center space-y-6 animate-in fade-in zoom-in duration-700">
               <div className="relative">
                 <div className="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full" />
-                <div className="bg-[#151922] p-6 rounded-3xl border border-gray-800 shadow-2xl relative z-10">
-                  <BarChart2 size={64} strokeWidth={1.5} className="text-emerald-400/80 mb-4 mx-auto" />
-                  <h2 className="text-3xl font-extrabold text-white tracking-tight">Financial Analysis Terminal</h2>
-                  <p className="text-gray-400 mt-3 text-lg">Use the top search bar or select a ticker from your watchlist to begin.</p>
+                <div className="bg-white dark:bg-[#151922] p-6 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl dark:shadow-2xl relative z-10 transition-colors duration-300">
+                  <BarChart2 size={64} strokeWidth={1.5} className="text-emerald-500 dark:text-emerald-400/80 mb-4 mx-auto" />
+                  <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Financial Analysis Terminal</h2>
+                  <p className="text-slate-500 dark:text-gray-400 mt-3 text-lg">Use the top search bar or select a ticker from your watchlist to begin.</p>
                 </div>
               </div>
             </div>
@@ -150,11 +150,11 @@ function HomeContent() {
                 <Search className="absolute text-emerald-500/50 animate-pulse z-0" size={24} />
               </div>
               <div className="text-center space-y-3">
-                <h3 className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">
+                <h3 className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-400 dark:from-emerald-400 dark:to-teal-200">
                   INITIALIZING
                 </h3>
-                <p className="text-gray-400 text-sm max-w-sm mx-auto leading-relaxed bg-[#191d26] p-4 rounded-xl border border-gray-800 shadow-inner">
-                  首次查询该股票，正在从上游数据源<span className="text-emerald-400 font-bold">同步十年财务与行情数据</span>，请稍候...
+                <p className="text-slate-600 dark:text-gray-400 text-sm max-w-sm mx-auto leading-relaxed bg-white dark:bg-[#191d26] p-4 rounded-xl border border-gray-200 dark:border-gray-800 shadow-md dark:shadow-inner transition-colors duration-300">
+                  首次查询该股票，正在从上游数据源<span className="text-emerald-600 dark:text-emerald-400 font-bold">同步十年财务与行情数据</span>，请稍候...
                 </p>
               </div>
             </div>
@@ -164,13 +164,13 @@ function HomeContent() {
           {stockData && !loading && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both delay-100">
               {/* Top Profile Card */}
-              <div className="bg-[#191D26] border border-gray-800 rounded-2xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-32 bg-emerald-500/5 blur-[120px] rounded-full pointer-events-none" />
+              <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl p-6 md:p-8 shadow-xl dark:shadow-2xl relative overflow-hidden transition-colors duration-300">
+                <div className="absolute top-0 right-0 p-32 bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none" />
 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 relative z-10">
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-4">
-                      <h2 className="text-4xl font-extrabold text-white tracking-tight">{stockData.profile.name}</h2>
+                      <h2 className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">{stockData.profile.name}</h2>
                       {!watchlist.includes(stockData.profile.ticker) ? (
                         <button
                           onClick={() => handleAddWatchlist(stockData.profile.ticker)}
@@ -184,24 +184,24 @@ function HomeContent() {
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-2 text-sm font-medium text-gray-300">
-                      <span className="bg-[#2B2B43] px-3 py-1.5 rounded-lg border border-gray-700 shadow-sm text-emerald-400 tracking-wider">
+                    <div className="flex flex-wrap gap-2 text-sm font-medium text-slate-700 dark:text-gray-300">
+                      <span className="bg-gray-100 dark:bg-[#2B2B43] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-emerald-600 dark:text-emerald-400 tracking-wider transition-colors duration-300">
                         {stockData.profile.ticker}
                       </span>
-                      <span className="bg-[#2B2B43] px-3 py-1.5 rounded-lg border border-gray-700 shadow-sm">
+                      <span className="bg-gray-100 dark:bg-[#2B2B43] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-300">
                         {stockData.profile.exchange}
                       </span>
-                      <span className="bg-[#2B2B43] px-3 py-1.5 rounded-lg border border-gray-700 shadow-sm">
+                      <span className="bg-gray-100 dark:bg-[#2B2B43] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-300">
                         {stockData.profile.sector}
                       </span>
                     </div>
                   </div>
 
                   <div className="text-left md:text-right w-full md:w-auto">
-                    <div className="bg-[#151922] border border-gray-800 p-4 rounded-xl shadow-inner inline-block min-w-full md:min-w-[200px]">
-                      <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Latest Close</p>
-                      <p className="text-4xl font-black text-white">
-                        <span className="text-xl text-gray-400 font-medium mr-1">{stockData.profile.currency}</span>
+                    <div className="bg-gray-50 dark:bg-[#151922] border border-gray-200 dark:border-gray-800 p-4 rounded-xl shadow-sm dark:shadow-inner inline-block min-w-full md:min-w-[200px] transition-colors duration-300">
+                      <p className="text-sm font-medium text-slate-500 dark:text-gray-500 uppercase tracking-wider mb-1">Latest Close</p>
+                      <p className="text-4xl font-black text-slate-900 dark:text-white">
+                        <span className="text-xl text-slate-400 dark:text-gray-400 font-medium mr-1">{stockData.profile.currency}</span>
                         {stockData.historical_data[stockData.historical_data.length - 1]?.close?.toFixed(2)}
                       </p>
 
@@ -224,8 +224,8 @@ function HomeContent() {
                   </div>
                 </div>
 
-                <div className="mt-6 pt-6 border-t border-gray-800/80">
-                  <p className="text-gray-400 text-sm leading-relaxed line-clamp-3 hover:line-clamp-none transition-all duration-300">
+                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-800/80 transition-colors duration-300">
+                  <p className="text-slate-600 dark:text-gray-400 text-sm leading-relaxed line-clamp-3 hover:line-clamp-none transition-all duration-300">
                     {stockData.profile.description}
                   </p>
                 </div>
@@ -249,14 +249,14 @@ function HomeContent() {
               )}
 
               {/* Interactive Chart Container */}
-              <div className="bg-[#191D26] border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-gray-800 bg-[#141820] flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-200">Price & Volume History</h3>
-                  <div className="text-xs font-mono text-gray-500 bg-[#191D26] px-2 py-1 rounded border border-gray-800">
+              <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl shadow-xl dark:shadow-2xl overflow-hidden flex flex-col transition-colors duration-300">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-slate-50 dark:bg-[#141820] flex items-center justify-between transition-colors duration-300">
+                  <h3 className="font-semibold text-slate-800 dark:text-gray-200">Price & Volume History</h3>
+                  <div className="text-xs font-mono text-slate-500 dark:text-gray-500 bg-white dark:bg-[#191D26] px-2 py-1 rounded border border-gray-200 dark:border-gray-800 transition-colors duration-300">
                     Interactive K-Line View
                   </div>
                 </div>
-                <div className="p-0 sm:p-4 bg-[#1E222D] relative">
+                <div className="p-0 sm:p-4 bg-slate-100 dark:bg-[#1E222D] relative transition-colors duration-300">
                   <StockChart
                     data={stockData.historical_data}
                     interval={chartInterval}
@@ -280,7 +280,7 @@ function HomeContent() {
 export default function Home() {
   return (
     <Suspense fallback={
-      <div className="flex h-screen w-full items-center justify-center bg-[#0E1117]">
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-[#0E1117] transition-colors duration-300">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
       </div>
     }>

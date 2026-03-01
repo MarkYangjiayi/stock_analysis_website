@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { ThemeToggle } from './ThemeToggle';
 
 export default function TopNavBar() {
     const pathname = usePathname();
@@ -25,7 +26,7 @@ export default function TopNavBar() {
     ];
 
     return (
-        <nav className="h-16 w-full bg-[#0B0E14] border-b border-gray-800 flex items-center justify-between px-6 sticky top-0 z-50">
+        <nav className="h-16 w-full bg-white dark:bg-[#0B0E14] border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-6 sticky top-0 z-50 transition-colors duration-300">
             {/* Left side: Logo and Links */}
             <div className="flex items-center gap-8 h-full">
                 {/* Logo */}
@@ -48,7 +49,7 @@ export default function TopNavBar() {
                             <Link
                                 key={link.name}
                                 href={link.path}
-                                className={`relative px-4 h-full flex items-center text-sm font-medium transition-colors ${isActive ? 'text-white' : 'text-gray-400 hover:text-gray-200'
+                                className={`relative px-4 h-full flex items-center text-sm font-medium transition-colors ${isActive ? 'text-emerald-600 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
                                     }`}
                             >
                                 {link.name}
@@ -61,8 +62,8 @@ export default function TopNavBar() {
                 </div>
             </div>
 
-            {/* Right side: Global Search */}
-            <div className="flex items-center">
+            {/* Right side: Global Search and Theme */}
+            <div className="flex items-center gap-4">
                 <form onSubmit={handleSearch} className="relative group w-64">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-4 w-4 text-gray-400 group-focus-within:text-emerald-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -71,12 +72,13 @@ export default function TopNavBar() {
                     </div>
                     <input
                         type="text"
-                        className="block w-full pl-10 pr-3 py-1.5 border border-gray-700 rounded-md leading-5 bg-[#151922] text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 focus:bg-[#1E222D] transition-all sm:text-sm"
+                        className="block w-full pl-10 pr-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md leading-5 bg-gray-50 dark:bg-[#151922] text-gray-900 dark:text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 dark:focus:bg-[#1E222D] transition-all sm:text-sm"
                         placeholder="Search ticker (e.g. AAPL.US)"
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
                     />
                 </form>
+                <ThemeToggle />
             </div>
         </nav>
     );
