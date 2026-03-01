@@ -65,6 +65,7 @@ export interface HistoricalFinancialPoint {
     revenue: number;
     net_income: number;
     gross_margin: number;
+    price?: number;
 }
 
 export interface StockDataResponse {

@@ -195,6 +195,81 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             "gross_margin": gross_margin
         })
 
+    # 4.5 利用 Pandas merge_asof 将财务报表日期与最近交易日的收盘价匹配
+    if historical_financials and price_records:
+        # A. 将历史行情转化为以 datetime 为基准的 DataFrame 
+        df_prices_raw = pd.DataFrame([{
+            "date": rec.date,
+            "close": float(rec.close) if rec.close else None,
+            "adjusted_close": float(rec.adjusted_close) if rec.adjusted_close else None
+        } for rec in price_records if rec.date and (rec.close or rec.adjusted_close)])
+
+        if not df_prices_raw.empty:
+            df_prices_raw['date'] = pd.to_datetime(df_prices_raw['date'])
+            # 优先使用 adjusted_close，如果没有则用 close
+            df_prices_raw['price'] = df_prices_raw['adjusted_close'].fillna(df_prices_raw['close'])
+            df_prices_raw = df_prices_raw.dropna(subset=['price'])
+            df_prices_raw = df_prices_raw.sort_values('date')
+            df_prices_raw = df_prices_raw[['date', 'price']]
+
+            # B. 将财务数据转化为 DataFrame
+            df_fin = pd.DataFrame(historical_financials)
+            df_fin['date_dt'] = pd.to_datetime(df_fin['date'])
+            df_fin = df_fin.sort_values('date_dt')
+
+            # C. 执行 merge_asof (寻找离财务报告日期 direction='backward' 最近的股价)
+            # 因为财报季末经常在周末，对应的股票收盘价应该在周五
+            df_merged = pd.merge_asof(
+                df_fin, 
+                df_prices_raw, 
+                left_on='date_dt', 
+                right_on='date', 
+                direction='backward',
+                tolerance=pd.Timedelta(days=14) # 如果财报日期前14天都没有交易数据，则记为 None
+            )
+
+            # D. 清洗并赋值写回 list
+            df_merged['price'] = df_merged['price'].where(pd.notnull(df_merged['price']), None)
+            
+            # 使用 iterrows 更新原先存盘的 dict
+            df_merged.set_index('date_x' if 'date_x' in df_merged.columns else 'date', inplace=True)
+            
+            new_financials = []
+            for item in historical_financials:
+                dt_str = item['date']
+                matched_price = None
+                
+                # 在 df_merged 中找对应行的 price 
+                # (注意 iterrows / indexing, 这里用简单 mapping)
+                try:
+                    # 如果有重复 index，这里可能返回 Series, 所以取 .iloc[0]
+                    row = df_merged.loc[dt_str]
+                    if isinstance(row, pd.DataFrame):
+                        row = row.iloc[0]
+                    elif isinstance(row, pd.Series) and row.ndim > 1: # Edge case fallbacks
+                         row = row.iloc[0]
+                         
+                    matched_price = row['price']
+                    if pd.isna(matched_price):
+                        matched_price = None
+                    else:
+                        matched_price = float(matched_price)
+                except KeyError:
+                    pass
+                
+                item['price'] = matched_price
+                new_financials.append(item)
+                
+            historical_financials = new_financials
+        else:
+            # 兼容：如果确实没有任何行情数据，所有历史财报的 price 置空
+            for item in historical_financials:
+                item['price'] = None
+    else:
+        # 如果财务数据或者价格数据任一为空
+        for item in historical_financials:
+            item['price'] = None
+
     # 5. 组装返回结果
     response_data = {
         "profile": profile,

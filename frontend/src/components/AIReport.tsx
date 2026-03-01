@@ -75,7 +75,7 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
     }, [ticker]);
 
     return (
-        <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-inner w-full mt-4 flex flex-col h-full">
+        <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-inner w-full flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 border-b border-gray-200 dark:border-gray-800/80 pb-4">
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-xl">
