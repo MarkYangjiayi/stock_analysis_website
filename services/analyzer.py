@@ -196,6 +196,8 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         })
 
     # 4.5 利用 Pandas merge_asof 将财务报表日期与最近交易日的收盘价匹配
+    price_matched = False
+    
     if historical_financials and price_records:
         # A. 将历史行情转化为以 datetime 为基准的 DataFrame 
         df_prices_raw = pd.DataFrame([{
@@ -231,42 +233,18 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             # D. 清洗并赋值写回 list
             df_merged['price'] = df_merged['price'].where(pd.notnull(df_merged['price']), None)
             
-            # 使用 iterrows 更新原先存盘的 dict
-            df_merged.set_index('date_x' if 'date_x' in df_merged.columns else 'date', inplace=True)
-            
-            new_financials = []
-            for item in historical_financials:
-                dt_str = item['date']
-                matched_price = None
+            # E. 转换回 list of dicts, 移除临时列并处理合并导致的列名重叠 ('date_x', 'date_y')
+            if 'date_y' in df_merged.columns:
+                df_merged = df_merged.drop(columns=['date_y'])
+            if 'date_x' in df_merged.columns:
+                df_merged = df_merged.rename(columns={'date_x': 'date'})
                 
-                # 在 df_merged 中找对应行的 price 
-                # (注意 iterrows / indexing, 这里用简单 mapping)
-                try:
-                    # 如果有重复 index，这里可能返回 Series, 所以取 .iloc[0]
-                    row = df_merged.loc[dt_str]
-                    if isinstance(row, pd.DataFrame):
-                        row = row.iloc[0]
-                    elif isinstance(row, pd.Series) and row.ndim > 1: # Edge case fallbacks
-                         row = row.iloc[0]
-                         
-                    matched_price = row['price']
-                    if pd.isna(matched_price):
-                        matched_price = None
-                    else:
-                        matched_price = float(matched_price)
-                except KeyError:
-                    pass
-                
-                item['price'] = matched_price
-                new_financials.append(item)
-                
-            historical_financials = new_financials
-        else:
-            # 兼容：如果确实没有任何行情数据，所有历史财报的 price 置空
-            for item in historical_financials:
-                item['price'] = None
-    else:
-        # 如果财务数据或者价格数据任一为空
+            # The .to_dict(orient='records') method correctly handles NaN -> None for JSON compatibility.
+            historical_financials = df_merged.drop(columns=['date_dt']).to_dict(orient='records')
+            price_matched = True
+
+    if not price_matched:
+        # 兼容：如果确实没有任何行情数据或者合并失败，所有历史财报的 price 置空
         for item in historical_financials:
             item['price'] = None
 

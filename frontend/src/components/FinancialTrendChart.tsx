@@ -51,8 +51,8 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
                 color: textColor,
                 fontWeight: '500',
                 formatter: (value: number) => {
-                    if (value >= 1e9) return (value / 1e9) + 'B';
-                    if (value >= 1e6) return (value / 1e6) + 'M';
+                    if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
+                    if (value >= 1e6) return (value / 1e6).toFixed(2) + ' M';
                     return value;
                 }
             },
@@ -83,7 +83,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
             axisLabel: {
                 color: textColor,
                 fontWeight: '500',
-                formatter: '${value}'
+                formatter: (value: number) => `$${value.toFixed(2)}`
             },
             splitLine: { show: false },
         };
