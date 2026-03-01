@@ -44,7 +44,7 @@ export default function NewsFeed({ ticker }: NewsFeedProps) {
     }, [ticker]);
 
     return (
-        <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl flex flex-col h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl">
             {/* Header */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-slate-50 dark:bg-[#141820] flex items-center justify-between shrink-0 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-transparent pointer-events-none" />
@@ -60,7 +60,7 @@ export default function NewsFeed({ ticker }: NewsFeedProps) {
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 pr-2 custom-scrollbar">
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-full space-y-4 text-slate-500 dark:text-gray-500">
                         <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>

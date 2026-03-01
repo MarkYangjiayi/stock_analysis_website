@@ -233,15 +233,15 @@ function HomeContent() {
 
               {/* Valuation Dashboard Panel & Intelligence Column */}
               {stockData.valuation_metrics && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both delay-300 items-start">
-                  <div className="lg:col-span-2 flex w-full">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:h-[700px] mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both delay-300 items-stretch">
+                  <div className="xl:col-span-8 flex flex-col gap-6 h-full min-h-0">
                     <ValuationDashboard metrics={stockData.valuation_metrics} />
                   </div>
-                  <div className="lg:col-span-1 flex flex-col w-full gap-6 h-full">
-                    <div className="w-full flex h-[350px]">
+                  <div className="xl:col-span-4 flex flex-col gap-6 h-full min-h-0">
+                    <div className="w-full flex h-[350px] shrink-0">
                       <AIReport ticker={stockData.profile.ticker} />
                     </div>
-                    <div className="w-full flex h-[450px]">
+                    <div className="flex-1 min-h-0 flex flex-col">
                       <NewsFeed ticker={stockData.profile.ticker} />
                     </div>
                   </div>

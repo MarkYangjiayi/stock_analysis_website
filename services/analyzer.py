@@ -195,6 +195,59 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             "gross_margin": gross_margin
         })
 
+    # 4.5 利用 Pandas merge_asof 将财务报表日期与最近交易日的收盘价匹配
+    price_matched = False
+    
+    if historical_financials and price_records:
+        # A. 将历史行情转化为以 datetime 为基准的 DataFrame 
+        df_prices_raw = pd.DataFrame([{
+            "date": rec.date,
+            "close": float(rec.close) if rec.close else None,
+            "adjusted_close": float(rec.adjusted_close) if rec.adjusted_close else None
+        } for rec in price_records if rec.date and (rec.close or rec.adjusted_close)])
+
+        if not df_prices_raw.empty:
+            df_prices_raw['date'] = pd.to_datetime(df_prices_raw['date'])
+            # 优先使用 adjusted_close，如果没有则用 close
+            df_prices_raw['price'] = df_prices_raw['adjusted_close'].fillna(df_prices_raw['close'])
+            df_prices_raw = df_prices_raw.dropna(subset=['price'])
+            df_prices_raw = df_prices_raw.sort_values('date')
+            df_prices_raw = df_prices_raw[['date', 'price']]
+
+            # B. 将财务数据转化为 DataFrame
+            df_fin = pd.DataFrame(historical_financials)
+            df_fin['date_dt'] = pd.to_datetime(df_fin['date'])
+            df_fin = df_fin.sort_values('date_dt')
+
+            # C. 执行 merge_asof (寻找离财务报告日期 direction='backward' 最近的股价)
+            # 因为财报季末经常在周末，对应的股票收盘价应该在周五
+            df_merged = pd.merge_asof(
+                df_fin, 
+                df_prices_raw, 
+                left_on='date_dt', 
+                right_on='date', 
+                direction='backward',
+                tolerance=pd.Timedelta(days=14) # 如果财报日期前14天都没有交易数据，则记为 None
+            )
+
+            # D. 清洗并赋值写回 list
+            df_merged['price'] = df_merged['price'].where(pd.notnull(df_merged['price']), None)
+            
+            # E. 转换回 list of dicts, 移除临时列并处理合并导致的列名重叠 ('date_x', 'date_y')
+            if 'date_y' in df_merged.columns:
+                df_merged = df_merged.drop(columns=['date_y'])
+            if 'date_x' in df_merged.columns:
+                df_merged = df_merged.rename(columns={'date_x': 'date'})
+                
+            # The .to_dict(orient='records') method correctly handles NaN -> None for JSON compatibility.
+            historical_financials = df_merged.drop(columns=['date_dt']).to_dict(orient='records')
+            price_matched = True
+
+    if not price_matched:
+        # 兼容：如果确实没有任何行情数据或者合并失败，所有历史财报的 price 置空
+        for item in historical_financials:
+            item['price'] = None
+
     # 5. 组装返回结果
     response_data = {
         "profile": profile,
