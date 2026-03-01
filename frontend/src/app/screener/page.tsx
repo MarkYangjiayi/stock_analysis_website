@@ -196,7 +196,7 @@ export default function ScreenerPage() {
                                 onClick={() => setActiveTab(tab)}
                                 className={`px-6 py-4 text-sm font-bold tracking-wide transition-all ${activeTab === tab
                                     ? "text-emerald-400 border-b-2 border-emerald-500 bg-white dark:bg-[#191D26]"
-                                    : "text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200 hover:bg-slate-100 dark:bg-[#1E222D]"
+                                    : "text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-[#1E222D]"
                                     }`}
                             >
                                 {tab}
@@ -429,10 +429,10 @@ export default function ScreenerPage() {
                                             <td className="px-6 py-4 text-slate-800 dark:text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
                                             <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">${stock.close?.toFixed(2) || "-"}</td>
                                             <td className="px-6 py-4 text-slate-700 dark:text-gray-300">{formatPE(stock.pe_ratio)}</td>
-                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
+                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
                                                 {stock.roe ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity < 1.0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                                                 {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : "-"}
                                             </td>
                                             <td className="px-6 py-4 text-slate-700 dark:text-gray-300">

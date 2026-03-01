@@ -115,12 +115,12 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
                         </button>
                     </div>
                 ) : report ? (
-                    <div className="prose prose-invert prose-sm max-w-none pb-8 pr-2
-                        prose-headings:text-slate-800 dark:text-gray-200 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
-                        prose-p:text-slate-700 dark:text-gray-300 prose-p:leading-relaxed prose-p:mb-4
-                        prose-li:text-slate-700 dark:text-gray-300
-                        prose-strong:text-indigo-300
-                        prose-hr:border-gray-200 dark:border-gray-800">
+                    <div className="prose dark:prose-invert prose-sm max-w-none pb-8 pr-2
+                        prose-headings:text-slate-800 dark:prose-headings:text-gray-200 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
+                        prose-p:text-slate-700 dark:prose-p:text-gray-300 prose-p:leading-relaxed prose-p:mb-4
+                        prose-li:text-slate-700 dark:prose-li:text-gray-300
+                        prose-strong:text-indigo-600 dark:prose-strong:text-indigo-300
+                        prose-hr:border-gray-200 dark:prose-hr:border-gray-800">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {report}
                         </ReactMarkdown>

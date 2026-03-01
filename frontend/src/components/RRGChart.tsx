@@ -147,7 +147,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                     color: themeColor,
                     fontWeight: 'bold',
                     fontSize: 14,
-                    textBorderColor: '#000',
+                    textBorderColor: isDark ? '#000' : '#fff',
                     textBorderWidth: 2
                 }
             });

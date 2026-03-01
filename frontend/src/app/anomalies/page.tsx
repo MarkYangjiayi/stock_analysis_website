@@ -109,7 +109,7 @@ export default function AnomaliesPage() {
                             return (
                                 <div
                                     key={idx}
-                                    className="group bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:border-gray-200 dark:border-gray-700 transition-all duration-300"
+                                    className="group bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300"
                                 >
                                     {/* Card Header */}
                                     <div className="p-5 border-b border-gray-200 dark:border-gray-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-[#181C25]">
@@ -145,7 +145,7 @@ export default function AnomaliesPage() {
                                                     <Sparkles className="text-emerald-400" size={20} />
                                                 </div>
                                                 <div className="flex-1 space-y-4">
-                                                    <div className="prose prose-invert max-w-none text-slate-700 dark:text-gray-300 leading-relaxed text-[15px]">
+                                                    <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-gray-300 leading-relaxed text-[15px]">
                                                         {item.ai_analysis.split('\n').map((paragraph, pIdx) => (
                                                             <p key={pIdx} className="mb-2 last:mb-0">{paragraph}</p>
                                                         ))}

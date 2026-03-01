@@ -179,7 +179,7 @@ function HomeContent() {
                           <Plus size={16} strokeWidth={3} /> 加入自选
                         </button>
                       ) : (
-                        <span className="px-3 py-1.5 bg-gray-800/80 text-gray-400 text-sm font-bold rounded-lg border border-gray-700 flex items-center gap-1.5">
+                        <span className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 text-sm font-bold rounded-lg border border-gray-300 dark:border-gray-700 flex items-center gap-1.5 transition-colors">
                           <Check size={16} strokeWidth={3} className="text-emerald-500" /> 已关注
                         </span>
                       )}
