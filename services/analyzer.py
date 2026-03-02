@@ -239,8 +239,10 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             if 'date_x' in df_merged.columns:
                 df_merged = df_merged.rename(columns={'date_x': 'date'})
                 
-            # The .to_dict(orient='records') method correctly handles NaN -> None for JSON compatibility.
-            historical_financials = df_merged.drop(columns=['date_dt']).to_dict(orient='records')
+            # Clean NaN for JSON compatibility
+            historical_financials = []
+            for record in df_merged.drop(columns=['date_dt']).to_dict(orient='records'):
+                historical_financials.append({k: (None if pd.isna(v) else v) for k, v in record.items()})
             price_matched = True
 
     if not price_matched:
