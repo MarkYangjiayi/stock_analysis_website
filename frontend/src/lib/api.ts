@@ -31,6 +31,7 @@ export interface HistoricalDataPoint {
 export interface ValuationMetrics {
     ttm: {
         revenue: number;
+        gross_profit: number;
         net_income: number;
         free_cash_flow: number;
         roe: number;
@@ -75,8 +76,8 @@ export interface StockDataResponse {
     valuation_metrics?: ValuationMetrics;
 }
 
-export const fetchStockData = async (ticker: string, interval: string = '1d'): Promise<StockDataResponse> => {
-    const response = await axios.get(`${API_BASE_URL}/api/stocks/${ticker}?interval=${interval}`);
+export const fetchStockData = async (ticker: string, interval: string = '1d', financialPeriod: string = 'Yearly'): Promise<StockDataResponse> => {
+    const response = await axios.get(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}?interval=${interval}&financial_period=${financialPeriod}`);
     return response.data;
 };
 
@@ -85,7 +86,7 @@ export interface AIReportResponse {
 }
 
 export const fetchAIReport = async (ticker: string): Promise<AIReportResponse> => {
-    const response = await axios.get(`${API_BASE_URL}/api/stocks/${ticker}/report`);
+    const response = await axios.get(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/report`);
     return response.data;
 };
 
@@ -116,7 +117,7 @@ export interface NewsItem {
 }
 
 export const fetchStockNews = async (ticker: string): Promise<NewsItem[]> => {
-    const response = await axios.get(`${API_BASE_URL}/api/stocks/${ticker}/news`);
+    const response = await axios.get(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/news`);
     return response.data;
 };
 

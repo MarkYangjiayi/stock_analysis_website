@@ -28,6 +28,8 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         company_name = profile.get('Name', ticker)
         industry = profile.get('Industry', 'Unknown')
         
+        ttm = valuation.get('ttm', {})
+
         prompt = f"""
         你是一位华尔街资深量化分析师。请根据以下我提供的美股最新基本面与多因子打分数据，为 {company_name} ({ticker}) 撰写一份专业的投资简报。
         
@@ -36,6 +38,12 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         - 最新股价: ${valuation.get('valuation', {}).get('current_price', 'N/A')}
         - DCF 内在价值估算: ${valuation.get('valuation', {}).get('dcf_intrinsic_value_per_share', 'N/A')}
         - 估值安全边际: {valuation.get('valuation', {}).get('margin_of_safety', 0) * 100:.1f}%
+        
+        【最新基本面 (TTM 滚动十二个月)】
+        - 营收 (Revenue): ${ttm.get('revenue', 'N/A')}
+        - 净利润 (Net Income): ${ttm.get('net_income', 'N/A')}
+        - 自由现金流 (FCF): ${ttm.get('free_cash_flow', 'N/A')}
+        - 净资产收益率 (ROE): {ttm.get('roe', 0) * 100:.2f}%
         
         【多因子得分 (0-100)】
         - 价值 (Value): {factors.get('value', 'N/A')}

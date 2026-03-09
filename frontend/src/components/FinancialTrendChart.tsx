@@ -2,12 +2,16 @@
 
 import React, { useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { HistoricalFinancialPoint } from '@/lib/api';
+import { HistoricalFinancialPoint, ValuationMetrics } from '@/lib/api';
 import { BarChart3 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 interface FinancialTrendChartProps {
     data?: HistoricalFinancialPoint[];
+    ttmData?: ValuationMetrics['ttm'];
+    currentPrice?: number;
+    timePeriod: 'annual' | 'ttm' | 'quarterly';
+    onTimePeriodChange: (period: 'annual' | 'ttm' | 'quarterly') => void;
 }
 
 const formatCompact = (num: number) => {
@@ -22,7 +26,7 @@ const formatCompact = (num: number) => {
 
 type OverlayMode = 'all' | 'revenue_price' | 'net_income_price' | 'margin_price';
 
-const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
+const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData, currentPrice, timePeriod, onTimePeriodChange }) => {
     const { resolvedTheme } = useTheme();
     const [overlayMode, setOverlayMode] = useState<OverlayMode>('all');
 
@@ -33,7 +37,17 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
         const revenues = data.map(item => item.revenue);
         const netIncomes = data.map(item => item.net_income);
         const grossMargins = data.map(item => (item.gross_margin * 100).toFixed(2));
-        const prices = data.map(item => item.price);
+        const prices: (number | null | undefined)[] = data.map(item => item.price);
+
+        // Inject TTM Data if active mode is 'ttm'
+        if (timePeriod === 'ttm' && ttmData) {
+            dates.push('TTM (Current)');
+            revenues.push(ttmData.revenue);
+            netIncomes.push(ttmData.net_income);
+            const ttmGrossMargin = ttmData.revenue > 0 ? (ttmData.gross_profit / ttmData.revenue) : 0;
+            grossMargins.push((ttmGrossMargin * 100).toFixed(2));
+            prices.push(currentPrice ?? null); // Render current price or break line
+        }
 
         const isDark = resolvedTheme === 'dark';
         const textColor = isDark ? '#9ca3af' : '#475569';
@@ -246,7 +260,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
             yAxis: yAxisConfig,
             series: seriesConfig
         };
-    }, [data, resolvedTheme, overlayMode]);
+    }, [data, ttmData, currentPrice, timePeriod, resolvedTheme, overlayMode]);
 
     if (!data || data.length === 0) {
         return null;
@@ -262,6 +276,20 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data }) => {
                     <h3 className="font-semibold text-slate-800 dark:text-gray-200">Historical Financial Trends</h3>
                 </div>
                 <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-gray-100 dark:bg-[#1a1f2b] rounded-lg p-1 border border-gray-200 dark:border-gray-800">
+                        {(['annual', 'ttm', 'quarterly'] as const).map(period => (
+                            <button
+                                key={period}
+                                onClick={() => onTimePeriodChange(period)}
+                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${timePeriod === period
+                                        ? 'bg-white dark:bg-[#2B2B43] text-emerald-600 dark:text-emerald-400 shadow-sm'
+                                        : 'text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200'
+                                    }`}
+                            >
+                                {period === 'annual' ? 'Annual' : period === 'ttm' ? 'Annual + TTM' : 'Quarterly'}
+                            </button>
+                        ))}
+                    </div>
                     <select
                         value={overlayMode}
                         onChange={(e) => setOverlayMode(e.target.value as OverlayMode)}

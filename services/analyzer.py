@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # 定量分析与读取服务
 # ------------------------------------------------------------------------
 
-async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str = "1d") -> Optional[Dict[str, Any]]:
+async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str = "1d", financial_period: str = "Yearly") -> Optional[Dict[str, Any]]:
     """
     根据架构文档的数据读取逻辑：
     - 读取指定 ticker 的基础 Profile
@@ -156,20 +156,29 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         historical_data = df.to_dict(orient='records')
 
     # 4. 异步查询所有历史财报以提供前端图表数据
-    stmt_q = select(FinancialStatement).where(
-        FinancialStatement.ticker == ticker,
-        FinancialStatement.period == "Quarterly"
-    ).order_by(FinancialStatement.fiscal_date.desc())
-    result_q = await db.execute(stmt_q)
-    fs_records = list(result_q.scalars().all())
-
-    if not fs_records:
-        stmt_y = select(FinancialStatement).where(
+    if financial_period == "Quarterly":
+        stmt_fs = select(FinancialStatement).where(
+            FinancialStatement.ticker == ticker,
+            FinancialStatement.period == "Quarterly"
+        ).order_by(FinancialStatement.fiscal_date.desc()).limit(40) # 过去10年
+    else:
+        stmt_fs = select(FinancialStatement).where(
             FinancialStatement.ticker == ticker,
             FinancialStatement.period == "Yearly"
-        ).order_by(FinancialStatement.fiscal_date.desc())
-        result_y = await db.execute(stmt_y)
-        fs_records = list(result_y.scalars().all())
+        ).order_by(FinancialStatement.fiscal_date.desc()).limit(10)
+
+    result_fs = await db.execute(stmt_fs)
+    fs_records = list(result_fs.scalars().all())
+
+    # Fallback if no quarterly data but yearly exists (or vice versa)
+    if not fs_records:
+        fallback_period = "Yearly" if financial_period == "Quarterly" else "Quarterly"
+        stmt_fallback = select(FinancialStatement).where(
+            FinancialStatement.ticker == ticker,
+            FinancialStatement.period == fallback_period
+        ).order_by(FinancialStatement.fiscal_date.desc()).limit(10)
+        result_fallback = await db.execute(stmt_fallback)
+        fs_records = list(result_fallback.scalars().all())
 
     historical_financials = []
     fs_records.reverse()  # 翻转为升序排列 (最老的数据在前)
@@ -263,6 +272,66 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
 # 基本面估值服务 (Fundamental Valuation)
 # ------------------------------------------------------------------------
 
+def calculate_ttm(flow_records: list[FinancialStatement], latest_bs_record: Optional[FinancialStatement]) -> Dict[str, float]:
+    """
+    计算 TTM 核心指标。
+    如果是 quarterly 数据，必须严格提取最近4个季度的流量指标并累加；存量指标则从 latest_bs_record 获取。
+    如果缺乏季度数据，流指标严格置 0（记录日志警告），不使用年度去顶替！
+    """
+    def _safe_float(val) -> float:
+        try:
+            return float(val) if val is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    ttm_revenue = 0.0
+    ttm_gross_profit = 0.0
+    ttm_net_income = 0.0
+    ttm_fcf = 0.0
+    
+    # 严格判断必须有足够4个季度的流数据才进行累加
+    if flow_records and len(flow_records) == 4:
+        for rec in flow_records:
+            inc_stmt = rec.income_statement or {}
+            cf_stmt = rec.cash_flow or {}
+            rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
+            gp = _safe_float(inc_stmt.get('grossProfit', 0))
+            cogs = rev - gp
+            logger.info(f"[TTM COGS Debug] Quarter Date: {rec.fiscal_date}, Raw COGS Derived: {cogs}, Raw GP: {gp}, Raw Rev: {rev}")
+            
+            ttm_revenue += rev
+            ttm_gross_profit += gp
+            ttm_net_income += _safe_float(inc_stmt.get('netIncome', rec.net_income))
+            ttm_fcf += _safe_float(cf_stmt.get('freeCashFlow', 0))
+
+    # 取最近一期资产负债表(Point-in-time)
+    latest_bs = latest_bs_record.balance_sheet or {} if latest_bs_record else {}
+    
+    total_assets = _safe_float(latest_bs.get('totalAssets'))
+    total_liab = _safe_float(latest_bs.get('totalLiab', latest_bs.get('totalLiabilities')))
+    total_equity = _safe_float(latest_bs.get('totalStockholderEquity'))
+    shares_out = _safe_float(latest_bs.get('commonStockSharesOutstanding'))
+    cash_equiv = _safe_float(latest_bs.get('cashAndCashEquivalents'))
+    total_debt = _safe_float(latest_bs.get('totalDebt'))
+    
+    # ROE 计算
+    roe = (ttm_net_income / total_equity) if total_equity > 0 else 0.0
+
+    return {
+        "ttm_revenue": ttm_revenue,
+        "ttm_gross_profit": ttm_gross_profit,
+        "ttm_net_income": ttm_net_income,
+        "ttm_fcf": ttm_fcf,
+        "total_assets": total_assets,
+        "total_equity": total_equity,
+        "total_liab": total_liab,
+        "total_debt": total_debt,
+        "cash_equiv": cash_equiv,
+        "shares_out": shares_out,
+        "roe": roe
+    }
+
+
 async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[Dict[str, Any]]:
     """
     计算 TTM 核心指标与简易 DCF (现金流折现) 模型估值。
@@ -275,18 +344,16 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         FinancialStatement.period == "Quarterly"
     ).order_by(FinancialStatement.fiscal_date.desc()).limit(4)
     result_q = await db.execute(stmt_q)
-    records = list(result_q.scalars().all())
+    records_q = list(result_q.scalars().all())
     
-    # 如果没有季度报表，则退而求其次获取最近 1 个年度报表
-    if not records:
-        stmt_y = select(FinancialStatement).where(
-            FinancialStatement.ticker == ticker,
-            FinancialStatement.period == "Yearly"
-        ).order_by(FinancialStatement.fiscal_date.desc()).limit(1)
-        result_y = await db.execute(stmt_y)
-        records = list(result_y.scalars().all())
+    # 取无论季报年报中最新的那一期作为 Balance Sheet 基准
+    stmt_latest = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(1)
+    result_latest = await db.execute(stmt_latest)
+    latest_rec = result_latest.scalar_one_or_none()
         
-    if not records:
+    if not latest_rec:
         logger.warning(f"No financial statements found for {ticker}")
         return None
 
@@ -296,33 +363,49 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         except (ValueError, TypeError):
             return 0.0
 
-    ttm_revenue = 0.0
-    ttm_net_income = 0.0
-    ttm_fcf = 0.0
+    if len(records_q) < 4:
+        logger.warning(f"Ticker {ticker} does not have enough quarterly records (found {len(records_q)}). TTM calculation will set flow variables to 0 and avoid using fallback annual data.")
+        ttm_data = calculate_ttm([], latest_rec)
+    else:
+        for i, r in enumerate(records_q):
+            logger.info(f"[TTM Debug] {ticker} - Using Quarterly record {i+1}/4: {r.fiscal_date}")
+        ttm_data = calculate_ttm(records_q, latest_rec)
     
-    # 遍历计算 TTM (Trailing Twelve Months) 累计值
-    for rec in records:
-        # 获取当年/季的数据
-        inc_stmt = rec.income_statement or {}
-        cf_stmt = rec.cash_flow or {}
+    ttm_revenue = ttm_data['ttm_revenue']
+    ttm_gross_profit = ttm_data['ttm_gross_profit']
+    ttm_net_income = ttm_data['ttm_net_income']
+    ttm_fcf = ttm_data['ttm_fcf']
+    roe = ttm_data['roe']
+    
+    # 实施异常保护：校验 TTM 算出的 Gross Margin 是否由于数据脏污而与前序年报产生巨大偏差
+    ttm_gm = (ttm_gross_profit / ttm_revenue) if ttm_revenue > 0 else 0
+    
+    # 取最新的年报获取前一个财年的 GM
+    stmt_y = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker,
+        FinancialStatement.period == "Yearly"
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(1)
+    result_y = await db.execute(stmt_y)
+    latest_yearly = result_y.scalar_one_or_none()
+    
+    if latest_yearly and ttm_revenue > 0:
+        prev_rev = _safe_float(latest_yearly.revenue)
+        prev_gp = _safe_float(latest_yearly.income_statement.get('grossProfit', 0) if latest_yearly.income_statement else 0)
+        prev_gm = (prev_gp / prev_rev) if prev_rev > 0 else 0
         
-        # 处理可能以字符串存在的数据
-        ttm_revenue += _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
-        ttm_net_income += _safe_float(inc_stmt.get('netIncome', rec.net_income))
-        ttm_fcf += _safe_float(cf_stmt.get('freeCashFlow', 0))
-
-    # 取最近一期资产负债表(Point-in-time)
-    latest_bs = records[0].balance_sheet or {}
+        # 允许 ±20% (比如原先是 40%，偏离到 20% 以下或 60% 以上则判定异常)
+        TTM_GM_DEVIATION_THRESHOLD = 0.20
+        if abs(ttm_gm - prev_gm) > TTM_GM_DEVIATION_THRESHOLD:
+            logger.warning(f"[TTM DIRT CHECK] TTM Gross Margin ({ttm_gm:.2%}) deviation >{TTM_GM_DEVIATION_THRESHOLD:.0%} from Prev Yearly ({prev_gm:.2%}). Fallback GP to Prev GP adjusted by Rev growth.")
+            # 使用年度比例进行平滑替换脏数据，以免图表剧烈抖动
+            ttm_gross_profit = ttm_revenue * prev_gm
     
-    total_assets = _safe_float(latest_bs.get('totalAssets'))
-    total_liab = _safe_float(latest_bs.get('totalLiab', latest_bs.get('totalLiabilities')))
-    total_equity = _safe_float(latest_bs.get('totalStockholderEquity'))
-    shares_out = _safe_float(latest_bs.get('commonStockSharesOutstanding'))
-    cash_equiv = _safe_float(latest_bs.get('cashAndCashEquivalents'))
-    total_debt = _safe_float(latest_bs.get('totalDebt'))
-    
-    # ROE 计算
-    roe = (ttm_net_income / total_equity) if total_equity > 0 else 0.0
+    total_assets = ttm_data['total_assets']
+    total_liab = ttm_data['total_liab']
+    total_equity = ttm_data['total_equity']
+    shares_out = ttm_data['shares_out']
+    cash_equiv = ttm_data['cash_equiv']
+    total_debt = ttm_data['total_debt']
 
     # DCF 模型参数
     fcf_growth_rate = 0.10      # 10% 未来5年复合增长率
@@ -398,13 +481,18 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         else:
             quality_score = 20
 
-    # 3. Growth 分数 (由于 TTM 循环顺序为近期在前，提取记录 [0] 和 [1] 或 [4] 测算增长率)
+    # 3. Growth 分数
     growth_score = 50
-    if len(records) > 1:
-        # 简化处理：由于可能是季度数据或年度，取第 0 份与其之前的做对比
-        # 如果是季度，1 个季度前可能受季节性影响，更为准确的做法是同比 (Yoy)，这里做简化的环比映射或近邻对比
-        curr_rev = _safe_float(records[0].income_statement.get('totalRevenue', records[0].revenue) if records[0].income_statement else records[0].revenue)
-        prev_rev = _safe_float(records[1].income_statement.get('totalRevenue', records[1].revenue) if records[1].income_statement else records[1].revenue)
+    stmt_y = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker,
+        FinancialStatement.period == "Yearly"
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(2)
+    result_y = await db.execute(stmt_y)
+    records_y = list(result_y.scalars().all())
+    
+    if len(records_y) > 1:
+        curr_rev = _safe_float(records_y[0].income_statement.get('totalRevenue', records_y[0].revenue) if records_y[0].income_statement else records_y[0].revenue)
+        prev_rev = _safe_float(records_y[1].income_statement.get('totalRevenue', records_y[1].revenue) if records_y[1].income_statement else records_y[1].revenue)
         
         if prev_rev > 0:
             growth_rate = (curr_rev - prev_rev) / prev_rev
@@ -479,6 +567,7 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     return {
         "ttm": {
             "revenue": ttm_revenue,
+            "gross_profit": ttm_gross_profit,
             "net_income": ttm_net_income,
             "free_cash_flow": ttm_fcf,
             "roe": roe
