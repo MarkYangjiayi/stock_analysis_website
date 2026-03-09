@@ -108,9 +108,14 @@ async def read_stock_analysis(ticker: str, interval: str = "1d", financial_perio
         needs_sync = True
     else:
         # Prevent legacy records from preventing TTM calculation by checking if Quarterly data exists:
-        stmt_check_q = select(func.count(FinancialStatement.id)).where(FinancialStatement.ticker == ticker, FinancialStatement.period == "Quarterly")
-        q_count = (await db.execute(stmt_check_q)).scalar()
-        if q_count == 0:
+        stmt_check_q = select(
+            select(FinancialStatement.id).where(
+                FinancialStatement.ticker == ticker,
+                FinancialStatement.period == "Quarterly"
+            ).limit(1).exists()
+        )
+        q_exists = (await db.execute(stmt_check_q)).scalar()
+        if not q_exists:
             needs_sync = True
 
     if needs_sync:

@@ -37,7 +37,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
         const revenues = data.map(item => item.revenue);
         const netIncomes = data.map(item => item.net_income);
         const grossMargins = data.map(item => (item.gross_margin * 100).toFixed(2));
-        const prices = data.map(item => item.price);
+        const prices: (number | null | undefined)[] = data.map(item => item.price);
 
         // Inject TTM Data if active mode is 'ttm'
         if (timePeriod === 'ttm' && ttmData) {
@@ -46,7 +46,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
             netIncomes.push(ttmData.net_income);
             const ttmGrossMargin = ttmData.revenue > 0 ? (ttmData.gross_profit / ttmData.revenue) : 0;
             grossMargins.push((ttmGrossMargin * 100).toFixed(2));
-            prices.push(currentPrice !== undefined ? currentPrice : null as any); // Render current price or break line
+            prices.push(currentPrice ?? null); // Render current price or break line
         }
 
         const isDark = resolvedTheme === 'dark';

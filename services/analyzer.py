@@ -394,8 +394,9 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         prev_gm = (prev_gp / prev_rev) if prev_rev > 0 else 0
         
         # 允许 ±20% (比如原先是 40%，偏离到 20% 以下或 60% 以上则判定异常)
-        if abs(ttm_gm - prev_gm) > 0.20:
-            logger.warning(f"[TTM DIRT CHECK] TTM Gross Margin ({ttm_gm:.2%}) deviation >20% from Prev Yearly ({prev_gm:.2%}). Fallback GP to Prev GP adjusted by Rev growth.")
+        TTM_GM_DEVIATION_THRESHOLD = 0.20
+        if abs(ttm_gm - prev_gm) > TTM_GM_DEVIATION_THRESHOLD:
+            logger.warning(f"[TTM DIRT CHECK] TTM Gross Margin ({ttm_gm:.2%}) deviation >{TTM_GM_DEVIATION_THRESHOLD:.0%} from Prev Yearly ({prev_gm:.2%}). Fallback GP to Prev GP adjusted by Rev growth.")
             # 使用年度比例进行平滑替换脏数据，以免图表剧烈抖动
             ttm_gross_profit = ttm_revenue * prev_gm
     

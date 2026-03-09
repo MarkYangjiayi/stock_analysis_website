@@ -96,6 +96,14 @@ async def _upsert_financials(ticker: str, fundamentals: dict, db: AsyncSession):
     解析 JSONB 数据并插入/更新 financial_statements 表。
     仅取财务数据表 (Financials.Income_Statement.yearly 等)，根据业务按需扩展
     """
+    def _safe_float(val) -> Optional[float]:
+        try:
+            if val is None:
+                return None
+            return float(val)
+        except ValueError:
+            return None
+
     financials_data = fundamentals.get("Financials", {})
     
     insert_values = []
@@ -122,14 +130,6 @@ async def _upsert_financials(ticker: str, fundamentals: dict, db: AsyncSession):
             # 注意清洗，可能为 None 或非数值
             revenue_val = inc_stmt_entry.get("totalRevenue")
             net_inc_val = inc_stmt_entry.get("netIncome")
-
-            def _safe_float(val) -> Optional[float]:
-                try:
-                    if val is None:
-                        return None
-                    return float(val)
-                except ValueError:
-                    return None
 
             insert_values.append({
                 "ticker": ticker,
