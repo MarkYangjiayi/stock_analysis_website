@@ -97,48 +97,50 @@ async def _upsert_financials(ticker: str, fundamentals: dict, db: AsyncSession):
     仅取财务数据表 (Financials.Income_Statement.yearly 等)，根据业务按需扩展
     """
     financials_data = fundamentals.get("Financials", {})
-    income_statement = financials_data.get("Income_Statement", {}).get("yearly", {})
-    balance_sheet = financials_data.get("Balance_Sheet", {}).get("yearly", {})
-    cash_flow = financials_data.get("Cash_Flow", {}).get("yearly", {})
-
-    # 以 Income_Statement 的键 (日期) 作为核心维度遍历
-    # 如果有的日期仅在其它的表中存在，需要做并集处理
-    all_dates = set(income_statement.keys()) | set(balance_sheet.keys()) | set(cash_flow.keys())
-
+    
     insert_values = []
     
-    for str_date in all_dates:
-        # 转为标准的 datetime.date
-        try:
-            fiscal_date = datetime.strptime(str_date, "%Y-%m-%d").date()
-        except ValueError:
-            continue
+    for period_key, period_name in [("yearly", "Yearly"), ("quarterly", "Quarterly")]:
+        income_statement = financials_data.get("Income_Statement", {}).get(period_key, {})
+        balance_sheet = financials_data.get("Balance_Sheet", {}).get(period_key, {})
+        cash_flow = financials_data.get("Cash_Flow", {}).get(period_key, {})
         
-        # 尝试提取独立核心指标
-        inc_stmt_entry = income_statement.get(str_date, {})
-        
-        # 注意清洗，可能为 None 或非数值
-        revenue_val = inc_stmt_entry.get("totalRevenue")
-        net_inc_val = inc_stmt_entry.get("netIncome")
+        # 以 Income_Statement 的键 (日期) 作为核心维度遍历
+        # 如果有的日期仅在其它的表中存在，需要做并集处理
+        all_dates = set(income_statement.keys()) | set(balance_sheet.keys()) | set(cash_flow.keys())
 
-        def _safe_float(val) -> Optional[float]:
+        for str_date in all_dates:
+            # 转为标准的 datetime.date
             try:
-                if val is None:
-                    return None
-                return float(val)
+                fiscal_date = datetime.strptime(str_date, "%Y-%m-%d").date()
             except ValueError:
-                return None
+                continue
+            
+            # 尝试提取独立核心指标
+            inc_stmt_entry = income_statement.get(str_date, {})
+            
+            # 注意清洗，可能为 None 或非数值
+            revenue_val = inc_stmt_entry.get("totalRevenue")
+            net_inc_val = inc_stmt_entry.get("netIncome")
 
-        insert_values.append({
-            "ticker": ticker,
-            "fiscal_date": fiscal_date,
-            "period": "Yearly",
-            "revenue": _safe_float(revenue_val),
-            "net_income": _safe_float(net_inc_val),
-            "income_statement": inc_stmt_entry or None,
-            "balance_sheet": balance_sheet.get(str_date, {}) or None,
-            "cash_flow": cash_flow.get(str_date, {}) or None
-        })
+            def _safe_float(val) -> Optional[float]:
+                try:
+                    if val is None:
+                        return None
+                    return float(val)
+                except ValueError:
+                    return None
+
+            insert_values.append({
+                "ticker": ticker,
+                "fiscal_date": fiscal_date,
+                "period": period_name,
+                "revenue": _safe_float(revenue_val),
+                "net_income": _safe_float(net_inc_val),
+                "income_statement": inc_stmt_entry or None,
+                "balance_sheet": balance_sheet.get(str_date, {}) or None,
+                "cash_flow": cash_flow.get(str_date, {}) or None
+            })
 
     if not insert_values:
         return

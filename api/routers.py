@@ -1,3 +1,4 @@
+# api/routers.py
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
@@ -5,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.schemas import StockDataResponse
 from database import get_db
+from sqlalchemy import select, func
+from models import FinancialStatement
 from services.data_sync import sync_ticker_data
 from services.analyzer import (
     get_analyzed_stock_data, 
@@ -85,14 +89,14 @@ async def sync_stock_data(ticker: str, db: AsyncSession = Depends(get_db)):
         )
     return {"message": f"Successfully synchronized data for {ticker}", "ticker": ticker}
 
-@router.get("/api/stocks/{ticker}", tags=["Stocks Analysis Read"])
-async def read_stock_analysis(ticker: str, interval: str = "1d", db: AsyncSession = Depends(get_db)):
+@router.get("/api/stocks/{ticker}", response_model=StockDataResponse, tags=["Stocks Analysis Read"])
+async def read_stock_analysis(ticker: str, interval: str = "1d", financial_period: str = "Yearly", db: AsyncSession = Depends(get_db)):
     """
     读取指定股票的基础 Profile 以及经过量化分析 (MA, RSI, MACD等) 后的全量历史时间序列。
     实现了 Read-Through 策略: 如果本地数据陈旧或不存在，自动触发获取。
     """
     ticker = ticker.upper()
-    data = await get_analyzed_stock_data(ticker, db, interval)
+    data = await get_analyzed_stock_data(ticker, db, interval, financial_period)
     
     # Check if data exists AND if the profile is fully hydrated (sector is populated).
     # The Screener daily job inserts bare-bones Ticker records (just the ticker string), 
@@ -102,6 +106,12 @@ async def read_stock_analysis(ticker: str, interval: str = "1d", db: AsyncSessio
         needs_sync = True
     elif not data.get("profile", {}).get("sector"):
         needs_sync = True
+    else:
+        # Prevent legacy records from preventing TTM calculation by checking if Quarterly data exists:
+        stmt_check_q = select(func.count(FinancialStatement.id)).where(FinancialStatement.ticker == ticker, FinancialStatement.period == "Quarterly")
+        q_count = (await db.execute(stmt_check_q)).scalar()
+        if q_count == 0:
+            needs_sync = True
 
     if needs_sync:
         # Cache Miss or Incomplete Ticker: Trigger cold start data synchronization
@@ -112,7 +122,7 @@ async def read_stock_analysis(ticker: str, interval: str = "1d", db: AsyncSessio
                 detail=f"Data for {ticker} not found and external synchronization failed. Please try again later."
             )
         # Attempt to read again after synchronization
-        data = await get_analyzed_stock_data(ticker, db, interval)
+        data = await get_analyzed_stock_data(ticker, db, interval, financial_period)
         
         if not data:
              raise HTTPException(

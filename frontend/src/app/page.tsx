@@ -21,6 +21,8 @@ function HomeContent() {
   const [chartInterval, setChartInterval] = useState('1d');
   const [isChartLoading, setIsChartLoading] = useState(false);
 
+  const [financialPeriod, setFinancialPeriod] = useState<'annual' | 'ttm' | 'quarterly'>('annual');
+
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const DEFAULT_WATCHLIST = ['AAPL.US', 'AMAT.US', 'ASTS.US', 'UNH.US'];
 
@@ -54,7 +56,7 @@ function HomeContent() {
     saveWatchlist(watchlist.filter(t => t !== tickerToRemove));
   };
 
-  const executeSearch = async (searchTicker: string, intervalToFetch: string = '1d') => {
+  const executeSearch = async (searchTicker: string, intervalToFetch: string = chartInterval, periodToFetch: string = financialPeriod) => {
     if (!searchTicker.trim()) return;
 
     // Full load only for a completely new ticker
@@ -65,12 +67,15 @@ function HomeContent() {
       setStockData(null);
       setTicker(searchTicker);
       setChartInterval('1d');
+      setFinancialPeriod('annual');
       intervalToFetch = '1d';
+      periodToFetch = 'annual';
     }
 
     try {
-      // Send GET /api/stocks/{ticker}?interval=...
-      const data = await fetchStockData(searchTicker.toUpperCase(), intervalToFetch);
+      // Map 'ttm' (which uses the yearly endpoint + TTM node) to 'Yearly' for backend arg, 'quarterly' to 'Quarterly'
+      const fpBackend = (periodToFetch === 'quarterly') ? 'Quarterly' : 'Yearly';
+      const data = await fetchStockData(searchTicker.toUpperCase(), intervalToFetch, fpBackend);
       setStockData(data);
     } catch (err: any) {
       if (err.response?.status === 404) {
@@ -89,8 +94,17 @@ function HomeContent() {
     if (newInterval === chartInterval || !ticker) return;
     setChartInterval(newInterval);
     setIsChartLoading(true);
-    await executeSearch(ticker, newInterval);
+    await executeSearch(ticker, newInterval, financialPeriod);
     setIsChartLoading(false);
+  };
+
+  const handleFinancialPeriodChange = async (newPeriod: 'annual' | 'ttm' | 'quarterly') => {
+    if (newPeriod === financialPeriod || !ticker) return;
+    setFinancialPeriod(newPeriod);
+    // If we define fetching logic that needs to reload (e.g for quarterly), trigger here
+    if (newPeriod === 'quarterly' || financialPeriod === 'quarterly') {
+       await executeSearch(ticker, chartInterval, newPeriod);
+    }
   };
 
   // URL-driven state initialization
@@ -267,7 +281,13 @@ function HomeContent() {
               </div>
 
               {/* Financial Trends Chart */}
-              <FinancialTrendChart data={stockData.historical_financials} />
+              <FinancialTrendChart 
+                data={stockData.historical_financials} 
+                ttmData={stockData.valuation_metrics?.ttm}
+                currentPrice={stockData.valuation_metrics?.valuation.current_price}
+                timePeriod={financialPeriod}
+                onTimePeriodChange={handleFinancialPeriodChange}
+              />
             </div>
           )}
 
