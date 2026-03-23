@@ -30,14 +30,17 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
     const { resolvedTheme } = useTheme();
     const [overlayMode, setOverlayMode] = useState<OverlayMode>('all');
 
-    const options = useMemo(() => {
-        if (!data || data.length === 0) return {};
+    const activeData = data;
 
-        const dates = data.map(item => item.date);
-        const revenues = data.map(item => item.revenue);
-        const netIncomes = data.map(item => item.net_income);
-        const grossMargins = data.map(item => (item.gross_margin * 100).toFixed(2));
-        const prices: (number | null | undefined)[] = data.map(item => item.price);
+    const options = useMemo(() => {
+        if (!activeData || activeData.length === 0) return {};
+
+        const dates = activeData.map(item => item.date);
+        const revenues = activeData.map(item => item.revenue);
+        const netIncomes = activeData.map(item => item.net_income);
+        const grossMargins = activeData.map(item => (item.gross_margin * 100).toFixed(2));
+        const prices: (number | null | undefined)[] = activeData.map(item => item.price);
+        const epsValues = activeData.map(item => item.eps ?? null);
 
         // Inject TTM Data if active mode is 'ttm'
         if (timePeriod === 'ttm' && ttmData) {
@@ -46,7 +49,8 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
             netIncomes.push(ttmData.net_income);
             const ttmGrossMargin = ttmData.revenue > 0 ? (ttmData.gross_profit / ttmData.revenue) : 0;
             grossMargins.push((ttmGrossMargin * 100).toFixed(2));
-            prices.push(currentPrice ?? null); // Render current price or break line
+            prices.push(currentPrice ?? null);
+            epsValues.push(null);
         }
 
         const isDark = resolvedTheme === 'dark';
@@ -142,14 +146,36 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
         const seriesPrice = {
             name: 'Stock Price',
             type: 'line',
-            yAxisIndex: overlayMode === 'all' ? 2 : 1, // Becomes axis 1 when margin is hidden
-            itemStyle: { color: '#10b981' }, // Emerald
+            yAxisIndex: overlayMode === 'all' ? 2 : 1,
+            itemStyle: { color: '#10b981' },
             lineStyle: { width: 3, type: 'dotted', shadowColor: 'rgba(16, 185, 129, 0.5)', shadowBlur: 8 },
             symbol: 'diamond',
             symbolSize: 10,
             data: prices,
             connectNulls: true
         };
+
+        const hasEps = epsValues.some(v => v != null);
+        const yAxisEps = {
+            type: 'value',
+            name: 'EPS ($)',
+            nameTextStyle: { color: textColor, padding: [0, 30, 0, 0] },
+            position: 'right',
+            offset: overlayMode === 'all' ? 160 : 80,
+            axisLine: { show: true, lineStyle: { color: gridColor } },
+            axisLabel: { color: textColor, fontWeight: '500', formatter: (v: number) => `$${v.toFixed(2)}` },
+            splitLine: { show: false },
+        };
+        const seriesEps = hasEps ? {
+            name: 'EPS',
+            type: 'line',
+            yAxisIndex: overlayMode === 'all' ? 3 : 2,
+            itemStyle: { color: '#f59e0b' },
+            lineStyle: { width: 2, type: 'dashed' },
+            symbol: 'circle', symbolSize: 6,
+            data: epsValues,
+            connectNulls: true
+        } : null;
 
         let activeLegend: string[] = [];
         let yAxisConfig: any[] = [];
@@ -168,7 +194,6 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
                 break;
             case 'margin_price':
                 activeLegend = ['Gross Margin', 'Stock Price'];
-                // Reset margin Y-axis index to 0 for left side in this specific dual-view, price to 1
                 const modifiedYAxisMargin = { ...yAxisMargin, position: 'left' };
                 const modifiedSeriesMargin = { ...seriesMargin, yAxisIndex: 0 };
                 yAxisConfig = [modifiedYAxisMargin, yAxisPrice];
@@ -179,6 +204,11 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
                 activeLegend = ['Revenue', 'Net Income', 'Gross Margin', 'Stock Price'];
                 yAxisConfig = [yAxisAmount, yAxisMargin, yAxisPrice];
                 seriesConfig = [seriesRevenue, seriesNetIncome, seriesMargin, seriesPrice];
+                if (seriesEps) {
+                    activeLegend.push('EPS');
+                    yAxisConfig.push(yAxisEps);
+                    seriesConfig.push(seriesEps);
+                }
                 break;
         }
 
@@ -260,9 +290,9 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
             yAxis: yAxisConfig,
             series: seriesConfig
         };
-    }, [data, ttmData, currentPrice, timePeriod, resolvedTheme, overlayMode]);
+    }, [activeData, ttmData, currentPrice, timePeriod, resolvedTheme, overlayMode]);
 
-    if (!data || data.length === 0) {
+    if (!activeData || activeData.length === 0) {
         return null;
     }
 
@@ -276,6 +306,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
                     <h3 className="font-semibold text-slate-800 dark:text-gray-200">Historical Financial Trends</h3>
                 </div>
                 <div className="flex items-center gap-3">
+                    {/* Period Toggle */}
                     <div className="flex items-center bg-gray-100 dark:bg-[#1a1f2b] rounded-lg p-1 border border-gray-200 dark:border-gray-800">
                         {(['annual', 'ttm', 'quarterly'] as const).map(period => (
                             <button

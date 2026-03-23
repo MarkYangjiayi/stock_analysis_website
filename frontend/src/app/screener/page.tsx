@@ -5,6 +5,7 @@ import Link from 'next/link';
 import debounce from 'lodash.debounce';
 import { useAppStore } from '@/store/useAppStore';
 import { API_BASE_URL } from '@/lib/api';
+import { Download } from 'lucide-react';
 
 export default function ScreenerPage() {
     const [activeTab, setActiveTab] = useState("Descriptive");
@@ -148,6 +149,29 @@ export default function ScreenerPage() {
         return num.toFixed(2);
     };
 
+    const handleExportCsv = () => {
+        const headers = ['Ticker', 'Company', 'Sector', 'Market Cap', 'Price', 'P/E', 'P/B', 'RSI', 'ROE', 'D/E', 'Gross Margin', '5Y SG', 'FCF', 'Div Yield'];
+        const rows = results.map((s: any) => [
+            s.ticker, s.name ?? '', s.sector ?? '',
+            s.market_cap ?? '', s.close ?? '',
+            s.pe_ratio ?? '', s.pb_ratio ?? '', s.rsi_14 ?? '',
+            s.roe != null ? (s.roe * 100).toFixed(2) : '',
+            s.debt_to_equity ?? '',
+            s.gross_margin != null ? (s.gross_margin * 100).toFixed(2) : '',
+            s.sales_growth_5yr != null ? (s.sales_growth_5yr * 100).toFixed(2) : '',
+            s.fcf ?? '',
+            s.dividend_yield != null ? (s.dividend_yield * 100).toFixed(2) : '',
+        ]);
+        const csvContent = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `screener_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const totalPages = Math.ceil(totalCount / limit);
 
     const generatePagination = () => {
@@ -181,8 +205,19 @@ export default function ScreenerPage() {
                         <span className="text-slate-600 dark:text-gray-600 text-xl font-light">/</span>
                         <h1 className="text-2xl font-bold tracking-wide text-slate-900 dark:text-white"><span className="text-emerald-400">Screener</span></h1>
                     </div>
-                    <div className="text-sm font-medium text-emerald-400/80 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                        {loading ? "Scanning market..." : `Matches: ${totalCount.toLocaleString()}`}
+                    <div className="flex items-center gap-3">
+                        <div className="text-sm font-medium text-emerald-400/80 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                            {loading ? "Scanning market..." : `Matches: ${totalCount.toLocaleString()}`}
+                        </div>
+                        {results.length > 0 && (
+                            <button
+                                onClick={handleExportCsv}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-700 text-slate-600 dark:text-gray-300 text-sm font-semibold rounded-lg hover:border-emerald-500/50 hover:text-emerald-500 transition-colors shadow-sm"
+                            >
+                                <Download size={14} />
+                                CSV
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -391,55 +426,65 @@ export default function ScreenerPage() {
                 <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-slate-50 dark:bg-[#141820] text-slate-500 dark:text-gray-400 font-medium">
+                            <thead className="bg-slate-50 dark:bg-[#141820] text-slate-500 dark:text-gray-400 font-medium text-xs uppercase tracking-wide">
                                 <tr>
-                                    <th className="px-6 py-4 rounded-tl-xl">Ticker</th>
-                                    <th className="px-6 py-4">Company</th>
-                                    <th className="px-6 py-4">Sector</th>
-                                    <th className="px-6 py-4">Market Cap</th>
-                                    <th className="px-6 py-4">Price</th>
-                                    <th className="px-6 py-4">P/E</th>
-                                    <th className="px-6 py-4">ROE</th>
-                                    <th className="px-6 py-4">D/E</th>
-                                    <th className="px-6 py-4">Gross Margin</th>
-                                    <th className="px-6 py-4">5Y SG</th>
+                                    <th className="px-4 py-3 rounded-tl-xl text-left">Ticker</th>
+                                    <th className="px-4 py-3 text-left">Company</th>
+                                    <th className="px-4 py-3 text-left">Sector</th>
+                                    <th className="px-4 py-3 text-right">Mkt Cap</th>
+                                    <th className="px-4 py-3 text-right">Price</th>
+                                    <th className="px-4 py-3 text-right">P/E</th>
+                                    <th className="px-4 py-3 text-right">P/B</th>
+                                    <th className="px-4 py-3 text-right">RSI</th>
+                                    <th className="px-4 py-3 text-right">ROE</th>
+                                    <th className="px-4 py-3 text-right">D/E</th>
+                                    <th className="px-4 py-3 text-right">Gr. Margin</th>
+                                    <th className="px-4 py-3 text-right">5Y SG</th>
+                                    <th className="px-4 py-3 text-right rounded-tr-xl">FCF</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                                 {results.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="px-6 py-12 text-center text-slate-500 dark:text-gray-500">
+                                        <td colSpan={13} className="px-6 py-12 text-center text-slate-500 dark:text-gray-500">
                                             {loading ? "Cruising the markets..." : "No stocks match your strict criteria."}
                                         </td>
                                     </tr>
                                 ) : (
                                     results.map((stock: any) => (
                                         <tr key={stock.ticker} className="hover:bg-slate-100 dark:hover:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800/50 transition-colors group">
-                                            <td className="px-6 py-4 font-bold text-emerald-400 group-hover:text-emerald-300">
+                                            <td className="px-4 py-3 font-bold text-emerald-400 group-hover:text-emerald-300">
                                                 <Link href={`/?ticker=${stock.ticker}`}>
                                                     {stock.ticker.split('.')[0]}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300 truncate max-w-[200px]" title={stock.name}>{stock.name || "-"}</td>
-                                            <td className="px-6 py-4 text-slate-500 dark:text-gray-400 truncate max-w-[120px]">
-                                                <span className="bg-slate-200 dark:bg-[#2B2B43] px-2 py-1 rounded border border-gray-200 dark:border-gray-700 shadow-sm text-xs">
+                                            <td className="px-4 py-3 text-slate-700 dark:text-gray-300 truncate max-w-[160px] text-sm" title={stock.name}>{stock.name || "-"}</td>
+                                            <td className="px-4 py-3 text-slate-500 dark:text-gray-400 truncate max-w-[100px]">
+                                                <span className="bg-slate-200 dark:bg-[#2B2B43] px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-xs">
                                                     {stock.sector || "-"}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-slate-800 dark:text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
-                                            <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">${stock.close?.toFixed(2) || "-"}</td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">{formatPE(stock.pe_ratio)}</td>
-                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
+                                            <td className="px-4 py-3 text-right text-slate-800 dark:text-gray-200 font-medium text-sm">{formatMarketCap(stock.market_cap)}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">${stock.close?.toFixed(2) || "-"}</td>
+                                            <td className="px-4 py-3 text-right text-slate-700 dark:text-gray-300 text-sm">{formatPE(stock.pe_ratio)}</td>
+                                            <td className="px-4 py-3 text-right text-slate-700 dark:text-gray-300 text-sm">{stock.pb_ratio ? stock.pb_ratio.toFixed(1) + 'x' : "-"}</td>
+                                            <td className={`px-4 py-3 text-right font-semibold text-sm ${stock.rsi_14 < 30 ? 'text-emerald-600 dark:text-emerald-400' : stock.rsi_14 > 70 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-gray-400'}`}>
+                                                {stock.rsi_14 ? stock.rsi_14.toFixed(1) : "-"}
+                                            </td>
+                                            <td className={`px-4 py-3 text-right font-semibold text-sm ${stock.roe > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
                                                 {stock.roe ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                            <td className={`px-4 py-3 text-right font-semibold text-sm ${stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
                                                 {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : "-"}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
+                                            <td className="px-4 py-3 text-right text-slate-700 dark:text-gray-300 text-sm">
                                                 {stock.gross_margin ? `${(stock.gross_margin * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
+                                            <td className={`px-4 py-3 text-right font-semibold text-sm ${stock.sales_growth_5yr > 0.1 ? 'text-emerald-600 dark:text-emerald-400' : stock.sales_growth_5yr < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-600 dark:text-gray-400'}`}>
                                                 {stock.sales_growth_5yr ? `${(stock.sales_growth_5yr * 100).toFixed(1)}%` : "-"}
+                                            </td>
+                                            <td className={`px-4 py-3 text-right font-semibold text-sm ${stock.fcf > 0 ? 'text-emerald-600 dark:text-emerald-400' : stock.fcf < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-500 dark:text-gray-500'}`}>
+                                                {stock.fcf != null ? formatMarketCap(stock.fcf) : "-"}
                                             </td>
                                         </tr>
                                     ))
