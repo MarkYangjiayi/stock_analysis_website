@@ -24,6 +24,10 @@ export interface ScreenerResult {
     market_cap?: number;
     close?: number;
     pe_ratio?: number;
+    pb_ratio?: number;
+    rsi_14?: number;
+    fcf?: number;
+    dividend_yield?: number;
     roe?: number;
     debt_to_equity?: number;
     gross_margin?: number;

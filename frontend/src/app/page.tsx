@@ -6,6 +6,9 @@ import { Search, Activity, AlertCircle, Plus, Check, BarChart2 } from 'lucide-re
 import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
 import ValuationDashboard from '@/components/ValuationDashboard';
+import ValuationMultiplesPanel from '@/components/ValuationMultiplesPanel';
+import DCFCalculator from '@/components/DCFCalculator';
+import PeerComparisonTable from '@/components/PeerComparisonTable';
 import AIReport from '@/components/AIReport';
 import NewsFeed from '@/components/NewsFeed';
 import FinancialTrendChart from '@/components/FinancialTrendChart';
@@ -280,13 +283,32 @@ function HomeContent() {
                 </div>
               </div>
 
+              {/* Key Financial Metrics Panel */}
+              {stockData.valuation_metrics && (
+                <ValuationMultiplesPanel metrics={stockData.valuation_metrics} />
+              )}
+
+              {/* Interactive DCF Calculator */}
+              {stockData.valuation_metrics?.dcf_inputs && (
+                <DCFCalculator
+                  dcfInputs={stockData.valuation_metrics.dcf_inputs}
+                  currentPrice={stockData.valuation_metrics.valuation.current_price}
+                />
+              )}
+
               {/* Financial Trends Chart */}
-              <FinancialTrendChart 
-                data={stockData.historical_financials} 
+              <FinancialTrendChart
+                data={stockData.historical_financials}
                 ttmData={stockData.valuation_metrics?.ttm}
                 currentPrice={stockData.valuation_metrics?.valuation.current_price}
                 timePeriod={financialPeriod}
                 onTimePeriodChange={handleFinancialPeriodChange}
+              />
+
+              {/* Peer Comparison */}
+              <PeerComparisonTable
+                ticker={stockData.profile.ticker}
+                onSelectTicker={executeSearch}
               />
             </div>
           )}

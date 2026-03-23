@@ -28,6 +28,52 @@ export interface HistoricalDataPoint {
     MACD_Hist?: number;
 }
 
+export interface ValuationMultiples {
+    pe_ratio: number | null;
+    pb_ratio: number | null;
+    ps_ratio: number | null;
+    pfcf_ratio: number | null;
+    ev_ebitda: number | null;
+    ev_revenue: number | null;
+    market_cap: number | null;
+    enterprise_value: number | null;
+    net_debt: number | null;
+    eps: number | null;
+}
+
+export interface ProfitabilityMetrics {
+    gross_margin: number | null;
+    operating_margin: number | null;
+    net_margin: number | null;
+    roe: number | null;
+    roa: number | null;
+    fcf_conversion: number | null;
+    ttm_ebitda: number | null;
+}
+
+export interface FinancialHealthMetrics {
+    current_ratio: number | null;
+    debt_to_equity: number | null;
+    net_debt_ebitda: number | null;
+    interest_coverage: number | null;
+    net_debt: number | null;
+}
+
+export interface GrowthMetrics {
+    revenue_yoy: number | null;
+    revenue_cagr_3yr: number | null;
+    eps_yoy: number | null;
+    eps_cagr_3yr: number | null;
+    fcf_yoy: number | null;
+}
+
+export interface DCFInputs {
+    ttm_fcf: number;
+    cash: number;
+    total_debt: number;
+    shares_outstanding: number;
+}
+
 export interface ValuationMetrics {
     ttm: {
         revenue: number;
@@ -46,12 +92,21 @@ export interface ValuationMetrics {
         dcf_intrinsic_value_per_share: number;
         current_price: number;
         margin_of_safety: number;
+        high_52w: number | null;
+        low_52w: number | null;
+        pct_from_52w_high: number | null;
+        pct_from_52w_low: number | null;
         assumptions: {
             fcf_growth_rate_5yr: number;
             wacc: number;
             perpetual_growth: number;
         };
     };
+    dcf_inputs?: DCFInputs;
+    multiples?: ValuationMultiples;
+    profitability?: ProfitabilityMetrics;
+    financial_health?: FinancialHealthMetrics;
+    growth_metrics?: GrowthMetrics;
     factor_scores: {
         value: number;
         quality: number;
@@ -66,13 +121,15 @@ export interface HistoricalFinancialPoint {
     revenue: number;
     net_income: number;
     gross_margin: number;
-    price?: number;
+    eps?: number | null;
+    price?: number | null;
 }
 
 export interface StockDataResponse {
     profile: StockProfile;
     historical_data: HistoricalDataPoint[];
     historical_financials?: HistoricalFinancialPoint[];
+    historical_financials_annual?: HistoricalFinancialPoint[];
     valuation_metrics?: ValuationMetrics;
 }
 
@@ -132,5 +189,35 @@ export interface AnomalyReport {
 
 export const fetchMarketAnomalies = async (): Promise<AnomalyReport[]> => {
     const response = await axios.get(`${API_BASE_URL}/api/market/anomalies`);
+    return response.data;
+};
+
+export interface PeerStock {
+    ticker: string;
+    name: string;
+    market_cap: number | null;
+    pe_ratio: number | null;
+    pb_ratio: number | null;
+    roe: number | null;
+    gross_margin: number | null;
+    sales_growth_5yr: number | null;
+    close: number | null;
+    is_current: boolean;
+}
+
+export interface PeerComparisonResponse {
+    peers: PeerStock[];
+    industry_medians: {
+        pe_ratio: number | null;
+        pb_ratio: number | null;
+        roe: number | null;
+        gross_margin: number | null;
+        sales_growth_5yr: number | null;
+    };
+    sector: string;
+}
+
+export const fetchPeerComparison = async (ticker: string): Promise<PeerComparisonResponse> => {
+    const response = await axios.get(`${API_BASE_URL}/api/stocks/${ticker}/peers`);
     return response.data;
 };

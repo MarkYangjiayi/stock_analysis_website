@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ValuationMetrics } from '@/lib/api';
-import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, Percent, Scale, Target } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, Percent, Scale, Target, BarChart } from 'lucide-react';
 import FactorRadarChart from './FactorRadarChart';
 
 interface ValuationDashboardProps {
@@ -13,6 +13,11 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
     if (!metrics) return null;
 
     const { ttm, valuation, factor_scores } = metrics;
+
+    const has52w = valuation.high_52w != null && valuation.low_52w != null;
+    const rangePosition = has52w && valuation.high_52w !== valuation.low_52w
+        ? Math.max(0, Math.min(100, ((valuation.current_price - valuation.low_52w!) / (valuation.high_52w! - valuation.low_52w!)) * 100))
+        : null;
 
     // 美化数字格式化函数
     const formatCompact = (num: number) => {
@@ -126,9 +131,48 @@ const ValuationDashboard: React.FC<ValuationDashboardProps> = ({ metrics }) => {
                     </div>
                 </div>
 
+                {/* 5. 52-Week Range */}
+            {has52w && (
+                <div className="bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-5 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all flex flex-col justify-between group">
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 bg-sky-50 dark:bg-sky-500/10 rounded-lg group-hover:bg-sky-100 dark:group-hover:bg-sky-500/20 transition">
+                            <BarChart className="text-sky-600 dark:text-sky-400" size={18} />
+                        </div>
+                        <h4 className="text-sm font-semibold text-slate-500 dark:text-gray-400 tracking-wide">52-Week Range</h4>
+                    </div>
+                    <div className="space-y-3">
+                        <div className="flex justify-between text-xs font-semibold">
+                            <span className="text-rose-500 dark:text-rose-400">${valuation.low_52w!.toFixed(2)} L</span>
+                            <span className="text-emerald-500 dark:text-emerald-400">H ${valuation.high_52w!.toFixed(2)}</span>
+                        </div>
+                        {/* Range bar */}
+                        <div className="relative w-full h-2 bg-slate-100 dark:bg-gray-800 rounded-full overflow-visible">
+                            <div
+                                className="absolute inset-y-0 left-0 bg-gradient-to-r from-rose-400 via-amber-400 to-emerald-400 rounded-full"
+                                style={{ width: '100%', opacity: 0.35 }}
+                            />
+                            {rangePosition != null && (
+                                <div
+                                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white dark:bg-gray-100 border-2 border-emerald-500 rounded-full shadow-md z-10"
+                                    style={{ left: `calc(${rangePosition}% - 6px)` }}
+                                />
+                            )}
+                        </div>
+                        {valuation.pct_from_52w_high != null && (
+                            <p className="text-xs text-slate-500 dark:text-gray-500 font-medium">
+                                <span className={valuation.pct_from_52w_high >= 0 ? 'text-emerald-500' : 'text-rose-400'}>
+                                    {(valuation.pct_from_52w_high * 100).toFixed(1)}%
+                                </span> from 52W High
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
+
             </div>
 
-            {/* 5. 多因子评分系统 (Multi-Factor Scoring) - 雷达图展示 */}
+            {/* 6. 多因子评分系统 (Multi-Factor Scoring) - 雷达图展示 */}
+
             {factor_scores && (
                 <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-sm dark:shadow-inner hover:border-emerald-500/30 transition-all w-full">
                     <div className="flex items-center gap-2 mb-2">

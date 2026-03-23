@@ -180,33 +180,55 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         result_fallback = await db.execute(stmt_fallback)
         fs_records = list(result_fallback.scalars().all())
 
+    # Always fetch annual records for the annual chart view (Annual/Quarterly toggle)
+    stmt_y_all = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker,
+        FinancialStatement.period == "Yearly"
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(10)
+    result_y_all = await db.execute(stmt_y_all)
+    fs_annual_records = list(result_y_all.scalars().all())
+
     historical_financials = []
     fs_records.reverse()  # 翻转为升序排列 (最老的数据在前)
-    
+
     def _safe_float(val) -> float:
         try:
             return float(val) if val is not None else 0.0
         except (ValueError, TypeError):
             return 0.0
 
-    for rec in fs_records:
-        inc_stmt = rec.income_statement or {}
-        rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
-        ni = _safe_float(inc_stmt.get('netIncome', rec.net_income))
-        gp = _safe_float(inc_stmt.get('grossProfit', 0.0))
-        
-        gross_margin = (gp / rev) if rev > 0 else 0.0
-        
-        historical_financials.append({
-            "date": rec.fiscal_date.isoformat() if hasattr(rec.fiscal_date, 'isoformat') else str(rec.fiscal_date),
-            "revenue": rev,
-            "net_income": ni,
-            "gross_margin": gross_margin
-        })
+    def _build_financial_records(records_list):
+        result = []
+        for rec in records_list:
+            inc_stmt = rec.income_statement or {}
+            bs_stmt = rec.balance_sheet or {}
+            rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
+            ni = _safe_float(inc_stmt.get('netIncome', rec.net_income))
+            gp = _safe_float(inc_stmt.get('grossProfit', 0.0))
+            shares = _safe_float(bs_stmt.get('commonStockSharesOutstanding', 0))
+
+            gross_margin = (gp / rev) if rev > 0 else 0.0
+            eps = (ni / shares) if shares > 0 else None
+
+            result.append({
+                "date": rec.fiscal_date.isoformat() if hasattr(rec.fiscal_date, 'isoformat') else str(rec.fiscal_date),
+                "revenue": rev,
+                "net_income": ni,
+                "gross_margin": gross_margin,
+                "eps": eps,
+            })
+        return result
+
+    historical_financials = _build_financial_records(fs_records)
+
+    # Build annual version (always ascending order)
+    fs_annual_records.reverse()
+    historical_financials_annual = _build_financial_records(fs_annual_records)
 
     # 4.5 利用 Pandas merge_asof 将财务报表日期与最近交易日的收盘价匹配
     price_matched = False
-    
+    price_matched_annual = False
+
     if historical_financials and price_records:
         # A. 将历史行情转化为以 datetime 为基准的 DataFrame 
         df_prices_raw = pd.DataFrame([{
@@ -241,13 +263,13 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
 
             # D. 清洗并赋值写回 list
             df_merged['price'] = df_merged['price'].where(pd.notnull(df_merged['price']), None)
-            
+
             # E. 转换回 list of dicts, 移除临时列并处理合并导致的列名重叠 ('date_x', 'date_y')
             if 'date_y' in df_merged.columns:
                 df_merged = df_merged.drop(columns=['date_y'])
             if 'date_x' in df_merged.columns:
                 df_merged = df_merged.rename(columns={'date_x': 'date'})
-                
+
             # Clean NaN for JSON compatibility
             historical_financials = []
             for record in df_merged.drop(columns=['date_dt']).to_dict(orient='records'):
@@ -259,13 +281,54 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         for item in historical_financials:
             item['price'] = None
 
+    # 4.6 Price-match annual financials
+    if historical_financials_annual and price_records:
+        try:
+            df_prices_raw2 = pd.DataFrame([{
+                "date": rec.date,
+                "close": float(rec.close) if rec.close else None,
+                "adjusted_close": float(rec.adjusted_close) if rec.adjusted_close else None
+            } for rec in price_records if rec.date and (rec.close or rec.adjusted_close)])
+
+            if not df_prices_raw2.empty:
+                df_prices_raw2['date'] = pd.to_datetime(df_prices_raw2['date'])
+                df_prices_raw2['price'] = df_prices_raw2['adjusted_close'].fillna(df_prices_raw2['close'])
+                df_prices_raw2 = df_prices_raw2.dropna(subset=['price']).sort_values('date')[['date', 'price']]
+
+                df_fin_a = pd.DataFrame(historical_financials_annual)
+                df_fin_a['date_dt'] = pd.to_datetime(df_fin_a['date'])
+                df_fin_a = df_fin_a.sort_values('date_dt')
+
+                df_merged_a = pd.merge_asof(
+                    df_fin_a, df_prices_raw2,
+                    left_on='date_dt', right_on='date',
+                    direction='backward', tolerance=pd.Timedelta(days=30)
+                )
+                df_merged_a['price'] = df_merged_a['price'].where(pd.notnull(df_merged_a['price']), None)
+                if 'date_y' in df_merged_a.columns:
+                    df_merged_a = df_merged_a.drop(columns=['date_y'])
+                if 'date_x' in df_merged_a.columns:
+                    df_merged_a = df_merged_a.rename(columns={'date_x': 'date'})
+
+                historical_financials_annual = []
+                for record in df_merged_a.drop(columns=['date_dt']).to_dict(orient='records'):
+                    historical_financials_annual.append({k: (None if pd.isna(v) else v) for k, v in record.items()})
+                price_matched_annual = True
+        except Exception as e:
+            logger.warning(f"Annual price match failed for {ticker}: {e}")
+
+    if not price_matched_annual:
+        for item in historical_financials_annual:
+            item['price'] = None
+
     # 5. 组装返回结果
     response_data = {
         "profile": profile,
         "historical_data": historical_data,
-        "historical_financials": historical_financials
+        "historical_financials": historical_financials,
+        "historical_financials_annual": historical_financials_annual,
     }
-    
+
     return response_data
 
 # ------------------------------------------------------------------------
@@ -370,16 +433,16 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         for i, r in enumerate(records_q):
             logger.info(f"[TTM Debug] {ticker} - Using Quarterly record {i+1}/4: {r.fiscal_date}")
         ttm_data = calculate_ttm(records_q, latest_rec)
-    
+
     ttm_revenue = ttm_data['ttm_revenue']
     ttm_gross_profit = ttm_data['ttm_gross_profit']
     ttm_net_income = ttm_data['ttm_net_income']
     ttm_fcf = ttm_data['ttm_fcf']
     roe = ttm_data['roe']
-    
+
     # 实施异常保护：校验 TTM 算出的 Gross Margin 是否由于数据脏污而与前序年报产生巨大偏差
     ttm_gm = (ttm_gross_profit / ttm_revenue) if ttm_revenue > 0 else 0
-    
+
     # 取最新的年报获取前一个财年的 GM
     stmt_y = select(FinancialStatement).where(
         FinancialStatement.ticker == ticker,
@@ -387,25 +450,41 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     ).order_by(FinancialStatement.fiscal_date.desc()).limit(1)
     result_y = await db.execute(stmt_y)
     latest_yearly = result_y.scalar_one_or_none()
-    
+
     if latest_yearly and ttm_revenue > 0:
         prev_rev = _safe_float(latest_yearly.revenue)
         prev_gp = _safe_float(latest_yearly.income_statement.get('grossProfit', 0) if latest_yearly.income_statement else 0)
         prev_gm = (prev_gp / prev_rev) if prev_rev > 0 else 0
-        
+
         # 允许 ±20% (比如原先是 40%，偏离到 20% 以下或 60% 以上则判定异常)
         TTM_GM_DEVIATION_THRESHOLD = 0.20
         if abs(ttm_gm - prev_gm) > TTM_GM_DEVIATION_THRESHOLD:
             logger.warning(f"[TTM DIRT CHECK] TTM Gross Margin ({ttm_gm:.2%}) deviation >{TTM_GM_DEVIATION_THRESHOLD:.0%} from Prev Yearly ({prev_gm:.2%}). Fallback GP to Prev GP adjusted by Rev growth.")
-            # 使用年度比例进行平滑替换脏数据，以免图表剧烈抖动
             ttm_gross_profit = ttm_revenue * prev_gm
-    
+
     total_assets = ttm_data['total_assets']
     total_liab = ttm_data['total_liab']
     total_equity = ttm_data['total_equity']
     shares_out = ttm_data['shares_out']
     cash_equiv = ttm_data['cash_equiv']
     total_debt = ttm_data['total_debt']
+
+    # Extract additional TTM metrics needed for professional multiples
+    # (operating income, EBITDA, interest expense, current ratio components)
+    ttm_operating_income = 0.0
+    ttm_ebitda_calc = 0.0
+    ttm_interest_expense = 0.0
+    current_assets = 0.0
+    current_liabilities = 0.0
+    if records_q and len(records_q) == 4:
+        for rec in records_q:
+            inc_stmt = rec.income_statement or {}
+            ttm_operating_income += _safe_float(inc_stmt.get('operatingIncome', 0))
+            ttm_ebitda_calc += _safe_float(inc_stmt.get('ebitda', 0))
+            ttm_interest_expense += _safe_float(inc_stmt.get('interestExpense', 0))
+    latest_bs_prof = latest_rec.balance_sheet or {} if latest_rec else {}
+    current_assets = _safe_float(latest_bs_prof.get('totalCurrentAssets'))
+    current_liabilities = _safe_float(latest_bs_prof.get('totalCurrentLiabilities'))
 
     # DCF 模型参数
     fcf_growth_rate = 0.10      # 10% 未来5年复合增长率
@@ -564,6 +643,89 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
             logger.warning(f"Momentum scoring failed for {ticker}: {e}")
             momentum_score = 50
 
+    # --- Professional Metrics Calculations ---
+    market_cap = current_price * shares_out if shares_out > 0 else 0.0
+    net_debt = total_debt - cash_equiv
+    ev = market_cap + total_debt - cash_equiv
+
+    eps = ttm_net_income / shares_out if shares_out > 0 else 0.0
+    book_value_ps = total_equity / shares_out if shares_out > 0 else 0.0
+
+    pe_ratio = round(current_price / eps, 2) if eps > 0 and current_price > 0 else None
+    pb_ratio = round(current_price / book_value_ps, 2) if book_value_ps > 0 and current_price > 0 else None
+    ps_ratio = round(market_cap / ttm_revenue, 2) if ttm_revenue > 0 and market_cap > 0 else None
+    pfcf_ratio = round(market_cap / ttm_fcf, 2) if ttm_fcf > 0 and market_cap > 0 else None
+    ev_ebitda = round(ev / ttm_ebitda_calc, 2) if ttm_ebitda_calc > 0 and ev > 0 else None
+    ev_revenue = round(ev / ttm_revenue, 2) if ttm_revenue > 0 and ev > 0 else None
+
+    gross_margin_pct = ttm_gross_profit / ttm_revenue if ttm_revenue > 0 else None
+    operating_margin_pct = ttm_operating_income / ttm_revenue if ttm_revenue > 0 else None
+    net_margin_pct = ttm_net_income / ttm_revenue if ttm_revenue > 0 else None
+    roa = ttm_net_income / total_assets if total_assets > 0 else None
+    fcf_conversion = ttm_fcf / ttm_net_income if ttm_net_income != 0 else None
+
+    current_ratio = round(current_assets / current_liabilities, 2) if current_liabilities > 0 else None
+    debt_to_equity_calc = round(total_debt / total_equity, 2) if total_equity > 0 else None
+    net_debt_ebitda = round(net_debt / ttm_ebitda_calc, 2) if ttm_ebitda_calc > 0 else None
+    interest_coverage = round(ttm_operating_income / abs(ttm_interest_expense), 2) if ttm_interest_expense != 0 else None
+
+    # --- 52-Week High/Low ---
+    price_52w_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(252)
+    price_52w_result = await db.execute(price_52w_stmt)
+    price_52w_recs = list(price_52w_result.scalars().all())
+
+    high_52w = max((float(r.high) for r in price_52w_recs if r.high), default=None)
+    low_52w = min((float(r.low) for r in price_52w_recs if r.low), default=None)
+    pct_from_52w_high = round((current_price - high_52w) / high_52w, 4) if high_52w and high_52w > 0 else None
+    pct_from_52w_low = round((current_price - low_52w) / low_52w, 4) if low_52w and low_52w > 0 else None
+
+    # --- Growth CAGR (Annual Records) ---
+    stmt_annual_growth = select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker,
+        FinancialStatement.period == "Yearly"
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(6)
+    result_annual_growth = await db.execute(stmt_annual_growth)
+    annual_records_growth = list(result_annual_growth.scalars().all())
+
+    revenue_yoy = None
+    revenue_cagr_3yr = None
+    eps_yoy = None
+    eps_cagr_3yr = None
+    fcf_yoy = None
+    eps_latest_annual = 0.0
+    rev_latest_annual = 0.0
+
+    if len(annual_records_growth) >= 2:
+        rev_latest_annual = _safe_float((annual_records_growth[0].income_statement or {}).get('totalRevenue', 0))
+        rev_1yr = _safe_float((annual_records_growth[1].income_statement or {}).get('totalRevenue', 0))
+        if rev_1yr > 0 and rev_latest_annual > 0:
+            revenue_yoy = (rev_latest_annual - rev_1yr) / rev_1yr
+
+        ni_latest = _safe_float((annual_records_growth[0].income_statement or {}).get('netIncome', 0))
+        ni_1yr = _safe_float((annual_records_growth[1].income_statement or {}).get('netIncome', 0))
+        sh_latest = _safe_float((annual_records_growth[0].balance_sheet or {}).get('commonStockSharesOutstanding', shares_out)) or shares_out
+        sh_1yr = _safe_float((annual_records_growth[1].balance_sheet or {}).get('commonStockSharesOutstanding', shares_out)) or shares_out
+        eps_latest_annual = ni_latest / sh_latest if sh_latest > 0 else 0.0
+        eps_1yr_val = ni_1yr / sh_1yr if sh_1yr > 0 else 0.0
+        if eps_1yr_val != 0:
+            eps_yoy = (eps_latest_annual - eps_1yr_val) / abs(eps_1yr_val)
+
+        fcf_latest_a = _safe_float((annual_records_growth[0].cash_flow or {}).get('freeCashFlow', 0))
+        fcf_1yr_a = _safe_float((annual_records_growth[1].cash_flow or {}).get('freeCashFlow', 0))
+        if fcf_1yr_a != 0:
+            fcf_yoy = (fcf_latest_a - fcf_1yr_a) / abs(fcf_1yr_a)
+
+    if len(annual_records_growth) >= 4:
+        rev_3yr = _safe_float((annual_records_growth[3].income_statement or {}).get('totalRevenue', 0))
+        if rev_3yr > 0 and rev_latest_annual > 0:
+            revenue_cagr_3yr = (rev_latest_annual / rev_3yr) ** (1.0 / 3.0) - 1.0
+
+        ni_3yr = _safe_float((annual_records_growth[3].income_statement or {}).get('netIncome', 0))
+        sh_3yr = _safe_float((annual_records_growth[3].balance_sheet or {}).get('commonStockSharesOutstanding', shares_out)) or shares_out
+        eps_3yr_val = ni_3yr / sh_3yr if sh_3yr > 0 else 0.0
+        if eps_3yr_val > 0 and eps_latest_annual > 0:
+            eps_cagr_3yr = (eps_latest_annual / eps_3yr_val) ** (1.0 / 3.0) - 1.0
+
     return {
         "ttm": {
             "revenue": ttm_revenue,
@@ -582,11 +744,56 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
             "dcf_intrinsic_value_per_share": intrinsic_value_per_share,
             "current_price": current_price,
             "margin_of_safety": margin_of_safety,
+            "high_52w": high_52w,
+            "low_52w": low_52w,
+            "pct_from_52w_high": pct_from_52w_high,
+            "pct_from_52w_low": pct_from_52w_low,
             "assumptions": {
                 "fcf_growth_rate_5yr": fcf_growth_rate,
                 "wacc": wacc,
                 "perpetual_growth": perpetual_growth
             }
+        },
+        "dcf_inputs": {
+            "ttm_fcf": ttm_fcf,
+            "cash": cash_equiv,
+            "total_debt": total_debt,
+            "shares_outstanding": shares_out,
+        },
+        "multiples": {
+            "pe_ratio": pe_ratio,
+            "pb_ratio": pb_ratio,
+            "ps_ratio": ps_ratio,
+            "pfcf_ratio": pfcf_ratio,
+            "ev_ebitda": ev_ebitda,
+            "ev_revenue": ev_revenue,
+            "market_cap": market_cap,
+            "enterprise_value": ev,
+            "net_debt": net_debt,
+            "eps": eps,
+        },
+        "profitability": {
+            "gross_margin": gross_margin_pct,
+            "operating_margin": operating_margin_pct,
+            "net_margin": net_margin_pct,
+            "roe": roe,
+            "roa": roa,
+            "fcf_conversion": fcf_conversion,
+            "ttm_ebitda": ttm_ebitda_calc,
+        },
+        "financial_health": {
+            "current_ratio": current_ratio,
+            "debt_to_equity": debt_to_equity_calc,
+            "net_debt_ebitda": net_debt_ebitda,
+            "interest_coverage": interest_coverage,
+            "net_debt": net_debt,
+        },
+        "growth_metrics": {
+            "revenue_yoy": revenue_yoy,
+            "revenue_cagr_3yr": revenue_cagr_3yr,
+            "eps_yoy": eps_yoy,
+            "eps_cagr_3yr": eps_cagr_3yr,
+            "fcf_yoy": fcf_yoy,
         },
         "factor_scores": {
             "value": value_score,
@@ -787,6 +994,76 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
         "limit": limit,
         "offset": offset
     }
+
+async def get_peer_comparison(ticker: str, db: AsyncSession) -> Optional[Dict[str, Any]]:
+    """
+    Returns a peer comparison table for a given ticker based on sector peers
+    from the StockScreenerSnapshot table, with industry median statistics.
+    """
+    ticker = ticker.upper()
+
+    # 1. Look up the ticker's sector
+    sector_stmt = select(StockScreenerSnapshot.sector).where(
+        StockScreenerSnapshot.ticker == ticker
+    ).limit(1)
+    sector_res = await db.execute(sector_stmt)
+    sector_row = sector_res.scalar_one_or_none()
+
+    if not sector_row:
+        return None
+
+    # 2. Fetch top peers in same sector ordered by market cap
+    peers_stmt = select(StockScreenerSnapshot).where(
+        StockScreenerSnapshot.sector == sector_row,
+        StockScreenerSnapshot.market_cap.isnot(None)
+    ).order_by(desc(StockScreenerSnapshot.market_cap)).limit(12)
+    peers_res = await db.execute(peers_stmt)
+    peer_records = list(peers_res.scalars().all())
+
+    if not peer_records:
+        return None
+
+    def _sf(val):
+        try:
+            return float(val) if val is not None else None
+        except (ValueError, TypeError):
+            return None
+
+    peers = []
+    for r in peer_records:
+        peers.append({
+            "ticker": r.ticker,
+            "name": r.name,
+            "market_cap": _sf(r.market_cap),
+            "pe_ratio": _sf(r.pe_ratio),
+            "pb_ratio": _sf(r.pb_ratio),
+            "roe": _sf(r.roe),
+            "gross_margin": _sf(r.gross_margin),
+            "sales_growth_5yr": _sf(r.sales_growth_5yr),
+            "close": _sf(r.close),
+            "is_current": r.ticker == ticker,
+        })
+
+    # 3. Compute medians for numeric fields
+    numeric_fields = ["pe_ratio", "pb_ratio", "roe", "gross_margin", "sales_growth_5yr"]
+
+    def _median(field: str):
+        vals = [p[field] for p in peers if p[field] is not None]
+        if not vals:
+            return None
+        vals.sort()
+        n = len(vals)
+        mid = n // 2
+        return (vals[mid] + vals[mid - 1]) / 2 if n % 2 == 0 else vals[mid]
+
+    industry_medians = {f: _median(f) for f in numeric_fields}
+
+    return {
+        "peers": peers,
+        "industry_medians": industry_medians,
+        "sector": sector_row,
+    }
+
 
 def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: int = 14) -> list[dict]:
     """

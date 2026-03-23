@@ -12,11 +12,12 @@ from sqlalchemy import select, func
 from models import FinancialStatement
 from services.data_sync import sync_ticker_data
 from services.analyzer import (
-    get_analyzed_stock_data, 
-    get_fundamental_valuation, 
+    get_analyzed_stock_data,
+    get_fundamental_valuation,
     batch_get_factor_scores,
     filter_screener_stocks,
-    get_rrg_data_for_tickers
+    get_rrg_data_for_tickers,
+    get_peer_comparison,
 )
 from services.ai_assistant import generate_stock_report
 from services.news_fetcher import fetch_yahoo_news
@@ -169,6 +170,19 @@ async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
     report_generator = generate_stock_report(ticker, data)
     
     return StreamingResponse(report_generator, media_type="text/event-stream")
+
+@router.get("/api/stocks/{ticker}/peers", tags=["Stocks Analysis Read"])
+async def get_stock_peers(ticker: str, db: AsyncSession = Depends(get_db)):
+    """
+    Returns a peer comparison table for the given ticker based on sector peers,
+    with industry median statistics for key valuation metrics.
+    """
+    ticker = ticker.upper()
+    result = await get_peer_comparison(ticker, db)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No peer data found for {ticker}")
+    return result
+
 
 @router.get("/api/stocks/{ticker}/news")
 async def get_stock_news(ticker: str):

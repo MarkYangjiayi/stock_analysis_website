@@ -14,14 +14,30 @@ interface StockChartProps {
 
 const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onIntervalChange, isLoading }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
+    const rsiContainerRef = useRef<HTMLDivElement>(null);
+    const macdContainerRef = useRef<HTMLDivElement>(null);
+
     const chartRef = useRef<IChartApi | null>(null);
+    const rsiChartRef = useRef<IChartApi | null>(null);
+    const macdChartRef = useRef<IChartApi | null>(null);
+
     const { resolvedTheme } = useTheme();
 
-    // Maintain refs to series so they can be updated dynamically
+    // Main chart series
     const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
     const ma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     const ma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+
+    // RSI series
+    const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+
+    // MACD series
+    const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+
+    const isSyncingRef = useRef(false);
 
     const [tooltipData, setTooltipData] = useState<{
         visible: boolean;
@@ -40,75 +56,99 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
 
     // 1. Initial Chart Creation (Only runs once)
     useEffect(() => {
-        if (!chartContainerRef.current) return;
+        if (!chartContainerRef.current || !rsiContainerRef.current || !macdContainerRef.current) return;
 
         const isDark = resolvedTheme === 'dark';
         const backgroundColor = isDark ? '#191D26' : '#ffffff';
         const textColor = isDark ? '#D9D9D9' : '#334155';
         const gridColor = isDark ? '#2B2B43' : '#e2e8f0';
 
-        const chart = createChart(chartContainerRef.current, {
-            layout: {
-                background: { type: ColorType.Solid, color: backgroundColor },
-                textColor: textColor,
-            },
-            grid: {
-                vertLines: { color: gridColor },
-                horzLines: { color: gridColor },
-            },
-            width: chartContainerRef.current.clientWidth,
-            height: 480,
-            crosshair: {
-                mode: CrosshairMode.Normal,
-            },
-            timeScale: {
-                timeVisible: true,
-                borderColor: gridColor,
-            },
-            rightPriceScale: {
-                borderColor: gridColor,
-                mode: PriceScaleMode.Logarithmic,
-            },
-        });
+        const commonOptions = {
+            layout: { background: { type: ColorType.Solid, color: backgroundColor }, textColor },
+            grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+            crosshair: { mode: CrosshairMode.Normal },
+            timeScale: { timeVisible: true, borderColor: gridColor },
+            rightPriceScale: { borderColor: gridColor },
+            handleScroll: { mouseWheel: true, pressedMouseMove: true },
+            handleScale: { mouseWheel: true, pinch: true },
+        };
 
+        // Main chart
+        const chart = createChart(chartContainerRef.current, {
+            ...commonOptions,
+            width: chartContainerRef.current.clientWidth,
+            height: 380,
+            rightPriceScale: { borderColor: gridColor, mode: PriceScaleMode.Logarithmic },
+        });
         chartRef.current = chart;
 
         candlestickSeriesRef.current = chart.addCandlestickSeries({
-            upColor: '#26a69a',
-            downColor: '#ef5350',
-            borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
+            upColor: '#26a69a', downColor: '#ef5350',
+            borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350',
         });
 
         volumeSeriesRef.current = chart.addHistogramSeries({
-            color: '#26a69a',
-            priceFormat: { type: 'volume' },
-            priceScaleId: '',
+            color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: '',
         });
+        chart.priceScale('').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 
-        chart.priceScale('').applyOptions({
-            scaleMargins: {
-                top: 0.8,
-                bottom: 0,
-            },
-        });
+        ma20SeriesRef.current = chart.addLineSeries({ color: '#2962FF', lineWidth: 2, crosshairMarkerVisible: false });
+        ma50SeriesRef.current = chart.addLineSeries({ color: '#FF9800', lineWidth: 2, crosshairMarkerVisible: false });
 
-        ma20SeriesRef.current = chart.addLineSeries({
-            color: '#2962FF',
-            lineWidth: 2,
-            crosshairMarkerVisible: false,
+        // RSI chart
+        const rsiChart = createChart(rsiContainerRef.current, {
+            ...commonOptions,
+            width: rsiContainerRef.current.clientWidth,
+            height: 90,
+            timeScale: { timeVisible: false, borderColor: gridColor },
         });
+        rsiChartRef.current = rsiChart;
 
-        ma50SeriesRef.current = chart.addLineSeries({
-            color: '#FF9800',
-            lineWidth: 2,
-            crosshairMarkerVisible: false,
+        rsiSeriesRef.current = rsiChart.addLineSeries({
+            color: '#a78bfa', lineWidth: 2, crosshairMarkerVisible: false,
+            priceFormat: { type: 'custom', minMove: 0.01, formatter: (p: number) => p.toFixed(1) },
         });
+        // Reference lines at 70 and 30
+        rsiSeriesRef.current.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
+        rsiSeriesRef.current.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
+
+        // MACD chart
+        const macdChart = createChart(macdContainerRef.current, {
+            ...commonOptions,
+            width: macdContainerRef.current.clientWidth,
+            height: 100,
+            timeScale: { timeVisible: false, borderColor: gridColor },
+        });
+        macdChartRef.current = macdChart;
+
+        macdHistRef.current = macdChart.addHistogramSeries({
+            priceFormat: { type: 'custom', minMove: 0.001, formatter: (p: number) => p.toFixed(3) },
+        });
+        macdLineRef.current = macdChart.addLineSeries({ color: '#2962FF', lineWidth: 1, crosshairMarkerVisible: false });
+        macdSignalRef.current = macdChart.addLineSeries({ color: '#FF6D00', lineWidth: 1, crosshairMarkerVisible: false });
+
+        // Time scale synchronization
+        const syncRange = (sourceChart: IChartApi, targetCharts: IChartApi[]) => {
+            sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+                if (isSyncingRef.current || !range) return;
+                isSyncingRef.current = true;
+                targetCharts.forEach(tc => tc.timeScale().setVisibleLogicalRange(range));
+                isSyncingRef.current = false;
+            });
+        };
+        syncRange(chart, [rsiChart, macdChart]);
+        syncRange(rsiChart, [chart, macdChart]);
+        syncRange(macdChart, [chart, rsiChart]);
 
         const handleResize = () => {
             if (chartContainerRef.current && chartRef.current) {
                 chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+            }
+            if (rsiContainerRef.current && rsiChartRef.current) {
+                rsiChartRef.current.applyOptions({ width: rsiContainerRef.current.clientWidth });
+            }
+            if (macdContainerRef.current && macdChartRef.current) {
+                macdChartRef.current.applyOptions({ width: macdContainerRef.current.clientWidth });
             }
         };
 
@@ -117,69 +157,57 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         return () => {
             window.removeEventListener('resize', handleResize);
             chart.remove();
+            rsiChart.remove();
+            macdChart.remove();
             chartRef.current = null;
+            rsiChartRef.current = null;
+            macdChartRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only run once on mount
 
-    // 2. Dynamic Theme Update (Applies options without recreating chart)
+    // 2. Dynamic Theme Update
     useEffect(() => {
-        if (!chartRef.current) return;
+        const charts = [chartRef.current, rsiChartRef.current, macdChartRef.current];
+        if (charts.some(c => !c)) return;
 
         const isDark = resolvedTheme === 'dark';
         const backgroundColor = isDark ? '#191D26' : '#ffffff';
         const textColor = isDark ? '#D9D9D9' : '#334155';
         const gridColor = isDark ? '#2B2B43' : '#e2e8f0';
 
-        chartRef.current.applyOptions({
-            layout: {
-                background: { type: ColorType.Solid, color: backgroundColor },
-                textColor: textColor,
-            },
-            grid: {
-                vertLines: { color: gridColor },
-                horzLines: { color: gridColor },
-            },
-            timeScale: {
-                borderColor: gridColor,
-            },
-            rightPriceScale: {
-                borderColor: gridColor,
-            },
-        });
+        charts.forEach(c => c?.applyOptions({
+            layout: { background: { type: ColorType.Solid, color: backgroundColor }, textColor },
+            grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+            timeScale: { borderColor: gridColor },
+            rightPriceScale: { borderColor: gridColor },
+        }));
     }, [resolvedTheme]);
 
-    // 3. Data Update Effect (triggers when `data` changes instead of tearing down instance)
+    // 3. Data Update Effect
     useEffect(() => {
         if (!data || data.length === 0 || !chartRef.current) return;
 
-        // Filter out any points that might have null/undefined values for essential properties
-        const validCandleData = data.filter(d =>
-            d.open != null && d.high != null && d.low != null && d.close != null
-        );
+        const validCandleData = data.filter(d => d.open != null && d.high != null && d.low != null && d.close != null);
 
-        const candleData = validCandleData.map((d) => ({
-            time: d.date,
-            open: d.open,
-            high: d.high,
-            low: d.low,
-            close: d.close,
-        }));
-
+        const candleData = validCandleData.map((d) => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close }));
         const volumeData = validCandleData.map((d) => ({
-            time: d.date,
-            value: d.volume != null ? d.volume : 0,
+            time: d.date, value: d.volume != null ? d.volume : 0,
             color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
         }));
+        const ma20Data = data.filter(d => d.MA20 != null).map(d => ({ time: d.date, value: d.MA20 as number }));
+        const ma50Data = data.filter(d => d.MA50 != null).map(d => ({ time: d.date, value: d.MA50 as number }));
 
-        const ma20Data = data.filter(d => d.MA20 != null).map(d => ({
-            time: d.date,
-            value: d.MA20 as number,
-        }));
+        // RSI data
+        const rsiData = data.filter(d => d.RSI != null).map(d => ({ time: d.date, value: d.RSI as number }));
 
-        const ma50Data = data.filter(d => d.MA50 != null).map(d => ({
+        // MACD data
+        const macdData = data.filter(d => d.MACD != null).map(d => ({ time: d.date, value: d.MACD as number }));
+        const macdSignalData = data.filter(d => d.MACD_Signal != null).map(d => ({ time: d.date, value: d.MACD_Signal as number }));
+        const macdHistData = data.filter(d => d.MACD_Hist != null).map(d => ({
             time: d.date,
-            value: d.MA50 as number,
+            value: d.MACD_Hist as number,
+            color: (d.MACD_Hist as number) >= 0 ? 'rgba(38,166,154,0.7)' : 'rgba(239,83,80,0.7)',
         }));
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -190,21 +218,24 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         ma20SeriesRef.current?.setData(ma20Data as any);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ma50SeriesRef.current?.setData(ma50Data as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rsiSeriesRef.current?.setData(rsiData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        macdHistRef.current?.setData(macdHistData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        macdLineRef.current?.setData(macdData as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        macdSignalRef.current?.setData(macdSignalData as any);
 
-        // Make sure newly loaded long-timeline data fits on screen gracefully
         chartRef.current.timeScale().fitContent();
 
-        // Subscribe inside so it has access to latest closures
         const chart = chartRef.current;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const crosshairHandler = (param: any) => {
             if (
-                param.point === undefined ||
-                !param.time ||
-                param.point.x < 0 ||
-                param.point.x > chartContainerRef.current!.clientWidth ||
-                param.point.y < 0 ||
-                param.point.y > chartContainerRef.current!.clientHeight
+                param.point === undefined || !param.time ||
+                param.point.x < 0 || param.point.x > chartContainerRef.current!.clientWidth ||
+                param.point.y < 0 || param.point.y > chartContainerRef.current!.clientHeight
             ) {
                 setTooltipData(prev => prev ? { ...prev, visible: false } : null);
                 return;
@@ -217,25 +248,17 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                 setTooltipData({
                     visible: true,
                     date: rawData.date,
-                    open: rawData.open,
-                    high: rawData.high,
-                    low: rawData.low,
-                    close: rawData.close,
+                    open: rawData.open, high: rawData.high, low: rawData.low, close: rawData.close,
                     volume: rawData.volume,
-                    ma20: rawData.MA20,
-                    ma50: rawData.MA50,
-                    x: param.point.x,
-                    y: param.point.y,
+                    ma20: rawData.MA20, ma50: rawData.MA50,
+                    x: param.point.x, y: param.point.y,
                     containerWidth: chartContainerRef.current?.clientWidth || Number.POSITIVE_INFINITY,
                 });
             }
         };
 
         chart.subscribeCrosshairMove(crosshairHandler);
-
-        return () => {
-            chart.unsubscribeCrosshairMove(crosshairHandler);
-        }
+        return () => { chart.unsubscribeCrosshairMove(crosshairHandler); };
     }, [data]);
 
     return (
@@ -264,7 +287,19 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                 </div>
             )}
 
-            <div ref={chartContainerRef} className="w-full h-full" />
+            <div ref={chartContainerRef} className="w-full" />
+
+            {/* RSI Pane */}
+            <div className="border-t border-gray-200 dark:border-gray-700/50 relative">
+                <span className="absolute top-1 left-2 z-10 text-[10px] font-bold text-violet-400 dark:text-violet-400 opacity-70 pointer-events-none">RSI (14)</span>
+                <div ref={rsiContainerRef} className="w-full" />
+            </div>
+
+            {/* MACD Pane */}
+            <div className="border-t border-gray-200 dark:border-gray-700/50 relative">
+                <span className="absolute top-1 left-2 z-10 text-[10px] font-bold text-blue-400 dark:text-blue-400 opacity-70 pointer-events-none">MACD (12,26,9)</span>
+                <div ref={macdContainerRef} className="w-full" />
+            </div>
 
             {/* Tooltip Overlay */}
             {tooltipData && tooltipData.visible && (
