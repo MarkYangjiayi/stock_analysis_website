@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
@@ -86,6 +87,26 @@ def _eligible_members(memberships: pd.DataFrame, universe: str, as_of: pd.Timest
     return set(data.loc[mask, "ticker"])
 
 
+async def _get_or_create_strategy(
+    db: AsyncSession,
+    name: str,
+    version: str,
+    config: dict,
+) -> StrategyDefinition:
+    await db.execute(
+        insert(StrategyDefinition)
+        .values(name=name, version=version, config=config)
+        .on_conflict_do_nothing(index_elements=["name", "version"])
+    )
+    result = await db.execute(
+        select(StrategyDefinition).where(
+            StrategyDefinition.name == name,
+            StrategyDefinition.version == version,
+        )
+    )
+    return result.scalar_one()
+
+
 def run_backtest_from_frames(
     factors: pd.DataFrame,
     prices: pd.DataFrame,
@@ -164,6 +185,7 @@ def run_backtest_from_frames(
         returns_row = asset_returns.loc[trading_date]
         day_return = 0.0
         liquidations = []
+        holding_returns: Dict[str, float] = {}
         for ticker, weight in current_weights.items():
             raw_price = pivot.loc[trading_date].get(ticker)
             if pd.isna(raw_price):
@@ -177,6 +199,7 @@ def run_backtest_from_frames(
                 liquidations.append(ticker)
                 continue
             asset_return = float(returns_row.get(ticker, 0.0) or 0.0)
+            holding_returns[ticker] = asset_return
             contribution = weight * asset_return
             day_return += contribution
             sector = current_sectors.get(ticker, "Unknown")
@@ -184,6 +207,18 @@ def run_backtest_from_frames(
         for ticker in liquidations:
             current_weights.pop(ticker, None)
             current_sectors.pop(ticker, None)
+
+        # Holdings drift with their market values between scheduled
+        # rebalances. Turnover must be measured from these post-return weights,
+        # otherwise the simulation silently assumes cost-free daily balancing.
+        portfolio_growth = 1.0 + day_return
+        if current_weights and portfolio_growth <= 0:
+            raise ValueError(f"Portfolio value reached zero on {trading_date.date()}")
+        if current_weights:
+            current_weights = {
+                ticker: weight * (1.0 + holding_returns[ticker]) / portfolio_growth
+                for ticker, weight in current_weights.items()
+            }
 
         rebalance_cost = 0.0
         if trading_date in execution_schedule:
@@ -299,17 +334,12 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
     serialized_config = json.dumps(config.json_dict(), sort_keys=True, separators=(",", ":"))
     config_hash = hashlib.sha256(serialized_config.encode("utf-8")).hexdigest()[:12]
     strategy_version = f"{config.factor_version}-{config_hash}"
-    strategy_result = await db.execute(
-        select(StrategyDefinition).where(
-            StrategyDefinition.name == name,
-            StrategyDefinition.version == strategy_version,
-        )
+    strategy = await _get_or_create_strategy(
+        db,
+        name=name,
+        version=strategy_version,
+        config=config.json_dict(),
     )
-    strategy = strategy_result.scalar_one_or_none()
-    if strategy is None:
-        strategy = StrategyDefinition(name=name, version=strategy_version, config=config.json_dict())
-        db.add(strategy)
-        await db.flush()
     run = BacktestRun(
         strategy_id=strategy.id,
         name=name,

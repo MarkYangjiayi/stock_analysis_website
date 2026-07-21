@@ -1,6 +1,7 @@
 import asyncio
 import sqlite3
-from datetime import date, datetime
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,8 @@ import yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
-from models import DailyPrice, DataPublication, PipelineRun, SecurityMaster, StockScreenerSnapshot, Ticker
-from services.analyzer import filter_screener_stocks
+from models import DailyPrice, DataPublication, FinancialStatement, PipelineRun, SecurityMaster, StockScreenerSnapshot, Ticker
+from services.analyzer import batch_get_factor_scores, filter_screener_stocks, get_fundamental_valuation
 from services.data_quality import validate_screener_records
 from services.raw_store import persist_snapshot
 from services.security_master import canonicalize_ticker, upsert_security
@@ -44,6 +45,64 @@ async def test_universe_membership_closes_exits(db_session):
     await db_session.commit()
     assert set(await universe_as_of(db_session, "TEST", date(2025, 1, 15))) == {"AAA.US", "BBB.US"}
     assert set(await universe_as_of(db_session, "TEST", date(2025, 2, 2))) == {"BBB.US", "CCC.US"}
+
+
+@pytest.mark.asyncio
+async def test_universe_membership_rejects_partial_observation(db_session):
+    initial = [f"T{index}.US" for index in range(10)]
+    await record_universe_membership(db_session, "TEST", initial, date(2025, 1, 1))
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="refusing to close memberships"):
+        await record_universe_membership(
+            db_session,
+            "TEST",
+            initial[:2],
+            date(2025, 1, 2),
+            minimum_retained_fraction=0.9,
+        )
+
+    assert set(await universe_as_of(db_session, "TEST", date(2025, 1, 2))) == set(initial)
+
+
+@pytest.mark.asyncio
+async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_components(index_ticker, client=None):
+        prefix = "SP" if index_ticker == "GSPC.INDX" else "RU"
+        return [f"{prefix}{index}.US" for index in range(5)]
+
+    async def partial_bulk(*args, **kwargs):
+        return [
+            {
+                "code": ticker,
+                "exchange_short_name": "US",
+                "date": "2025-01-02",
+                "close": 100,
+            }
+            for ticker in ["SP0", "RU0"]
+        ]
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_index_components",
+        fake_components,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_eod_prices",
+        partial_bulk,
+    )
+
+    with pytest.raises(ValueError, match="universe coverage"):
+        await fetch_and_merge_bulk_data("2025-01-02")
 
 
 @pytest.mark.asyncio
@@ -219,6 +278,78 @@ async def test_read_through_cache_miss_consumes_rate_limit(db_session, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_batch_factor_scores_use_constant_database_queries(db_session, monkeypatch):
+    tickers = ["AAA.US", "BBB.US"]
+    db_session.add_all([Ticker(ticker=ticker) for ticker in tickers])
+    for ticker_index, ticker in enumerate(tickers):
+        balance_sheet = {
+            "totalAssets": 1_000,
+            "totalLiab": 400,
+            "totalStockholderEquity": 600,
+            "commonStockSharesOutstanding": 100,
+        }
+        for quarter_index in range(4):
+            db_session.add(FinancialStatement(
+                ticker=ticker,
+                fiscal_date=date(2024, 12, 31) - timedelta(days=quarter_index * 90),
+                period="Quarterly",
+                revenue=100 + ticker_index * 10,
+                net_income=10 + ticker_index,
+                income_statement={
+                    "totalRevenue": 100 + ticker_index * 10,
+                    "grossProfit": 50,
+                    "netIncome": 10 + ticker_index,
+                },
+                balance_sheet=balance_sheet,
+                cash_flow={"freeCashFlow": 8},
+            ))
+        for year_index, revenue in enumerate([120, 100]):
+            db_session.add(FinancialStatement(
+                ticker=ticker,
+                fiscal_date=date(2023 - year_index, 12, 31),
+                period="Yearly",
+                revenue=revenue,
+                net_income=10,
+                income_statement={"totalRevenue": revenue, "grossProfit": 50},
+                balance_sheet=balance_sheet,
+            ))
+        for day_index in range(60):
+            db_session.add(DailyPrice(
+                ticker=ticker,
+                date=date(2025, 1, 1) + timedelta(days=day_index),
+                close=100 + day_index + ticker_index,
+                adjusted_close=100 + day_index + ticker_index,
+            ))
+    await db_session.commit()
+
+    expected = {
+        ticker: (await get_fundamental_valuation(ticker, db_session))["factor_scores"]
+        for ticker in tickers
+    }
+    original_execute = db_session.execute
+    execute_calls = 0
+
+    async def counted_execute(*args, **kwargs):
+        nonlocal execute_calls
+        execute_calls += 1
+        return await original_execute(*args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", counted_execute)
+    result = await batch_get_factor_scores(["aaa.us", "BBB.US", "MISSING.US"], db_session)
+
+    assert execute_calls == 2
+    assert result[0] == {"ticker": "AAA.US", "factor_scores": expected["AAA.US"]}
+    assert result[1] == {"ticker": "BBB.US", "factor_scores": expected["BBB.US"]}
+    assert result[2]["factor_scores"] == {
+        "value": 0,
+        "quality": 0,
+        "growth": 0,
+        "health": 0,
+        "momentum": 0,
+    }
+
+
+@pytest.mark.asyncio
 async def test_ws_monitor_backs_off_after_short_clean_disconnect(monkeypatch):
     from services.ws_monitor import WSMonitor
 
@@ -275,6 +406,36 @@ def test_online_backup_is_consistent(tmp_path):
     with sqlite3.connect(backup) as connection:
         assert connection.execute("SELECT value FROM values_table").fetchone()[0] == 42
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_funds_uses_sqlite_compatible_exact_match(db_session):
+    from scripts.cleanup_funds import clean_database
+
+    db_session.add_all([
+        Ticker(ticker="AEGFX.US"),
+        Ticker(ticker="AAPL.US"),
+        Ticker(ticker="TOOLONGX.US"),
+    ])
+    db_session.add_all([
+        DailyPrice(ticker="AEGFX.US", date=date(2025, 1, 2), close=10),
+        FinancialStatement(
+            ticker="AEGFX.US",
+            fiscal_date=date(2024, 12, 31),
+            period="Yearly",
+        ),
+        StockScreenerSnapshot(ticker="AEGFX.US", date=date(2025, 1, 2), close=10),
+    ])
+    await db_session.commit()
+
+    await clean_database()
+    await db_session.rollback()
+
+    remaining = set((await db_session.execute(select(Ticker.ticker))).scalars())
+    assert remaining == {"AAPL.US", "TOOLONGX.US"}
+    assert (await db_session.execute(select(DailyPrice))).scalars().all() == []
+    assert (await db_session.execute(select(FinancialStatement))).scalars().all() == []
+    assert (await db_session.execute(select(StockScreenerSnapshot))).scalars().all() == []
 
 
 def test_exchange_calendar_skips_weekends_and_holidays():

@@ -24,10 +24,28 @@ from services.security_master import bulk_upsert_securities
 from services.universe import record_universe_membership
 from services.raw_store import persist_snapshot
 from services.data_sync import _upsert_financials
+from core.config import settings
 from core.time_utils import utc_now
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _validate_universe_coverage(target_tickers: set[str], priced_tickers: set[str]) -> float:
+    if len(target_tickers) < settings.PIPELINE_MIN_UNIVERSE_SIZE:
+        raise ValueError(
+            f"Resolved target universe is too small: {len(target_tickers)} "
+            f"< {settings.PIPELINE_MIN_UNIVERSE_SIZE}"
+        )
+    coverage = len(priced_tickers & target_tickers) / len(target_tickers)
+    if coverage < settings.PIPELINE_MIN_UNIVERSE_COVERAGE:
+        raise ValueError(
+            f"Bulk price universe coverage {coverage:.2%} is below "
+            f"{settings.PIPELINE_MIN_UNIVERSE_COVERAGE:.2%} "
+            f"({len(priced_tickers)} priced / {len(target_tickers)} target)"
+        )
+    return coverage
+
 
 async def fetch_target_universe_fundamentals(
     tickers: set,
@@ -155,6 +173,7 @@ async def fetch_and_merge_bulk_data(
             russell_task = eodhd_client.get_index_components("RUT.INDX", client=client)
             sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
             target_tickers = set(sp500_tickers + russell_tickers)
+        target_tickers = {ticker.upper() for ticker in target_tickers}
         logger.info(f"Total unique target tickers from S&P 500 and Russell 2000: {len(target_tickers)}")
 
         # Fetch daily bulk prices (still free/fast)
@@ -175,6 +194,8 @@ async def fetch_and_merge_bulk_data(
         # Discard all prices that are not in the observed target universe.
         df_eod = df_eod[df_eod['ticker'].isin(target_tickers)]
         logger.info(f"Filtered EOD prices down to {len(df_eod)} target index constituents.")
+        priced_tickers = set(df_eod["ticker"])
+        universe_coverage = _validate_universe_coverage(target_tickers, priced_tickers)
 
         observed_dates = set(pd.to_datetime(df_eod["date"], errors="coerce").dropna().dt.date)
         if len(observed_dates) != 1:
@@ -184,7 +205,6 @@ async def fetch_and_merge_bulk_data(
             raise ValueError(f"Provider returned {observed_date} for requested date {target_date}")
 
         # Reuse the same connection pool for the large fundamental batch.
-        priced_tickers = set(df_eod["ticker"])
         async def handle_chunk(raw_batch: Dict[str, dict]) -> None:
             if fundamental_chunk_handler:
                 await fundamental_chunk_handler(raw_batch, observed_date)
@@ -203,6 +223,9 @@ async def fetch_and_merge_bulk_data(
     # Merge datasets on 'ticker'
     logger.info("Merging targeted EOD prices and fundamentals...")
     df_merged = pd.merge(df_eod, df_fund, on="ticker", how="left")
+    df_merged.attrs["target_tickers"] = sorted(target_tickers)
+    df_merged.attrs["priced_tickers"] = sorted(priced_tickers)
+    df_merged.attrs["universe_coverage"] = universe_coverage
     
     return df_merged
 
@@ -312,6 +335,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         )
         if df_merged.empty:
             raise ValueError("Merged screener dataset is empty")
+        target_universe = set(df_merged.attrs.get("target_tickers", df_merged["ticker"]))
             
         # VERY IMPORTANT: EODHD bulk sometimes returns overlapping duplicates for the same day
         df_merged = df_merged.drop_duplicates(subset=['ticker'])
@@ -442,14 +466,6 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 await db.execute(profile_stmt)
 
             await bulk_upsert_securities(db, records_to_upsert, snapshot_date)
-            await record_universe_membership(
-                db,
-                universe="SP500_RUSSELL2000",
-                tickers=ticker_list,
-                effective_date=snapshot_date,
-                source_run_id=run_id,
-            )
-            
             # 2a. Sync these EOD prices to our DailyPrice history locally first!
             # Since technicals depend on this
             daily_price_inserts = []
@@ -492,6 +508,14 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             quality_report = validate_screener_records(records_to_upsert)
             if not quality_report.passed:
                 raise DataQualityError(quality_report)
+            await record_universe_membership(
+                db,
+                universe="SP500_RUSSELL2000",
+                tickers=target_universe,
+                effective_date=snapshot_date,
+                source_run_id=run_id,
+                minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+            )
             
             # 3. Final bulk Insert to StockScreenerSnapshot (Delete and Replace)
             logger.info("Starting Bulk Insert into StockScreenerSnapshot...")

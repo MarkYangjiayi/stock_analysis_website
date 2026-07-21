@@ -14,6 +14,7 @@ async def record_universe_membership(
     tickers: Iterable[str],
     effective_date: date,
     source_run_id: Optional[int] = None,
+    minimum_retained_fraction: Optional[float] = None,
 ) -> None:
     current = {ticker.upper() for ticker in tickers}
     result = await db.execute(
@@ -23,6 +24,16 @@ async def record_universe_membership(
         )
     )
     active = {row.ticker: row for row in result.scalars().all()}
+    if minimum_retained_fraction is not None:
+        if not 0 < minimum_retained_fraction <= 1:
+            raise ValueError("minimum_retained_fraction must be in (0, 1]")
+        if active:
+            retained = len(set(active) & current) / len(active)
+            if retained < minimum_retained_fraction:
+                raise ValueError(
+                    f"Observed {universe} universe retained only {retained:.2%} of "
+                    f"{len(active)} active constituents; refusing to close memberships"
+                )
     exited = set(active) - current
     if exited:
         await db.execute(

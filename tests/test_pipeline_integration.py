@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, timedelta
 
 import pytest
@@ -206,6 +207,29 @@ async def test_backtest_persists_immutable_strategy_and_signal_snapshots(db_sess
     )).scalars().all()
     assert [snapshot.ticker for snapshot in snapshots] == ["AAA.US", "BBB.US"]
     assert sum(snapshot.target_weight for snapshot in snapshots) == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_strategy_definition_creation_is_concurrency_safe(db_session):
+    from database import async_session_maker
+    from services.quant.backtest import _get_or_create_strategy
+
+    async def create_strategy():
+        async with async_session_maker() as session:
+            strategy = await _get_or_create_strategy(
+                session,
+                name="Concurrent Strategy",
+                version="v1-test",
+                config={"factor": "composite"},
+            )
+            await session.commit()
+            return strategy.id
+
+    strategy_ids = await asyncio.gather(create_strategy(), create_strategy())
+
+    assert strategy_ids[0] == strategy_ids[1]
+    count = (await db_session.execute(select(func.count(StrategyDefinition.id)))).scalar_one()
+    assert count == 1
 
 
 @pytest.mark.asyncio

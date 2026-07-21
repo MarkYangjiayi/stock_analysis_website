@@ -331,6 +331,136 @@ def calculate_ttm(flow_records: list[FinancialStatement], latest_bs_record: Opti
     }
 
 
+def _float_or_zero(value) -> float:
+    try:
+        return float(value) if value is not None else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _empty_factor_scores() -> Dict[str, int]:
+    return {"value": 0, "quality": 0, "growth": 0, "health": 0, "momentum": 0}
+
+
+def _calculate_factor_scores(
+    ttm_data: Dict[str, float],
+    yearly_records: list[FinancialStatement],
+    price_records: list[DailyPrice],
+) -> Dict[str, int]:
+    current_price = _float_or_zero(price_records[0].close) if price_records else 0.0
+    shares_out = ttm_data["shares_out"]
+    ttm_net_income = ttm_data["ttm_net_income"]
+    total_equity = ttm_data["total_equity"]
+    total_assets = ttm_data["total_assets"]
+    total_liab = ttm_data["total_liab"]
+    roe = ttm_data["roe"]
+
+    value_score = 50
+    if shares_out > 0 and ttm_net_income > 0 and current_price > 0:
+        pe = current_price / (ttm_net_income / shares_out)
+        if pe <= 0:
+            value_score = 10
+        elif pe < 15:
+            value_score = 90
+        elif pe < 25:
+            value_score = 70
+        elif pe < 50:
+            value_score = 50
+        else:
+            value_score = 30
+    elif ttm_net_income <= 0:
+        value_score = 20
+
+    quality_score = 50
+    if total_equity > 0:
+        if roe > 0.20:
+            quality_score = 90
+        elif roe > 0.15:
+            quality_score = 75
+        elif roe > 0.10:
+            quality_score = 60
+        elif roe > 0.05:
+            quality_score = 40
+        else:
+            quality_score = 20
+
+    growth_score = 50
+    if len(yearly_records) > 1:
+        current_statement = yearly_records[0]
+        previous_statement = yearly_records[1]
+        current_revenue = _float_or_zero(
+            current_statement.income_statement.get("totalRevenue", current_statement.revenue)
+            if current_statement.income_statement
+            else current_statement.revenue
+        )
+        previous_revenue = _float_or_zero(
+            previous_statement.income_statement.get("totalRevenue", previous_statement.revenue)
+            if previous_statement.income_statement
+            else previous_statement.revenue
+        )
+        if previous_revenue > 0:
+            growth_rate = (current_revenue - previous_revenue) / previous_revenue
+            if growth_rate > 0.20:
+                growth_score = 90
+            elif growth_rate > 0.10:
+                growth_score = 75
+            elif growth_rate > 0:
+                growth_score = 60
+            elif growth_rate > -0.10:
+                growth_score = 40
+            else:
+                growth_score = 20
+
+    health_score = 50
+    if total_assets > 0:
+        debt_ratio = total_liab / total_assets
+        if debt_ratio < 0.3:
+            health_score = 90
+        elif debt_ratio < 0.5:
+            health_score = 75
+        elif debt_ratio < 0.7:
+            health_score = 50
+        elif debt_ratio < 0.9:
+            health_score = 30
+        else:
+            health_score = 10
+
+    momentum_score = 50
+    closes = [float(record.close) for record in reversed(price_records) if record.close is not None]
+    if len(closes) >= 50:
+        try:
+            close_series = pd.Series(closes)
+            ma20 = ta.sma(close_series, length=20).iloc[-1]
+            ma50 = ta.sma(close_series, length=50).iloc[-1]
+            rsi = ta.rsi(close_series, length=14).iloc[-1]
+            score = 50
+            if not pd.isna(ma20) and not pd.isna(ma50):
+                if current_price > ma20:
+                    score += 15
+                if current_price > ma50:
+                    score += 15
+                if ma20 > ma50:
+                    score += 10
+            if not pd.isna(rsi):
+                if 40 <= rsi <= 70:
+                    score += 10
+                elif rsi > 70:
+                    score -= 10
+                elif rsi < 30:
+                    score += 10
+            momentum_score = int(max(0, min(100, score)))
+        except Exception as exc:
+            logger.warning("Momentum scoring failed: %s", exc)
+
+    return {
+        "value": value_score,
+        "quality": quality_score,
+        "growth": growth_score,
+        "health": health_score,
+        "momentum": momentum_score,
+    }
+
+
 async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[Dict[str, Any]]:
     """
     计算 TTM 核心指标与简易 DCF (现金流折现) 模型估值。
@@ -383,9 +513,10 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     stmt_y = select(FinancialStatement).where(
         FinancialStatement.ticker == ticker,
         FinancialStatement.period == "Yearly"
-    ).order_by(FinancialStatement.fiscal_date.desc()).limit(1)
+    ).order_by(FinancialStatement.fiscal_date.desc()).limit(2)
     result_y = await db.execute(stmt_y)
-    latest_yearly = result_y.scalar_one_or_none()
+    records_y = list(result_y.scalars().all())
+    latest_yearly = records_y[0] if records_y else None
     
     if latest_yearly and ttm_revenue > 0:
         prev_rev = _safe_float(latest_yearly.revenue)
@@ -433,9 +564,10 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     intrinsic_value_per_share = (equity_value / shares_out) if shares_out > 0 else 0.0
 
     # 获取最新股价以计算安全边际
-    price_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(1)
+    price_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(60)
     price_result = await db.execute(price_stmt)
-    latest_price_rec = price_result.scalar_one_or_none()
+    price_records = list(price_result.scalars().all())
+    latest_price_rec = price_records[0] if price_records else None
     
     current_price = _safe_float(latest_price_rec.close) if latest_price_rec else 0.0
     margin_of_safety = 0.0
@@ -444,124 +576,7 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         # 安全边际 = (内在价值 - 当前股价) / 内在价值
         margin_of_safety = (intrinsic_value_per_share - current_price) / intrinsic_value_per_share
 
-    # --- 因子打分逻辑 (Factor Scoring 0-100) ---
-    def clamp_score(score: float) -> int:
-        return int(max(0, min(100, score)))
-
-    # 1. Value 分数 (依据 PE = Price / (TTM Net Income / Shares Out) 计算)
-    value_score = 50
-    if shares_out > 0 and ttm_net_income > 0 and current_price > 0:
-        eps = ttm_net_income / shares_out
-        pe = current_price / eps
-        if pe <= 0:
-            value_score = 10  # 亏损企业给低分
-        elif pe < 15:
-            value_score = 90
-        elif pe < 25:
-            value_score = 70
-        elif pe < 50:
-            value_score = 50
-        else:
-            value_score = 30
-    elif ttm_net_income <= 0:
-        value_score = 20
-        
-    # 2. Quality 分数 (依据 ROE 映射)
-    quality_score = 50
-    if total_equity > 0:
-        if roe > 0.20:
-            quality_score = 90
-        elif roe > 0.15:
-            quality_score = 75
-        elif roe > 0.10:
-            quality_score = 60
-        elif roe > 0.05:
-            quality_score = 40
-        else:
-            quality_score = 20
-
-    # 3. Growth 分数
-    growth_score = 50
-    stmt_y = select(FinancialStatement).where(
-        FinancialStatement.ticker == ticker,
-        FinancialStatement.period == "Yearly"
-    ).order_by(FinancialStatement.fiscal_date.desc()).limit(2)
-    result_y = await db.execute(stmt_y)
-    records_y = list(result_y.scalars().all())
-    
-    if len(records_y) > 1:
-        curr_rev = _safe_float(records_y[0].income_statement.get('totalRevenue', records_y[0].revenue) if records_y[0].income_statement else records_y[0].revenue)
-        prev_rev = _safe_float(records_y[1].income_statement.get('totalRevenue', records_y[1].revenue) if records_y[1].income_statement else records_y[1].revenue)
-        
-        if prev_rev > 0:
-            growth_rate = (curr_rev - prev_rev) / prev_rev
-            if growth_rate > 0.20:
-                growth_score = 90
-            elif growth_rate > 0.10:
-                growth_score = 75
-            elif growth_rate > 0:
-                growth_score = 60
-            elif growth_rate > -0.10:
-                growth_score = 40
-            else:
-                growth_score = 20
-                
-    # 4. Health 分数 (依据资产负债率 Total Liabilities / Total Assets 计算)
-    health_score = 50
-    if total_assets > 0:
-        debt_ratio = total_liab / total_assets
-        if debt_ratio < 0.3:
-            health_score = 90
-        elif debt_ratio < 0.5:
-            health_score = 75
-        elif debt_ratio < 0.7:
-            health_score = 50
-        elif debt_ratio < 0.9:
-            health_score = 30
-        else:
-            health_score = 10
-            
-    # 5. Momentum 分数 (查询最近的 MA 和 RSI 进行打分)
-    momentum_score = 50
-    if latest_price_rec:
-        try:
-            # Re-calculating moving averages precisely for the latest date would typically be cached,
-            # but we can fetch the last 60 days of prices to get MA50 and MA20 quickly for this factor.
-            mo_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(60)
-            mo_res = await db.execute(mo_stmt)
-            mo_recs = list(mo_res.scalars().all())
-            
-            if len(mo_recs) >= 50:
-                closes = [float(r.close) for r in mo_recs if r.close is not None]
-                closes.reverse() # 变成升序，最近一天在最后
-                import pandas as pd
-                import pandas_ta_classic as ta
-                
-                s_closes = pd.Series(closes)
-                ma20 = ta.sma(s_closes, length=20).iloc[-1]
-                ma50 = ta.sma(s_closes, length=50).iloc[-1]
-                rsi = ta.rsi(s_closes, length=14).iloc[-1]
-                
-                m_score = 50
-                # MA 趋势加分
-                if not pd.isna(ma20) and not pd.isna(ma50):
-                    if current_price > ma20: m_score += 15
-                    if current_price > ma50: m_score += 15
-                    if ma20 > ma50: m_score += 10
-                
-                # RSI 状态
-                if not pd.isna(rsi):
-                    if 40 <= rsi <= 70:
-                        m_score += 10
-                    elif rsi > 70:  # 超买，可能面临回调
-                        m_score -= 10
-                    elif rsi < 30:  # 超卖，可能有反弹动能
-                        m_score += 10
-                        
-                momentum_score = clamp_score(m_score)
-        except Exception as e:
-            logger.warning(f"Momentum scoring failed for {ticker}: {e}")
-            momentum_score = 50
+    factor_scores = _calculate_factor_scores(ttm_data, records_y, price_records)
 
     return {
         "ttm": {
@@ -587,38 +602,82 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
                 "perpetual_growth": perpetual_growth
             }
         },
-        "factor_scores": {
-            "value": value_score,
-            "quality": quality_score,
-            "growth": growth_score,
-            "health": health_score,
-            "momentum": momentum_score
-        }
+        "factor_scores": factor_scores
     }
 
 
 async def batch_get_factor_scores(tickers: list[str], db: AsyncSession) -> list[Dict[str, Any]]:
     """
-    Concurrently evaluate and gather factor scores for a list of tickers.
+    Evaluate factor scores with two database roundtrips regardless of batch size.
     Gracefully handles missing data by returning default zero scores.
     """
-    async def fetch_score(ticker: str):
-        try:
-            val = await get_fundamental_valuation(ticker, db)
-            if val and "factor_scores" in val:
-                return {"ticker": ticker.upper(), "factor_scores": val["factor_scores"]}
-        except Exception as e:
-            logger.error(f"Error fetching factor scores for {ticker}: {e}")
-            
-        return {
-            "ticker": ticker.upper(), 
-            "factor_scores": {
-                "value": 0, "quality": 0, "growth": 0, "health": 0, "momentum": 0
-            }
-        }
+    normalized_tickers = [ticker.upper() for ticker in tickers]
+    unique_tickers = sorted(set(normalized_tickers))
+    if not unique_tickers:
+        return []
 
-    # AsyncSession is stateful and must not be shared by concurrent tasks.
-    return [await fetch_score(ticker) for ticker in tickers]
+    ranked_statements = (
+        select(
+            FinancialStatement.id.label("statement_id"),
+            func.row_number()
+            .over(
+                partition_by=(FinancialStatement.ticker, FinancialStatement.period),
+                order_by=FinancialStatement.fiscal_date.desc(),
+            )
+            .label("position"),
+        )
+        .where(FinancialStatement.ticker.in_(unique_tickers))
+        .subquery()
+    )
+    statement_result = await db.execute(
+        select(FinancialStatement)
+        .join(ranked_statements, FinancialStatement.id == ranked_statements.c.statement_id)
+        .where(ranked_statements.c.position <= 4)
+        .order_by(FinancialStatement.ticker, FinancialStatement.fiscal_date.desc())
+    )
+    statements_by_ticker: dict[str, list[FinancialStatement]] = {}
+    for statement in statement_result.scalars().all():
+        statements_by_ticker.setdefault(statement.ticker, []).append(statement)
+
+    ranked_prices = (
+        select(
+            DailyPrice.id.label("price_id"),
+            func.row_number()
+            .over(partition_by=DailyPrice.ticker, order_by=DailyPrice.date.desc())
+            .label("position"),
+        )
+        .where(DailyPrice.ticker.in_(unique_tickers))
+        .subquery()
+    )
+    price_result = await db.execute(
+        select(DailyPrice)
+        .join(ranked_prices, DailyPrice.id == ranked_prices.c.price_id)
+        .where(ranked_prices.c.position <= 60)
+        .order_by(DailyPrice.ticker, DailyPrice.date.desc())
+    )
+    prices_by_ticker: dict[str, list[DailyPrice]] = {}
+    for price in price_result.scalars().all():
+        prices_by_ticker.setdefault(price.ticker, []).append(price)
+
+    scores_by_ticker: dict[str, Dict[str, int]] = {}
+    for ticker in unique_tickers:
+        statements = statements_by_ticker.get(ticker, [])
+        if not statements:
+            scores_by_ticker[ticker] = _empty_factor_scores()
+            continue
+        quarterly = [record for record in statements if record.period == "Quarterly"][:4]
+        yearly = [record for record in statements if record.period == "Yearly"][:2]
+        ttm_data = calculate_ttm(quarterly if len(quarterly) == 4 else [], statements[0])
+        scores_by_ticker[ticker] = _calculate_factor_scores(
+            ttm_data,
+            yearly,
+            prices_by_ticker.get(ticker, []),
+        )
+
+    return [
+        {"ticker": ticker, "factor_scores": dict(scores_by_ticker[ticker])}
+        for ticker in normalized_tickers
+    ]
 
 async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
     """

@@ -163,7 +163,10 @@ def test_unavailable_rebalance_keeps_the_existing_portfolio():
     result = run_backtest_from_frames(factors, prices, memberships, config)
     assert result["rebalances"][1]["status"] == "skipped"
     assert result["rebalances"][1]["positions"] == 2
-    assert result["rebalances"][1]["weights"] == result["rebalances"][0]["weights"]
+    skipped_weights = result["rebalances"][1]["weights"]
+    assert set(skipped_weights) == set(result["rebalances"][0]["weights"])
+    assert skipped_weights["AAA.US"] == pytest.approx(0.5 * 1.1 / 1.05)
+    assert skipped_weights["BBB.US"] == pytest.approx(0.5 / 1.05)
 
 
 def test_monthly_backtest_seeds_from_latest_pre_start_signal():
@@ -214,6 +217,61 @@ def test_monthly_backtest_seeds_from_latest_pre_start_signal():
     assert [row["signal_date"] for row in result["rebalances"]] == ["2024-12-31", "2025-01-31"]
     assert result["rebalances"][0]["execution_date"] == "2025-01-02"
     assert result["diagnostics"]["pre_start_signal_date"] == "2024-12-31"
+
+
+def test_backtest_revalues_holdings_between_rebalances():
+    factors = pd.DataFrame([
+        {
+            "ticker": ticker,
+            "as_of_date": signal_date,
+            "normalized_value": score,
+            "available_at": signal_date.to_pydatetime(),
+            "sector": sector,
+        }
+        for signal_date in [pd.Timestamp("2024-12-31"), pd.Timestamp("2025-01-03")]
+        for ticker, score, sector in [
+            ("AAA.US", 2.0, "Tech"),
+            ("BBB.US", 1.0, "Health"),
+        ]
+    ])
+    trading_dates = pd.to_datetime(["2025-01-02", "2025-01-03", "2025-01-06"])
+    prices = pd.DataFrame([
+        {"ticker": ticker, "date": trading_date, "close": price, "adjusted_close": price}
+        for ticker, values in {
+            "AAA.US": [100.0, 200.0, 220.0],
+            "BBB.US": [100.0, 100.0, 100.0],
+            "SPY.US": [100.0, 100.0, 100.0],
+        }.items()
+        for trading_date, price in zip(trading_dates, values)
+    ])
+    memberships = pd.DataFrame([
+        {
+            "universe": "TEST",
+            "ticker": ticker,
+            "effective_from": date(2024, 1, 1),
+            "effective_to": None,
+        }
+        for ticker in ["AAA.US", "BBB.US"]
+    ])
+    config = BacktestConfig(
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 6),
+        universe="TEST",
+        rebalance_frequency="monthly",
+        top_n=2,
+        max_position_weight=1.0,
+        max_sector_weight=1.0,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+    )
+
+    result = run_backtest_from_frames(factors, prices, memberships, config)
+    curve = {row["date"]: row["daily_return"] for row in result["equity_curve"]}
+
+    # AAA doubles after the initial 50/50 rebalance, so its weight drifts to
+    # 2/3 and contributes two thirds of the following 10% return.
+    assert curve["2025-01-06"] == pytest.approx((2.0 / 3.0) * 0.10)
+    assert result["rebalances"][1]["turnover"] == pytest.approx(0.1875)
 
 
 def test_backtest_refuses_missing_point_in_time_universe():

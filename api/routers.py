@@ -77,7 +77,7 @@ async def read_stock_screener(request: ScreenerRequest, db: AsyncSession = Depen
 @router.post("/api/stocks/batch-factors", tags=["Stocks Analysis Read"])
 async def read_batch_factors(request: BatchFactorsRequest, db: AsyncSession = Depends(get_db)):
     """
-    Fetch fundamental multi-factor scores for a batch of tickers concurrently.
+    Fetch fundamental multi-factor scores for a batch of tickers with bulk database reads.
     """
     if not request.tickers:
         return []
