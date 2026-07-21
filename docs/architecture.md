@@ -95,13 +95,13 @@ The research API reports Rank IC, IC information ratio, positive IC rate, quanti
 
 ## 8. Security and operations
 
-- `ADMIN_API_KEY` is mandatory when `ENVIRONMENT=production`.
+- Without `ADMIN_API_KEY`, production starts in read-only mode and admin APIs return 503; no default admin secret is used.
 - Admin and state-changing APIs require `X-API-Key`; expensive public research endpoints are rate-limited.
 - CORS is an explicit allow-list.
 - API keys are never logged.
 - `.dockerignore` excludes credentials, databases, raw data and local build artifacts.
 - The backend container runs as a non-root Python 3.12 user and applies Alembic migrations before Uvicorn.
-- Docker Compose forces `ENVIRONMENT=production`; a missing `ADMIN_API_KEY` prevents backend startup.
+- Docker Compose forces `ENVIRONMENT=production`; a missing `ADMIN_API_KEY` is logged and disables admin operations without taking public reads offline.
 - `/health/live` and `/health/ready` support orchestration.
 - `scripts/backup_sqlite.py` uses SQLite's online backup API and validates every copy.
 

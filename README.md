@@ -144,8 +144,9 @@ source venv/bin/activate
 python worker.py
 ```
 
-生产环境的 Docker Compose 会强制使用 `ENVIRONMENT=production`，因此服务器
-`.env` 必须设置非空 `ADMIN_API_KEY`，否则后端会拒绝启动，避免管理接口无认证暴露。
+生产环境的 Docker Compose 会强制使用 `ENVIRONMENT=production`。服务器未配置
+`ADMIN_API_KEY` 时，公开只读功能仍会启动，但同步、回测和运维等管理接口会返回
+`503 Admin operations are disabled`；配置后，请通过 `X-API-Key` 调用这些接口。
 
 首次建立可信数据集时运行：
 

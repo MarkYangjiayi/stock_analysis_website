@@ -13,9 +13,14 @@ async def require_admin_api_key(x_api_key: str = Header(default="")) -> None:
     """Protect state-changing and operational endpoints.
 
     Development remains convenient when no key is configured. Production
-    configuration validation refuses to start without a key.
+    stays available in read-only mode while admin operations fail closed.
     """
-    if not settings.ADMIN_API_KEY and settings.ENVIRONMENT.lower() != "production":
+    if not settings.ADMIN_API_KEY:
+        if settings.ENVIRONMENT.lower() == "production":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Admin operations are disabled",
+            )
         return
     if not x_api_key or not secrets.compare_digest(x_api_key, settings.ADMIN_API_KEY):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")

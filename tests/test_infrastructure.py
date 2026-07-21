@@ -718,17 +718,33 @@ def test_health_and_admin_authentication():
         assert client.get("/health/ready").status_code == 200
         unauthorized = client.post("/api/stocks/AAA.US/sync")
         assert unauthorized.status_code == 401
-
-
-def test_production_configuration_fails_closed_without_admin_key():
-    from core.config import Settings
-
-    with pytest.raises(ValueError, match="ADMIN_API_KEY"):
-        Settings(
-            ENVIRONMENT="production",
-            ADMIN_API_KEY="",
-            _env_file=None,
+        authorized = client.get(
+            "/api/operations/pipelines",
+            headers={"X-API-Key": "test-secret"},
         )
+        assert authorized.status_code == 200
+
+
+def test_production_without_admin_key_starts_in_read_only_mode(monkeypatch):
+    from core.config import Settings
+    from core.config import settings
+    from main import app
+
+    production = Settings(
+        ENVIRONMENT="production",
+        ADMIN_API_KEY="",
+        _env_file=None,
+    )
+    assert production.ADMIN_API_KEY == ""
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "")
+    with TestClient(app) as client:
+        assert client.get("/health/live").status_code == 200
+        assert client.get("/health/ready").status_code == 200
+        disabled = client.post("/api/stocks/AAA.US/sync")
+        assert disabled.status_code == 503
+        assert disabled.json()["detail"] == "Admin operations are disabled"
 
 
 @pytest.mark.asyncio
@@ -854,3 +870,16 @@ def test_compose_initializes_bind_mount_permissions():
     assert backend_dependency["condition"] == "service_completed_successfully"
     assert "ENVIRONMENT=production" in compose["services"]["backend"]["environment"]
     assert "ENVIRONMENT=production" in compose["services"]["worker"]["environment"]
+
+
+def test_deploy_waits_for_service_health_and_fails_closed():
+    workflow = yaml.safe_load(Path(".github/workflows/deploy.yml").read_text())
+    deploy_steps = workflow["jobs"]["deploy"]["steps"]
+    deploy_step = next(step for step in deploy_steps if step["name"].startswith("Deploy on Aliyun"))
+
+    assert deploy_step["with"]["script_stop"] is True
+    script = deploy_step["with"]["script"]
+    assert "docker compose up -d --remove-orphans" in script
+    assert "until curl -fsS http://127.0.0.1:8000/health/ready" in script
+    assert "curl -fsS http://127.0.0.1:3000/" in script
+    assert 'if [ "$attempt" -ge 60 ]' in script
