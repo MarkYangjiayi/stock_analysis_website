@@ -6,7 +6,7 @@ import pandas_ta_classic as ta
 from sqlalchemy import select, asc, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import DataPublication, Ticker, DailyPrice, FinancialStatement, StockScreenerSnapshot
+from models import DataPublication, DailyPrice, FinancialStatement, PipelineRun, StockScreenerSnapshot, Ticker
 
 logger = logging.getLogger(__name__)
 
@@ -693,10 +693,13 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
         except (TypeError, ValueError) as exc:
             raise ValueError("as_of_date must use YYYY-MM-DD format") from exc
         publication_result = await db.execute(
-            select(DataPublication.id).where(
+            select(DataPublication.id)
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+            .where(
                 DataPublication.dataset == "screener",
                 DataPublication.as_of_date == selected_date,
                 DataPublication.status == "published",
+                PipelineRun.status == "published",
             )
         )
         if publication_result.scalar_one_or_none() is None:
@@ -712,7 +715,9 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
     else:
         publication_result = await db.execute(
             select(DataPublication.as_of_date)
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
             .where(DataPublication.dataset == "screener", DataPublication.status == "published")
+            .where(PipelineRun.status == "published")
             .order_by(DataPublication.as_of_date.desc())
             .limit(1)
         )

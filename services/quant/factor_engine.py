@@ -3,13 +3,18 @@ from typing import Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session_maker
-from models import DailyPrice, DataPublication, FactorValue, StockScreenerSnapshot
-from services.pipeline_runs import begin_pipeline_run, finish_pipeline_run, publish_dataset
+from core.config import settings
+from models import DailyPrice, DataPublication, FactorValue, PipelineRun, StockScreenerSnapshot
+from services.pipeline_runs import (
+    begin_pipeline_run,
+    finish_pipeline_run,
+    publish_datasets_and_finish,
+)
 
 
 FACTOR_VERSION = "lfq-v1"
@@ -24,10 +29,10 @@ def _safe_numeric(frame: pd.DataFrame, column: str) -> pd.Series:
 
 def _winsorized_zscore(values: pd.Series, sectors: pd.Series) -> pd.Series:
     series = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
-    sector_medians = series.groupby(sectors).transform("median")
-    series = series.fillna(sector_medians).fillna(series.median())
     if series.isna().all():
         return pd.Series(0.0, index=series.index)
+    sector_medians = series.groupby(sectors).transform("median")
+    series = series.fillna(sector_medians).fillna(series.median())
     low, high = series.quantile([0.01, 0.99])
     clipped = series.clip(low, high)
     neutral = clipped - clipped.groupby(sectors).transform("mean")
@@ -146,16 +151,34 @@ async def compute_and_store_factors(db: AsyncSession, as_of_date: date) -> dict:
     run_id = await begin_pipeline_run("factor_cross_section", as_of_date, FACTOR_VERSION)
     try:
         publication_result = await db.execute(
-            select(DataPublication).where(
+            select(DataPublication)
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+            .where(
                 DataPublication.dataset == "screener",
                 DataPublication.as_of_date == as_of_date,
                 DataPublication.status == "published",
+                PipelineRun.status == "published",
             )
         )
         screener_publication = publication_result.scalar_one_or_none()
         if screener_publication is None:
             raise ValueError(
                 f"Screener snapshot {as_of_date} is not a quality-gated publication; factors were not computed"
+            )
+        price_publication_result = await db.execute(
+            select(DataPublication)
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+            .where(
+                DataPublication.dataset == "price_history",
+                DataPublication.as_of_date == as_of_date,
+                DataPublication.status == "published",
+                PipelineRun.status == "published",
+            )
+        )
+        price_publication = price_publication_result.scalar_one_or_none()
+        if price_publication is None:
+            raise ValueError(
+                f"Price history {as_of_date} is not a quality-gated publication; factors were not computed"
             )
         snapshot_result = await db.execute(
             select(StockScreenerSnapshot).where(StockScreenerSnapshot.date == as_of_date)
@@ -181,16 +204,32 @@ async def compute_and_store_factors(db: AsyncSession, as_of_date: date) -> dict:
         factors = compute_factor_frame(snapshots, prices, as_of_date)
         raw_columns = [f"{name}_raw" for name in FACTOR_NAMES if name != "composite"]
         coverage = float((factors[raw_columns].notna().sum(axis=1) >= 3).mean()) if not factors.empty else 0.0
-        quality = {"passed": coverage >= 0.8, "metrics": {"tickers": len(factors), "composite_coverage": coverage}}
-        if not quality["passed"]:
-            raise ValueError(f"Factor coverage below 80%: {coverage:.2%}")
-
-        await db.execute(
-            delete(FactorValue).where(FactorValue.as_of_date == as_of_date, FactorValue.version == FACTOR_VERSION)
+        price_factor_coverage = (
+            float(factors[["momentum_raw", "low_volatility_raw"]].notna().all(axis=1).mean())
+            if not factors.empty
+            else 0.0
         )
+        quality = {
+            "passed": (
+                coverage >= 0.8
+                and price_factor_coverage >= settings.PIPELINE_MIN_PRICE_FACTOR_COVERAGE
+            ),
+            "metrics": {
+                "tickers": len(factors),
+                "composite_coverage": coverage,
+                "price_factor_coverage": price_factor_coverage,
+            },
+        }
+        if not quality["passed"]:
+            raise ValueError(
+                "Factor quality below threshold: "
+                f"composite={coverage:.2%}, price_factors={price_factor_coverage:.2%} "
+                f"(required price coverage={settings.PIPELINE_MIN_PRICE_FACTOR_COVERAGE:.2%})"
+            )
+
         # Factor inputs become tradable no earlier than the quality-gated
-        # screener publication. Never backdate availability to the price date.
-        available_at = screener_publication.published_at
+        # screener and cumulative price-history publications.
+        available_at = max(screener_publication.published_at, price_publication.published_at)
         values = []
         for _, row in factors.iterrows():
             for factor_name in FACTOR_NAMES:
@@ -208,21 +247,16 @@ async def compute_and_store_factors(db: AsyncSession, as_of_date: date) -> dict:
                     "details": {"sector": row.get("sector") or "Unknown"},
                 })
         for start in range(0, len(values), 1000):
-            stmt = insert(FactorValue).values(values[start:start + 1000])
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["ticker", "as_of_date", "factor_name", "version"],
-                set_={
-                    "raw_value": stmt.excluded.raw_value,
-                    "normalized_value": stmt.excluded.normalized_value,
-                    "available_at": stmt.excluded.available_at,
-                    "source_run_id": run_id,
-                    "details": stmt.excluded.details,
-                },
-            )
-            await db.execute(stmt)
+            await db.execute(insert(FactorValue).values(values[start:start + 1000]))
+        await publish_datasets_and_finish(
+            db,
+            ["factors"],
+            as_of_date,
+            run_id,
+            quality_report=quality,
+            records_processed=len(values),
+        )
         await db.commit()
-        await publish_dataset("factors", as_of_date, run_id)
-        await finish_pipeline_run(run_id, "published", quality_report=quality)
         return {"run_id": run_id, "as_of_date": as_of_date.isoformat(), "version": FACTOR_VERSION, **quality["metrics"]}
     except Exception as exc:
         await db.rollback()
@@ -234,7 +268,9 @@ async def compute_latest_factors() -> dict:
     async with async_session_maker() as db:
         result = await db.execute(
             select(DataPublication.as_of_date)
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
             .where(DataPublication.dataset == "screener", DataPublication.status == "published")
+            .where(PipelineRun.status == "published")
             .order_by(DataPublication.as_of_date.desc())
             .limit(1)
         )

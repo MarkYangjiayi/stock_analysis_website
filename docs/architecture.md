@@ -33,7 +33,7 @@ For larger offline panels, the raw files can later be converted to Parquet and q
 
 - `security_master`, `symbol_history`: canonical identity and vendor symbol history.
 - `universe_membership`: membership intervals with `effective_from/effective_to`; exited securities are retained.
-- `daily_prices`, `corporate_actions`: raw/adjusted prices, splits and dividends.
+- `daily_prices`, `corporate_actions`: raw/adjusted prices, splits and dividends. The daily exchange-wide bulk sync updates all three without per-symbol action requests.
 - `fundamental_versions`: period end, filing time, information `available_at`, fetch time and preserved revisions.
 - `raw_data_snapshots`: immutable source lineage.
 - `pipeline_runs`, `data_publications`: resumable job state, validation report and the dates API consumers may read.
@@ -52,7 +52,7 @@ The daily pipeline performs these stages:
 4. Upsert prices and current screener rows idempotently.
 5. Calculate indicators using prices no later than the snapshot date.
 6. Validate universe size, ticker uniqueness, price coverage and fundamental coverage.
-7. Publish the snapshot only after the quality gate passes.
+7. Atomically publish the snapshot and cumulative price panel only after the quality gate passes.
 8. Compute and publish the `lfq-v1` factor cross-section in a separate tracked run.
 
 Failures are persisted and re-raised so APScheduler does not report false success. API reads prefer the latest `data_publications` row. Historical Screener reconstruction is refused unless an archived point-in-time source payload is explicitly imported; current fundamentals are never relabeled as historical.
@@ -77,7 +77,7 @@ Backfill is resumable: tickers with sufficient coverage are skipped and every ru
 - Momentum: 12–1 momentum when 252 days exist, otherwise a 63-day warm-up signal.
 - Low volatility: negative annualized realized volatility.
 
-Each cross-section applies sector-median missing-value handling, 1%/99% winsorization, sector demeaning and z-scoring. The composite is the equal-weight mean. Factor rows record their version, availability time, source run and sector.
+Each cross-section applies sector-median missing-value handling, 1%/99% winsorization, sector demeaning and z-scoring. The composite is the equal-weight mean. At least 80% of the universe must have both momentum and low-volatility observations. Factor rows are append-only by source run and record their version, availability time and sector; readers only expose the run referenced by the matching publication.
 
 The research API reports Rank IC, IC information ratio, positive IC rate, quantile returns, monotonicity, long-short spread and top-quantile turnover.
 
@@ -89,7 +89,9 @@ The research API reports Rank IC, IC information ratio, positive IC rate, quanti
 - Portfolio construction enforces top-N, position and sector caps and may retain cash when constraints are infeasible.
 - Turnover includes cash transitions. Commission and slippage are charged on every rebalance.
 - Missing held-security prices fail by default, forcing the researcher to load a delisting return; an explicit `liquidate_last` policy is available.
+- A period with no executable, invested rebalance fails instead of reporting a misleading zero-return backtest.
 - Outputs include return, volatility, Sharpe, Sortino, drawdown, VaR/CVaR, Beta, Alpha, tracking error, information ratio, turnover, costs and sector contribution.
+- Signal snapshots are keyed by backtest run, so rerunning the same strategy never overwrites an earlier run's evidence.
 
 ## 8. Security and operations
 
@@ -99,6 +101,7 @@ The research API reports Rank IC, IC information ratio, positive IC rate, quanti
 - API keys are never logged.
 - `.dockerignore` excludes credentials, databases, raw data and local build artifacts.
 - The backend container runs as a non-root Python 3.12 user and applies Alembic migrations before Uvicorn.
+- Docker Compose forces `ENVIRONMENT=production`; a missing `ADMIN_API_KEY` prevents backend startup.
 - `/health/live` and `/health/ready` support orchestration.
 - `scripts/backup_sqlite.py` uses SQLite's online backup API and validates every copy.
 

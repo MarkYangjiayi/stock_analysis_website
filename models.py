@@ -320,7 +320,14 @@ class FactorValue(Base):
     details: Mapped[Optional[Any]] = mapped_column(JSON)
 
     __table_args__ = (
-        UniqueConstraint("ticker", "as_of_date", "factor_name", "version", name="uix_factor_value_version"),
+        UniqueConstraint(
+            "ticker",
+            "as_of_date",
+            "factor_name",
+            "version",
+            "source_run_id",
+            name="uix_factor_value_run",
+        ),
     )
 
 
@@ -341,6 +348,7 @@ class SignalSnapshot(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     strategy_id: Mapped[int] = mapped_column(ForeignKey("strategy_definitions.id"), index=True)
+    backtest_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("backtest_runs.id"), index=True)
     ticker: Mapped[str] = mapped_column(String, index=True)
     as_of_date: Mapped[dt_date] = mapped_column(Date, index=True)
     score: Mapped[float] = mapped_column(Float)
@@ -349,7 +357,12 @@ class SignalSnapshot(Base):
     factor_details: Mapped[Optional[Any]] = mapped_column(JSON)
 
     __table_args__ = (
-        UniqueConstraint("strategy_id", "ticker", "as_of_date", name="uix_strategy_signal_date"),
+        UniqueConstraint(
+            "backtest_run_id",
+            "ticker",
+            "as_of_date",
+            name="uix_backtest_signal_date",
+        ),
     )
 
 

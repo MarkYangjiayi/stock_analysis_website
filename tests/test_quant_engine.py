@@ -138,9 +138,28 @@ def test_backtest_rejects_signals_published_after_execution_close():
         transaction_cost_bps=0,
         slippage_bps=0,
     )
-    result = run_backtest_from_frames(factors, prices, memberships, config)
-    assert result["rebalances"][0]["positions"] == 0
-    assert result["metrics"]["total_return"] == 0
+    with pytest.raises(ValueError, match="No executable rebalance"):
+        run_backtest_from_frames(factors, prices, memberships, config)
+
+
+def test_backtest_rejects_period_without_an_executable_signal():
+    factors, prices, memberships = backtest_frames()
+    factors["as_of_date"] = pd.Timestamp("2025-01-07")
+    factors["available_at"] = datetime(2025, 1, 7, 23, 0)
+    config = BacktestConfig(
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 1, 7),
+        universe="TEST",
+        rebalance_frequency="all",
+        top_n=2,
+        max_position_weight=1.0,
+        max_sector_weight=1.0,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+    )
+
+    with pytest.raises(ValueError, match="No executable rebalance"):
+        run_backtest_from_frames(factors, prices, memberships, config)
 
 
 def test_unavailable_rebalance_keeps_the_existing_portfolio():
@@ -361,6 +380,32 @@ def test_factor_research_rejects_immature_forward_returns_cleanly():
 
     with pytest.raises(ValueError, match="No aligned forward returns"):
         evaluate_factor(factors, prices, horizon_days=21)
+
+
+def test_factor_research_returns_json_safe_monotonicity_for_flat_returns():
+    factors = pd.DataFrame([
+        {
+            "ticker": f"T{index}",
+            "as_of_date": pd.Timestamp("2025-01-02"),
+            "normalized_value": float(index),
+        }
+        for index in range(10)
+    ])
+    prices = pd.DataFrame([
+        {
+            "ticker": f"T{index}",
+            "date": trading_date,
+            "close": 100.0,
+            "adjusted_close": 100.0,
+        }
+        for index in range(10)
+        for trading_date in pd.bdate_range("2025-01-02", periods=10)
+    ])
+
+    result = evaluate_factor(factors, prices, horizon_days=2, quantiles=5)
+
+    assert result["monotonicity"] == 0.0
+    assert np.isfinite(result["monotonicity"])
 
 
 def test_risk_metrics_include_benchmark_and_drawdown():

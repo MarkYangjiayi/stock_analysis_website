@@ -5,14 +5,16 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
     BacktestRun,
+    DataPublication,
     DailyPrice,
     FactorValue,
+    PipelineRun,
     SignalSnapshot,
     StrategyDefinition,
     UniverseMembership,
@@ -311,6 +313,15 @@ def run_backtest_from_frames(
         total_turnover=total_turnover,
         total_cost=total_cost,
     )
+    invested_rebalances = [
+        rebalance
+        for rebalance in rebalances
+        if rebalance.get("status") != "skipped" and rebalance.get("positions", 0) > 0
+    ]
+    if not invested_rebalances:
+        raise ValueError(
+            "No executable rebalance produced any positions in the requested period"
+        )
     return {
         "metrics": metrics,
         "equity_curve": equity_curve,
@@ -351,10 +362,26 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
     db.add(run)
     await db.commit()
     await db.refresh(run)
+    run_id = run.id
 
     try:
+        published_factor_join = and_(
+            DataPublication.dataset == "factors",
+            DataPublication.status == "published",
+            DataPublication.as_of_date == FactorValue.as_of_date,
+            DataPublication.pipeline_run_id == FactorValue.source_run_id,
+        )
         previous_signal_result = await db.execute(
-            select(func.max(FactorValue.as_of_date)).where(
+            select(func.max(FactorValue.as_of_date))
+            .join(DataPublication, published_factor_join)
+            .join(
+                PipelineRun,
+                and_(
+                    PipelineRun.id == FactorValue.source_run_id,
+                    PipelineRun.status == "published",
+                ),
+            )
+            .where(
                 FactorValue.factor_name == config.factor_name,
                 FactorValue.version == config.factor_version,
                 FactorValue.as_of_date < config.start_date,
@@ -371,7 +398,16 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
                 FactorValue.as_of_date == previous_signal_date,
             )
         factor_result = await db.execute(
-            select(FactorValue).where(
+            select(FactorValue)
+            .join(DataPublication, published_factor_join)
+            .join(
+                PipelineRun,
+                and_(
+                    PipelineRun.id == FactorValue.source_run_id,
+                    PipelineRun.status == "published",
+                ),
+            )
+            .where(
                 FactorValue.factor_name == config.factor_name,
                 FactorValue.version == config.factor_version,
                 factor_date_condition,
@@ -384,6 +420,7 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
                 "as_of_date": row.as_of_date,
                 "normalized_value": row.normalized_value,
                 "available_at": row.available_at,
+                "source_run_id": row.source_run_id,
                 "sector": (row.details or {}).get("sector", "Unknown"),
             }
             for row in factor_rows
@@ -428,18 +465,13 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
         result = run_backtest_from_frames(factors, prices, memberships, config)
         signal_dates = [date.fromisoformat(item["signal_date"]) for item in result["rebalances"]]
         if signal_dates:
-            await db.execute(
-                delete(SignalSnapshot).where(
-                    SignalSnapshot.strategy_id == strategy.id,
-                    SignalSnapshot.as_of_date.in_(signal_dates),
-                )
-            )
             for rebalance in result["rebalances"]:
                 as_of_date = date.fromisoformat(rebalance["signal_date"])
                 for signal in rebalance["_signals"]:
                     db.add(
                         SignalSnapshot(
                             strategy_id=strategy.id,
+                            backtest_run_id=run.id,
                             ticker=signal["ticker"],
                             as_of_date=as_of_date,
                             score=signal["score"],
@@ -460,14 +492,28 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
         run.metrics = result["metrics"]
         run.equity_curve = result["equity_curve"]
         run.attribution = result["attribution"]
-        run.diagnostics = {**result["diagnostics"], "rebalances": diagnostic_rebalances}
+        factor_source_run_ids = sorted({
+            int(value)
+            for value in factors.get("source_run_id", pd.Series(dtype=int)).dropna().unique()
+        })
+        run.diagnostics = {
+            **result["diagnostics"],
+            "factor_source_run_ids": factor_source_run_ids,
+            "rebalances": diagnostic_rebalances,
+        }
         run.finished_at = utc_now()
         await db.commit()
         await db.refresh(run)
         return run
     except Exception as exc:
-        run.status = "failed"
-        run.diagnostics = {"error": str(exc)}
-        run.finished_at = utc_now()
+        # A persistence error leaves the SQLAlchemy transaction unusable until
+        # rollback. Reload the already-created run before recording failure.
+        await db.rollback()
+        failed_run = await db.get(BacktestRun, run_id)
+        if failed_run is None:
+            raise
+        failed_run.status = "failed"
+        failed_run.diagnostics = {"error": str(exc)}
+        failed_run.finished_at = utc_now()
         await db.commit()
         raise

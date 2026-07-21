@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import BacktestRequest, FactorComputeRequest, FactorResearchRequest, StockDataResponse
 from database import database_ready, get_db
-from sqlalchemy import select, func
-from models import BacktestRun, DailyPrice, FactorValue, PipelineRun
+from sqlalchemy import and_, select, func
+from models import BacktestRun, DailyPrice, DataPublication, FactorValue, PipelineRun
 from services.data_sync import sync_ticker_data
 from services.analyzer import (
     get_analyzed_stock_data, 
@@ -267,6 +267,22 @@ async def read_factors(
 ):
     result = await db.execute(
         select(FactorValue)
+        .join(
+            DataPublication,
+            and_(
+                DataPublication.dataset == "factors",
+                DataPublication.status == "published",
+                DataPublication.as_of_date == FactorValue.as_of_date,
+                DataPublication.pipeline_run_id == FactorValue.source_run_id,
+            ),
+        )
+        .join(
+            PipelineRun,
+            and_(
+                PipelineRun.id == FactorValue.source_run_id,
+                PipelineRun.status == "published",
+            ),
+        )
         .where(
             FactorValue.as_of_date == as_of_date,
             FactorValue.factor_name == factor_name,
@@ -297,7 +313,24 @@ async def read_factors(
 )
 async def research_factor(request: FactorResearchRequest, db: AsyncSession = Depends(get_db)):
     factor_result = await db.execute(
-        select(FactorValue).where(
+        select(FactorValue)
+        .join(
+            DataPublication,
+            and_(
+                DataPublication.dataset == "factors",
+                DataPublication.status == "published",
+                DataPublication.as_of_date == FactorValue.as_of_date,
+                DataPublication.pipeline_run_id == FactorValue.source_run_id,
+            ),
+        )
+        .join(
+            PipelineRun,
+            and_(
+                PipelineRun.id == FactorValue.source_run_id,
+                PipelineRun.status == "published",
+            ),
+        )
+        .where(
             FactorValue.factor_name == request.factor_name,
             FactorValue.version == request.factor_version,
             FactorValue.as_of_date >= request.start_date,

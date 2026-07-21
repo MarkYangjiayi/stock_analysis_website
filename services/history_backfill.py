@@ -11,7 +11,12 @@ from models import DailyPrice
 from services import eodhd_client
 from services.corporate_actions import upsert_corporate_actions
 from services.data_sync import _upsert_daily_prices
-from services.pipeline_runs import begin_pipeline_run, finish_pipeline_run, publish_dataset, update_pipeline_run
+from services.pipeline_runs import (
+    begin_pipeline_run,
+    finish_pipeline_run,
+    publish_datasets_and_finish,
+    update_pipeline_run,
+)
 from services.raw_store import persist_snapshot
 
 
@@ -28,6 +33,8 @@ async def backfill_price_history(
     days = history_days or settings.COLD_START_HISTORY_DAYS
     target = target_date or date.today()
     calendar_start = target - timedelta(days=int(days * 1.8) + 30)
+    minimum_rows = max(1, int(days * 0.9))
+    latest_acceptable_date = target - timedelta(days=7)
     run_id = await begin_pipeline_run("price_history_backfill", target)
     semaphore = asyncio.Semaphore(settings.HISTORY_BACKFILL_CONCURRENCY)
     progress_lock = asyncio.Lock()
@@ -37,47 +44,115 @@ async def backfill_price_history(
         async with semaphore:
             try:
                 async with async_session_maker() as check_db:
-                    count_result = await check_db.execute(
-                        select(func.count(DailyPrice.id)).where(
+                    coverage_result = await check_db.execute(
+                        select(func.count(DailyPrice.id), func.max(DailyPrice.date)).where(
                             DailyPrice.ticker == ticker,
                             DailyPrice.date >= calendar_start,
                             DailyPrice.date <= target,
                         )
                     )
-                    existing_count = count_result.scalar_one()
-                if existing_count >= int(days * 0.9):
+                    existing_count, existing_latest = coverage_result.one()
+                prices_complete = (
+                    existing_count >= minimum_rows
+                    and existing_latest is not None
+                    and existing_latest >= latest_acceptable_date
+                )
+                if prices_complete and not include_corporate_actions:
                     async with progress_lock:
                         stats["skipped"] += 1
                     return
 
-                price_task = eodhd_client.get_eod_historical_data(
-                    ticker, calendar_start.isoformat(), target.isoformat(), client=client
-                )
+                tasks = []
+                if not prices_complete:
+                    tasks.append(
+                        eodhd_client.get_eod_historical_data(
+                            ticker,
+                            calendar_start.isoformat(),
+                            target.isoformat(),
+                            client=client,
+                        )
+                    )
                 if include_corporate_actions:
-                    split_task = eodhd_client.get_splits(
-                        ticker, calendar_start.isoformat(), target.isoformat(), client=client
-                    )
-                    dividend_task = eodhd_client.get_dividends(
-                        ticker, calendar_start.isoformat(), target.isoformat(), client=client
-                    )
-                    prices, splits, dividends = await asyncio.gather(price_task, split_task, dividend_task)
+                    tasks.extend([
+                        eodhd_client.get_splits(
+                            ticker, calendar_start.isoformat(), target.isoformat(), client=client
+                        ),
+                        eodhd_client.get_dividends(
+                            ticker, calendar_start.isoformat(), target.isoformat(), client=client
+                        ),
+                    ])
+                responses = await asyncio.gather(*tasks)
+                response_index = 0
+                prices = []
+                if not prices_complete:
+                    prices = responses[response_index]
+                    response_index += 1
+                if include_corporate_actions:
+                    splits = responses[response_index]
+                    dividends = responses[response_index + 1]
+                    if splits is None or dividends is None:
+                        raise ValueError("provider failed to return corporate actions")
                 else:
-                    prices = await price_task
                     splits, dividends = [], []
-                if not prices:
+                if not prices_complete and not prices:
                     raise ValueError("provider returned no price history")
 
+                snapshot_identity = {
+                    "ticker": ticker,
+                    "from_date": calendar_start.isoformat(),
+                    "to_date": target.isoformat(),
+                }
                 async with async_session_maker() as db, db.begin():
-                    await persist_snapshot(
-                        db, "EODHD", "eod_prices", prices, as_of_date=target, details={"ticker": ticker}
-                    )
-                    await _upsert_daily_prices(ticker, prices, db)
+                    if prices:
+                        await persist_snapshot(
+                            db,
+                            "EODHD",
+                            "eod_prices",
+                            prices,
+                            as_of_date=target,
+                            details=snapshot_identity,
+                        )
+                        await _upsert_daily_prices(ticker, prices, db)
                     action_count = await upsert_corporate_actions(db, ticker, splits or [], dividends or [])
                     if include_corporate_actions:
-                        await persist_snapshot(db, "EODHD", "splits", splits or [], as_of_date=target, details={"ticker": ticker})
-                        await persist_snapshot(db, "EODHD", "dividends", dividends or [], as_of_date=target, details={"ticker": ticker})
+                        await persist_snapshot(
+                            db,
+                            "EODHD",
+                            "splits",
+                            splits or [],
+                            as_of_date=target,
+                            details=snapshot_identity,
+                        )
+                        await persist_snapshot(
+                            db,
+                            "EODHD",
+                            "dividends",
+                            dividends or [],
+                            as_of_date=target,
+                            details=snapshot_identity,
+                        )
+
+                async with async_session_maker() as coverage_db:
+                    final_coverage_result = await coverage_db.execute(
+                        select(func.count(DailyPrice.id), func.max(DailyPrice.date)).where(
+                            DailyPrice.ticker == ticker,
+                            DailyPrice.date >= calendar_start,
+                            DailyPrice.date <= target,
+                        )
+                    )
+                    final_count, final_latest = final_coverage_result.one()
+                if (
+                    final_count < minimum_rows
+                    or final_latest is None
+                    or final_latest < latest_acceptable_date
+                ):
+                    raise ValueError(
+                        "price history coverage is incomplete: "
+                        f"rows={final_count}/{minimum_rows}, latest={final_latest}, "
+                        f"required_latest={latest_acceptable_date}"
+                    )
                 async with progress_lock:
-                    stats["succeeded"] += 1
+                    stats["skipped" if prices_complete else "succeeded"] += 1
                     stats["price_rows"] += len(prices)
                     stats["corporate_actions"] += action_count
             except Exception as exc:
@@ -93,11 +168,26 @@ async def backfill_price_history(
                 await update_pipeline_run(run_id, "backfilling", stats["succeeded"] + stats["skipped"])
 
         coverage = (stats["succeeded"] + stats["skipped"]) / len(symbols) if symbols else 0.0
-        quality = {"passed": coverage >= 0.90, "metrics": {**stats, "ticker_coverage": coverage}}
+        quality = {
+            "passed": coverage >= 0.90,
+            "metrics": {
+                **stats,
+                "ticker_coverage": coverage,
+                "minimum_rows_per_ticker": minimum_rows,
+                "latest_acceptable_date": latest_acceptable_date.isoformat(),
+            },
+        }
         if not quality["passed"]:
             raise RuntimeError(f"History backfill coverage below 90%: {coverage:.2%}")
-        await publish_dataset("price_history", target, run_id)
-        await finish_pipeline_run(run_id, "published", quality_report=quality)
+        async with async_session_maker() as publication_db, publication_db.begin():
+            await publish_datasets_and_finish(
+                publication_db,
+                ["price_history"],
+                target,
+                run_id,
+                quality_report=quality,
+                records_processed=stats["succeeded"] + stats["skipped"],
+            )
         return {"run_id": run_id, "status": "published", **quality["metrics"]}
     except asyncio.CancelledError:
         await finish_pipeline_run(

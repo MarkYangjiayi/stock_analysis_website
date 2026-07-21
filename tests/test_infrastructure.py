@@ -9,7 +9,7 @@ import yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
-from models import DailyPrice, DataPublication, FinancialStatement, PipelineRun, SecurityMaster, StockScreenerSnapshot, Ticker
+from models import DailyPrice, DataPublication, FactorValue, FinancialStatement, PipelineRun, SecurityMaster, StockScreenerSnapshot, Ticker
 from services.analyzer import batch_get_factor_scores, filter_screener_stocks, get_fundamental_valuation
 from services.data_quality import validate_screener_records
 from services.raw_store import persist_snapshot
@@ -101,8 +101,79 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
         partial_bulk,
     )
 
+    async def empty_actions(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_corporate_actions",
+        empty_actions,
+    )
+
     with pytest.raises(ValueError, match="universe coverage"):
         await fetch_and_merge_bulk_data("2025-01-02")
+
+
+@pytest.mark.asyncio
+async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    bulk_prices = [
+        {
+            "code": ticker,
+            "exchange_short_name": "US",
+            "date": "2025-01-02",
+            "close": 100,
+        }
+        for ticker in ["AAA", "BBB"]
+    ]
+    raw_splits = [
+        {"code": "AAA", "exchange": "US", "date": "2025-01-02", "split": "2/1"},
+        {"code": "OUT", "exchange": "US", "date": "2025-01-02", "split": "3/1"},
+    ]
+    raw_dividends = [
+        {"code": "BBB", "exchange": "US", "date": "2025-01-02", "dividend": 0.25},
+    ]
+
+    async def fake_bulk_prices(*args, **kwargs):
+        return bulk_prices
+
+    async def fake_bulk_actions(action_type, *args, **kwargs):
+        return raw_splits if action_type == "splits" else raw_dividends
+
+    async def no_fundamentals(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_eod_prices",
+        fake_bulk_prices,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_corporate_actions",
+        fake_bulk_actions,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.fetch_target_universe_fundamentals",
+        no_fundamentals,
+    )
+
+    frame = await fetch_and_merge_bulk_data(
+        "2025-01-02",
+        target_tickers={"AAA.US", "BBB.US"},
+    )
+
+    assert frame.attrs["raw_bulk_eod"] == bulk_prices
+    assert frame.attrs["raw_bulk_splits"] == raw_splits
+    assert frame.attrs["raw_bulk_dividends"] == raw_dividends
+    assert {item["ticker"] for item in frame.attrs["bulk_splits"]} == {"AAA.US"}
+    assert {item["ticker"] for item in frame.attrs["bulk_dividends"]} == {"BBB.US"}
 
 
 @pytest.mark.asyncio
@@ -186,6 +257,42 @@ async def test_screener_keeps_published_snapshot_point_in_time(db_session, monke
     assert result["total"] == 1
     assert result["items"][0]["market_cap"] is None
     assert result["items"][0]["pe_ratio"] is None
+
+
+@pytest.mark.asyncio
+async def test_factor_api_hides_rows_without_matching_publication(db_session):
+    from api.routers import read_factors
+
+    as_of = date(2025, 1, 2)
+    failed_run = PipelineRun(
+        pipeline_name="factor_cross_section",
+        target_date=as_of,
+        status="failed",
+    )
+    db_session.add(failed_run)
+    await db_session.flush()
+    db_session.add(FactorValue(
+        ticker="AAA.US",
+        as_of_date=as_of,
+        factor_name="composite",
+        normalized_value=1.0,
+        version="lfq-v1",
+        available_at=datetime(2025, 1, 2, 23, 0),
+        source_run_id=failed_run.id,
+    ))
+    await db_session.commit()
+
+    assert await read_factors(as_of, db=db_session) == []
+
+    failed_run.status = "published"
+    db_session.add(DataPublication(
+        dataset="factors",
+        as_of_date=as_of,
+        pipeline_run_id=failed_run.id,
+    ))
+    await db_session.commit()
+    rows = await read_factors(as_of, db=db_session)
+    assert [row["ticker"] for row in rows] == ["AAA.US"]
 
 
 @pytest.mark.asyncio
@@ -483,6 +590,17 @@ def test_health_and_admin_authentication():
         assert unauthorized.status_code == 401
 
 
+def test_production_configuration_fails_closed_without_admin_key():
+    from core.config import Settings
+
+    with pytest.raises(ValueError, match="ADMIN_API_KEY"):
+        Settings(
+            ENVIRONMENT="production",
+            ADMIN_API_KEY="",
+            _env_file=None,
+        )
+
+
 @pytest.mark.asyncio
 async def test_rate_limiter_purges_expired_client_keys(monkeypatch):
     current_time = [0.0]
@@ -604,3 +722,5 @@ def test_compose_initializes_bind_mount_permissions():
     assert "./data:/app/data" in initializer["volumes"]
     assert "chown -R 10001:10001 /app/data" in initializer["command"][-1]
     assert backend_dependency["condition"] == "service_completed_successfully"
+    assert "ENVIRONMENT=production" in compose["services"]["backend"]["environment"]
+    assert "ENVIRONMENT=production" in compose["services"]["worker"]["environment"]

@@ -76,7 +76,11 @@ def evaluate_factor(
         raise ValueError("No aligned forward returns are available")
 
     daily_ic = pd.Series({
-        as_of: group["score"].rank().corr(group["forward_return"].rank())
+        as_of: (
+            group["score"].rank().corr(group["forward_return"].rank())
+            if group["score"].nunique() > 1 and group["forward_return"].nunique() > 1
+            else np.nan
+        )
         for as_of, group in merged.groupby("as_of_date")
     }, dtype=float).dropna()
     quantile_rows = []
@@ -106,12 +110,13 @@ def evaluate_factor(
         turnovers.append(1.0 - len(previous & current) / denominator)
     quantile_keys = sorted(aggregate_returns)
     monotonicity = 0.0
-    if len(quantile_keys) >= 2:
-        monotonicity = float(
+    if len(quantile_keys) >= 2 and len(set(aggregate_returns.values())) > 1:
+        correlation = float(
             pd.Series(quantile_keys).rank().corr(
                 pd.Series([aggregate_returns[key] for key in quantile_keys]).rank()
             )
         )
+        monotonicity = correlation if np.isfinite(correlation) else 0.0
 
     ic_std = float(daily_ic.std(ddof=0)) if not daily_ic.empty else 0.0
     return {

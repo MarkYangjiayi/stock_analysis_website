@@ -170,6 +170,26 @@ async def get_bulk_eod_prices(
     return await _fetch_from_eodhd(endpoint="eod-bulk-last-day", ticker=exchange, params=params, client=client)
 
 
+async def get_bulk_corporate_actions(
+    action_type: str,
+    exchange: str = "US",
+    date_str: Optional[str] = None,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[list]:
+    """Fetch one exchange-wide split or dividend batch for a session."""
+    if action_type not in {"splits", "dividends"}:
+        raise ValueError("action_type must be splits or dividends")
+    params: Dict[str, Any] = {"type": action_type}
+    if date_str:
+        params["date"] = date_str
+    return await _fetch_from_eodhd(
+        endpoint="eod-bulk-last-day",
+        ticker=exchange,
+        params=params,
+        client=client,
+    )
+
+
 async def get_bulk_fundamentals(
     exchange: str = "US",
     client: Optional[httpx.AsyncClient] = None,
