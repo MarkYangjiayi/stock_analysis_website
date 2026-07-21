@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import event
+from sqlalchemy import event, text
 import os
 from core.config import settings
 
@@ -15,24 +15,28 @@ if DATABASE_URL.startswith("sqlite"):
     # extract path from sqlite+aiosqlite:///./data/quantify_local.db
     db_path = DATABASE_URL.split("///")[-1]
     if db_path.startswith("./"):
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        parent = os.path.dirname(db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
 
 # 1. 创建异步引擎 (Engine)
 # SQLite 支持 check_same_thread=False 来适应多线程的 FastAPI
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    future=True,
-    connect_args={"check_same_thread": False},
-)
+engine_options = {"echo": False, "future": True, "pool_pre_ping": True}
+if DATABASE_URL.startswith("sqlite"):
+    engine_options["connect_args"] = {"check_same_thread": False, "timeout": 30}
+
+engine = create_async_engine(DATABASE_URL, **engine_options)
 
 # 注册连接事件配置 SQLite 高性能 WAL 模式
-@event.listens_for(engine.sync_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL;")
-    cursor.execute("PRAGMA synchronous=NORMAL;")
-    cursor.close()
+if DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA foreign_keys=ON;")
+        cursor.execute("PRAGMA busy_timeout=30000;")
+        cursor.close()
 
 # 2. 创建异步 Session 工厂
 async_session_maker = async_sessionmaker(
@@ -57,3 +61,13 @@ async def init_db():
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def database_ready() -> bool:
+    """Cheap readiness probe used by health checks and orchestration."""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False

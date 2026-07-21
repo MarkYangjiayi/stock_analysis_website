@@ -2,9 +2,29 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from 'next/link';
-import debounce from 'lodash.debounce';
 import { useAppStore } from '@/store/useAppStore';
 import { API_BASE_URL } from '@/lib/api';
+
+interface ScreenerApiPayload {
+    limit: number;
+    offset: number;
+    sort_by: string;
+    sort_desc: boolean;
+    sector?: string;
+    market_cap_min?: number;
+    market_cap_max?: number;
+    pe_min?: number;
+    pe_max?: number;
+    rsi_14_min?: number;
+    rsi_14_max?: number;
+    price_above_ma50?: boolean;
+    price_below_ma50?: boolean;
+    roe_min?: number;
+    debt_to_equity_max?: number;
+    fcf_min?: number;
+    gross_margin_min?: number;
+    sales_growth_5yr_min?: number;
+}
 
 export default function ScreenerPage() {
     const [activeTab, setActiveTab] = useState("Descriptive");
@@ -18,8 +38,8 @@ export default function ScreenerPage() {
 
     const tabs = ["Descriptive", "Fundamental", "Technical"];
 
-    const buildApiPayload = () => {
-        const payload: any = {
+    const buildApiPayload = useCallback((): ScreenerApiPayload => {
+        const payload: ScreenerApiPayload = {
             limit,
             offset: page * limit,
             sort_by: filters.sort_by,
@@ -76,9 +96,9 @@ export default function ScreenerPage() {
         }
 
         return payload;
-    };
+    }, [filters, page]);
 
-    const fetchResults = async () => {
+    const fetchResults = useCallback(async () => {
         setLoading(true);
         try {
             const payload = buildApiPayload();
@@ -98,10 +118,7 @@ export default function ScreenerPage() {
         } finally {
             setLoading(false);
         }
-    };
-
-    // Safe debounced fetch logic
-    const debouncedFetch = useCallback(debounce(() => fetchResults(), 300), [filters, page]);
+    }, [buildApiPayload, setScreenerState]);
 
     useEffect(() => {
         // Condition: If this is the FIRST render and we already have cached results, DO NOT fetch.
@@ -112,9 +129,9 @@ export default function ScreenerPage() {
             }
         }
 
-        debouncedFetch();
-        return () => debouncedFetch.cancel();
-    }, [debouncedFetch, results.length]);
+        const timeout = window.setTimeout(() => void fetchResults(), 300);
+        return () => window.clearTimeout(timeout);
+    }, [fetchResults, results.length]);
 
     const handleFilterChange = (key: string, value: string) => {
         setScreenerState({
@@ -131,7 +148,7 @@ export default function ScreenerPage() {
         if (page > 0) setScreenerState({ page: page - 1 });
     };
 
-    const formatMarketCap = (value: any) => {
+    const formatMarketCap = (value: unknown) => {
         if (value === null || value === undefined) return "-";
         const num = Number(value);
         if (isNaN(num)) return "-";
@@ -141,7 +158,7 @@ export default function ScreenerPage() {
         return num.toLocaleString();
     };
 
-    const formatPE = (value: any) => {
+    const formatPE = (value: unknown) => {
         if (value === null || value === undefined) return "-";
         const num = Number(value);
         if (isNaN(num) || num <= 0) return "-";
@@ -413,7 +430,7 @@ export default function ScreenerPage() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    results.map((stock: any) => (
+                                    results.map((stock) => (
                                         <tr key={stock.ticker} className="hover:bg-slate-100 dark:hover:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800/50 transition-colors group">
                                             <td className="px-6 py-4 font-bold text-emerald-400 group-hover:text-emerald-300">
                                                 <Link href={`/?ticker=${stock.ticker}`}>
@@ -429,11 +446,11 @@ export default function ScreenerPage() {
                                             <td className="px-6 py-4 text-slate-800 dark:text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
                                             <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">${stock.close?.toFixed(2) || "-"}</td>
                                             <td className="px-6 py-4 text-slate-700 dark:text-gray-300">{formatPE(stock.pe_ratio)}</td>
-                                            <td className={`px-6 py-4 font-bold ${stock.roe > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
-                                                {stock.roe ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
+                                            <td className={`px-6 py-4 font-bold ${(stock.roe ?? 0) > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
+                                                {stock.roe != null ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                                                {stock.debt_to_equity ? stock.debt_to_equity.toFixed(2) : "-"}
+                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity == null ? 'text-slate-500 dark:text-gray-400' : stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                {stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : "-"}
                                             </td>
                                             <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
                                                 {stock.gross_margin ? `${(stock.gross_margin * 100).toFixed(1)}%` : "-"}

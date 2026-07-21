@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, Activity, AlertCircle, Plus, Check, BarChart2 } from 'lucide-react';
+import { Search, AlertCircle, Plus, Check, BarChart2 } from 'lucide-react';
 import { fetchStockData, StockDataResponse } from '@/lib/api';
 import StockChart from '@/components/StockChart';
 import ValuationDashboard from '@/components/ValuationDashboard';
@@ -10,6 +10,8 @@ import AIReport from '@/components/AIReport';
 import NewsFeed from '@/components/NewsFeed';
 import FinancialTrendChart from '@/components/FinancialTrendChart';
 import WatchlistSidebar from '@/components/WatchlistSidebar';
+
+const DEFAULT_WATCHLIST = ['AAPL.US', 'AMAT.US', 'ASTS.US', 'UNH.US'];
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -24,8 +26,6 @@ function HomeContent() {
   const [financialPeriod, setFinancialPeriod] = useState<'annual' | 'ttm' | 'quarterly'>('annual');
 
   const [watchlist, setWatchlist] = useState<string[]>([]);
-  const DEFAULT_WATCHLIST = ['AAPL.US', 'AMAT.US', 'ASTS.US', 'UNH.US'];
-
   useEffect(() => {
     const stored = localStorage.getItem('my_watchlist');
     if (stored) {
@@ -35,7 +35,7 @@ function HomeContent() {
           setWatchlist(parsed);
           return;
         }
-      } catch (e) { }
+      } catch { /* Fall back to defaults below. */ }
     }
     setWatchlist(DEFAULT_WATCHLIST);
     localStorage.setItem('my_watchlist', JSON.stringify(DEFAULT_WATCHLIST));
@@ -77,12 +77,9 @@ function HomeContent() {
       const fpBackend = (periodToFetch === 'quarterly') ? 'Quarterly' : 'Yearly';
       const data = await fetchStockData(searchTicker.toUpperCase(), intervalToFetch, fpBackend);
       setStockData(data);
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        setError(`Data for ${searchTicker} not found. Ensure it has been synchronized first.`);
-      } else {
-        setError(err.message || 'Failed to fetch stock data');
-      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch stock data';
+      setError(message);
     } finally {
       if (isNewTicker) {
         setLoading(false);

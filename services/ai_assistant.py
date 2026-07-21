@@ -25,8 +25,8 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         valuation = analysis_data.get('valuation_metrics', {})
         factors = valuation.get('factor_scores', {})
         
-        company_name = profile.get('Name', ticker)
-        industry = profile.get('Industry', 'Unknown')
+        company_name = profile.get('name') or ticker
+        industry = profile.get('industry') or 'Unknown'
         
         ttm = valuation.get('ttm', {})
 

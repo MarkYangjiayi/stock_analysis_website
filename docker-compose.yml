@@ -5,6 +5,14 @@ services:
     container_name: quantify_warp
     restart: always
 
+  data-permissions:
+    image: quantify-backend:latest
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /app/data && chown -R 10001:10001 /app/data"]
+    volumes:
+      - ./data:/app/data
+    restart: "no"
+
   backend:
     image: quantify-backend:latest
     ports:
@@ -13,17 +21,49 @@ services:
     volumes:
       - ./data:/app/data
     environment:
+      - ENVIRONMENT=production
       # 2. 注意这里！新镜像的默认 SOCKS5 端口是 9091
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
       - ALL_PROXY=socks5h://warp:9091
       - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com
     depends_on:
-      - warp
+      data-permissions:
+        condition: service_completed_successfully
+      warp:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    image: quantify-backend:latest
+    command: ["python", "worker.py"]
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ENVIRONMENT=production
+      - HTTP_PROXY=socks5h://warp:9091
+      - HTTPS_PROXY=socks5h://warp:9091
+      - ALL_PROXY=socks5h://warp:9091
+      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com
+    depends_on:
+      backend:
+        condition: service_healthy
+      warp:
+        condition: service_started
+    restart: unless-stopped
 
   frontend:
     image: quantify-frontend:latest
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

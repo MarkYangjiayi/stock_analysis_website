@@ -54,10 +54,10 @@ const AIReport: React.FC<AIReportProps> = ({ ticker }) => {
                     setReport(prev => prev + chunk);
                 }
             }
-        } catch (err: any) {
-            if (err.name === 'AbortError') return;
+        } catch (err: unknown) {
+            if (err instanceof DOMException && err.name === 'AbortError') return;
             console.error("Failed to fetch AI report:", err);
-            setError(err.message || 'Failed to generate investment brief.');
+            setError(err instanceof Error ? err.message : 'Failed to generate investment brief.');
             setLoading(false);
         }
     };

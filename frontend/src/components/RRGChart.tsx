@@ -2,7 +2,6 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import * as echarts from 'echarts/core';
 import { useTheme } from 'next-themes';
 
 export interface RRGDataPoint {
@@ -23,6 +22,21 @@ interface RRGChartProps {
     tailLength?: number;
     // 时光机：当前所在的全局日期索引
     currentDayIndex?: number;
+}
+
+interface CustomRenderParams {
+    dataIndex: number;
+}
+
+interface CustomRenderApi {
+    coord: (value: Array<number | string>) => number[];
+    value: (dimension: number, dataIndex?: number) => number | string;
+}
+
+interface RRGTooltipParam {
+    value?: Array<number | string>;
+    color?: string;
+    seriesName?: string;
 }
 
 // 预设的亮丽颜色数组
@@ -51,7 +65,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
         let minRatio = 100, maxRatio = 100;
         let minMomentum = 100, maxMomentum = 100;
 
-        const dynamicSeries: any[] = [];
+        const dynamicSeries: Array<Record<string, unknown>> = [];
         const legendData: string[] = [];
         let colorIndex = 0;
 
@@ -93,7 +107,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 type: 'custom',
                 animation: false,
                 data: lineData,
-                renderItem: function (params: any, api: any) {
+                renderItem: function (params: CustomRenderParams, api: CustomRenderApi) {
                     const idx = params.dataIndex;
                     // 第一个点没有前一个点，无法连线，直接跳过
                     if (idx === 0) return;
@@ -197,10 +211,10 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
                 borderColor: isDark ? '#334155' : '#cbd5e1',
                 textStyle: { color: isDark ? '#f8fafc' : '#0f172a' },
-                formatter: function (params: any) {
+                formatter: function (params: RRGTooltipParam) {
                     if (Array.isArray(params.value)) {
-                        const ratio = params.value[0].toFixed(2);
-                        const momentum = params.value[1].toFixed(2);
+                        const ratio = Number(params.value[0]).toFixed(2);
+                        const momentum = Number(params.value[1]).toFixed(2);
                         const dt = params.value[2];
                         const tck = params.value[3];
 
@@ -217,7 +231,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
               <div class="text-sm ${dateColor}">RS-Momentum: <span class="${valColor}">${momentum}</span></div>
             `;
                     }
-                    return params.seriesName;
+                    return params.seriesName ?? '';
                 }
             },
             grid: {

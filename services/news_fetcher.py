@@ -1,5 +1,5 @@
 import feedparser
-import requests
+import httpx
 import re
 from datetime import datetime, timedelta, timezone
 import logging
@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def fetch_yahoo_news(ticker: str) -> List[Dict[str, Any]]:
+async def fetch_yahoo_news(ticker: str) -> List[Dict[str, Any]]:
     """
     Fetches the latest news for a given ticker from Yahoo Finance RSS.
     Returns only news from the past 72 hours, with stripped HTML.
@@ -22,7 +22,8 @@ def fetch_yahoo_news(ticker: str) -> List[Dict[str, Any]]:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
-        response = requests.get(url, headers=headers, timeout=10)
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(url, headers=headers)
         response.raise_for_status()
         
         feed = feedparser.parse(response.content)
@@ -66,9 +67,3 @@ def fetch_yahoo_news(ticker: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error fetching news for {ticker}: {e}")
         return []
-
-if __name__ == '__main__':
-    # Test script
-    import json
-    news = fetch_yahoo_news('AAPL.US')
-    print(json.dumps(news, indent=2))

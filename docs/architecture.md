@@ -1,82 +1,131 @@
-# 股票量化分析系统 (Stock Analysis Platform) - 架构与设计文档
+# Quantify v2 Architecture
 
-## 1. 项目概述 (Project Overview)
-本项目是一个全栈股票综合分析平台。系统通过调用 EODHD API 获取原始金融数据（基本面、技术面历史 K 线等），在后端进行清洗、转换和衍生指标计算，并通过 RESTful API 提供给前端进行交互式可视化展示。
+## 1. Runtime topology
 
-## 2. 核心技术栈选型 (Tech Stack)
+The application is a small, single-node research platform with deliberately separate lifecycles:
 
-### 2.1 后端 (Backend & Data Pipeline)
-* **核心语言:** Python 3.10+
-* **Web 框架:** FastAPI (纯异步架构)
-* **数据处理与量化计算:** `pandas`, `numpy`, `TA-Lib` (或 `pandas-ta`)
-* **HTTP 请求:** `httpx` (异步调用外部 API)
-* **ORM:** SQLAlchemy 2.0 (Async 模式) + asyncpg
+```text
+Browser / Next.js
+        |
+        v
+FastAPI read and admin APIs -----> SQLite (WAL, FK enabled)
+                                      |
+Dedicated worker --------------------+
+  |-- XNYS-aware APScheduler
+  |-- data quality and publication jobs
+  |-- optional WebSocket monitor
+  `-- weekly online SQLite backup
 
-### 2.2 前端 (Frontend & UI)
-* **框架:** Next.js (React) 或 Vue 3 (使用 TypeScript 强类型)
-* **样式:** Tailwind CSS
-* **可视化图表:**
-    * K线与金融行情: Lightweight Charts (TradingView)
-    * 财务数据看板: ECharts
+Immutable raw JSON.gz ---> normalized point-in-time tables ---> factor panels ---> research/backtests
+```
 
-### 2.3 数据存储与基础设施 (Storage & Infra)
-* **主数据库:** PostgreSQL (存储结构化/半结构化静态数据与行情序列)
-* **缓存与限流:** Redis (存储计算后的热点指标、实时数据缓存)
-* **任务调度:** APScheduler 或 Celery (处理盘后 K 线更新与周末财报更新)
+Uvicorn never owns scheduled jobs. This makes API worker scaling safe and prevents duplicate notifications or data writes. `worker.py` is the only scheduler process.
 
----
+## 2. Storage choices
 
-## 3. 核心数据库模型 (Database Schema)
+SQLite remains the serving and metadata database because the current universe and write rate are small. WAL, a 30-second busy timeout and foreign-key enforcement are configured on every connection. Alembic owns production schema changes.
 
-系统基于 PostgreSQL 构建，主要包含以下 4 张核心表：
+Raw provider responses are content-addressed gzip JSON files under `data/raw`. The database stores their checksum, location, fetch time and dataset identity. This preserves lineage and allows normalized data to be rebuilt.
 
-1.  **`tickers` (股票基础信息表)**
-    * `ticker` (String, PK): 股票代码 (例: AAPL.US)
-    * `name`, `exchange`, `sector`, `industry`, `description`, `currency`
-    * `last_updated` (DateTime): 基础信息最后同步时间
-2.  **`daily_prices` (日 K 线历史行情表)**
-    * `id` (Integer, PK, Auto Increment)
-    * `ticker` (String, FK/Index)
-    * `date` (Date, Index)
-    * `open`, `high`, `low`, `close`, `adjusted_close`, `volume` (Numeric/BigInt)
-    * *约束 (Constraint):* `(ticker, date)` 联合唯一索引。
-3.  **`financial_statements` (财务报表表)**
-    * `id` (Integer, PK)
-    * `ticker` (String, Index)
-    * `fiscal_date` (Date), `period` (String: Quarterly/Yearly)
-    * `revenue`, `net_income` (Numeric) - 核心指标独立列
-    * `income_statement`, `balance_sheet`, `cash_flow` (JSONB) - 完整原始报表存入 JSONB
-    * *约束 (Constraint):* `(ticker, fiscal_date, period)` 联合唯一索引。
-4.  **`computed_metrics` (预计算基本面指标表)**
-    * `ticker` (String, Index), `date` (Date)
-    * `pe_ratio`, `pb_ratio`, `roe`, `debt_to_equity` (Numeric)
+For larger offline panels, the raw files can later be converted to Parquet and queried with DuckDB without changing the API database.
 
----
+## 3. Point-in-time schema
 
-## 4. 数据流与业务逻辑 (Data Flow)
+- `security_master`, `symbol_history`: canonical identity and vendor symbol history.
+- `universe_membership`: membership intervals with `effective_from/effective_to`; exited securities are retained.
+- `daily_prices`, `corporate_actions`: raw/adjusted prices, splits and dividends. The daily exchange-wide bulk sync updates all three without per-symbol action requests.
+- `fundamental_versions`: period end, filing time, information `available_at`, fetch time and preserved revisions.
+- `raw_data_snapshots`: immutable source lineage.
+- `pipeline_runs`, `data_publications`: resumable job state, validation report and the dates API consumers may read.
+- `factor_values`: named, versioned raw and normalized factor observations.
+- `strategy_definitions`, `signal_snapshots`, `backtest_runs`: reproducible research outputs.
 
-系统遵循 **Read-Through Cache** 策略，禁止前端请求直接触发不受控的外部 API 调用。
+Legacy `financial_statements` and `stock_screener_snapshot` remain for dashboard compatibility. New research must use quality-gated publications and versioned factor values.
 
-* **冷启动 (Cold Start - 首次查询陌生 Ticker):**
-    1. 前端发起请求 -> 后端查 Redis 未命中 -> 查 PostgreSQL 未命中。
-    2. 后端并发调用 EODHD API 获取 Fundamentals 和 EOD 数据。
-    3. 解析数据入库 (PostgreSQL DB)。
-    4. 触发量化引擎计算 MA/MACD/RSI 等技术指标及财务比率。
-    5. 结果存入 Redis 缓存 (设置 24h TTL) 并返回前端。
-* **热路径 (Hot Path - 日常高频查询):**
-    1. 命中 Redis (技术指标) 或 PostgreSQL (90天内更新过的财报)。
-    2. 快速组装 JSON 返回，响应时间控制在 50ms 内。
-* **后台更新任务 (Cron Jobs):**
-    1. **每日收盘:** 盘后批量拉取活跃自选股的最新日 K，追加至 DB，刷新 Redis 中技术面缓存。
-    2. **周末巡检:** 扫描 DB 中 `last_updated` 较旧的股票，拉取最新财报更新 JSONB。
+## 4. Publication pipeline
 
----
+The daily pipeline performs these stages:
 
-## 5. 🤖 AI 编程强制约束 (AI Coding Guidelines)
-*阅读此文档的 AI 助手，在生成代码时必须严格遵守以下准则：*
+1. Resolve the observed S&P 500/Russell 2000 universe.
+2. Fetch EOD prices and fundamentals; store the immutable source batch.
+3. Record security identity, universe intervals and fundamental availability/revisions.
+4. Upsert prices and current screener rows idempotently.
+5. Calculate indicators using prices no later than the snapshot date.
+6. Validate universe size, ticker uniqueness, price coverage and fundamental coverage.
+7. Atomically publish the snapshot and cumulative price panel only after the quality gate passes.
+8. Compute and publish the `lfq-v1` factor cross-section in a separate tracked run.
 
-1.  **异步优先:** FastAPI 路由、数据库操作（SQLAlchemy AsyncSession）、Redis 交互必须全部使用 `async/await`。
-2.  **HTTP Client 生命周期 (极其重要):** * 在与外部 API (如 EODHD) 交互时，**HTTP client (如 `httpx.AsyncClient`) 必须在单次请求 (single request) 的内部进行初始化和关闭。** * **绝对禁止**将 HTTP client 声明为全局变量或单例，以避免在异步并发环境下产生连接池状态污染或混乱。推荐使用 `async with httpx.AsyncClient() as client:` 模式。
-3.  **计算解耦:** 外部数据获取与量化指标计算 (`pandas`) 必须解耦到不同的 Service 层方法中，保持数据管道的纯净度。
-4.  **JSONB 读写:** 在处理 EODHD 复杂的 Fundamentals 返回值时，不要尝试将所有财务科目映射为强类型 ORM 字段，统一序列化为 PostgreSQL 的 `JSONB` 类型存储，并在分析时按需反序列化。
-5.  **异常与限流捕获:** 所有对 EODHD 的请求必须包含 `try-except` 块，并显式处理 HTTP 429 (Too Many Requests) 错误，实现退避重试 (Exponential Backoff)。
+Failures are persisted and re-raised so APScheduler does not report false success. API reads prefer the latest `data_publications` row. Historical Screener reconstruction is refused unless an archived point-in-time source payload is explicitly imported; current fundamentals are never relabeled as historical.
+
+## 5. Cold start and catch-up
+
+`python scripts/cold_start_init.py`:
+
+1. Initializes/migrates tables and seeds benchmark/sector ETFs.
+2. Captures the latest market snapshot.
+3. Backfills 252 trading days of price history plus splits/dividends with bounded concurrency.
+4. Recomputes MA/RSI after the history is warm.
+5. Publishes the first factor cross-section.
+
+Backfill is resumable: tickers with sufficient coverage are skipped and every run records progress. Worker startup catches up the latest completed XNYS session. It intentionally does not fabricate every missed date with today's universe.
+
+## 6. Factor methodology (`lfq-v1`)
+
+- Value: earnings yield and book-to-price.
+- Quality: ROE, gross margin and inverse leverage.
+- Growth: five-year sales growth.
+- Momentum: 12–1 momentum when 252 days exist, otherwise a 63-day warm-up signal.
+- Low volatility: negative annualized realized volatility.
+
+Each cross-section applies sector-median missing-value handling, 1%/99% winsorization, sector demeaning and z-scoring. The composite is the equal-weight mean. At least 80% of the universe must have both momentum and low-volatility observations. Factor rows are append-only by source run and record their version, availability time and sector; readers only expose the run referenced by the matching publication.
+
+The research API reports Rank IC, IC information ratio, positive IC rate, quantile returns, monotonicity, long-short spread and top-quantile turnover.
+
+## 7. Backtest rules
+
+- Factor signals must have been published by the official XNYS execution close, execute at least one later trading close and earn returns only after that execution close.
+- Membership is resolved at each signal date; missing PIT membership fails by default.
+- Prices use adjusted close with raw close fallback.
+- Portfolio construction enforces top-N, position and sector caps and may retain cash when constraints are infeasible.
+- Turnover includes cash transitions. Commission and slippage are charged on every rebalance.
+- Missing held-security prices fail by default, forcing the researcher to load a delisting return; an explicit `liquidate_last` policy is available.
+- A period with no executable, invested rebalance fails instead of reporting a misleading zero-return backtest.
+- Outputs include return, volatility, Sharpe, Sortino, drawdown, VaR/CVaR, Beta, Alpha, tracking error, information ratio, turnover, costs and sector contribution.
+- Signal snapshots are keyed by backtest run, so rerunning the same strategy never overwrites an earlier run's evidence.
+
+## 8. Security and operations
+
+- `ADMIN_API_KEY` is mandatory when `ENVIRONMENT=production`.
+- Admin and state-changing APIs require `X-API-Key`; expensive public research endpoints are rate-limited.
+- CORS is an explicit allow-list.
+- API keys are never logged.
+- `.dockerignore` excludes credentials, databases, raw data and local build artifacts.
+- The backend container runs as a non-root Python 3.12 user and applies Alembic migrations before Uvicorn.
+- Docker Compose forces `ENVIRONMENT=production`; a missing `ADMIN_API_KEY` prevents backend startup.
+- `/health/live` and `/health/ready` support orchestration.
+- `scripts/backup_sqlite.py` uses SQLite's online backup API and validates every copy.
+
+## 9. Commands
+
+```bash
+cp .env.example .env
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements-dev.txt
+alembic upgrade head
+pytest -q
+
+uvicorn main:app --reload
+python worker.py
+
+cd frontend
+npm ci
+npm run lint
+npx tsc --noEmit
+npm run build
+npm run dev
+```
+
+## 10. Data boundary
+
+Snapshots created before v2 did not preserve historical membership or information availability and must not be used for backtests. They remain readable by the dashboard as legacy data. Trustworthy research history begins with v2 quality-gated publications or with separately imported, verified point-in-time source data.

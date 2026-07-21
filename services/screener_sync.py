@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import argparse
-from datetime import datetime
-from typing import List, Dict, Any
+from datetime import date, datetime, timedelta
+from typing import Awaitable, Callable, List, Dict, Any, Optional
 
 import pandas as pd
 import pandas_ta_classic as ta
@@ -13,11 +13,46 @@ from sqlalchemy import select, and_, func
 from models import StockScreenerSnapshot, DailyPrice, Ticker
 from database import engine, async_session_maker
 from services import eodhd_client
+from services.data_quality import DataQualityError, validate_screener_records
+from services.pipeline_runs import (
+    begin_pipeline_run,
+    finish_pipeline_run,
+    publish_datasets_and_finish,
+    update_pipeline_run,
+)
+from services.corporate_actions import upsert_corporate_actions
+from services.security_master import bulk_upsert_securities
+from services.universe import record_universe_membership
+from services.raw_store import persist_snapshot
+from services.data_sync import _upsert_financials
+from core.config import settings
+from core.time_utils import utc_now
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-async def fetch_target_universe_fundamentals(tickers: set) -> list:
+
+def _validate_universe_coverage(target_tickers: set[str], priced_tickers: set[str]) -> float:
+    if len(target_tickers) < settings.PIPELINE_MIN_UNIVERSE_SIZE:
+        raise ValueError(
+            f"Resolved target universe is too small: {len(target_tickers)} "
+            f"< {settings.PIPELINE_MIN_UNIVERSE_SIZE}"
+        )
+    coverage = len(priced_tickers & target_tickers) / len(target_tickers)
+    if coverage < settings.PIPELINE_MIN_UNIVERSE_COVERAGE:
+        raise ValueError(
+            f"Bulk price universe coverage {coverage:.2%} is below "
+            f"{settings.PIPELINE_MIN_UNIVERSE_COVERAGE:.2%} "
+            f"({len(priced_tickers)} priced / {len(target_tickers)} target)"
+        )
+    return coverage
+
+
+async def fetch_target_universe_fundamentals(
+    tickers: set,
+    client=None,
+    on_chunk: Optional[Callable[[Dict[str, dict]], Awaitable[None]]] = None,
+) -> list:
     """
     Fetch individual fundamental data for a set of tickers concurrently, 
     respecting EODHD rate limits via a Semaphore.
@@ -26,11 +61,13 @@ async def fetch_target_universe_fundamentals(tickers: set) -> list:
     
     semaphore = asyncio.Semaphore(15) # Safe concurrency limit for EODHD 100k tier
     results = []
+    raw_fundamentals = {}
     
     async def fetch_single(ticker: str):
         async with semaphore:
-            data = await eodhd_client.get_fundamental_data(ticker)
+            data = await eodhd_client.get_fundamental_data(ticker, client=client)
             if data:
+                raw_fundamentals[ticker] = data
                 # EODHD individual fundamental has a different structure:
                 # General: { Code, Type, Name, Exchange, CurrencyCode... }
                 # Highlights: { MarketCapitalization, PERatio, DividendYield... }
@@ -100,19 +137,28 @@ async def fetch_target_universe_fundamentals(tickers: set) -> list:
                     "SalesGrowth5yr": sales_growth_5yr
                 })
 
-    tasks = [fetch_single(t) for t in tickers]
-    
     # Run tasks with progress logging
-    total_tasks = len(tasks)
-    chunk_size = 500
+    symbols = sorted(tickers)
+    total_tasks = len(symbols)
+    # Fundamental payloads are large. Bound the retained raw batch so a full
+    # Russell 2000 run cannot grow into multi-gigabyte process memory.
+    chunk_size = 100
     for i in range(0, total_tasks, chunk_size):
-        chunk = tasks[i:i+chunk_size]
-        await asyncio.gather(*chunk)
+        await asyncio.gather(*(fetch_single(ticker) for ticker in symbols[i:i+chunk_size]))
+        if on_chunk and raw_fundamentals:
+            await on_chunk(dict(raw_fundamentals))
+        raw_fundamentals.clear()
         logger.info(f"Fetched fundamentals: {min(i+chunk_size, total_tasks)} / {total_tasks}")
-        
+
     return results
 
-async def fetch_and_merge_bulk_data(target_date: str = None) -> pd.DataFrame:
+async def fetch_and_merge_bulk_data(
+    target_date: str = None,
+    target_tickers: set = None,
+    fundamental_chunk_handler: Optional[
+        Callable[[Dict[str, dict], date], Awaitable[None]]
+    ] = None,
+) -> pd.DataFrame:
     """
     1. Fetch Index Constituents for S&P 500 and Russell 2000.
     2. Concurrently fetch bulk EOD closing prices for all US stocks.
@@ -121,37 +167,66 @@ async def fetch_and_merge_bulk_data(target_date: str = None) -> pd.DataFrame:
     5. Merge and return.
     """
     logger.info("Fetching target index universes (S&P 500 and Russell 2000)...")
-    
-    sp500_task = eodhd_client.get_index_components("GSPC.INDX")
-    russell_task = eodhd_client.get_index_components("RUT.INDX")
-    
-    sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
-    target_tickers = set(sp500_tickers + russell_tickers)
-    logger.info(f"Total unique target tickers from S&P 500 and Russell 2000: {len(target_tickers)}")
 
-    # Fetch daily bulk prices (still free/fast)
-    eod_data = await eodhd_client.get_bulk_eod_prices(exchange="US", date_str=target_date)
-    
-    if not eod_data:
-        raise ValueError("Failed to retrieve bulk EOD data.")
+    async with eodhd_client.create_http_client() as client:
+        if target_tickers is None:
+            sp500_task = eodhd_client.get_index_components("GSPC.INDX", client=client)
+            russell_task = eodhd_client.get_index_components("RUT.INDX", client=client)
+            sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
+            target_tickers = set(sp500_tickers + russell_tickers)
+        target_tickers = {ticker.upper() for ticker in target_tickers}
+        logger.info(f"Total unique target tickers from S&P 500 and Russell 2000: {len(target_tickers)}")
 
-    df_eod = pd.DataFrame(eod_data)
-    
-    if df_eod.empty or 'code' not in df_eod.columns:
-        raise ValueError("EOD bulk data format error or empty.")
-        
-    if 'exchange_short_name' in df_eod.columns:
-        df_eod['ticker'] = df_eod['code'] + '.' + df_eod['exchange_short_name']
-    else:
-        df_eod['ticker'] = df_eod['code'] + '.US'
-        
-    # HUGE OPTIMIZATION: Discard all prices that are NOT in our target index universe
-    df_eod = df_eod[df_eod['ticker'].isin(target_tickers)]
-    logger.info(f"Filtered EOD prices down to {len(df_eod)} target index constituents.")
+        # Fetch the daily market batch and matching corporate actions. Each is
+        # one exchange-wide request, avoiding thousands of per-symbol calls.
+        eod_data, split_data, dividend_data = await asyncio.gather(
+            eodhd_client.get_bulk_eod_prices(exchange="US", date_str=target_date, client=client),
+            eodhd_client.get_bulk_corporate_actions(
+                "splits", exchange="US", date_str=target_date, client=client
+            ),
+            eodhd_client.get_bulk_corporate_actions(
+                "dividends", exchange="US", date_str=target_date, client=client
+            ),
+        )
 
-    # Now fetch fundamental data individually for our optimized target list
-    fundamental_data = await fetch_target_universe_fundamentals(target_tickers)
-    
+        if not isinstance(eod_data, list) or not eod_data:
+            raise ValueError("Failed to retrieve bulk EOD data.")
+        if not isinstance(split_data, list) or not isinstance(dividend_data, list):
+            raise ValueError("Failed to retrieve bulk corporate actions.")
+
+        df_eod = pd.DataFrame(eod_data)
+        if df_eod.empty or 'code' not in df_eod.columns:
+            raise ValueError("EOD bulk data format error or empty.")
+
+        if 'exchange_short_name' in df_eod.columns:
+            df_eod['ticker'] = df_eod['code'] + '.' + df_eod['exchange_short_name']
+        else:
+            df_eod['ticker'] = df_eod['code'] + '.US'
+
+        # Discard all prices that are not in the observed target universe.
+        df_eod = df_eod[df_eod['ticker'].isin(target_tickers)]
+        logger.info(f"Filtered EOD prices down to {len(df_eod)} target index constituents.")
+        priced_tickers = set(df_eod["ticker"])
+        universe_coverage = _validate_universe_coverage(target_tickers, priced_tickers)
+
+        observed_dates = set(pd.to_datetime(df_eod["date"], errors="coerce").dropna().dt.date)
+        if len(observed_dates) != 1:
+            raise ValueError(f"Expected one EOD observation date, found {sorted(observed_dates)}")
+        observed_date = next(iter(observed_dates))
+        if target_date and observed_date != datetime.strptime(target_date, "%Y-%m-%d").date():
+            raise ValueError(f"Provider returned {observed_date} for requested date {target_date}")
+
+        # Reuse the same connection pool for the large fundamental batch.
+        async def handle_chunk(raw_batch: Dict[str, dict]) -> None:
+            if fundamental_chunk_handler:
+                await fundamental_chunk_handler(raw_batch, observed_date)
+
+        fundamental_data = await fetch_target_universe_fundamentals(
+            priced_tickers,
+            client=client,
+            on_chunk=handle_chunk,
+        )
+
     if fundamental_data:
         df_fund = pd.DataFrame(fundamental_data)
     else:
@@ -160,10 +235,44 @@ async def fetch_and_merge_bulk_data(target_date: str = None) -> pd.DataFrame:
     # Merge datasets on 'ticker'
     logger.info("Merging targeted EOD prices and fundamentals...")
     df_merged = pd.merge(df_eod, df_fund, on="ticker", how="left")
+    df_merged.attrs["target_tickers"] = sorted(target_tickers)
+    df_merged.attrs["priced_tickers"] = sorted(priced_tickers)
+    df_merged.attrs["universe_coverage"] = universe_coverage
+    # Preserve the exact exchange-wide responses for immutable lineage. The
+    # normalized action lists below remain limited to the target universe.
+    df_merged.attrs["raw_bulk_eod"] = eod_data
+    df_merged.attrs["raw_bulk_splits"] = split_data
+    df_merged.attrs["raw_bulk_dividends"] = dividend_data
+
+    def action_ticker(item: dict) -> Optional[str]:
+        code = str(item.get("code") or "").strip().upper()
+        if not code:
+            return None
+        if "." in code:
+            return code
+        exchange = str(
+            item.get("exchange_short_name") or item.get("exchange") or "US"
+        ).strip().upper()
+        return f"{code}.{exchange}"
+
+    df_merged.attrs["bulk_splits"] = [
+        {**item, "ticker": ticker}
+        for item in split_data
+        if isinstance(item, dict) and (ticker := action_ticker(item)) in target_tickers
+    ]
+    df_merged.attrs["bulk_dividends"] = [
+        {**item, "ticker": ticker}
+        for item in dividend_data
+        if isinstance(item, dict) and (ticker := action_ticker(item)) in target_tickers
+    ]
     
     return df_merged
 
-async def calculate_technicals_locally(db: AsyncSession, tickers: List[str]) -> pd.DataFrame:
+async def calculate_technicals_locally(
+    db: AsyncSession,
+    tickers: List[str],
+    as_of_date: date = None,
+) -> pd.DataFrame:
     """
     Since bulk API only returns 1 day of data, we need 60+ days of history to compute MA20/MA50/RSI.
     This function pulls all necessary recent history from our local PostgreSQL `daily_prices` table.
@@ -175,8 +284,14 @@ async def calculate_technicals_locally(db: AsyncSession, tickers: List[str]) -> 
     records = []
     for i in range(0, len(tickers), 5000):
         chunk = tickers[i:i+5000]
+        conditions = [DailyPrice.ticker.in_(chunk)]
+        if as_of_date:
+            conditions.extend([
+                DailyPrice.date <= as_of_date,
+                DailyPrice.date >= as_of_date - timedelta(days=400),
+            ])
         stmt = select(DailyPrice.ticker, DailyPrice.date, DailyPrice.close).where(
-            DailyPrice.ticker.in_(chunk)
+            *conditions
         ).order_by(DailyPrice.date.asc())
         
         result = await db.execute(stmt)
@@ -194,7 +309,7 @@ async def calculate_technicals_locally(db: AsyncSession, tickers: List[str]) -> 
     # Vectorized fast computing by stock
     def compute_ta(group):
         if len(group) < 14:
-            return pd.Series({'ma20': None, 'ma50': None, 'rsi_14': None, 'latest_close': group['close'].iloc[-1]})
+            return pd.Series({'ma20': None, 'ma50': None, 'rsi_14': None})
         
         c = group['close']
         ma20 = c.rolling(20).mean().iloc[-1]
@@ -208,20 +323,63 @@ async def calculate_technicals_locally(db: AsyncSession, tickers: List[str]) -> 
             'rsi_14': rsi_val,
         })
         
-    df_tech = df_hist.groupby('ticker').apply(compute_ta).reset_index()
+    df_tech = df_hist.groupby('ticker').apply(compute_ta, include_groups=False).reset_index()
     return df_tech
 
 
-async def run_screener_pipeline(target_date: str = None):
+async def run_screener_pipeline(target_date: str = None, observe_current_universe: bool = False):
     """
     主管道：串联获取并入库截面快照
     """
+    requested_date = datetime.strptime(target_date, "%Y-%m-%d").date() if target_date else None
+    run_id = await begin_pipeline_run("daily_screener", requested_date)
     try:
+        await update_pipeline_run(run_id, "resolving_universe")
+        historical_universe = None
+        if requested_date and requested_date < date.today() and not observe_current_universe:
+            raise ValueError(
+                "Historical screener snapshots cannot be reconstructed from current fundamentals. "
+                "Load an archived point-in-time source payload instead."
+            )
+
         # 1. Fetch cross-sectional daily bulk
-        df_merged = await fetch_and_merge_bulk_data(target_date)
+        await update_pipeline_run(run_id, "fetching_source_data")
+        async def persist_fundamental_chunk(raw_batch: Dict[str, dict], observed_date: date) -> None:
+            async with async_session_maker() as raw_db, raw_db.begin():
+                await raw_db.execute(
+                    insert(Ticker)
+                    .values([{"ticker": ticker} for ticker in raw_batch])
+                    .on_conflict_do_nothing(index_elements=["ticker"])
+                )
+                for ticker, raw_payload in raw_batch.items():
+                    raw_snapshot = await persist_snapshot(
+                        raw_db,
+                        "EODHD",
+                        "fundamentals",
+                        raw_payload,
+                        as_of_date=observed_date,
+                        details={"ticker": ticker},
+                    )
+                    await _upsert_financials(
+                        ticker,
+                        raw_payload,
+                        raw_db,
+                        raw_snapshot_id=raw_snapshot.id,
+                    )
+
+        df_merged = await fetch_and_merge_bulk_data(
+            target_date,
+            target_tickers=historical_universe,
+            fundamental_chunk_handler=persist_fundamental_chunk,
+        )
         if df_merged.empty:
-            logger.warning("Merged dataset is empty. Skipping.")
-            return
+            raise ValueError("Merged screener dataset is empty")
+        target_universe = set(df_merged.attrs.get("target_tickers", df_merged["ticker"]))
+        bulk_splits = list(df_merged.attrs.get("bulk_splits", []))
+        bulk_dividends = list(df_merged.attrs.get("bulk_dividends", []))
+        raw_bulk_eod = df_merged.attrs.get("raw_bulk_eod")
+        raw_bulk_splits = df_merged.attrs.get("raw_bulk_splits")
+        raw_bulk_dividends = df_merged.attrs.get("raw_bulk_dividends")
             
         # VERY IMPORTANT: EODHD bulk sometimes returns overlapping duplicates for the same day
         df_merged = df_merged.drop_duplicates(subset=['ticker'])
@@ -244,6 +402,7 @@ async def run_screener_pipeline(target_date: str = None):
             return str(val).strip() or None
 
         records_to_upsert = []
+        daily_price_inserts = []
         for index, row in df_merged.iterrows():
             # Safely unpack row
             ticker = row.get('ticker')
@@ -257,6 +416,18 @@ async def run_screener_pipeline(target_date: str = None):
                 
             close_price = _safe_float(row.get('close'))
             volume_num = row.get('volume')
+            adjusted_close = _safe_float(row.get('adjusted_close'))
+            if close_price is not None:
+                daily_price_inserts.append({
+                    "ticker": ticker,
+                    "date": dt_val,
+                    "open": _safe_float(row.get("open")),
+                    "high": _safe_float(row.get("high")),
+                    "low": _safe_float(row.get("low")),
+                    "close": close_price,
+                    "adjusted_close": adjusted_close if adjusted_close is not None else close_price,
+                    "volume": int(volume_num) if pd.notna(volume_num) else None,
+                })
             
             # Fundamentals Fields
             name = _safe_str(row.get('name')) or _safe_str(row.get('Name')) or _safe_str(row.get('Company'))
@@ -296,15 +467,21 @@ async def run_screener_pipeline(target_date: str = None):
             
         logger.info(f"Prepared {len(records_to_upsert)} base records for snapshot.")
 
+        if not records_to_upsert:
+            raise ValueError("No valid screener records were produced")
+        snapshot_dates = {record["date"] for record in records_to_upsert}
+        if len(snapshot_dates) != 1:
+            raise ValueError(f"Expected one snapshot date, found {sorted(snapshot_dates)}")
+        snapshot_date = next(iter(snapshot_dates))
+        if requested_date and snapshot_date != requested_date:
+            raise ValueError(f"Provider returned {snapshot_date} for requested date {requested_date}")
+
         # 2. Database Transactions
         # Initialize DB Session
+        await update_pipeline_run(run_id, "writing_prices", len(records_to_upsert))
         async with async_session_maker() as db, db.begin():
             # First, ensure all tickers exist in Tickers table to avoid foreign key violations in DailyPrice
             ticker_list = list(set([r['ticker'] for r in records_to_upsert]))
-            
-            logger.info("Purging old screener data not in the current target universe...")
-            from sqlalchemy import delete
-            await db.execute(delete(StockScreenerSnapshot).where(StockScreenerSnapshot.ticker.not_in(ticker_list)))
             
             # Fetch existing tickers in chunks to avoid max bind parameter limits
             existing_tickers = set()
@@ -319,20 +496,34 @@ async def run_screener_pipeline(target_date: str = None):
                 missing_inserts = [{"ticker": t} for t in missing_tickers]
                 for i in range(0, len(missing_inserts), 1000):
                     await db.execute(insert(Ticker).values(missing_inserts[i:i+1000]).on_conflict_do_nothing())
-            
-            # 2a. Sync these EOD prices to our DailyPrice history locally first!
-            # Since technicals depend on this
-            daily_price_inserts = []
-            for r in records_to_upsert:
-                 if r['close'] is not None:
-                     daily_price_inserts.append({
-                         "ticker": r['ticker'],
-                         "date": r['date'],
-                         "close": r['close'],
-                         "adjusted_close": r['close'], # approx fallback
-                         "volume": r['volume']
-                     })
-                     
+
+            ticker_profiles = [
+                {
+                    "ticker": record["ticker"],
+                    "name": record.get("name"),
+                    "sector": record.get("sector"),
+                    "industry": record.get("industry"),
+                    "currency": "USD",
+                    "last_updated": utc_now(),
+                }
+                for record in records_to_upsert
+            ]
+            for i in range(0, len(ticker_profiles), 500):
+                profile_stmt = insert(Ticker).values(ticker_profiles[i:i + 500])
+                profile_stmt = profile_stmt.on_conflict_do_update(
+                    index_elements=["ticker"],
+                    set_={
+                        "name": profile_stmt.excluded.name,
+                        "sector": profile_stmt.excluded.sector,
+                        "industry": profile_stmt.excluded.industry,
+                        "currency": profile_stmt.excluded.currency,
+                        "last_updated": profile_stmt.excluded.last_updated,
+                    },
+                )
+                await db.execute(profile_stmt)
+
+            await bulk_upsert_securities(db, records_to_upsert, snapshot_date)
+            # 2a. Sync the provider's adjusted OHLCV fields before technicals.
             if daily_price_inserts:
                  # Chunking update
                  logger.info("Upserting latest EOD prices to local daily_prices table...")
@@ -341,12 +532,61 @@ async def run_screener_pipeline(target_date: str = None):
                      stmt_dp = insert(DailyPrice)
                      stmt_dp = stmt_dp.on_conflict_do_update(
                          index_elements=['ticker', 'date'],
-                         set_={"close": stmt_dp.excluded.close, "volume": stmt_dp.excluded.volume}
+                         set_={
+                             "open": stmt_dp.excluded.open,
+                             "high": stmt_dp.excluded.high,
+                             "low": stmt_dp.excluded.low,
+                             "close": stmt_dp.excluded.close,
+                             "adjusted_close": stmt_dp.excluded.adjusted_close,
+                             "volume": stmt_dp.excluded.volume,
+                         }
                      )
                      await db.execute(stmt_dp, chunk)
+
+            await persist_snapshot(
+                db,
+                "EODHD",
+                "bulk_eod",
+                raw_bulk_eod if raw_bulk_eod is not None else daily_price_inserts,
+                as_of_date=snapshot_date,
+                details={
+                    "exchange": "US",
+                    "universe": "SP500_RUSSELL2000",
+                    "as_of_date": snapshot_date.isoformat(),
+                },
+            )
+            await persist_snapshot(
+                db,
+                "EODHD",
+                "bulk_splits",
+                raw_bulk_splits if raw_bulk_splits is not None else bulk_splits,
+                as_of_date=snapshot_date,
+                details={"exchange": "US", "as_of_date": snapshot_date.isoformat()},
+            )
+            await persist_snapshot(
+                db,
+                "EODHD",
+                "bulk_dividends",
+                raw_bulk_dividends if raw_bulk_dividends is not None else bulk_dividends,
+                as_of_date=snapshot_date,
+                details={"exchange": "US", "as_of_date": snapshot_date.isoformat()},
+            )
+            splits_by_ticker: Dict[str, list] = {}
+            dividends_by_ticker: Dict[str, list] = {}
+            for item in bulk_splits:
+                splits_by_ticker.setdefault(item["ticker"], []).append(item)
+            for item in bulk_dividends:
+                dividends_by_ticker.setdefault(item["ticker"], []).append(item)
+            for action_ticker in set(splits_by_ticker) | set(dividends_by_ticker):
+                await upsert_corporate_actions(
+                    db,
+                    action_ticker,
+                    splits_by_ticker.get(action_ticker, []),
+                    dividends_by_ticker.get(action_ticker, []),
+                )
                      
             # 2b. Compute Local Technical Indicators
-            df_technicals = await calculate_technicals_locally(db, ticker_list)
+            df_technicals = await calculate_technicals_locally(db, ticker_list, as_of_date=snapshot_date)
             
             # 2c. Merge Technicals into the snapshot models
             if not df_technicals.empty:
@@ -358,14 +598,24 @@ async def run_screener_pipeline(target_date: str = None):
                          r['ma20'] = _safe_float(t_data.get('ma20'))
                          r['ma50'] = _safe_float(t_data.get('ma50'))
                          r['rsi_14'] = _safe_float(t_data.get('rsi_14'))
+
+            quality_report = validate_screener_records(records_to_upsert)
+            if not quality_report.passed:
+                raise DataQualityError(quality_report)
+            await record_universe_membership(
+                db,
+                universe="SP500_RUSSELL2000",
+                tickers=target_universe,
+                effective_date=snapshot_date,
+                source_run_id=run_id,
+                minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+            )
             
             # 3. Final bulk Insert to StockScreenerSnapshot (Delete and Replace)
             logger.info("Starting Bulk Insert into StockScreenerSnapshot...")
             from sqlalchemy import delete
-            target_dt_val = datetime.strptime(str(target_date or datetime.today().date()), '%Y-%m-%d').date()
-            
             await db.execute(
-                delete(StockScreenerSnapshot).where(StockScreenerSnapshot.date == target_dt_val)
+                delete(StockScreenerSnapshot).where(StockScreenerSnapshot.date == snapshot_date)
             )
             
             chunk_size = 1000
@@ -417,11 +667,29 @@ async def run_screener_pipeline(target_date: str = None):
                         }
                     )
                     await db.execute(stmt)
-                
-        logger.info(f"Successfully processed Screener snapshot job.")
 
+            # The normalized rows, cumulative price-history publication and
+            # screener publication become visible in one commit.
+            await publish_datasets_and_finish(
+                db,
+                ["screener", "price_history"],
+                snapshot_date,
+                run_id,
+                quality_report=quality_report.to_dict(),
+                records_processed=len(records_to_upsert),
+            )
+
+        logger.info("Successfully processed Screener snapshot job.")
+        return {"run_id": run_id, "status": "published", "as_of_date": snapshot_date.isoformat(), "quality": quality_report.to_dict()}
+
+    except asyncio.CancelledError:
+        await finish_pipeline_run(run_id, "cancelled", error_message="Pipeline execution was cancelled")
+        raise
     except Exception as e:
         logger.error(f"Screener Pipeline failed: {e}", exc_info=True)
+        report = e.report.to_dict() if isinstance(e, DataQualityError) else None
+        await finish_pipeline_run(run_id, "failed", quality_report=report, error_message=str(e))
+        raise
 
 
 if __name__ == "__main__":
@@ -432,19 +700,43 @@ if __name__ == "__main__":
     
     async def main():
         if args.backfill > 0:
-            logger.info(f"Starting Historical Backfill for {args.backfill} business days.")
-            import pandas as pd
-            end_dt = datetime.today()
-            # Generate more business days than needed to account for holidays, then take the last N
-            start_dt = end_dt - pd.Timedelta(days=args.backfill * 2) 
-            b_days = pd.bdate_range(start=start_dt, end=end_dt)
-            trading_days = b_days[-args.backfill:]
-            
-            for dt in trading_days:
-                date_str = dt.strftime('%Y-%m-%d')
-                logger.info(f"=== Running pipeline for backfilled date: {date_str} ===")
-                await run_screener_pipeline(target_date=date_str)
+            raise ValueError(
+                "--backfill is disabled because the provider endpoint returns current fundamentals. "
+                "Use archived point-in-time raw snapshots for historical screener reconstruction."
+            )
         else:
             await run_screener_pipeline(target_date=args.date)
             
     asyncio.run(main())
+
+
+async def refresh_screener_technicals(snapshot_date: date) -> int:
+    """Recompute a published snapshot after cold-start price history is loaded."""
+    from sqlalchemy import update
+
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(StockScreenerSnapshot.ticker).where(StockScreenerSnapshot.date == snapshot_date)
+        )
+        tickers = list(result.scalars().all())
+        technicals = await calculate_technicals_locally(db, tickers, as_of_date=snapshot_date)
+        if technicals.empty:
+            return 0
+        updated = 0
+        async with db.begin_nested():
+            for row in technicals.to_dict("records"):
+                await db.execute(
+                    update(StockScreenerSnapshot)
+                    .where(
+                        StockScreenerSnapshot.ticker == row["ticker"],
+                        StockScreenerSnapshot.date == snapshot_date,
+                    )
+                    .values(
+                        ma20=None if pd.isna(row.get("ma20")) else float(row["ma20"]),
+                        ma50=None if pd.isna(row.get("ma50")) else float(row["ma50"]),
+                        rsi_14=None if pd.isna(row.get("rsi_14")) else float(row["rsi_14"]),
+                    )
+                )
+                updated += 1
+        await db.commit()
+        return updated

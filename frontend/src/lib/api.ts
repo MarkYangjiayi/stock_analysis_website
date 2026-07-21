@@ -130,7 +130,7 @@ export interface AnomalyReport {
     top_news_links: string[];
 }
 
-export const fetchMarketAnomalies = async (): Promise<AnomalyReport[]> => {
-    const response = await axios.get(`${API_BASE_URL}/api/market/anomalies`);
+export const fetchMarketAnomalies = async (signal?: AbortSignal): Promise<AnomalyReport[]> => {
+    const response = await axios.get(`${API_BASE_URL}/api/market/anomalies`, { signal });
     return response.data;
 };
