@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
@@ -96,10 +96,19 @@ def run_backtest_from_frames(
         raise ValueError("No factor observations available for the requested period")
     factor_data = factors.copy()
     factor_data["as_of_date"] = pd.to_datetime(factor_data["as_of_date"])
-    factor_data = factor_data[
-        (factor_data["as_of_date"].dt.date >= config.start_date)
-        & (factor_data["as_of_date"].dt.date <= config.end_date)
-    ]
+    factor_data = factor_data[factor_data["as_of_date"].dt.date <= config.end_date]
+    pre_start_dates = factor_data.loc[
+        factor_data["as_of_date"].dt.date < config.start_date,
+        "as_of_date",
+    ].dropna()
+    pre_start_signal_date = pre_start_dates.max() if not pre_start_dates.empty else None
+    in_window = factor_data["as_of_date"].dt.date >= config.start_date
+    if pre_start_signal_date is not None:
+        factor_data = factor_data[in_window | (factor_data["as_of_date"] == pre_start_signal_date)]
+    else:
+        factor_data = factor_data[in_window]
+    if factor_data.empty:
+        raise ValueError("No factor observations available for the requested period")
     if "score" not in factor_data:
         factor_data["score"] = pd.to_numeric(factor_data["normalized_value"], errors="coerce")
     if "sector" not in factor_data:
@@ -122,7 +131,13 @@ def run_backtest_from_frames(
         raise ValueError("Insufficient benchmark trading dates")
     asset_returns = pivot.pct_change(fill_method=None).replace([float("inf"), float("-inf")], pd.NA).fillna(0.0)
 
-    signal_dates = _rebalance_dates(list(factor_data["as_of_date"]), config.rebalance_frequency)
+    in_window_signal_dates = factor_data.loc[
+        factor_data["as_of_date"].dt.date >= config.start_date,
+        "as_of_date",
+    ]
+    signal_dates = _rebalance_dates(list(in_window_signal_dates), config.rebalance_frequency)
+    if pre_start_signal_date is not None:
+        signal_dates = sorted({pre_start_signal_date, *signal_dates})
     execution_schedule: Dict[pd.Timestamp, pd.Timestamp] = {}
     for signal_date in signal_dates:
         future_dates = [trading_date for trading_date in trading_dates if trading_date > signal_date]
@@ -269,6 +284,10 @@ def run_backtest_from_frames(
         "diagnostics": {
             "factor_version": config.factor_version,
             "signal_lag_days": config.signal_lag_days,
+            "initialization_policy": "latest pre-start signal executes at the first eligible in-window close",
+            "pre_start_signal_date": (
+                pre_start_signal_date.date().isoformat() if pre_start_signal_date is not None else None
+            ),
             "missing_membership_dates": sorted(set(missing_membership_dates)),
             "missing_price_events": missing_price_events,
             "lookahead_guard": "signals execute on a later trading close and earn returns from the following close",
@@ -304,12 +323,28 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
     await db.refresh(run)
 
     try:
+        previous_signal_result = await db.execute(
+            select(func.max(FactorValue.as_of_date)).where(
+                FactorValue.factor_name == config.factor_name,
+                FactorValue.version == config.factor_version,
+                FactorValue.as_of_date < config.start_date,
+            )
+        )
+        previous_signal_date = previous_signal_result.scalar_one_or_none()
+        factor_date_condition = (
+            (FactorValue.as_of_date >= config.start_date)
+            & (FactorValue.as_of_date <= config.end_date)
+        )
+        if previous_signal_date is not None:
+            factor_date_condition = or_(
+                factor_date_condition,
+                FactorValue.as_of_date == previous_signal_date,
+            )
         factor_result = await db.execute(
             select(FactorValue).where(
                 FactorValue.factor_name == config.factor_name,
                 FactorValue.version == config.factor_version,
-                FactorValue.as_of_date >= config.start_date,
-                FactorValue.as_of_date <= config.end_date,
+                factor_date_condition,
             )
         )
         factor_rows = factor_result.scalars().all()
@@ -343,11 +378,12 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
             }
             for row in price_rows
         ])
+        membership_start = previous_signal_date or config.start_date
         membership_result = await db.execute(
             select(UniverseMembership).where(
                 UniverseMembership.universe == config.universe,
                 UniverseMembership.effective_from <= config.end_date,
-                (UniverseMembership.effective_to.is_(None) | (UniverseMembership.effective_to >= config.start_date)),
+                (UniverseMembership.effective_to.is_(None) | (UniverseMembership.effective_to >= membership_start)),
             )
         )
         memberships = pd.DataFrame([

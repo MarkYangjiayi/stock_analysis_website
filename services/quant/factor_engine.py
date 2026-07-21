@@ -239,3 +239,9 @@ async def compute_latest_factors() -> dict:
         if as_of_date is None:
             raise ValueError("No published screener snapshot is available")
         return await compute_and_store_factors(db, as_of_date)
+
+
+async def compute_factors_for_date(as_of_date: date) -> dict:
+    """Compute an exact published screener date instead of whichever is latest."""
+    async with async_session_maker() as db:
+        return await compute_and_store_factors(db, as_of_date)

@@ -5,6 +5,14 @@ services:
     container_name: quantify_warp
     restart: always
 
+  data-permissions:
+    image: quantify-backend:latest
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /app/data && chown -R 10001:10001 /app/data"]
+    volumes:
+      - ./data:/app/data
+    restart: "no"
+
   backend:
     image: quantify-backend:latest
     ports:
@@ -19,7 +27,10 @@ services:
       - ALL_PROXY=socks5h://warp:9091
       - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com
     depends_on:
-      - warp
+      data-permissions:
+        condition: service_completed_successfully
+      warp:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]

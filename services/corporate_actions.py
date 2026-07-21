@@ -25,9 +25,18 @@ def _parse_split_factor(value: Any) -> Optional[Decimal]:
     text = str(value)
     if "/" in text:
         numerator, denominator = text.split("/", 1)
+        numerator_value = _decimal(numerator)
         denominator_value = _decimal(denominator)
-        return _decimal(numerator) / denominator_value if denominator_value else None
-    return _decimal(value)
+        if (
+            numerator_value is None
+            or denominator_value is None
+            or numerator_value <= 0
+            or denominator_value <= 0
+        ):
+            return None
+        return numerator_value / denominator_value
+    factor = _decimal(value)
+    return factor if factor is not None and factor > 0 else None
 
 
 async def upsert_corporate_actions(
@@ -42,11 +51,14 @@ async def upsert_corporate_actions(
             ex_date = _parse_date(item.get("date"))
         except (TypeError, ValueError):
             continue
+        split_factor = _parse_split_factor(item.get("split") or item.get("split_factor"))
+        if split_factor is None:
+            continue
         rows.append({
             "ticker": ticker,
             "ex_date": ex_date,
             "action_type": "split",
-            "split_factor": _parse_split_factor(item.get("split") or item.get("split_factor")),
+            "split_factor": split_factor,
             "cash_amount": None,
             "currency": None,
             "available_at": datetime.combine(ex_date, datetime.min.time()),

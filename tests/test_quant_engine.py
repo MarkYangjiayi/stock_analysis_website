@@ -151,6 +151,56 @@ def test_unavailable_rebalance_keeps_the_existing_portfolio():
     assert result["rebalances"][1]["weights"] == result["rebalances"][0]["weights"]
 
 
+def test_monthly_backtest_seeds_from_latest_pre_start_signal():
+    factors = pd.DataFrame([
+        {
+            "ticker": ticker,
+            "as_of_date": signal_date,
+            "normalized_value": score,
+            "available_at": signal_date.to_pydatetime(),
+            "sector": sector,
+        }
+        for signal_date, scores in [
+            (pd.Timestamp("2024-12-31"), [("AAA.US", 2.0, "Tech"), ("BBB.US", 1.0, "Health")]),
+            (pd.Timestamp("2025-01-02"), [("AAA.US", 2.0, "Tech"), ("BBB.US", 1.0, "Health")]),
+            (pd.Timestamp("2025-01-31"), [("AAA.US", 1.0, "Tech"), ("BBB.US", 2.0, "Health")]),
+        ]
+        for ticker, score, sector in scores
+    ])
+    trading_dates = pd.to_datetime(["2025-01-02", "2025-01-03", "2025-01-31", "2025-02-03"])
+    prices = pd.DataFrame([
+        {
+            "ticker": ticker,
+            "date": trading_date,
+            "close": 100 + day_index,
+            "adjusted_close": 100 + day_index,
+        }
+        for ticker in ["AAA.US", "BBB.US", "SPY.US"]
+        for day_index, trading_date in enumerate(trading_dates)
+    ])
+    memberships = pd.DataFrame([
+        {"universe": "TEST", "ticker": ticker, "effective_from": date(2024, 1, 1), "effective_to": None}
+        for ticker in ["AAA.US", "BBB.US"]
+    ])
+    config = BacktestConfig(
+        start_date=date(2025, 1, 2),
+        end_date=date(2025, 2, 3),
+        universe="TEST",
+        rebalance_frequency="monthly",
+        top_n=2,
+        max_position_weight=1.0,
+        max_sector_weight=1.0,
+        transaction_cost_bps=0,
+        slippage_bps=0,
+    )
+
+    result = run_backtest_from_frames(factors, prices, memberships, config)
+
+    assert [row["signal_date"] for row in result["rebalances"]] == ["2024-12-31", "2025-01-31"]
+    assert result["rebalances"][0]["execution_date"] == "2025-01-02"
+    assert result["diagnostics"]["pre_start_signal_date"] == "2024-12-31"
+
+
 def test_backtest_refuses_missing_point_in_time_universe():
     factors, prices, _ = backtest_frames()
     config = BacktestConfig(

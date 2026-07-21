@@ -206,3 +206,60 @@ async def test_backtest_persists_immutable_strategy_and_signal_snapshots(db_sess
     )).scalars().all()
     assert [snapshot.ticker for snapshot in snapshots] == ["AAA.US", "BBB.US"]
     assert sum(snapshot.target_weight for snapshot in snapshots) == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_stored_backtest_loads_latest_pre_start_factor_cross_section(db_session):
+    pre_start = date(2024, 12, 31)
+    start = date(2025, 1, 2)
+    tickers = ["AAA.US", "BBB.US", "SPY.US"]
+    db_session.add_all([Ticker(ticker=ticker) for ticker in tickers])
+    db_session.add_all([
+        UniverseMembership(
+            universe="TEST",
+            ticker=ticker,
+            effective_from=date(2024, 1, 1),
+        )
+        for ticker in tickers[:2]
+    ])
+    for index, ticker in enumerate(tickers[:2]):
+        db_session.add(FactorValue(
+            ticker=ticker,
+            as_of_date=pre_start,
+            factor_name="composite",
+            raw_value=2 - index,
+            normalized_value=2 - index,
+            version=FACTOR_VERSION,
+            available_at=pd.Timestamp("2024-12-31 20:00").to_pydatetime(),
+            details={"sector": "Tech" if index == 0 else "Health"},
+        ))
+    for ticker in tickers:
+        for day_index, trading_date in enumerate(pd.to_datetime(["2025-01-02", "2025-01-03", "2025-01-06"])):
+            db_session.add(DailyPrice(
+                ticker=ticker,
+                date=trading_date.date(),
+                close=100 + day_index,
+                adjusted_close=100 + day_index,
+                volume=1000,
+            ))
+    await db_session.commit()
+
+    run = await run_and_store_backtest(
+        db_session,
+        BacktestConfig(
+            start_date=start,
+            end_date=date(2025, 1, 6),
+            universe="TEST",
+            rebalance_frequency="monthly",
+            top_n=2,
+            max_position_weight=1.0,
+            max_sector_weight=1.0,
+            transaction_cost_bps=0,
+            slippage_bps=0,
+        ),
+        name="Pre-start Signal Test",
+    )
+
+    assert run.status == "completed"
+    assert run.diagnostics["pre_start_signal_date"] == "2024-12-31"
+    assert run.diagnostics["rebalances"][0]["execution_date"] == "2025-01-02"

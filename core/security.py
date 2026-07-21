@@ -2,7 +2,7 @@ import asyncio
 import secrets
 import time
 from collections import defaultdict, deque
-from typing import Callable, Deque, DefaultDict
+from typing import Deque, DefaultDict
 
 from fastapi import Header, HTTPException, Request, status
 
@@ -27,11 +27,23 @@ class SlidingWindowRateLimiter:
         self.window_seconds = window_seconds
         self._requests: DefaultDict[str, Deque[float]] = defaultdict(deque)
         self._lock = asyncio.Lock()
+        self._next_cleanup = 0.0
 
     async def check(self, key: str) -> None:
         now = time.monotonic()
         cutoff = now - self.window_seconds
         async with self._lock:
+            if now >= self._next_cleanup:
+                stale_keys = []
+                for request_key, request_times in self._requests.items():
+                    while request_times and request_times[0] <= cutoff:
+                        request_times.popleft()
+                    if not request_times:
+                        stale_keys.append(request_key)
+                for request_key in stale_keys:
+                    del self._requests[request_key]
+                self._next_cleanup = now + self.window_seconds
+
             timestamps = self._requests[key]
             while timestamps and timestamps[0] <= cutoff:
                 timestamps.popleft()

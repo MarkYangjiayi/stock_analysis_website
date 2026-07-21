@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
@@ -16,6 +17,7 @@ from scripts.backup_sqlite import create_backup
 from core.trading_calendar import is_us_market_session, latest_completed_us_session, us_market_close_utc
 from services.freshness import assess_ticker_freshness
 from services.catchup import catch_up_latest_publications
+from core.security import SlidingWindowRateLimiter
 
 
 @pytest.mark.asyncio
@@ -141,6 +143,21 @@ def test_health_and_admin_authentication():
 
 
 @pytest.mark.asyncio
+async def test_rate_limiter_purges_expired_client_keys(monkeypatch):
+    current_time = [0.0]
+    monkeypatch.setattr("core.security.time.monotonic", lambda: current_time[0])
+    limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
+
+    for index in range(100):
+        await limiter.check(f"client-{index}")
+    assert len(limiter._requests) == 100
+
+    current_time[0] = 61.0
+    await limiter.check("current-client")
+    assert set(limiter._requests) == {"current-client"}
+
+
+@pytest.mark.asyncio
 async def test_worker_catchup_publishes_only_latest_completed_session(monkeypatch):
     calls = []
 
@@ -175,8 +192,74 @@ async def test_scheduled_jobs_are_publication_idempotent(monkeypatch):
 
     monkeypatch.setattr(scheduler, "latest_published_date", already_published)
     monkeypatch.setattr(scheduler, "run_screener_pipeline", should_not_run)
-    monkeypatch.setattr(scheduler, "compute_latest_factors", should_not_run)
+    monkeypatch.setattr(scheduler, "compute_factors_for_date", should_not_run)
     screener = await scheduler.scheduled_screener_sync(date(2025, 7, 7))
     factors = await scheduler.scheduled_factor_sync(date(2025, 7, 7))
     assert screener["reason"] == "already-published"
     assert factors["reason"] == "already-published"
+
+
+@pytest.mark.asyncio
+async def test_screener_publication_chains_matching_factor_date(monkeypatch):
+    from core import scheduler
+
+    publications = {}
+    calls = []
+
+    async def latest(dataset):
+        return publications.get(dataset)
+
+    async def publish_screener(target_date, observe_current_universe=False):
+        target = date.fromisoformat(target_date)
+        publications["screener"] = target
+        calls.append(("screener", target, observe_current_universe))
+        return {"status": "published", "as_of_date": target_date}
+
+    async def publish_factors(target):
+        publications["factors"] = target
+        calls.append(("factors", target))
+        return {"status": "published", "as_of_date": target.isoformat()}
+
+    monkeypatch.setattr(scheduler, "latest_published_date", latest)
+    monkeypatch.setattr(scheduler, "run_screener_pipeline", publish_screener)
+    monkeypatch.setattr(scheduler, "compute_factors_for_date", publish_factors)
+
+    result = await scheduler.scheduled_screener_sync(date(2025, 7, 7))
+
+    assert result["factors"]["status"] == "published"
+    assert calls == [
+        ("screener", date(2025, 7, 3), True),
+        ("factors", date(2025, 7, 3)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_factor_job_defers_until_matching_screener_is_published(monkeypatch):
+    from core import scheduler
+
+    async def latest(dataset):
+        return date(2025, 7, 2) if dataset == "screener" else None
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("factors must not use a stale screener publication")
+
+    monkeypatch.setattr(scheduler, "latest_published_date", latest)
+    monkeypatch.setattr(scheduler, "compute_factors_for_date", should_not_run)
+
+    result = await scheduler.scheduled_factor_sync(date(2025, 7, 7))
+    assert result == {
+        "status": "deferred",
+        "reason": "screener-not-published",
+        "as_of_date": "2025-07-03",
+    }
+
+
+def test_compose_initializes_bind_mount_permissions():
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text())
+    initializer = compose["services"]["data-permissions"]
+    backend_dependency = compose["services"]["backend"]["depends_on"]["data-permissions"]
+
+    assert initializer["user"] == "0:0"
+    assert "./data:/app/data" in initializer["volumes"]
+    assert "chown -R 10001:10001 /app/data" in initializer["command"][-1]
+    assert backend_dependency["condition"] == "service_completed_successfully"

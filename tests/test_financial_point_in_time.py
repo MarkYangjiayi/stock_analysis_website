@@ -50,3 +50,22 @@ async def test_corporate_actions_are_upserted(db_session):
     assert count == 2
     assert float(rows[0].split_factor) == 2.0
     assert float(rows[1].cash_amount) == 0.25
+
+
+@pytest.mark.asyncio
+async def test_invalid_split_factor_does_not_crash_ingestion(db_session):
+    count = await upsert_corporate_actions(
+        db_session,
+        "AAA.US",
+        [{"date": "2025-03-04", "split": "invalid/2"}],
+        [],
+    )
+    await db_session.commit()
+
+    row = (
+        await db_session.execute(
+            select(CorporateAction).where(CorporateAction.ex_date == date(2025, 3, 4))
+        )
+    ).scalar_one_or_none()
+    assert count == 0
+    assert row is None
