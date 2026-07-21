@@ -1,86 +1,103 @@
 "use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { ThemeToggle } from './ThemeToggle';
+import { useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { ChartNoAxesCombined, Menu, Search, X } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
+
+const NAV_LINKS = [
+    { name: "Analysis", path: "/" },
+    { name: "Screener", path: "/screener" },
+    { name: "Anomalies", path: "/anomalies" },
+    { name: "Market Rotation", path: "/rrg" },
+    { name: "Factor Lab", path: "/research" },
+];
 
 export default function TopNavBar() {
     const pathname = usePathname();
     const router = useRouter();
-    const [searchInput, setSearchInput] = useState('');
+    const [searchInput, setSearchInput] = useState("");
+    const [menuOpen, setMenuOpen] = useState(false);
 
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (searchInput.trim()) {
-            router.push(`/?ticker=${searchInput.toUpperCase().trim()}`);
-            setSearchInput(''); // optional: clear after search
-        }
+    const handleSearch = (event: React.FormEvent) => {
+        event.preventDefault();
+        const ticker = searchInput.trim().toUpperCase();
+        if (!ticker) return;
+        router.push(`/?ticker=${encodeURIComponent(ticker)}`);
+        setSearchInput("");
+        setMenuOpen(false);
     };
 
-    const navLinks = [
-        { name: 'Analysis', path: '/' },
-        { name: 'Screener', path: '/screener' },
-        { name: 'Anomalies', path: '/anomalies' },
-        { name: 'Market Rotation', path: '/rrg' },
-        { name: 'Factor Lab', path: '/research' },
-    ];
+    const navLinks = (mobile = false) => (
+        <div className={mobile ? "grid gap-1" : "flex h-full items-center gap-1"}>
+            {NAV_LINKS.map((link) => {
+                const active = pathname === link.path;
+                return (
+                    <Link
+                        key={link.path}
+                        href={link.path}
+                        onClick={() => setMenuOpen(false)}
+                        aria-current={active ? "page" : undefined}
+                        className={mobile
+                            ? `rounded-xl px-4 py-3 text-sm font-semibold ${active ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`
+                            : `relative flex h-full items-center px-3 text-sm font-semibold transition-colors ${active ? "text-emerald-700 dark:text-emerald-300" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"}`
+                        }
+                    >
+                        {link.name}
+                        {!mobile && active && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-emerald-500" />}
+                    </Link>
+                );
+            })}
+        </div>
+    );
 
     return (
-        <nav className="h-16 w-full bg-white dark:bg-[#0B0E14] border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-6 sticky top-0 z-50 transition-colors duration-300">
-            {/* Left side: Logo and Links */}
-            <div className="flex items-center gap-8 h-full">
-                {/* Logo */}
-                <Link href="/" className="flex items-center gap-2 group">
-                    <div className="w-8 h-8 rounded bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-black font-black text-lg shadow-[0_0_15px_rgba(16,185,129,0.4)] group-hover:scale-105 transition-transform">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                    </div>
-                    <span className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-500">
-                        Quantify
-                    </span>
-                </Link>
-
-                {/* Navigation Links */}
-                <div className="hidden md:flex items-center h-full space-x-1">
-                    {navLinks.map((link) => {
-                        const isActive = pathname === link.path;
-                        return (
-                            <Link
-                                key={link.name}
-                                href={link.path}
-                                className={`relative px-4 h-full flex items-center text-sm font-medium transition-colors ${isActive ? 'text-emerald-600 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-                                    }`}
-                            >
-                                {link.name}
-                                {isActive && (
-                                    <span className="absolute bottom-0 left-0 w-full h-[2px] bg-emerald-500 rounded-t-sm shadow-[0_-2px_8px_rgba(16,185,129,0.5)]" />
-                                )}
-                            </Link>
-                        );
-                    })}
+        <nav className="relative z-50 shrink-0 border-b bg-white/95 px-4 py-3 backdrop-blur-xl dark:bg-[#0b1116]/95 md:h-16 md:px-6 md:py-0" aria-label="Primary navigation">
+            <div className="mx-auto flex h-full max-w-[1600px] flex-wrap items-center gap-3 md:flex-nowrap md:justify-between">
+                <div className="flex min-w-0 flex-1 items-center gap-5 md:h-full lg:flex-none">
+                    <Link href="/" onClick={() => setMenuOpen(false)} className="flex shrink-0 items-center gap-2" aria-label="Quantify home">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 shadow-sm">
+                            <ChartNoAxesCombined size={19} strokeWidth={2.5} />
+                        </span>
+                        <span className="text-lg font-black tracking-[-0.04em] text-slate-900 dark:text-white">Quantify</span>
+                    </Link>
+                    <div className="hidden h-full lg:block">{navLinks()}</div>
                 </div>
+
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                    <ThemeToggle />
+                    <button
+                        type="button"
+                        onClick={() => setMenuOpen((open) => !open)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-200 lg:hidden"
+                        aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+                        aria-expanded={menuOpen}
+                    >
+                        {menuOpen ? <X size={19} /> : <Menu size={19} />}
+                    </button>
+                </div>
+
+                <form onSubmit={handleSearch} className="relative order-3 w-full md:order-none md:w-64 xl:w-72" role="search">
+                    <input
+                        type="search"
+                        className="control-field py-2 pl-3 pr-10"
+                        placeholder="Search ticker, e.g. AAPL.US"
+                        aria-label="Search stock ticker"
+                        value={searchInput}
+                        onChange={(event) => setSearchInput(event.target.value)}
+                    />
+                    <button type="submit" className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 dark:hover:text-emerald-300" aria-label="Search ticker">
+                        <Search size={15} />
+                    </button>
+                </form>
             </div>
 
-            {/* Right side: Global Search and Theme */}
-            <div className="flex items-center gap-4">
-                <form onSubmit={handleSearch} className="relative group w-64">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg className="h-4 w-4 text-gray-400 group-focus-within:text-emerald-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                    </div>
-                    <input
-                        type="text"
-                        className="block w-full pl-10 pr-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md leading-5 bg-gray-50 dark:bg-[#151922] text-gray-900 dark:text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 dark:focus:bg-[#1E222D] transition-all sm:text-sm"
-                        placeholder="Search ticker (e.g. AAPL.US)"
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                    />
-                </form>
-                <ThemeToggle />
-            </div>
+            {menuOpen && (
+                <div className="absolute inset-x-0 top-full border-b bg-white p-3 shadow-xl dark:bg-[#10171d] lg:hidden">
+                    {navLinks(true)}
+                </div>
+            )}
         </nav>
     );
 }

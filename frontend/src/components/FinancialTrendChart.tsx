@@ -3,7 +3,6 @@
 import React, { useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { HistoricalFinancialPoint, ValuationMetrics } from '@/lib/api';
-import { BarChart3 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 interface FinancialTrendChartProps {
@@ -190,6 +189,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
         }
 
         return {
+            aria: { enabled: true, description: 'Historical revenue, net income, gross margin, and matched share price' },
             tooltip: {
                 trigger: 'axis',
                 backgroundColor: tooltipBg,
@@ -275,23 +275,23 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
     }
 
     return (
-        <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col w-full h-full mt-8 animate-in fade-in slide-in-from-bottom-6 duration-700 ease-out fill-mode-both delay-[400ms]">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-slate-50 dark:bg-[#141820] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-sky-500/10 rounded-xl transition">
-                        <BarChart3 className="text-sky-400" size={20} />
-                    </div>
-                    <h3 className="font-semibold text-slate-800 dark:text-gray-200">Historical Financial Trends</h3>
+        <div className="surface-panel flex h-full w-full flex-col overflow-hidden">
+            <div className="surface-subtle flex flex-col justify-between gap-4 border-b p-4 sm:flex-row sm:items-center sm:px-5">
+                <div>
+                    <p className="eyebrow">Fundamental history</p>
+                    <h2 className="mt-1 font-black text-slate-900 dark:text-white">Financial trends</h2>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center bg-gray-100 dark:bg-[#1a1f2b] rounded-lg p-1 border border-gray-200 dark:border-gray-800">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex items-center rounded-lg border bg-slate-100 p-1 dark:bg-slate-900">
                         {(['annual', 'ttm', 'quarterly'] as const).map(period => (
                             <button
                                 key={period}
+                                type="button"
                                 onClick={() => onTimePeriodChange(period)}
-                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${timePeriod === period
-                                        ? 'bg-white dark:bg-[#2B2B43] text-emerald-600 dark:text-emerald-400 shadow-sm'
-                                        : 'text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200'
+                                aria-pressed={timePeriod === period}
+                                className={`min-h-8 flex-1 rounded-md px-2.5 py-1 text-xs font-bold transition-colors ${timePeriod === period
+                                        ? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300'
+                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                                     }`}
                             >
                                 {period === 'annual' ? 'Annual' : period === 'ttm' ? 'Annual + TTM' : 'Quarterly'}
@@ -301,13 +301,8 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
                     <select
                         value={overlayMode}
                         onChange={(e) => setOverlayMode(e.target.value as OverlayMode)}
-                        className="bg-white dark:bg-[#191D26] text-slate-700 dark:text-gray-300 text-xs sm:text-sm font-semibold border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all cursor-pointer shadow-sm hover:border-gray-300 dark:hover:border-gray-600 appearance-none pr-8 relative"
-                        style={{
-                            backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                            backgroundRepeat: 'no-repeat',
-                            backgroundPosition: 'right 0.5rem center',
-                            backgroundSize: '1em 1em'
-                        }}
+                        aria-label="Chart comparison"
+                        className="control-field py-2 text-xs font-semibold sm:w-auto"
                     >
                         <option value="all">Default (All Financials)</option>
                         <option value="revenue_price">Revenue vs Price</option>
@@ -316,7 +311,7 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
                     </select>
                 </div>
             </div>
-            <div className="p-4 sm:p-6 bg-slate-50 dark:bg-[#161b22] h-[450px]">
+            <div className="h-[420px] p-2 sm:h-[460px] sm:p-4">
                 <ReactECharts
                     option={options}
                     style={{ height: '100%', width: '100%' }}

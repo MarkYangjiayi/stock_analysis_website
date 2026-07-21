@@ -1,528 +1,334 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import Link from 'next/link';
-import { useAppStore } from '@/store/useAppStore';
-import { API_BASE_URL } from '@/lib/api';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { CalendarDays, ChevronLeft, ChevronRight, FilterX, Loader2, SlidersHorizontal } from "lucide-react";
+import { fetchScreener, ScreenerPayload, ScreenerResult } from "@/lib/api";
+import { DEFAULT_SCREENER_FILTERS, ScreenerFilters, useAppStore } from "@/store/useAppStore";
 
-interface ScreenerApiPayload {
-    limit: number;
-    offset: number;
-    sort_by: string;
-    sort_desc: boolean;
-    sector?: string;
-    market_cap_min?: number;
-    market_cap_max?: number;
-    pe_min?: number;
-    pe_max?: number;
-    rsi_14_min?: number;
-    rsi_14_max?: number;
-    price_above_ma50?: boolean;
-    price_below_ma50?: boolean;
-    roe_min?: number;
-    debt_to_equity_max?: number;
-    fcf_min?: number;
-    gross_margin_min?: number;
-    sales_growth_5yr_min?: number;
+const LIMIT = 50;
+const FILTER_KEYS: Array<keyof ScreenerFilters> = [
+    "sector", "market_cap", "pe", "rsi", "price_ma50", "roe",
+    "debt_to_equity", "fcf", "gross_margin", "sales_growth_5yr",
+    "sort_by", "sort_desc",
+];
+
+const SECTORS = [
+    "Technology", "Healthcare", "Financial Services", "Consumer Cyclical",
+    "Consumer Defensive", "Communication Services", "Industrials", "Energy",
+    "Basic Materials", "Real Estate", "Utilities",
+];
+
+type TabName = "Overview" | "Fundamentals" | "Technical";
+
+const selectClass = "control-field mt-1.5";
+
+function FilterField({ label, value, onChange, children }: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    children: React.ReactNode;
+}) {
+    return (
+        <label className="block text-xs font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+            {label}
+            <select className={selectClass} value={value} onChange={(event) => onChange(event.target.value)}>
+                {children}
+            </select>
+        </label>
+    );
 }
 
-export default function ScreenerPage() {
-    const [activeTab, setActiveTab] = useState("Descriptive");
-    const { filters, results, totalCount, page, setScreenerState } = useAppStore();
+const formatMarketCap = (value: unknown) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "—";
+    if (num >= 1e12) return `${(num / 1e12).toFixed(2)}T`;
+    if (num >= 1e9) return `${(num / 1e9).toFixed(2)}B`;
+    if (num >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
+    return num.toLocaleString();
+};
 
-    const [loading, setLoading] = useState(false);
-    const limit = 50;
+const formatNumber = (value: unknown, digits = 2) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toFixed(digits) : "—";
+};
 
-    // Use a ref to track initial mount
-    const isFirstRender = useRef(true);
+const formatPercent = (value: unknown) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${(num * 100).toFixed(1)}%` : "—";
+};
 
-    const tabs = ["Descriptive", "Fundamental", "Technical"];
+function buildPayload(filters: ScreenerFilters, page: number): ScreenerPayload {
+    const payload: ScreenerPayload = {
+        limit: LIMIT,
+        offset: page * LIMIT,
+        sort_by: filters.sort_by,
+        sort_desc: filters.sort_desc === "desc",
+    };
+    if (filters.sector) payload.sector = filters.sector;
+    if (filters.market_cap === "mega") payload.market_cap_min = 200e9;
+    if (filters.market_cap === "large") { payload.market_cap_min = 10e9; payload.market_cap_max = 200e9; }
+    if (filters.market_cap === "mid") { payload.market_cap_min = 2e9; payload.market_cap_max = 10e9; }
+    if (filters.market_cap === "small") payload.market_cap_max = 2e9;
+    if (filters.pe === "under15") payload.pe_max = 15;
+    if (filters.pe === "over50") payload.pe_min = 50;
+    if (filters.rsi === "oversold") payload.rsi_14_max = 30;
+    if (filters.rsi === "overbought") payload.rsi_14_min = 70;
+    if (filters.price_ma50 === "above") payload.price_above_ma50 = true;
+    if (filters.price_ma50 === "below") payload.price_below_ma50 = true;
+    if (filters.roe === "over15") payload.roe_min = 0.15;
+    if (filters.roe === "over30") payload.roe_min = 0.30;
+    if (filters.debt_to_equity === "under1") payload.debt_to_equity_max = 1;
+    if (filters.debt_to_equity === "under05") payload.debt_to_equity_max = 0.5;
+    if (filters.fcf === "positive") payload.fcf_min = 0;
+    if (filters.fcf === "high") payload.fcf_min = 1e9;
+    if (filters.gross_margin === "over30") payload.gross_margin_min = 0.30;
+    if (filters.gross_margin === "over50") payload.gross_margin_min = 0.50;
+    if (filters.sales_growth_5yr === "over10") payload.sales_growth_5yr_min = 0.10;
+    if (filters.sales_growth_5yr === "over20") payload.sales_growth_5yr_min = 0.20;
+    return payload;
+}
 
-    const buildApiPayload = useCallback((): ScreenerApiPayload => {
-        const payload: ScreenerApiPayload = {
-            limit,
-            offset: page * limit,
-            sort_by: filters.sort_by,
-            sort_desc: filters.sort_desc === "desc",
-        };
+function StockCard({ stock }: { stock: ScreenerResult }) {
+    return (
+        <Link href={`/?ticker=${encodeURIComponent(stock.ticker)}`} className="block rounded-xl border bg-white p-4 transition-colors hover:border-emerald-400 dark:bg-[#121920]">
+            <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">{stock.ticker.replace(".US", "")}</span>
+                        {stock.sector && <span className="truncate rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">{stock.sector}</span>}
+                    </div>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{stock.name || "Unnamed security"}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                    <p className="font-mono text-base font-black text-slate-900 dark:text-white">{stock.close == null ? "—" : `$${stock.close.toFixed(2)}`}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{formatMarketCap(stock.market_cap)}</p>
+                </div>
+            </div>
+            <dl className="mt-4 grid grid-cols-4 gap-2 border-t pt-3 text-center">
+                {[["P/E", formatNumber(stock.pe_ratio)], ["ROE", formatPercent(stock.roe)], ["D/E", formatNumber(stock.debt_to_equity)], ["5Y growth", formatPercent(stock.sales_growth_5yr)]].map(([label, value]) => (
+                    <div key={label}>
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+                        <dd className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">{value}</dd>
+                    </div>
+                ))}
+            </dl>
+        </Link>
+    );
+}
 
-        if (filters.sector) payload.sector = filters.sector;
-
-        if (filters.market_cap) {
-            if (filters.market_cap === "mega") payload.market_cap_min = 200000000000;
-            if (filters.market_cap === "large") { payload.market_cap_min = 10000000000; payload.market_cap_max = 200000000000; }
-            if (filters.market_cap === "mid") { payload.market_cap_min = 2000000000; payload.market_cap_max = 10000000000; }
-            if (filters.market_cap === "small") payload.market_cap_max = 2000000000;
-        }
-
-        if (filters.pe) {
-            if (filters.pe === "under15") payload.pe_max = 15;
-            if (filters.pe === "over50") payload.pe_min = 50;
-        }
-
-        if (filters.rsi) {
-            if (filters.rsi === "oversold") payload.rsi_14_max = 30;
-            if (filters.rsi === "overbought") payload.rsi_14_min = 70;
-        }
-
-        if (filters.price_ma50) {
-            if (filters.price_ma50 === "above") payload.price_above_ma50 = true;
-            if (filters.price_ma50 === "below") payload.price_below_ma50 = true;
-        }
-
-        if (filters.roe) {
-            if (filters.roe === "over15") payload.roe_min = 0.15;
-            if (filters.roe === "over30") payload.roe_min = 0.30;
-        }
-
-        if (filters.debt_to_equity) {
-            if (filters.debt_to_equity === "under1") payload.debt_to_equity_max = 1.0;
-            if (filters.debt_to_equity === "under05") payload.debt_to_equity_max = 0.5;
-        }
-
-        if (filters.fcf) {
-            if (filters.fcf === "positive") payload.fcf_min = 0;
-            if (filters.fcf === "high") payload.fcf_min = 1000000000;
-        }
-
-        if (filters.gross_margin) {
-            if (filters.gross_margin === "over30") payload.gross_margin_min = 0.30;
-            if (filters.gross_margin === "over50") payload.gross_margin_min = 0.50;
-        }
-
-        if (filters.sales_growth_5yr) {
-            if (filters.sales_growth_5yr === "over10") payload.sales_growth_5yr_min = 0.10;
-            if (filters.sales_growth_5yr === "over20") payload.sales_growth_5yr_min = 0.20;
-        }
-
-        return payload;
-    }, [filters, page]);
-
-    const fetchResults = useCallback(async () => {
-        setLoading(true);
-        try {
-            const payload = buildApiPayload();
-            const res = await fetch(`${API_BASE_URL}/api/stocks/screener`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setScreenerState({ results: data.items || [], totalCount: data.total || 0 });
-            } else {
-                console.error("Failed to fetch screener results");
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    }, [buildApiPayload, setScreenerState]);
+function ScreenerContent() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
+    const { filters, results, totalCount, page, asOfDate, setScreenerState } = useAppStore();
+    const [activeTab, setActiveTab] = useState<TabName>("Overview");
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [ready, setReady] = useState(false);
+    const initialized = useRef(false);
 
     useEffect(() => {
-        // Condition: If this is the FIRST render and we already have cached results, DO NOT fetch.
-        if (isFirstRender.current) {
-            isFirstRender.current = false;
-            if (results.length > 0) {
-                return; // Use cache
+        if (initialized.current) return;
+        initialized.current = true;
+        const nextFilters = { ...DEFAULT_SCREENER_FILTERS };
+        for (const key of FILTER_KEYS) {
+            const value = searchParams.get(key);
+            if (value !== null) {
+                nextFilters[key] = value;
             }
         }
-
-        const timeout = window.setTimeout(() => void fetchResults(), 300);
-        return () => window.clearTimeout(timeout);
-    }, [fetchResults, results.length]);
-
-    const handleFilterChange = (key: string, value: string) => {
+        const pageParam = searchParams.get("page");
+        const requestedPage = pageParam ? Number(pageParam) : 1;
         setScreenerState({
-            filters: { ...filters, [key]: value },
-            page: 0 // Reset to page 0 on any filter change
+            filters: nextFilters,
+            page: Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage - 1 : 0,
         });
-    };
+        setReady(true);
+    }, [searchParams, setScreenerState]);
 
-    const handleNextPage = () => {
-        if ((page + 1) * limit < totalCount) setScreenerState({ page: page + 1 });
-    };
-
-    const handlePrevPage = () => {
-        if (page > 0) setScreenerState({ page: page - 1 });
-    };
-
-    const formatMarketCap = (value: unknown) => {
-        if (value === null || value === undefined) return "-";
-        const num = Number(value);
-        if (isNaN(num)) return "-";
-        if (num >= 1e12) return (num / 1e12).toFixed(2) + "T";
-        if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
-        if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
-        return num.toLocaleString();
-    };
-
-    const formatPE = (value: unknown) => {
-        if (value === null || value === undefined) return "-";
-        const num = Number(value);
-        if (isNaN(num) || num <= 0) return "-";
-        return num.toFixed(2);
-    };
-
-    const totalPages = Math.ceil(totalCount / limit);
-
-    const generatePagination = () => {
-        if (totalPages <= 7) {
-            return Array.from({ length: totalPages }, (_, i) => i);
+    useEffect(() => {
+        if (!ready) return;
+        const params = new URLSearchParams();
+        for (const key of FILTER_KEYS) {
+            const value = filters[key];
+            if (value && value !== DEFAULT_SCREENER_FILTERS[key]) params.set(key, value);
         }
+        if (page > 0) params.set("page", String(page + 1));
+        const query = params.toString();
+        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    }, [filters, page, pathname, ready, router]);
 
-        if (page < 4) {
-            return [0, 1, 2, 3, 4, '...', totalPages - 1];
-        }
+    const payload = useMemo(() => buildPayload(filters, page), [filters, page]);
 
-        if (page > totalPages - 5) {
-            return [0, '...', totalPages - 5, totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1];
-        }
+    useEffect(() => {
+        if (!ready) return;
+        const controller = new AbortController();
+        const timeout = window.setTimeout(async () => {
+            setLoading(true);
+            setError("");
+            try {
+                const data = await fetchScreener(payload, controller.signal);
+                setScreenerState({
+                    results: data.items,
+                    totalCount: data.total,
+                    asOfDate: data.as_of_date,
+                });
+            } catch (caught) {
+                if (caught instanceof DOMException && caught.name === "AbortError") return;
+                setError(caught instanceof Error ? caught.message : "Unable to load the market snapshot.");
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        }, 250);
+        return () => {
+            window.clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [payload, ready, setScreenerState]);
 
-        return [0, '...', page - 1, page, page + 1, '...', totalPages - 1];
+    const handleFilterChange = useCallback((key: keyof ScreenerFilters, value: string) => {
+        setLoading(true);
+        setScreenerState({ filters: { ...filters, [key]: value }, page: 0 });
+    }, [filters, setScreenerState]);
+
+    const resetFilters = () => {
+        setLoading(true);
+        setScreenerState({ filters: { ...DEFAULT_SCREENER_FILTERS }, page: 0 });
     };
+    const totalPages = Math.ceil(totalCount / LIMIT);
+    const initialLoading = loading && totalCount === 0 && results.length === 0;
 
     return (
-        <div className="h-full w-full overflow-y-auto bg-slate-50 dark:bg-[#0E1117] text-slate-900 dark:text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
-            <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
-
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-4">
-                    <div className="flex items-center gap-4">
-                        <Link href="/" className="text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                            <span className="text-2xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">
-                                Quantify
-                            </span>
-                        </Link>
-                        <span className="text-slate-600 dark:text-gray-600 text-xl font-light">/</span>
-                        <h1 className="text-2xl font-bold tracking-wide text-slate-900 dark:text-white"><span className="text-emerald-400">Screener</span></h1>
+        <div className="app-page">
+            <div className="page-container">
+                <header className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
+                    <div>
+                        <p className="eyebrow">Published market snapshot</p>
+                        <h1 className="page-title mt-1">Equity Screener</h1>
+                        <p className="page-description">Filter the quality-gated US equity universe across size, fundamentals, and technical conditions.</p>
                     </div>
-                    <div className="text-sm font-medium text-emerald-400/80 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                        {loading ? "Scanning market..." : `Matches: ${totalCount.toLocaleString()}`}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {asOfDate && <span className="status-pill"><CalendarDays size={13} /> Data as of {asOfDate}</span>}
+                        <span className="rounded-full border bg-white px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                            {loading ? (asOfDate ? "Refreshing…" : "Loading snapshot…") : `${totalCount.toLocaleString()} matches`}
+                        </span>
                     </div>
-                </div>
+                </header>
 
-                {/* Filter Panel */}
-                <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
-                    {/* Tabs */}
-                    <div className="flex border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151922]">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab)}
-                                className={`px-6 py-4 text-sm font-bold tracking-wide transition-all ${activeTab === tab
-                                    ? "text-emerald-400 border-b-2 border-emerald-500 bg-white dark:bg-[#191D26]"
-                                    : "text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-[#1E222D]"
-                                    }`}
-                            >
-                                {tab}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Tab Content */}
-                    <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-
-                            {/* Common Controls (Always Visible) */}
-                            <div className="space-y-1">
-                                <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Sort By</label>
-                                <select
-                                    value={filters.sort_by}
-                                    onChange={(e) => handleFilterChange("sort_by", e.target.value)}
-                                    className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
+                <section className="surface-panel overflow-hidden" aria-label="Screener filters">
+                    <div className="flex items-center justify-between border-b px-3 sm:px-5">
+                        <div className="flex min-w-0 overflow-x-auto" role="tablist" aria-label="Filter categories">
+                            {(["Overview", "Fundamentals", "Technical"] as TabName[]).map((tab) => (
+                                <button
+                                    key={tab}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={activeTab === tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    className={`shrink-0 border-b-2 px-3 py-4 text-sm font-bold sm:px-4 ${activeTab === tab ? "border-emerald-500 text-emerald-700 dark:text-emerald-300" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"}`}
                                 >
-                                    <option value="market_cap">Market Cap</option>
-                                    <option value="pe_ratio">P/E Ratio</option>
-                                    <option value="roe">ROE</option>
-                                    <option value="debt_to_equity">Debt to Equity</option>
-                                    <option value="sales_growth_5yr">5Yr Sales Gwth</option>
-                                    <option value="gross_margin">Gross Margin</option>
-                                    <option value="fcf">Free Cash Flow</option>
-                                    <option value="volume">Volume</option>
-                                    <option value="rsi_14">RSI (14)</option>
-                                    <option value="close">Price</option>
-                                </select>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Order</label>
-                                <select
-                                    value={filters.sort_desc}
-                                    onChange={(e) => handleFilterChange("sort_desc", e.target.value)}
-                                    className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                >
-                                    <option value="desc">Descending</option>
-                                    <option value="asc">Ascending</option>
-                                </select>
-                            </div>
-
-                            {/* Descriptive Tab */}
-                            {activeTab === "Descriptive" && (
-                                <>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Sector</label>
-                                        <select
-                                            value={filters.sector}
-                                            onChange={(e) => handleFilterChange("sector", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="Technology">Technology</option>
-                                            <option value="Healthcare">Healthcare</option>
-                                            <option value="Financial Services">Financial Services</option>
-                                            <option value="Consumer Cyclical">Consumer Cyclical</option>
-                                            <option value="Industrials">Industrials</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Market Cap</label>
-                                        <select
-                                            value={filters.market_cap}
-                                            onChange={(e) => handleFilterChange("market_cap", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="mega">Mega (&gt; $200B)</option>
-                                            <option value="large">Large ($10B - $200B)</option>
-                                            <option value="mid">Mid ($2B - $10B)</option>
-                                            <option value="small">Small (&lt; $2B)</option>
-                                        </select>
-                                    </div>
-                                </>
-                            )}
-
-                            {/* Fundamental Tab */}
-                            {activeTab === "Fundamental" && (
-                                <>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">P/E Ratio</label>
-                                        <select
-                                            value={filters.pe}
-                                            onChange={(e) => handleFilterChange("pe", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="under15">Value (&lt; 15)</option>
-                                            <option value="over50">Growth (&gt; 50)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Return on Equity</label>
-                                        <select
-                                            value={filters.roe}
-                                            onChange={(e) => handleFilterChange("roe", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="over15">Good (&gt; 15%)</option>
-                                            <option value="over30">Exceptional (&gt; 30%)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Debt to Equity</label>
-                                        <select
-                                            value={filters.debt_to_equity}
-                                            onChange={(e) => handleFilterChange("debt_to_equity", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="under1">Healthy (&lt; 1.0)</option>
-                                            <option value="under05">Conservative (&lt; 0.5)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">5Yr Sales Growth</label>
-                                        <select
-                                            value={filters.sales_growth_5yr}
-                                            onChange={(e) => handleFilterChange("sales_growth_5yr", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="over10">Growing (&gt; 10%)</option>
-                                            <option value="over20">High Growth (&gt; 20%)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Gross Margin</label>
-                                        <select
-                                            value={filters.gross_margin}
-                                            onChange={(e) => handleFilterChange("gross_margin", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="over30">Wide (&gt; 30%)</option>
-                                            <option value="over50">Moat (&gt; 50%)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">FCF (Free Cash Flow)</label>
-                                        <select
-                                            value={filters.fcf}
-                                            onChange={(e) => handleFilterChange("fcf", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="positive">Positive (&gt; 0)</option>
-                                            <option value="high">Cash Cow (&gt; 1B)</option>
-                                        </select>
-                                    </div>
-                                </>
-                            )}
-
-                            {/* Technical Tab */}
-                            {activeTab === "Technical" && (
-                                <>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">Price vs MA50</label>
-                                        <select
-                                            value={filters.price_ma50}
-                                            onChange={(e) => handleFilterChange("price_ma50", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="above">Price &gt; MA50 (Bullish)</option>
-                                            <option value="below">Price &lt; MA50 (Bearish)</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-500 dark:text-gray-500 uppercase font-semibold">RSI (14)</label>
-                                        <select
-                                            value={filters.rsi}
-                                            onChange={(e) => handleFilterChange("rsi", e.target.value)}
-                                            className="w-full bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700 text-sm rounded-xl px-4 py-3 text-slate-800 dark:text-gray-200 focus:outline-none focus:border-emerald-500/50 hover:border-gray-600 transition-colors shadow-inner"
-                                        >
-                                            <option value="">Any</option>
-                                            <option value="oversold">Oversold (&lt; 30)</option>
-                                            <option value="overbought">Overbought (&gt; 70)</option>
-                                        </select>
-                                    </div>
-                                </>
-                            )}
+                                    {tab}
+                                </button>
+                            ))}
                         </div>
+                        <button type="button" onClick={resetFilters} className="secondary-button ml-1 min-h-9 shrink-0 px-2 py-1.5 sm:ml-3 sm:px-3" title="Reset all filters">
+                            <FilterX size={15} /><span className="hidden sm:inline">Reset</span>
+                        </button>
                     </div>
-                </div>
 
-                {/* Results Table */}
-                <div className="bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm whitespace-nowrap">
-                            <thead className="bg-slate-50 dark:bg-[#141820] text-slate-500 dark:text-gray-400 font-medium">
-                                <tr>
-                                    <th className="px-6 py-4 rounded-tl-xl">Ticker</th>
-                                    <th className="px-6 py-4">Company</th>
-                                    <th className="px-6 py-4">Sector</th>
-                                    <th className="px-6 py-4">Market Cap</th>
-                                    <th className="px-6 py-4">Price</th>
-                                    <th className="px-6 py-4">P/E</th>
-                                    <th className="px-6 py-4">ROE</th>
-                                    <th className="px-6 py-4">D/E</th>
-                                    <th className="px-6 py-4">Gross Margin</th>
-                                    <th className="px-6 py-4">5Y SG</th>
-                                </tr>
+                    <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
+                        <FilterField label="Sort by" value={filters.sort_by} onChange={(value) => handleFilterChange("sort_by", value)}>
+                            <option value="market_cap">Market cap</option><option value="pe_ratio">P/E ratio</option><option value="roe">ROE</option><option value="debt_to_equity">Debt to equity</option><option value="sales_growth_5yr">5Y sales growth</option><option value="gross_margin">Gross margin</option><option value="fcf">Free cash flow</option><option value="volume">Volume</option><option value="rsi_14">RSI (14)</option><option value="close">Price</option>
+                        </FilterField>
+                        <FilterField label="Order" value={filters.sort_desc} onChange={(value) => handleFilterChange("sort_desc", value)}>
+                            <option value="desc">Descending</option><option value="asc">Ascending</option>
+                        </FilterField>
+
+                        {activeTab === "Overview" && <>
+                            <FilterField label="Sector" value={filters.sector} onChange={(value) => handleFilterChange("sector", value)}>
+                                <option value="">All sectors</option>{SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
+                            </FilterField>
+                            <FilterField label="Market cap" value={filters.market_cap} onChange={(value) => handleFilterChange("market_cap", value)}>
+                                <option value="">Any size</option><option value="mega">Mega (&gt; $200B)</option><option value="large">Large ($10B–$200B)</option><option value="mid">Mid ($2B–$10B)</option><option value="small">Small (&lt; $2B)</option>
+                            </FilterField>
+                        </>}
+
+                        {activeTab === "Fundamentals" && <>
+                            <FilterField label="P/E ratio" value={filters.pe} onChange={(value) => handleFilterChange("pe", value)}><option value="">Any</option><option value="under15">Under 15</option><option value="over50">Over 50</option></FilterField>
+                            <FilterField label="Return on equity" value={filters.roe} onChange={(value) => handleFilterChange("roe", value)}><option value="">Any</option><option value="over15">Over 15%</option><option value="over30">Over 30%</option></FilterField>
+                            <FilterField label="Debt to equity" value={filters.debt_to_equity} onChange={(value) => handleFilterChange("debt_to_equity", value)}><option value="">Any</option><option value="under1">Under 1.0</option><option value="under05">Under 0.5</option></FilterField>
+                            <FilterField label="Free cash flow" value={filters.fcf} onChange={(value) => handleFilterChange("fcf", value)}><option value="">Any</option><option value="positive">Positive</option><option value="high">Over $1B</option></FilterField>
+                            <FilterField label="Gross margin" value={filters.gross_margin} onChange={(value) => handleFilterChange("gross_margin", value)}><option value="">Any</option><option value="over30">Over 30%</option><option value="over50">Over 50%</option></FilterField>
+                            <FilterField label="5Y sales growth" value={filters.sales_growth_5yr} onChange={(value) => handleFilterChange("sales_growth_5yr", value)}><option value="">Any</option><option value="over10">Over 10%</option><option value="over20">Over 20%</option></FilterField>
+                        </>}
+
+                        {activeTab === "Technical" && <>
+                            <FilterField label="Price vs MA50" value={filters.price_ma50} onChange={(value) => handleFilterChange("price_ma50", value)}><option value="">Any</option><option value="above">Above MA50</option><option value="below">Below MA50</option></FilterField>
+                            <FilterField label="RSI (14)" value={filters.rsi} onChange={(value) => handleFilterChange("rsi", value)}><option value="">Any</option><option value="oversold">Oversold (&lt; 30)</option><option value="overbought">Overbought (&gt; 70)</option></FilterField>
+                        </>}
+                    </div>
+                </section>
+
+                {error && <div className="error-panel" role="alert">{error} Previous results remain visible.</div>}
+
+                <section className="surface-panel overflow-hidden" aria-busy={loading}>
+                    <div className="flex items-center justify-between border-b px-4 py-3 lg:hidden">
+                        <span className="flex items-center gap-2 text-sm font-bold"><SlidersHorizontal size={15} /> Results</span>
+                        {loading && <Loader2 className="animate-spin text-emerald-500" size={16} />}
+                    </div>
+
+                    <div className="grid gap-3 p-3 lg:hidden">
+                        {!loading && results.length === 0
+                            ? <p className="py-12 text-center text-sm text-slate-500">No securities match these filters.</p>
+                            : results.map((stock) => <StockCard key={stock.ticker} stock={stock} />)}
+                    </div>
+
+                    <div className="hidden overflow-x-auto lg:block">
+                        <table className="w-full whitespace-nowrap text-left text-sm">
+                            <thead className="surface-subtle text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                <tr><th className="px-5 py-4">Ticker</th><th className="px-5 py-4">Company</th><th className="px-5 py-4">Sector</th><th className="px-5 py-4 text-right">Market cap</th><th className="px-5 py-4 text-right">Price</th><th className="px-5 py-4 text-right">P/E</th><th className="px-5 py-4 text-right">ROE</th><th className="px-5 py-4 text-right">D/E</th><th className="px-5 py-4 text-right">Gross margin</th><th className="px-5 py-4 text-right">5Y growth</th></tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                                {results.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={10} className="px-6 py-12 text-center text-slate-500 dark:text-gray-500">
-                                            {loading ? "Cruising the markets..." : "No stocks match your strict criteria."}
-                                        </td>
+                            <tbody className="divide-y">
+                                {results.length === 0 ? <tr><td colSpan={10} className="px-6 py-16 text-center text-slate-500">{loading ? "Loading the published market snapshot…" : "No securities match these filters."}</td></tr> : results.map((stock) => (
+                                    <tr key={stock.ticker} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                        <td className="px-5 py-3.5"><Link href={`/?ticker=${encodeURIComponent(stock.ticker)}`} className="font-mono font-black text-emerald-600 hover:underline dark:text-emerald-400">{stock.ticker.replace(".US", "")}</Link></td>
+                                        <td className="max-w-[220px] truncate px-5 py-3.5 font-semibold" title={stock.name || undefined}>{stock.name || "—"}</td>
+                                        <td className="max-w-[150px] truncate px-5 py-3.5 text-slate-500 dark:text-slate-400">{stock.sector || "—"}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono">{formatMarketCap(stock.market_cap)}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono font-bold">{stock.close == null ? "—" : `$${stock.close.toFixed(2)}`}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono">{formatNumber(stock.pe_ratio)}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono">{formatPercent(stock.roe)}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono">{formatNumber(stock.debt_to_equity)}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono">{formatPercent(stock.gross_margin)}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono">{formatPercent(stock.sales_growth_5yr)}</td>
                                     </tr>
-                                ) : (
-                                    results.map((stock) => (
-                                        <tr key={stock.ticker} className="hover:bg-slate-100 dark:hover:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800/50 transition-colors group">
-                                            <td className="px-6 py-4 font-bold text-emerald-400 group-hover:text-emerald-300">
-                                                <Link href={`/?ticker=${stock.ticker}`}>
-                                                    {stock.ticker.split('.')[0]}
-                                                </Link>
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300 truncate max-w-[200px]" title={stock.name}>{stock.name || "-"}</td>
-                                            <td className="px-6 py-4 text-slate-500 dark:text-gray-400 truncate max-w-[120px]">
-                                                <span className="bg-slate-200 dark:bg-[#2B2B43] px-2 py-1 rounded border border-gray-200 dark:border-gray-700 shadow-sm text-xs">
-                                                    {stock.sector || "-"}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-800 dark:text-gray-200 font-medium">{formatMarketCap(stock.market_cap)}</td>
-                                            <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">${stock.close?.toFixed(2) || "-"}</td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">{formatPE(stock.pe_ratio)}</td>
-                                            <td className={`px-6 py-4 font-bold ${(stock.roe ?? 0) > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
-                                                {stock.roe != null ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
-                                            </td>
-                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity == null ? 'text-slate-500 dark:text-gray-400' : stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                                                {stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : "-"}
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
-                                                {stock.gross_margin ? `${(stock.gross_margin * 100).toFixed(1)}%` : "-"}
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
-                                                {stock.sales_growth_5yr ? `${(stock.sales_growth_5yr * 100).toFixed(1)}%` : "-"}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
+                                ))}
                             </tbody>
                         </table>
                     </div>
 
-                    {/* Pagination Footer */}
-                    <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50 dark:bg-[#141820]">
-                        <span className="text-slate-500 dark:text-gray-500 text-sm font-medium">
-                            Showing {results.length > 0 ? page * limit + 1 : 0} to {Math.min((page + 1) * limit, totalCount)} of {totalCount}
-                        </span>
-
-                        {totalPages > 0 && (
-                            <div className="flex items-center gap-1">
-                                {/* Prev Button */}
-                                <button
-                                    onClick={handlePrevPage}
-                                    disabled={page === 0 || loading}
-                                    className="px-3 py-2 bg-white dark:bg-[#151922] text-slate-500 dark:text-gray-400 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                >
-                                    &lt;
-                                </button>
-
-                                {/* Page Numbers */}
-                                {generatePagination().map((item, index) => {
-                                    if (item === '...') {
-                                        return (
-                                            <span key={`ellipsis-${index}`} className="px-3 text-slate-500 dark:text-gray-500">
-                                                ...
-                                            </span>
-                                        );
-                                    }
-
-                                    const pageNum = item as number;
-                                    const isActive = pageNum === page;
-
-                                    return (
-                                        <button
-                                            key={`page-${pageNum}`}
-                                            onClick={() => setScreenerState({ page: pageNum })}
-                                            className={`min-w-[40px] h-10 flex items-center justify-center rounded-lg border text-sm font-bold transition-all ${isActive
-                                                ? 'bg-emerald-500 text-slate-900 dark:text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                                                : 'bg-white dark:bg-[#151922] text-slate-500 dark:text-gray-400 border-gray-200 dark:border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400'
-                                                }`}
-                                        >
-                                            {pageNum + 1}
-                                        </button>
-                                    );
-                                })}
-
-                                {/* Next Button */}
-                                <button
-                                    onClick={handleNextPage}
-                                    disabled={page >= totalPages - 1 || loading}
-                                    className="px-3 py-2 bg-white dark:bg-[#151922] text-slate-500 dark:text-gray-400 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                >
-                                    &gt;
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
+                    <footer className="surface-subtle flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {initialLoading ? "Loading published snapshot…" : totalCount > 0 ? `${(page * LIMIT + 1).toLocaleString()}–${Math.min((page + 1) * LIMIT, totalCount).toLocaleString()} of ${totalCount.toLocaleString()}` : "No results"}
+                        </p>
+                        <div className="flex items-center justify-between gap-2 sm:justify-end">
+                            <button type="button" className="secondary-button min-h-9 px-3 py-1.5" disabled={page === 0 || loading} onClick={() => { setLoading(true); setScreenerState({ page: page - 1 }); }}><ChevronLeft size={16} /> Previous</button>
+                            <span className="px-2 text-xs font-semibold text-slate-500">{initialLoading ? "Loading…" : `Page ${totalPages ? page + 1 : 0} of ${totalPages}`}</span>
+                            <button type="button" className="secondary-button min-h-9 px-3 py-1.5" disabled={page >= totalPages - 1 || loading} onClick={() => { setLoading(true); setScreenerState({ page: page + 1 }); }}>Next <ChevronRight size={16} /></button>
+                        </div>
+                    </footer>
+                </section>
             </div>
         </div>
+    );
+}
+
+export default function ScreenerPage() {
+    return (
+        <Suspense fallback={<div className="app-page"><div className="page-container"><div className="surface-panel h-[560px] animate-pulse" /></div></div>}>
+            <ScreenerContent />
+        </Suspense>
     );
 }

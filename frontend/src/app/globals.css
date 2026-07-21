@@ -1,8 +1,160 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-/* Explicitly tell Tailwind v4 to trigger dark mode when .dark class is active on parent */
 @custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --app-bg: #f4f7f9;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-raised: #ffffff;
+  --border: #dfe6eb;
+  --border-strong: #cbd5dc;
+  --text: #12211d;
+  --text-muted: #64748b;
+  --brand: #0f9f78;
+  --brand-strong: #08785b;
+  --brand-soft: #e8f8f2;
+  --danger: #dc5264;
+  --warning: #c68018;
+  --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px rgb(15 23 42 / 0.06);
+}
+
+.dark {
+  --app-bg: #0c1116;
+  --surface: #121920;
+  --surface-muted: #0f151b;
+  --surface-raised: #172029;
+  --border: #26313a;
+  --border-strong: #35434d;
+  --text: #e8f0ed;
+  --text-muted: #91a19b;
+  --brand: #39c99b;
+  --brand-strong: #6de2bc;
+  --brand-soft: #112a23;
+  --danger: #f06b7c;
+  --warning: #e3a13e;
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.25), 0 18px 40px rgb(0 0 0 / 0.18);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--text);
+}
+
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .app-page {
+    @apply h-full w-full overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8;
+    background: var(--app-bg);
+    color: var(--text);
+  }
+
+  .page-container {
+    @apply mx-auto w-full max-w-7xl space-y-6 pb-12;
+  }
+
+  .surface-panel {
+    @apply rounded-2xl border;
+    background: var(--surface);
+    border-color: var(--border);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .surface-subtle {
+    background: var(--surface-muted);
+    border-color: var(--border);
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.16em];
+    color: var(--text-muted);
+  }
+
+  .page-title {
+    @apply text-2xl font-black tracking-[-0.03em] sm:text-3xl;
+    color: var(--text);
+  }
+
+  .page-description {
+    @apply mt-1.5 max-w-3xl text-sm leading-6 sm:text-base;
+    color: var(--text-muted);
+  }
+
+  .control-field {
+    @apply w-full rounded-xl border px-3 py-2.5 text-sm transition-colors;
+    background: var(--surface-muted);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .control-field:hover {
+    border-color: var(--border-strong);
+  }
+
+  .control-field:focus {
+    border-color: var(--brand);
+    outline: none;
+  }
+
+  .primary-button {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--brand);
+  }
+
+  .primary-button:hover:not(:disabled) {
+    background: var(--brand-strong);
+  }
+
+  .secondary-button {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .secondary-button:hover:not(:disabled) {
+    background: var(--surface-muted);
+    border-color: var(--border-strong);
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+    background: var(--brand-soft);
+    border-color: color-mix(in srgb, var(--brand) 24%, transparent);
+    color: var(--brand-strong);
+  }
+
+  .error-panel {
+    @apply rounded-xl border px-4 py-3 text-sm;
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+    color: var(--danger);
+  }
+}
 
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
@@ -13,12 +165,12 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #374151;
+  background-color: var(--border-strong);
   border-radius: 10px;
 }
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: #4b5563;
+  background-color: var(--text-muted);
 }
 
 .scrollbar-hide::-webkit-scrollbar {

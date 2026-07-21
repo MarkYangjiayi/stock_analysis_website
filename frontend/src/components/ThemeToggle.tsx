@@ -18,7 +18,7 @@ export function ThemeToggle() {
     }
 
     return (
-        <div className="flex items-center gap-1 bg-gray-100 dark:bg-[#1a1f2e] p-1 rounded-full border border-gray-200 dark:border-gray-800 transition-colors">
+        <div className="flex items-center gap-0.5 rounded-full border bg-slate-100 p-1 transition-colors dark:bg-slate-900" role="group" aria-label="Color theme">
             <button
                 onClick={() => setTheme("light")}
                 className={`p-1.5 rounded-full transition-all ${theme === "light"
@@ -26,6 +26,8 @@ export function ThemeToggle() {
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                 title="Light Mode"
+                aria-label="Use light theme"
+                aria-pressed={theme === "light"}
             >
                 <Sun className="w-4 h-4" />
             </button>
@@ -36,6 +38,8 @@ export function ThemeToggle() {
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                 title="System Theme"
+                aria-label="Use system theme"
+                aria-pressed={theme === "system"}
             >
                 <Monitor className="w-4 h-4" />
             </button>
@@ -46,6 +50,8 @@ export function ThemeToggle() {
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                 title="Dark Mode"
+                aria-label="Use dark theme"
+                aria-pressed={theme === "dark"}
             >
                 <Moon className="w-4 h-4" />
             </button>

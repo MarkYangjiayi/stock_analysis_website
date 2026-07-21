@@ -27,11 +27,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col h-screen w-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-200 overflow-hidden transition-colors duration-300`}
+        className={`${geistSans.variable} ${geistMono.variable} flex h-screen w-full flex-col overflow-hidden antialiased transition-colors duration-300`}
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <a
+            href="#main-content"
+            className="sr-only z-[100] rounded-lg bg-emerald-600 px-4 py-2 text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+          >
+            Skip to main content
+          </a>
           <TopNavBar />
-          <main className="flex-1 w-full overflow-hidden">
+          <main id="main-content" className="min-h-0 w-full flex-1 overflow-hidden">
             {children}
           </main>
         </ThemeProvider>

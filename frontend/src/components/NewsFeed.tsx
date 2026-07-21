@@ -21,13 +21,16 @@ export default function NewsFeed({ ticker }: NewsFeedProps) {
         const controller = new AbortController();
 
         const loadNews = async () => {
+            setLoading(true);
+            setError("");
             try {
-                const data = await fetchStockNews(ticker);
+                const data = await fetchStockNews(ticker, controller.signal);
                 if (isMounted) {
                     setNews(data);
                     setError("");
                 }
             } catch (err) {
+                if (err instanceof DOMException && err.name === "AbortError") return;
                 console.error("Failed to fetch news:", err);
                 if (isMounted) setError("Failed to load global news feed.");
             } finally {
@@ -44,35 +47,30 @@ export default function NewsFeed({ ticker }: NewsFeedProps) {
     }, [ticker]);
 
     return (
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-slate-50 dark:bg-[#141820] flex items-center justify-between shrink-0 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-transparent pointer-events-none" />
-                <div className="flex items-center gap-3 relative z-10">
-                    <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
-                        <Newspaper className="text-blue-400" size={20} />
-                    </div>
-                    <h3 className="font-extrabold text-slate-900 dark:text-white tracking-wide">Signal Intel & News</h3>
+        <div className="surface-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="surface-subtle flex shrink-0 items-center justify-between border-b p-4 sm:px-5">
+                <div>
+                    <p className="eyebrow">External context</p>
+                    <h2 className="mt-1 font-black text-slate-900 dark:text-white">Recent news & catalysts</h2>
                 </div>
-                <div className="text-xs font-mono text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-[#1D212A] px-2 py-1 rounded border border-gray-200 dark:border-gray-700 relative z-10">
-                    Past 72H
+                <div className="rounded-full border px-2.5 py-1 text-xs font-semibold text-slate-500">
+                    Past 72h
                 </div>
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto min-h-0 p-4 pr-2 custom-scrollbar">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center h-full space-y-4 text-slate-500 dark:text-gray-500">
-                        <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-                        <p className="text-sm font-medium animate-pulse">Scanning global feeds...</p>
+                    <div className="flex h-full flex-col items-center justify-center space-y-4 text-slate-500">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-emerald-500 dark:border-slate-700 dark:border-t-emerald-400" />
+                        <p className="text-sm font-medium">Loading recent coverage…</p>
                     </div>
                 ) : error ? (
-                    <div className="flex flex-col items-center justify-center h-full text-red-400/80 space-y-2">
+                    <div className="flex h-full flex-col items-center justify-center space-y-2 text-rose-500" role="alert">
                         <ZapOff size={32} />
                         <p className="text-sm">{error}</p>
                     </div>
                 ) : news.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-500 dark:text-gray-500 space-y-2">
+                    <div className="flex h-full flex-col items-center justify-center space-y-2 text-slate-500">
                         <Newspaper size={32} className="opacity-50" />
                         <p className="text-sm">No recent news catalysts found.</p>
                     </div>
@@ -94,25 +92,25 @@ export default function NewsFeed({ ticker }: NewsFeedProps) {
                                     href={item.link}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="block group bg-white dark:bg-[#151922] hover:bg-slate-50 dark:hover:bg-[#1D222D] p-4 rounded-xl border border-gray-200 dark:border-gray-800/80 hover:border-blue-500/40 transition-all shadow-sm"
+                                    className="group block rounded-xl border bg-white p-4 transition-colors hover:border-emerald-300 hover:bg-slate-50 dark:bg-slate-950/30 dark:hover:border-emerald-800 dark:hover:bg-slate-900"
                                 >
-                                    <div className="flex justify-between items-start gap-3 mb-2">
-                                        <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-200 group-hover:text-blue-400 transition-colors leading-tight line-clamp-2 w-full">
+                                    <div className="mb-2 flex items-start justify-between gap-3">
+                                        <h3 className="line-clamp-2 w-full text-sm font-bold leading-5 text-slate-800 transition-colors group-hover:text-emerald-700 dark:text-slate-200 dark:group-hover:text-emerald-300">
                                             {item.title}
-                                        </h4>
-                                        <ExternalLink size={14} className="text-slate-600 dark:text-gray-600 group-hover:text-blue-400 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </h3>
+                                        <ExternalLink size={14} className="mt-0.5 shrink-0 text-slate-400 transition-colors group-hover:text-emerald-600" aria-hidden="true" />
                                     </div>
 
-                                    <p className="text-xs text-slate-500 dark:text-gray-500 line-clamp-2 mb-3 leading-relaxed">
+                                    <p className="mb-3 line-clamp-2 text-xs leading-5 text-slate-500">
                                         {item.summary}
                                     </p>
 
-                                    <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 dark:text-gray-600">
-                                        <span className="bg-slate-100 dark:bg-gray-800/50 px-2 py-0.5 rounded text-slate-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700/50">
+                                    <div className="flex items-center justify-between gap-3 text-[11px] font-medium text-slate-500">
+                                        <span className="truncate rounded border bg-slate-50 px-2 py-0.5 dark:bg-slate-900">
                                             {item.publisher}
                                         </span>
                                         {parsedDate && (
-                                            <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                                            <div className="flex shrink-0 items-center gap-1.5">
                                                 <Clock size={12} />
                                                 <span>{parsedDate}</span>
                                             </div>

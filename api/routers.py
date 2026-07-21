@@ -66,6 +66,55 @@ class ScreenerRequest(BaseModel):
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
 
+
+async def _load_latest_published_factor_snapshot(ticker: str, db: AsyncSession) -> Optional[dict]:
+    ticker = canonicalize_ticker(ticker)
+    publication_result = await db.execute(
+        select(DataPublication)
+        .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+        .where(
+            DataPublication.dataset == "factors",
+            DataPublication.status == "published",
+            PipelineRun.status == "published",
+        )
+        .order_by(DataPublication.as_of_date.desc())
+        .limit(1)
+    )
+    publication = publication_result.scalar_one_or_none()
+    if publication is None:
+        return None
+
+    factor_result = await db.execute(
+        select(FactorValue).where(
+            FactorValue.ticker == ticker,
+            FactorValue.as_of_date == publication.as_of_date,
+            FactorValue.source_run_id == publication.pipeline_run_id,
+        )
+    )
+    rows = factor_result.scalars().all()
+    if not rows:
+        return None
+
+    rows_by_version = {}
+    for row in rows:
+        rows_by_version.setdefault(row.version, []).append(row)
+    version = max(rows_by_version, key=lambda item: (len(rows_by_version[item]), item))
+    version_rows = rows_by_version[version]
+    return {
+        "ticker": ticker,
+        "as_of_date": publication.as_of_date.isoformat(),
+        "published_at": publication.published_at.isoformat(),
+        "version": version,
+        "factors": {
+            row.factor_name: {
+                "raw_value": row.raw_value,
+                "normalized_value": row.normalized_value,
+                "details": row.details,
+            }
+            for row in version_rows
+        },
+    }
+
 @router.post("/api/stocks/screener", tags=["Stocks Analysis Read"])
 async def read_stock_screener(request: ScreenerRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -180,6 +229,7 @@ async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
         
     valuation = await get_fundamental_valuation(ticker, db)
     data["valuation_metrics"] = valuation
+    data["published_factor_snapshot"] = await _load_latest_published_factor_snapshot(ticker, db)
     
     report_generator = generate_stock_report(ticker, data)
     
@@ -304,6 +354,93 @@ async def read_factors(
         }
         for row in result.scalars().all()
     ]
+
+
+@router.get("/api/quant/coverage", tags=["Quant Research"])
+async def read_quant_coverage(db: AsyncSession = Depends(get_db)):
+    publication_result = await db.execute(
+        select(DataPublication)
+        .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+        .where(
+            DataPublication.status == "published",
+            PipelineRun.status == "published",
+            DataPublication.dataset.in_(["screener", "price_history", "factors"]),
+        )
+        .order_by(DataPublication.dataset, DataPublication.as_of_date.desc())
+    )
+    latest_by_dataset = {}
+    for publication in publication_result.scalars().all():
+        if publication.dataset not in latest_by_dataset:
+            latest_by_dataset[publication.dataset] = {
+                "as_of_date": publication.as_of_date.isoformat(),
+                "published_at": publication.published_at.isoformat(),
+            }
+
+    coverage_result = await db.execute(
+        select(
+            func.min(FactorValue.as_of_date),
+            func.max(FactorValue.as_of_date),
+            func.count(func.distinct(FactorValue.as_of_date)),
+            func.count(func.distinct(FactorValue.ticker)),
+        )
+        .join(
+            DataPublication,
+            and_(
+                DataPublication.dataset == "factors",
+                DataPublication.status == "published",
+                DataPublication.as_of_date == FactorValue.as_of_date,
+                DataPublication.pipeline_run_id == FactorValue.source_run_id,
+            ),
+        )
+        .join(
+            PipelineRun,
+            and_(
+                PipelineRun.id == FactorValue.source_run_id,
+                PipelineRun.status == "published",
+            ),
+        )
+    )
+    min_date, max_date, date_count, ticker_count = coverage_result.one()
+    factor_name_result = await db.execute(
+        select(FactorValue.factor_name)
+        .join(
+            DataPublication,
+            and_(
+                DataPublication.dataset == "factors",
+                DataPublication.status == "published",
+                DataPublication.as_of_date == FactorValue.as_of_date,
+                DataPublication.pipeline_run_id == FactorValue.source_run_id,
+            ),
+        )
+        .join(
+            PipelineRun,
+            and_(
+                PipelineRun.id == FactorValue.source_run_id,
+                PipelineRun.status == "published",
+            ),
+        )
+        .distinct()
+        .order_by(FactorValue.factor_name)
+    )
+    return {
+        "publications": latest_by_dataset,
+        "factors": {
+            "min_date": min_date.isoformat() if min_date else None,
+            "max_date": max_date.isoformat() if max_date else None,
+            "date_count": date_count or 0,
+            "ticker_count": ticker_count or 0,
+            "names": list(factor_name_result.scalars().all()),
+        },
+    }
+
+
+@router.get("/api/quant/factors/{ticker}/latest", tags=["Quant Research"])
+async def read_latest_ticker_factors(ticker: str, db: AsyncSession = Depends(get_db)):
+    ticker = canonicalize_ticker(ticker)
+    snapshot = await _load_latest_published_factor_snapshot(ticker, db)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"No published factors are available for {ticker}")
+    return snapshot
 
 
 @router.post(

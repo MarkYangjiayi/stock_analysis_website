@@ -1,183 +1,73 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { fetchMarketAnomalies } from "@/lib/api";
-import { Sparkles, TrendingUp, TrendingDown, ExternalLink, Activity, ScanSearch } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Activity, ArrowDownRight, ArrowUpRight, Clock3, ExternalLink, Loader2, Radar, RefreshCw, Sparkles } from "lucide-react";
+import { fetchMarketAnomalies } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 
 export default function AnomaliesPage() {
-    const { data: anomalies, lastFetchTime, setAnomaliesData } = useAppStore();
-
-    // Determine initial loading state: true if no cache available, false if cache exists
-    const hasCache = anomalies.length > 0 && lastFetchTime !== null;
-    const [loading, setLoading] = useState(!hasCache);
+    const { data, lastFetchTime, setAnomaliesData } = useAppStore();
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const controllerRef = useRef<AbortController | null>(null);
 
-    useEffect(() => {
-        let isMounted = true;
+    useEffect(() => () => controllerRef.current?.abort(), []);
+
+    const runScan = async () => {
+        controllerRef.current?.abort();
         const controller = new AbortController();
-
-        const loadData = async () => {
-            try {
-                // 5 minute TTL (Time to live) check
-                const CACHE_TTL = 5 * 60 * 1000;
-                const now = Date.now();
-
-                if (anomalies.length > 0 && lastFetchTime && (now - lastFetchTime < CACHE_TTL)) {
-                    // Valid cache exists, nothing to do
-                    if (isMounted) {
-                        setLoading(false);
-                    }
-                    return;
-                }
-
-                if (isMounted) setLoading(true);
-
-                const rawData = await fetchMarketAnomalies(controller.signal);
-                if (isMounted) {
-                    setAnomaliesData(rawData);
-                    setError("");
-                }
-            } catch (err) {
-                console.error("Failed to fetch anomalies:", err);
-                if (isMounted) setError("Failed to synchronize anomaly scan.");
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
-
-        loadData();
-
-        return () => {
-            isMounted = false;
-            controller.abort();
-        };
-    }, [anomalies.length, lastFetchTime, setAnomaliesData]);
+        controllerRef.current = controller;
+        setLoading(true);
+        setError("");
+        try {
+            const result = await fetchMarketAnomalies(controller.signal);
+            if (!controller.signal.aborted) setAnomaliesData(result);
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            setError(caught instanceof Error ? caught.message : "Unable to complete the anomaly scan.");
+        } finally {
+            if (!controller.signal.aborted) setLoading(false);
+        }
+    };
 
     return (
-        <div className="h-full w-full overflow-y-auto bg-slate-50 dark:bg-[#0E1117] text-slate-900 dark:text-gray-100 p-6 md:p-8 font-sans selection:bg-emerald-500/30">
-            <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-6 relative overflow-hidden">
-                    <div className="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/10 blur-[50px] rounded-full pointer-events-none" />
-                    <div className="flex items-center gap-4 relative z-10">
-                        <div className="p-3 bg-white dark:bg-[#151922] rounded-xl border border-gray-200 dark:border-gray-800 shadow-inner">
-                            <Activity className="text-emerald-400" size={28} />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-                                Market Anomalies
-                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 italic tracking-normal ml-1">
-                                    & AI Attribution
-                                </span>
-                            </h1>
-                            <p className="text-slate-500 dark:text-gray-400 text-sm mt-1">Real-time daily variance scanning powered by predictive language models.</p>
-                        </div>
-                    </div>
-                </div>
+        <div className="app-page">
+            <div className="mx-auto w-full max-w-5xl space-y-6 pb-12">
+                <header className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
+                    <div><p className="eyebrow">On-demand market monitor</p><h1 className="page-title mt-1">Market Anomalies</h1><p className="page-description">Scan large daily moves, then review a model-generated catalyst summary and its linked sources.</p></div>
+                    {lastFetchTime && <span className="status-pill"><Clock3 size={13} /> Scanned {new Date(lastFetchTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+                </header>
 
-                {/* Content */}
-                {loading ? (
-                    <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-6 animate-in fade-in duration-500">
-                        <div className="relative w-32 h-32 flex items-center justify-center">
-                            <div className="absolute inset-0 border-[3px] border-emerald-500/20 rounded-full"></div>
-                            <div className="absolute inset-0 border-[3px] border-transparent border-t-emerald-400 rounded-full animate-spin [animation-duration:1.5s]"></div>
-                            <div className="absolute inset-2 border-[3px] border-transparent border-b-teal-400 rounded-full animate-spin [animation-duration:2s] [animation-direction:reverse]"></div>
-                            <ScanSearch size={40} className="text-emerald-400/80 animate-pulse" />
-                        </div>
-                        <div className="space-y-2">
-                            <h3 className="text-xl font-bold text-slate-800 dark:text-gray-200">Quantum Radar Active</h3>
-                            <p className="text-slate-500 dark:text-gray-500 text-sm max-w-sm">AI is scanning the global network for news catalysts to attribute multi-sigma price deviations...</p>
-                        </div>
-                    </div>
-                ) : error ? (
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
-                        <p className="text-red-400 font-medium">{error}</p>
-                    </div>
-                ) : anomalies.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-[40vh] text-slate-500 dark:text-gray-500 space-y-4">
-                        <Activity size={48} className="opacity-30" />
-                        <p className="text-lg">No significant market anomalies detected today.</p>
-                    </div>
-                ) : (
-                    <div className="space-y-6 pb-12">
-                        {anomalies.map((item, idx) => {
-                            const isPositive = item.price_change >= 0;
-                            const Icon = isPositive ? TrendingUp : TrendingDown;
+                <section className="surface-panel flex flex-col justify-between gap-5 p-5 sm:flex-row sm:items-center sm:p-6">
+                    <div className="flex gap-4"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"><Radar size={22} /></span><div><h2 className="font-black">Run a fresh scan</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">This is an explicit, potentially slow operation. It checks the tracked universe and generates attribution only for the largest moves.</p></div></div>
+                    <button type="button" className="primary-button shrink-0" disabled={loading} onClick={runScan}>{loading ? <Loader2 className="animate-spin" size={16} /> : data.length ? <RefreshCw size={16} /> : <Activity size={16} />}{loading ? "Scanning…" : data.length ? "Refresh scan" : "Run scan"}</button>
+                </section>
 
-                            return (
-                                <div
-                                    key={idx}
-                                    className="group bg-white dark:bg-[#191D26] border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300"
-                                >
-                                    {/* Card Header */}
-                                    <div className="p-5 border-b border-gray-200 dark:border-gray-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-[#181C25]">
-                                        <div className="flex items-center gap-4">
-                                            <div className="bg-slate-50 dark:bg-[#0E1117] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-800 shadow-inner flex items-center gap-2">
-                                                <Link
-                                                    href={`/?ticker=${item.ticker}`}
-                                                    className="font-bold text-slate-800 dark:text-gray-200 hover:text-emerald-400 transition-colors tracking-wide"
-                                                >
-                                                    {item.ticker.replace('.US', '')}
-                                                </Link>
-                                            </div>
-                                            <span className="text-slate-500 dark:text-gray-400 font-medium text-sm sm:text-base line-clamp-1">{item.company_name}</span>
-                                        </div>
+                {error && <div className="error-panel" role="alert">{error}</div>}
 
-                                        <div className={`flex items-center gap-2 font-bold ${isPositive
-                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-lg'
-                                            : 'bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 rounded-lg'
-                                            }`}>
-                                            <Icon size={18} strokeWidth={2.5} />
-                                            <span className="text-lg tracking-tight">
-                                                {isPositive ? '+' : ''}{item.price_change.toFixed(2)}%
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* AI Analysis Area */}
-                                    <div className="p-5 sm:p-6 bg-slate-50 dark:bg-[#181C25]">
-                                        <div className="bg-white dark:bg-[#151922] border-l-2 border-emerald-500/50 rounded-r-xl p-5 relative overflow-hidden">
-                                            <div className="absolute -top-10 -left-10 w-32 h-32 bg-emerald-500/10 blur-[50px] pointer-events-none" />
-                                            <div className="flex gap-4 items-start relative z-10">
-                                                <div className="shrink-0 mt-1 p-2 bg-slate-50 dark:bg-[#0E1117] border border-gray-200 dark:border-gray-800 rounded-lg">
-                                                    <Sparkles className="text-emerald-400" size={20} />
-                                                </div>
-                                                <div className="flex-1 space-y-4">
-                                                    <div className="prose dark:prose-invert max-w-none text-slate-700 dark:text-gray-300 leading-relaxed text-[15px]">
-                                                        {item.ai_analysis.split('\n').map((paragraph, pIdx) => (
-                                                            <p key={pIdx} className="mb-2 last:mb-0">{paragraph}</p>
-                                                        ))}
-                                                    </div>
-
-                                                    {/* News Sources Footer */}
-                                                    {item.top_news_links && item.top_news_links.length > 0 && (
-                                                        <div className="pt-4 mt-2 border-t border-gray-200 dark:border-gray-800/60 flex flex-wrap items-center gap-3">
-                                                            <span className="text-xs font-mono text-slate-500 dark:text-gray-500 uppercase tracking-wider">Catalyst Sources:</span>
-                                                            {item.top_news_links.map((link, lIdx) => (
-                                                                <a
-                                                                    key={lIdx}
-                                                                    href={link}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-3 py-1.5 rounded-full transition-all"
-                                                                >
-                                                                    News {lIdx + 1}
-                                                                    <ExternalLink size={10} />
-                                                                </a>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                {!loading && !data.length && !error && (
+                    <section className="surface-panel flex min-h-[360px] flex-col items-center justify-center p-8 text-center"><Activity className="text-slate-300 dark:text-slate-600" size={38} /><h2 className="mt-4 text-lg font-black">No scan results in this session</h2><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Run the scanner when you need a current anomaly review. The page no longer launches external data and AI work just by being opened.</p></section>
                 )}
+
+                {loading && !data.length && (
+                    <section className="surface-panel flex min-h-[360px] flex-col items-center justify-center p-8 text-center"><Loader2 className="animate-spin text-emerald-500" size={38} /><h2 className="mt-4 text-lg font-black">Scanning market moves</h2><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Comparing current quotes and preparing source-backed attribution for the most significant moves.</p></section>
+                )}
+
+                {data.length > 0 && <section className="space-y-4" aria-busy={loading}>
+                    {data.map((item) => {
+                        const positive = item.price_change >= 0;
+                        return (
+                            <article key={`${item.ticker}-${item.date}`} className="surface-panel overflow-hidden">
+                                <header className="surface-subtle flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center sm:px-5">
+                                    <div className="min-w-0"><div className="flex items-center gap-3"><Link href={`/?ticker=${encodeURIComponent(item.ticker)}`} className="font-mono text-sm font-black text-emerald-600 hover:underline dark:text-emerald-400">{item.ticker.replace(".US", "")}</Link><span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{item.company_name}</span></div><p className="mt-1 text-xs text-slate-500">Price date {item.date}</p></div>
+                                    <span className={`inline-flex w-fit items-center gap-1 rounded-lg px-3 py-1.5 font-mono text-base font-black ${positive ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-300"}`}>{positive ? <ArrowUpRight size={17} /> : <ArrowDownRight size={17} />}{positive ? "+" : ""}{item.price_change.toFixed(2)}%</span>
+                                </header>
+                                <div className="p-5 sm:p-6"><div className="flex gap-3"><Sparkles className="mt-0.5 shrink-0 text-indigo-500" size={18} /><div className="min-w-0 flex-1"><p className="whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-300">{item.ai_analysis}</p>{item.top_news_links?.length > 0 && <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">{item.top_news_links.map((link, index) => <a key={link} href={link} target="_blank" rel="noopener noreferrer" className="secondary-button min-h-8 px-3 py-1 text-xs">Source {index + 1}<ExternalLink size={12} /></a>)}</div>}</div></div></div>
+                            </article>
+                        );
+                    })}
+                </section>}
             </div>
         </div>
     );

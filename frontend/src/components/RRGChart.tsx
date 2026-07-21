@@ -13,6 +13,7 @@ export interface RRGDataPoint {
 export interface RRGResponse {
     benchmark: string;
     update_time: string;
+    data_as_of_date?: string | null;
     data: Record<string, RRGDataPoint[]>;
 }
 
@@ -156,11 +157,11 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 label: {
                     show: true,
                     formatter: ticker,
-                    position: 'right',
-                    distance: 10,
+                    position: lastDataNode.rs_ratio >= 100 ? 'left' : 'right',
+                    distance: 7,
                     color: themeColor,
                     fontWeight: 'bold',
-                    fontSize: 14,
+                    fontSize: 12,
                     textBorderColor: isDark ? '#000' : '#fff',
                     textBorderWidth: 2
                 }
@@ -184,6 +185,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
         return {
             // 动画更新配置：关闭更新动画，提升 Slider 拖拉时的纯粹重绘体验，防蠕动
             animationDurationUpdate: 0,
+            aria: { enabled: true, description: 'Relative rotation graph for US sector ETFs versus the benchmark' },
             title: {
                 text: 'Relative Rotation Graph (RRG)',
                 left: 'center',
@@ -337,11 +339,11 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
     }, [data, tailLength, currentDayIndex, isDark]);
 
     if (!mounted) {
-        return <div className="w-full h-[600px] bg-white dark:bg-slate-900 rounded-lg p-4 shadow-lg border border-gray-200 dark:border-slate-800 relative" />;
+        return <div className="h-[520px] w-full rounded-xl bg-white p-2 dark:bg-[#121920] sm:h-[600px] sm:p-4" />;
     }
 
     return (
-        <div className="w-full h-[600px] bg-white dark:bg-slate-900 rounded-lg p-4 shadow-lg border border-gray-200 dark:border-slate-800 relative">
+        <div className="relative h-[520px] w-full rounded-xl bg-white p-2 dark:bg-[#121920] sm:h-[600px] sm:p-4">
             <ReactECharts
                 option={option}
                 style={{ height: '100%', width: '100%' }}
@@ -352,10 +354,10 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
             />
 
             {/* 补充四个象限的文字标识浮层 (绝对定位，避免遮挡 ECharts legend，调整到底部网格上方) */}
-            <div className="absolute top-12 right-10 text-emerald-500/50 font-bold uppercase pointer-events-none tracking-widest text-lg z-0">Leading</div>
-            <div className="absolute bottom-20 right-10 text-yellow-500/50 font-bold uppercase pointer-events-none tracking-widest text-lg z-0">Weakening</div>
-            <div className="absolute bottom-20 left-10 text-red-500/50 font-bold uppercase pointer-events-none tracking-widest text-lg z-0">Lagging</div>
-            <div className="absolute top-12 left-10 text-blue-500/50 font-bold uppercase pointer-events-none tracking-widest text-lg z-0">Improving</div>
+            <div className="pointer-events-none absolute right-5 top-12 z-0 text-xs font-bold uppercase tracking-widest text-emerald-500/50 sm:right-10 sm:text-lg">Leading</div>
+            <div className="pointer-events-none absolute bottom-28 right-5 z-0 text-xs font-bold uppercase tracking-widest text-yellow-500/50 sm:bottom-24 sm:right-10 sm:text-lg">Weakening</div>
+            <div className="pointer-events-none absolute bottom-28 left-5 z-0 text-xs font-bold uppercase tracking-widest text-red-500/50 sm:bottom-24 sm:left-10 sm:text-lg">Lagging</div>
+            <div className="pointer-events-none absolute left-5 top-12 z-0 text-xs font-bold uppercase tracking-widest text-blue-500/50 sm:left-10 sm:text-lg">Improving</div>
         </div>
     );
 }

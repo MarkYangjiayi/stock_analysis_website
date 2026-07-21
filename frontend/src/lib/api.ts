@@ -1,31 +1,83 @@
-import axios from 'axios';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+export class ApiError extends Error {
+    status: number;
+    detail?: string;
+
+    constructor(message: string, status: number, detail?: string) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+        this.detail = detail;
+    }
+}
+
+const parseError = async (response: Response) => {
+    const payload = await response.json().catch(() => ({})) as { detail?: string; message?: string };
+    return payload.detail || payload.message || `Request failed with status ${response.status}`;
+};
+
+export async function apiRequest<T>(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = 30_000,
+): Promise<T> {
+    const controller = new AbortController();
+    if (init.signal?.aborted) controller.abort();
+    let timedOut = false;
+    const timeout = globalThis.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, timeoutMs);
+    const onAbort = () => controller.abort();
+    init.signal?.addEventListener("abort", onAbort, { once: true });
+
+    try {
+        const headers = new Headers(init.headers);
+        if (!headers.has("Accept")) headers.set("Accept", "application/json");
+        const response = await fetch(`${API_BASE_URL}${path}`, {
+            ...init,
+            headers,
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            const message = await parseError(response);
+            throw new ApiError(message, response.status, message);
+        }
+        return response.json() as Promise<T>;
+    } catch (error) {
+        if (timedOut) throw new ApiError(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`, 408);
+        throw error;
+    } finally {
+        globalThis.clearTimeout(timeout);
+        init.signal?.removeEventListener("abort", onAbort);
+    }
+}
 
 export interface StockProfile {
     ticker: string;
-    name: string;
-    exchange: string;
-    sector: string;
-    industry: string;
-    description: string;
-    currency: string;
-    last_updated: string;
+    name: string | null;
+    exchange: string | null;
+    sector: string | null;
+    industry: string | null;
+    description: string | null;
+    currency: string | null;
+    last_updated: string | null;
 }
 
 export interface HistoricalDataPoint {
     date: string;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
-    MA20?: number;
-    MA50?: number;
-    RSI?: number;
-    MACD?: number;
-    MACD_Signal?: number;
-    MACD_Hist?: number;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    close: number | null;
+    volume: number | null;
+    MA20?: number | null;
+    MA50?: number | null;
+    RSI?: number | null;
+    MACD?: number | null;
+    MACD_Signal?: number | null;
+    MACD_Hist?: number | null;
 }
 
 export interface ValuationMetrics {
@@ -52,13 +104,6 @@ export interface ValuationMetrics {
             perpetual_growth: number;
         };
     };
-    factor_scores: {
-        value: number;
-        quality: number;
-        growth: number;
-        health: number;
-        momentum: number;
-    };
 }
 
 export interface HistoricalFinancialPoint {
@@ -66,47 +111,43 @@ export interface HistoricalFinancialPoint {
     revenue: number;
     net_income: number;
     gross_margin: number;
-    price?: number;
+    price?: number | null;
 }
 
 export interface StockDataResponse {
     profile: StockProfile;
     historical_data: HistoricalDataPoint[];
-    historical_financials?: HistoricalFinancialPoint[];
-    valuation_metrics?: ValuationMetrics;
+    historical_financials: HistoricalFinancialPoint[];
+    valuation_metrics?: ValuationMetrics | null;
 }
 
-export const fetchStockData = async (ticker: string, interval: string = '1d', financialPeriod: string = 'Yearly'): Promise<StockDataResponse> => {
-    const response = await axios.get(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}?interval=${interval}&financial_period=${financialPeriod}`);
-    return response.data;
-};
-
-export interface AIReportResponse {
-    report: string;
+export interface PublishedFactorValue {
+    raw_value: number | null;
+    normalized_value: number | null;
+    details?: Record<string, unknown> | null;
 }
 
-export const fetchAIReport = async (ticker: string): Promise<AIReportResponse> => {
-    const response = await axios.get(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/report`);
-    return response.data;
-};
-
-export interface BatchFactorScore {
+export interface PublishedFactorSnapshot {
     ticker: string;
-    factor_scores: {
-        value: number;
-        quality: number;
-        growth: number;
-        health: number;
-        momentum: number;
+    as_of_date: string;
+    published_at: string;
+    version: string;
+    factors: Record<string, PublishedFactorValue>;
+}
+
+export interface QuantCoverage {
+    publications: Record<string, {
+        as_of_date: string;
+        published_at: string;
+    }>;
+    factors: {
+        min_date: string | null;
+        max_date: string | null;
+        date_count: number;
+        ticker_count: number;
+        names: string[];
     };
 }
-
-export const fetchBatchFactors = async (tickers: string[]): Promise<BatchFactorScore[]> => {
-    const response = await axios.post(`${API_BASE_URL}/api/stocks/batch-factors`, {
-        tickers
-    });
-    return response.data;
-};
 
 export interface NewsItem {
     title: string;
@@ -115,11 +156,6 @@ export interface NewsItem {
     summary: string;
     publisher: string;
 }
-
-export const fetchStockNews = async (ticker: string): Promise<NewsItem[]> => {
-    const response = await axios.get(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/news`);
-    return response.data;
-};
 
 export interface AnomalyReport {
     ticker: string;
@@ -130,7 +166,142 @@ export interface AnomalyReport {
     top_news_links: string[];
 }
 
-export const fetchMarketAnomalies = async (signal?: AbortSignal): Promise<AnomalyReport[]> => {
-    const response = await axios.get(`${API_BASE_URL}/api/market/anomalies`, { signal });
-    return response.data;
-};
+export interface ScreenerPayload {
+    limit: number;
+    offset: number;
+    sort_by: string;
+    sort_desc: boolean;
+    as_of_date?: string;
+    sector?: string;
+    market_cap_min?: number;
+    market_cap_max?: number;
+    pe_min?: number;
+    pe_max?: number;
+    rsi_14_min?: number;
+    rsi_14_max?: number;
+    price_above_ma50?: boolean;
+    price_below_ma50?: boolean;
+    roe_min?: number;
+    debt_to_equity_max?: number;
+    fcf_min?: number;
+    gross_margin_min?: number;
+    sales_growth_5yr_min?: number;
+}
+
+export interface ScreenerResult {
+    ticker: string;
+    name?: string | null;
+    sector?: string | null;
+    industry?: string | null;
+    market_cap?: number | null;
+    close?: number | null;
+    pe_ratio?: number | null;
+    roe?: number | null;
+    debt_to_equity?: number | null;
+    gross_margin?: number | null;
+    sales_growth_5yr?: number | null;
+    rsi_14?: number | null;
+    date?: string;
+    [key: string]: unknown;
+}
+
+export interface ScreenerResponse {
+    total: number;
+    items: ScreenerResult[];
+    limit: number;
+    offset: number;
+    as_of_date: string | null;
+}
+
+export interface FactorResearchResult {
+    observations: number;
+    dates: number;
+    mean_rank_ic: number;
+    ic_information_ratio: number;
+    positive_ic_rate: number;
+    long_short_spread: number;
+    monotonicity: number;
+    top_quantile_turnover: number;
+    quantile_returns: Record<string, number>;
+}
+
+export interface BacktestSummary {
+    id: number;
+    status: string;
+    metrics: Record<string, number>;
+    diagnostics: Record<string, unknown>;
+}
+
+export interface EquityCurvePoint {
+    date: string;
+    equity: number;
+    daily_return: number;
+}
+
+export interface BacktestDetails extends BacktestSummary {
+    name: string;
+    config: Record<string, unknown>;
+    equity_curve: EquityCurvePoint[];
+    attribution: {
+        sector_return_contribution?: Record<string, number>;
+        [key: string]: unknown;
+    };
+}
+
+export const fetchStockData = (
+    ticker: string,
+    interval = "1d",
+    financialPeriod = "Yearly",
+    signal?: AbortSignal,
+) => apiRequest<StockDataResponse>(
+    `/api/stocks/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}&financial_period=${encodeURIComponent(financialPeriod)}`,
+    { signal },
+    90_000,
+);
+
+export const fetchLatestTickerFactors = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<PublishedFactorSnapshot>(`/api/quant/factors/${encodeURIComponent(ticker)}/latest`, { signal });
+
+export const fetchQuantCoverage = (signal?: AbortSignal) =>
+    apiRequest<QuantCoverage>("/api/quant/coverage", { signal });
+
+export const fetchStockNews = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<NewsItem[]>(`/api/stocks/${encodeURIComponent(ticker)}/news`, { signal });
+
+export const fetchMarketAnomalies = (signal?: AbortSignal) =>
+    apiRequest<AnomalyReport[]>("/api/market/anomalies", { signal }, 180_000);
+
+export const fetchScreener = (payload: ScreenerPayload, signal?: AbortSignal) =>
+    apiRequest<ScreenerResponse>("/api/stocks/screener", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal,
+    });
+
+export const runFactorResearch = (
+    payload: Record<string, unknown>,
+    signal?: AbortSignal,
+) => apiRequest<FactorResearchResult>("/api/quant/research", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+}, 120_000);
+
+export const createBacktest = (
+    payload: Record<string, unknown>,
+    adminKey: string,
+    signal?: AbortSignal,
+) => apiRequest<BacktestSummary>("/api/quant/backtests", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": adminKey,
+    },
+    body: JSON.stringify(payload),
+    signal,
+}, 180_000);
+
+export const fetchBacktest = (runId: number, signal?: AbortSignal) =>
+    apiRequest<BacktestDetails>(`/api/quant/backtests/${runId}`, { signal });
