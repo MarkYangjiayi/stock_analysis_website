@@ -46,7 +46,7 @@ export default function RealRRGWidget() {
 
                 // 拼接真实的 FastAPI 端点进行请求
                 // 改为 11 大行业板块 ETF 代码，请求一整年 (252个交易日) 的大规模数据
-                const endpoint = `${API_BASE_URL}/api/v1/rrg?tickers=XLK.US,XLF.US,XLV.US,XLY.US,XLP.US,XLE.US,XLI.US,XLB.US,XLU.US,XLRE.US,XLC.US&benchmark=SPY&history_days=252`;
+                const endpoint = `${API_BASE_URL}/api/v1/rrg?tickers=XLK.US,XLF.US,XLV.US,XLY.US,XLP.US,XLE.US,XLI.US,XLB.US,XLU.US,XLRE.US,XLC.US&benchmark=SPY.US&history_days=252`;
 
                 const response = await fetch(endpoint);
 
@@ -66,9 +66,9 @@ export default function RealRRGWidget() {
                     setCurrentDayIndex(dates.length - 1);
                 }
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Failed to fetch RRG data:", err);
-                setError(err.message || "Unknown error occurred while fetching data.");
+                setError(err instanceof Error ? err.message : "Unknown error occurred while fetching data.");
             } finally {
                 setLoading(false);
             }
@@ -196,7 +196,7 @@ export default function RealRRGWidget() {
                 {!loading && !error && (
                     <div className="p-6 bg-white dark:bg-[#191D26] rounded-2xl border border-gray-200 dark:border-gray-800 text-slate-600 dark:text-gray-400 text-sm leading-relaxed shadow-lg dark:shadow-xl transition-colors duration-300">
                         <p className="mb-2"><strong className="text-slate-900 dark:text-gray-200">Data Source:</strong> Fast API Quant Backend • Sector ETFs loaded from EODHD.</p>
-                        <p><strong className="text-slate-900 dark:text-gray-200">Benchmark:</strong> SPY • Track double EMA trajectory offsets.</p>
+                        <p><strong className="text-slate-900 dark:text-gray-200">Benchmark:</strong> SPY.US • Track double EMA trajectory offsets.</p>
                     </div>
                 )}
             </div>

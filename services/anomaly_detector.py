@@ -2,7 +2,6 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from models import StockScreenerSnapshot, Ticker
-import asyncio
 from typing import List, Dict, Any
 
 from services.news_fetcher import fetch_yahoo_news
@@ -94,7 +93,7 @@ async def scan_and_analyze_anomalies(db: AsyncSession, limit_count: int = 5):
             logger.info(f"Anomaly detected: {ticker} changed by {price_change_rounded}%")
             
             # Fetch News
-            news_items = await asyncio.to_thread(fetch_yahoo_news, ticker)
+            news_items = await fetch_yahoo_news(ticker)
             
             top_news_links = [item['link'] for item in news_items[:3]]
             

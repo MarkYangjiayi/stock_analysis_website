@@ -11,7 +11,7 @@ from services.notifications import NotificationManager
 logger = logging.getLogger(__name__)
 
 # Sliding window to store prices: { "AAPL": deque(maxlen=60) }
-price_window = collections.defaultdict(lambda: collections.deque(maxlen=60))
+price_window = collections.defaultdict(collections.deque)
 
 # Cooldown cache to track last alert time: { "AAPL": 1700000000.0 }
 cooldown_cache = {}
@@ -28,7 +28,11 @@ class WSMonitor:
                 logger.info("Connected to EODHD WebSocket.")
                 subscribe_msg = {
                     "action": "subscribe",
-                    "symbols": "AAPL, NVDA, TSLA, ASTS"
+                    "symbols": ",".join(
+                        symbol.strip().upper()
+                        for symbol in settings.WS_SYMBOLS.split(",")
+                        if symbol.strip()
+                    )
                 }
                 await websocket.send(json.dumps(subscribe_msg))
                 logger.info(f"Subscribed to symbols: {subscribe_msg['symbols']}")
@@ -55,26 +59,31 @@ class WSMonitor:
                 
     async def _process_tick(self, ticker: str, new_price: float):
         """Detects anomalies using a sliding window approach."""
+        if new_price <= 0:
+            return
+        current_time = time.time()
         window = price_window[ticker]
-        window.append(new_price)
+        window.append((current_time, new_price))
+        cutoff = current_time - settings.WS_WINDOW_SECONDS
+        while window and window[0][0] < cutoff:
+            window.popleft()
         
         # We need at least 2 data points to calculate change
         if len(window) < 2:
             return
             
-        old_price = window[0]  # Oldest price in the window
+        old_price = window[0][1]  # Oldest price in the time window
         if old_price == 0:
             return
             
         change_pct = (new_price - old_price) / old_price
         
         # Check if absolute change >= 1.5%
-        if abs(change_pct) >= 0.015:
-            current_time = time.time()
+        if abs(change_pct) >= settings.WS_ALERT_THRESHOLD:
             last_alert_time = cooldown_cache.get(ticker, 0)
             
             # Cooldown is 15 minutes (900 seconds)
-            if current_time - last_alert_time < 900:
+            if current_time - last_alert_time < settings.WS_COOLDOWN_SECONDS:
                 return  # Skip, in cooldown
                 
             # Trigger alert
@@ -91,11 +100,14 @@ class WSMonitor:
     async def start(self):
         """Main loop that keeps the WebSocket connection alive."""
         logger.info("Starting WebSocket Monitor daemon...")
+        reconnect_delay = 1
         while True:
             try:
                 await self.connect()
+                reconnect_delay = 1
             except Exception as e:
-                logger.error(f"WebSocket disconnected. Reconnecting in 5 seconds... Error: {e}")
-                await asyncio.sleep(5)
+                logger.error("WebSocket disconnected. Reconnecting in %s seconds: %s", reconnect_delay, e)
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, 60)
 
 ws_monitor = WSMonitor()

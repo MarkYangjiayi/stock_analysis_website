@@ -26,6 +26,13 @@ const formatCompact = (num: number) => {
 
 type OverlayMode = 'all' | 'revenue_price' | 'net_income_price' | 'margin_price';
 
+interface TooltipSeriesParam {
+    axisValue: string;
+    value: number | string | null | undefined;
+    seriesName: string;
+    marker: string;
+}
+
 const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData, currentPrice, timePeriod, onTimePeriodChange }) => {
     const { resolvedTheme } = useTheme();
     const [overlayMode, setOverlayMode] = useState<OverlayMode>('all');
@@ -152,8 +159,8 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
         };
 
         let activeLegend: string[] = [];
-        let yAxisConfig: any[] = [];
-        let seriesConfig: any[] = [];
+        let yAxisConfig: Array<Record<string, unknown>> = [];
+        let seriesConfig: Array<Record<string, unknown>> = [];
 
         switch (overlayMode) {
             case 'revenue_price':
@@ -189,18 +196,19 @@ const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData
                 borderColor: tooltipBorder,
                 textStyle: { color: tooltipText },
                 axisPointer: { type: 'cross', crossStyle: { color: '#6b7280' } },
-                formatter: (params: any) => {
+                formatter: (params: TooltipSeriesParam[]) => {
+                    if (!params.length) return '';
                     let tooltipHtml = `<div class="font-bold mb-1 border-b border-gray-200 dark:border-gray-700 pb-1">${params[0].axisValue}</div>`;
-                    params.forEach((param: any) => {
+                    params.forEach((param) => {
                         // Skip undefined prices
                         if (param.value === undefined || param.value === null) return;
 
-                        let valueStr = param.seriesName === 'Gross Margin'
+                        const valueStr = param.seriesName === 'Gross Margin'
                             ? `${param.value}%`
                             : param.seriesName === 'Stock Price'
                                 ? `$${Number(param.value).toFixed(2)}`
-                                : `$${formatCompact(param.value)}`;
-                        let marker = param.marker;
+                                : `$${formatCompact(Number(param.value))}`;
+                        const marker = param.marker;
                         tooltipHtml += `<div class="flex justify-between gap-6 text-sm mt-2">
                             <span class="flex items-center">${marker} ${param.seriesName}</span>
                             <span class="font-bold font-mono pl-4">${valueStr}</span>

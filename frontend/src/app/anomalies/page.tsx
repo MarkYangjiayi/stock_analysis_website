@@ -34,7 +34,7 @@ export default function AnomaliesPage() {
 
                 if (isMounted) setLoading(true);
 
-                const rawData = await fetchMarketAnomalies();
+                const rawData = await fetchMarketAnomalies(controller.signal);
                 if (isMounted) {
                     setAnomaliesData(rawData);
                     setError("");

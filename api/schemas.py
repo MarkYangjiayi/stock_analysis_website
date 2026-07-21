@@ -1,4 +1,4 @@
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from datetime import date
 
@@ -75,3 +75,35 @@ class StockDataResponse(BaseModel):
     historical_data: List[HistoricalDataPointModel]
     historical_financials: List[HistoricalFinancialPointModel]
     valuation_metrics: Optional[ValuationMetricsModel] = None
+
+
+class FactorComputeRequest(BaseModel):
+    as_of_date: date
+
+
+class FactorResearchRequest(BaseModel):
+    start_date: date
+    end_date: date
+    factor_name: str = "composite"
+    factor_version: str = "lfq-v1"
+    horizon_days: int = Field(21, ge=1, le=252)
+    quantiles: int = Field(5, ge=2, le=10)
+
+
+class BacktestRequest(BaseModel):
+    name: str = "Low Frequency Multi-Factor"
+    start_date: date
+    end_date: date
+    factor_name: str = "composite"
+    factor_version: str = "lfq-v1"
+    universe: str = "SP500_RUSSELL2000"
+    benchmark: str = "SPY.US"
+    rebalance_frequency: Literal["weekly", "monthly", "all"] = "monthly"
+    signal_lag_days: int = Field(1, ge=1, le=10)
+    top_n: int = Field(30, ge=2, le=500)
+    max_position_weight: float = Field(0.05, gt=0, le=1)
+    max_sector_weight: float = Field(0.30, gt=0, le=1)
+    transaction_cost_bps: float = Field(5.0, ge=0, le=500)
+    slippage_bps: float = Field(5.0, ge=0, le=500)
+    require_point_in_time_universe: bool = True
+    missing_price_policy: Literal["fail", "liquidate_last"] = "fail"

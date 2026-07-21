@@ -20,10 +20,37 @@ services:
       - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com
     depends_on:
       - warp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    image: quantify-backend:latest
+    command: ["python", "worker.py"]
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - HTTP_PROXY=socks5h://warp:9091
+      - HTTPS_PROXY=socks5h://warp:9091
+      - ALL_PROXY=socks5h://warp:9091
+      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com
+    depends_on:
+      backend:
+        condition: service_healthy
+      warp:
+        condition: service_started
+    restart: unless-stopped
 
   frontend:
     image: quantify-frontend:latest
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://img.shields.io/badge/Python-3.9-blue?style=flat-square&logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/Next.js-16+-black?style=flat-square&logo=next.js" alt="Next.js">
   <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite" alt="SQLite">
@@ -7,6 +7,8 @@
 </div>
 
 # QuantDashboard - 现代全栈量化投资终端
+
+> **v2:** The system now separates API and worker lifecycles, preserves point-in-time fundamentals/universe history and corporate actions, quality-gates every publication, and includes a versioned factor lab plus cost-aware backtesting. See [the current architecture](docs/architecture.md).
 
 **QuantDashboard** 是一款专为个人投资者与极客打造的全栈式股票量化分析与投研平台。基于现代前后端分离架构搭建，它深度融合了数据同步抓取、基本面多因子量化评估、实时技术指标测算以及由最新 Google Gemini 大模型驱动的 AI 智能研报引擎。
 
@@ -36,13 +38,13 @@
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
     构建了企业级高可用推送路由，完美支持**飞书 (Lark) 富文本卡片**穿透。
     *   **Scheduled Daily Reporter**: 依托 `APScheduler` 时钟锁死美东时区，在每个工作日开盘与收盘后，自动唤醒 AI 撰写大盘异动速递并投递至群聊。
-    *   **Real-time WebSocket Monitor**: FastAPI 在后台挂载了永久存活的盯盘精灵 Daemon。直接接入毫秒级 WebSocket 行情流，基于内存级队列维护股票滑动窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）的短线异动实时预警并防重复滋扰（冷却池）**。
+    *   **Real-time WebSocket Monitor**: 独立 Worker 可选挂载盯盘 Daemon，避免多 Uvicorn worker 重复调度。直接接入 WebSocket 行情流，基于滑动时间窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）与告警冷却**。
 ---
 
 ## 🛠 技术栈概览 (Tech Stack)
 
 ### Backend (Data & Core Analysis)
-*   **Language**: Python 3.9+
+*   **Language**: Python 3.12+
 *   **Web Framework**: FastAPI (高性能异步通信)
 *   **ORM / DB Driver**: SQLAlchemy 2.0 (Async Engine), `aiosqlite`
 *   **Database**: SQLite (WAL 模式并发优化)
@@ -89,7 +91,7 @@ stock_analysis_website/
 
 ### 环境前置要求
 *   已安装 Node.js (v18+) & NPM / Yarn
-*   已安装 Python 3.9 或更高版本
+*   已安装 Python 3.12 或更高版本
 *   *(无需安装任何外部数据库，系统内置了对 SQLite 的全自动化支持)*
 
 ### 1. 克隆项目
@@ -129,9 +131,26 @@ source venv/bin/activate  # Windows 用户: venv\Scripts\activate
 pip install -r requirements.txt
 
 # 使用 Uvicorn 唤起异步雷达网络 (端口常驻 8000)
+alembic upgrade head
+python scripts/migrate_legacy_data.py  # 旧库升级时执行一次，可重复运行
 uvicorn main:app --reload
 ```
 访问 `http://127.0.0.1:8000/docs` 即可查阅/调试全自动生成的 Swagger 互交式 API 文档。
+
+另开一个终端启动唯一的后台 Worker：
+
+```bash
+source venv/bin/activate
+python worker.py
+```
+
+首次建立可信数据集时运行：
+
+```bash
+python scripts/cold_start_init.py
+```
+
+该命令会回填 252 个交易日、拆股和分红，完成质量验证后才发布 Screener 与首个因子截面。
 
 ### 4. 启动前端容器 (Next.js)
 

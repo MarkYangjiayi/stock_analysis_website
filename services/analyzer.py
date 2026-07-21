@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Optional, Dict, Any
 
@@ -7,7 +6,7 @@ import pandas_ta_classic as ta
 from sqlalchemy import select, asc, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Ticker, DailyPrice, FinancialStatement, StockScreenerSnapshot
+from models import DataPublication, Ticker, DailyPrice, FinancialStatement, StockScreenerSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +296,7 @@ def calculate_ttm(flow_records: list[FinancialStatement], latest_bs_record: Opti
             rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
             gp = _safe_float(inc_stmt.get('grossProfit', 0))
             cogs = rev - gp
-            logger.info(f"[TTM COGS Debug] Quarter Date: {rec.fiscal_date}, Raw COGS Derived: {cogs}, Raw GP: {gp}, Raw Rev: {rev}")
+            logger.debug(f"[TTM COGS Debug] Quarter Date: {rec.fiscal_date}, Raw COGS Derived: {cogs}, Raw GP: {gp}, Raw Rev: {rev}")
             
             ttm_revenue += rev
             ttm_gross_profit += gp
@@ -368,7 +367,7 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         ttm_data = calculate_ttm([], latest_rec)
     else:
         for i, r in enumerate(records_q):
-            logger.info(f"[TTM Debug] {ticker} - Using Quarterly record {i+1}/4: {r.fiscal_date}")
+            logger.debug(f"[TTM Debug] {ticker} - Using Quarterly record {i+1}/4: {r.fiscal_date}")
         ttm_data = calculate_ttm(records_q, latest_rec)
     
     ttm_revenue = ttm_data['ttm_revenue']
@@ -618,19 +617,41 @@ async def batch_get_factor_scores(tickers: list[str], db: AsyncSession) -> list[
             }
         }
 
-    tasks = [fetch_score(ticker) for ticker in tickers]
-    results = await asyncio.gather(*tasks)
-    return list(results)
+    # AsyncSession is stateful and must not be shared by concurrent tasks.
+    return [await fetch_score(ticker) for ticker in tickers]
 
 async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
     """
     Dynamically filters the `StockScreenerSnapshot` table based on a variety of parameters.
     Supports min/max conditions, exact match for sector/industry, sorting, and pagination.
     """
+    requested_date = request_data.get("as_of_date")
+    if requested_date:
+        try:
+            selected_date = pd.Timestamp(requested_date).date()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("as_of_date must use YYYY-MM-DD format") from exc
+    else:
+        publication_result = await db.execute(
+            select(DataPublication.as_of_date)
+            .where(DataPublication.dataset == "screener", DataPublication.status == "published")
+            .order_by(DataPublication.as_of_date.desc())
+            .limit(1)
+        )
+        selected_date = publication_result.scalar_one_or_none()
+        if selected_date is None:
+            # Backward-compatible fallback for databases created before publication tracking.
+            date_result = await db.execute(select(func.max(StockScreenerSnapshot.date)))
+            selected_date = date_result.scalar_one_or_none()
+
+    limit = request_data.get("limit", 50)
+    offset = request_data.get("offset", 0)
+    if selected_date is None:
+        return {"total": 0, "items": [], "limit": limit, "offset": offset, "as_of_date": None}
+
     stmt = select(StockScreenerSnapshot)
     count_stmt = select(func.count(StockScreenerSnapshot.id))
-    
-    conditions = []
+    conditions = [StockScreenerSnapshot.date == selected_date]
     
     if request_data.get("market_cap_min") is not None:
         conditions.append(StockScreenerSnapshot.market_cap >= request_data["market_cap_min"])
@@ -711,9 +732,6 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
         stmt = stmt.order_by(asc(sort_column).nulls_last())
         
     # pagination
-    limit = request_data.get("limit", 50)
-    offset = request_data.get("offset", 0)
-    
     stmt = stmt.limit(limit).offset(offset)
     
     # execute
@@ -731,8 +749,7 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
     tickers_to_fetch = [r.ticker for r in records if r.market_cap is None or r.pe_ratio is None]
     valuation_map = {}
     if tickers_to_fetch:
-        val_tasks = [fetch_valuation_for_missing(t) for t in tickers_to_fetch]
-        val_results = await asyncio.gather(*val_tasks)
+        val_results = [await fetch_valuation_for_missing(t) for t in tickers_to_fetch]
         for t, val in val_results:
             valuation_map[t] = val
 
@@ -785,7 +802,8 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
         "total": total_count,
         "items": items,
         "limit": limit,
-        "offset": offset
+        "offset": offset,
+        "as_of_date": selected_date.isoformat(),
     }
 
 def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: int = 14) -> list[dict]:
@@ -846,7 +864,7 @@ def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: i
 async def get_rrg_data_for_tickers(
     tickers: list[str],
     db_session: AsyncSession,
-    benchmark: str = 'SPY',
+    benchmark: str = 'SPY.US',
     history_days: int = 252
 ) -> dict:
     """
@@ -927,5 +945,3 @@ async def get_rrg_data_for_tickers(
         "update_time": current_time,
         "data": rrg_data
     }
-
-

@@ -65,7 +65,7 @@ export const useAppStore = create<ScreenerState & AnomaliesState>((set) => ({
     },
     results: [],
     totalCount: 0,
-    page: 1,
+    page: 0,
     setScreenerState: (partial) => set((state) => ({ ...state, ...partial })),
 
     // Anomalies Initial State

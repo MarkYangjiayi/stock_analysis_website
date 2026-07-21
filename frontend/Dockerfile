@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy frontend code
 COPY . .
@@ -19,6 +19,9 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Build the Next.js app
 RUN npm run build
+
+RUN chown -R node:node /app
+USER node
 
 # Expose port
 EXPOSE 3000
