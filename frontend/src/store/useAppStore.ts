@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AnomalyReport } from '@/lib/api';
+import { AnomalyReport, ScreenerResult } from '@/lib/api';
 
 // --- Screener Types ---
 export interface ScreenerFilters {
@@ -17,25 +17,12 @@ export interface ScreenerFilters {
     sort_desc: string;
 }
 
-export interface ScreenerResult {
-    ticker: string;
-    name?: string;
-    sector?: string;
-    market_cap?: number;
-    close?: number;
-    pe_ratio?: number;
-    roe?: number;
-    debt_to_equity?: number;
-    gross_margin?: number;
-    sales_growth_5yr?: number;
-    [key: string]: unknown; // Allow other properties
-}
-
 export interface ScreenerState {
     filters: ScreenerFilters;
     results: ScreenerResult[];
     totalCount: number;
     page: number;
+    asOfDate: string | null;
     setScreenerState: (partial: Partial<Omit<ScreenerState, 'setScreenerState'>>) => void;
 }
 
@@ -46,26 +33,29 @@ export interface AnomaliesState {
     setAnomaliesData: (data: AnomalyReport[]) => void;
 }
 
+export const DEFAULT_SCREENER_FILTERS: ScreenerFilters = {
+    sector: '',
+    market_cap: '',
+    pe: '',
+    rsi: '',
+    price_ma50: '',
+    roe: '',
+    debt_to_equity: '',
+    fcf: '',
+    gross_margin: '',
+    sales_growth_5yr: '',
+    sort_by: 'market_cap',
+    sort_desc: 'desc',
+};
+
 // --- Combined Store ---
 export const useAppStore = create<ScreenerState & AnomaliesState>((set) => ({
     // Screener Initial State
-    filters: {
-        sector: '',
-        market_cap: '',
-        pe: '',
-        rsi: '',
-        price_ma50: '',
-        roe: '',
-        debt_to_equity: '',
-        fcf: '',
-        gross_margin: '',
-        sales_growth_5yr: '',
-        sort_by: 'market_cap',
-        sort_desc: 'desc',
-    },
+    filters: DEFAULT_SCREENER_FILTERS,
     results: [],
     totalCount: 0,
     page: 0,
+    asOfDate: null,
     setScreenerState: (partial) => set((state) => ({ ...state, ...partial })),
 
     // Anomalies Initial State

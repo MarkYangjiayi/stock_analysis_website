@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
     """
-    Generates a concise markdown investment report using Gemini 1.5 Flash.
+    Generates a concise markdown investment report from the current published snapshot.
     Initializes the client PER REQUEST to ensure concurrency safety and config isolation.
     """
     api_key = settings.GEMINI_API_KEY
@@ -22,8 +22,13 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         client = genai.Client(api_key=api_key)
         
         profile = analysis_data.get('profile', {})
-        valuation = analysis_data.get('valuation_metrics', {})
-        factors = valuation.get('factor_scores', {})
+        valuation = analysis_data.get('valuation_metrics') or {}
+        factor_snapshot = analysis_data.get('published_factor_snapshot') or {}
+        factors = factor_snapshot.get('factors') or {}
+
+        def factor_z(name: str):
+            value = (factors.get(name) or {}).get('normalized_value')
+            return 'N/A' if value is None else f"{float(value):+.2f}"
         
         company_name = profile.get('name') or ticker
         industry = profile.get('industry') or 'Unknown'
@@ -45,12 +50,14 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         - 自由现金流 (FCF): ${ttm.get('free_cash_flow', 'N/A')}
         - 净资产收益率 (ROE): {ttm.get('roe', 0) * 100:.2f}%
         
-        【多因子得分 (0-100)】
-        - 价值 (Value): {factors.get('value', 'N/A')}
-        - 质量 (Quality): {factors.get('quality', 'N/A')}
-        - 成长 (Growth): {factors.get('growth', 'N/A')}
-        - 健康 (Health): {factors.get('health', 'N/A')}
-        - 动量 (Momentum): {factors.get('momentum', 'N/A')}
+        【已发布多因子横截面 Z 分数】
+        - 版本与日期: {factor_snapshot.get('version', 'N/A')} / {factor_snapshot.get('as_of_date', 'N/A')}
+        - 综合 (Composite): {factor_z('composite')}
+        - 价值 (Value): {factor_z('value')}
+        - 质量 (Quality): {factor_z('quality')}
+        - 成长 (Growth): {factor_z('growth')}
+        - 动量 (Momentum): {factor_z('momentum')}
+        - 低波动 (Low Volatility): {factor_z('low_volatility')}
         
         【要求】
         1. 使用 Markdown 格式排版。
@@ -58,7 +65,7 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         3. 必须包含以下四个标准模块：
            - **核心观点**: 一段话总结该股目前的投资吸引力。
            - **估值诊断**: 结合 DCF 和安全边际，评判当前股价是否被低估或高估。
-           - **因子解读**: 挑出得分最高和最低的因子进行专业点评，无需罗列所有分数。
+           - **因子解读**: 仅基于已发布 Z 分数，挑出最高和最低的因子进行专业点评；0 代表横截面平均水平。若因子数据不可用，必须明确说明，不能自行推断。
            - **潜在风险**: 基于行业或低分因子，指出可能面临的风险。
         4. 语气专业、客观，避免强烈的买卖推荐。
         """
@@ -78,7 +85,7 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
 
 async def generate_anomaly_attribution(ticker: str, price_change: float, news_list: list) -> str:
     """
-    Generates a concise attribution report for a stock price anomaly using Gemini 1.5 Flash.
+    Generates a concise attribution report for a stock price anomaly.
     Initializes the client PER REQUEST to ensure concurrency safety.
     """
     api_key = settings.GEMINI_API_KEY

@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, TrendingUp, ArrowUpDown, CloudOff } from 'lucide-react';
-import { fetchBatchFactors, BatchFactorScore } from '@/lib/api';
+import { useState } from "react";
+import { Plus, Star, Trash2 } from "lucide-react";
 
 interface WatchlistSidebarProps {
     currentTicker: string;
@@ -10,209 +9,65 @@ interface WatchlistSidebarProps {
     watchlist: string[];
     onAdd: (ticker: string) => void;
     onRemove: (ticker: string) => void;
+    compact?: boolean;
 }
 
-const WatchlistSidebar: React.FC<WatchlistSidebarProps> = ({ currentTicker, onSelectTicker, watchlist, onAdd, onRemove }) => {
-    const [newTicker, setNewTicker] = useState('');
-    const [mounted, setMounted] = useState(false);
+export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchlist, onAdd, onRemove, compact = false }: WatchlistSidebarProps) {
+    const [newTicker, setNewTicker] = useState("");
 
-    type SortDimension = 'Default' | 'value' | 'quality' | 'growth' | 'health' | 'momentum';
-    const [sortBy, setSortBy] = useState<SortDimension>('Default');
-    const [factorScores, setFactorScores] = useState<Record<string, BatchFactorScore>>({});
-    const [loadingScores, setLoadingScores] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
-
-    // Effect to fetch scores whenever watchlist array changes
-    useEffect(() => {
-        if (!watchlist || watchlist.length === 0) {
-            setFactorScores({});
-            return;
-        }
-
-        const loadScores = async () => {
-            setLoadingScores(true);
-            try {
-                const results = await fetchBatchFactors(watchlist);
-                const scoresMap: Record<string, BatchFactorScore> = {};
-                results.forEach(res => {
-                    scoresMap[res.ticker] = res;
-                });
-                setFactorScores(scoresMap);
-            } catch (err) {
-                console.error("Failed to batch fetch factor scores", err);
-            } finally {
-                setLoadingScores(false);
-            }
-        };
-
-        loadScores();
-    }, [watchlist]);
-
-    const handleAdd = (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleAdd = (event: React.FormEvent) => {
+        event.preventDefault();
         const ticker = newTicker.trim().toUpperCase();
-        if (ticker) {
-            onAdd(ticker);
-            setNewTicker('');
-        }
+        if (!ticker) return;
+        onAdd(ticker);
+        setNewTicker("");
     };
 
-    const handleRemove = (e: React.MouseEvent, tickerToRemove: string) => {
-        e.stopPropagation();
-        onRemove(tickerToRemove);
-    };
-
-    // Compute sorted watchlist
-    const sortedWatchlist = useMemo(() => {
-        if (sortBy === 'Default') return [...watchlist];
-
-        return [...watchlist].sort((a, b) => {
-            const scoreA = factorScores[a]?.factor_scores[sortBy as keyof typeof factorScores[0]['factor_scores']] || 0;
-            const scoreB = factorScores[b]?.factor_scores[sortBy as keyof typeof factorScores[0]['factor_scores']] || 0;
-            return scoreB - scoreA; // Descending
-        });
-    }, [watchlist, factorScores, sortBy]);
-
-    // Helper to get color code for badge
-    const getScoreColor = (score: number) => {
-        if (score === 0) return 'bg-gray-800 text-gray-500 border-gray-700'; // Missing data
-        if (score >= 80) return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-        if (score >= 60) return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
-        if (score >= 40) return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30';
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
-    };
-
-    // Before mounting on client, render a placeholder with same dimensions to avoid hydration mismatch
-    if (!mounted) {
+    if (compact) {
         return (
-            <div className="w-72 bg-white dark:bg-[#151922] border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shrink-0 transition-colors duration-300"></div>
+            <section className="surface-panel p-3 md:hidden" aria-label="Watchlist">
+                <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                    <span className="flex shrink-0 items-center gap-1.5 px-1 text-xs font-black uppercase tracking-wide text-slate-500"><Star size={14} /> Watchlist</span>
+                    {watchlist.map((ticker) => (
+                        <button key={ticker} type="button" onClick={() => onSelectTicker(ticker)} className={`shrink-0 rounded-full border px-3 py-1.5 font-mono text-xs font-bold ${ticker === currentTicker ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
+                            {ticker.replace(".US", "")}
+                        </button>
+                    ))}
+                </div>
+                <form onSubmit={handleAdd} className="mt-1 flex gap-2">
+                    <label className="sr-only" htmlFor="mobile-watchlist-ticker">Add ticker to watchlist</label>
+                    <input id="mobile-watchlist-ticker" className="control-field py-2" value={newTicker} onChange={(event) => setNewTicker(event.target.value)} placeholder="Add ticker" />
+                    <button type="submit" className="primary-button min-h-9 px-3" disabled={!newTicker.trim()} aria-label="Add ticker"><Plus size={16} /></button>
+                </form>
+            </section>
         );
     }
 
     return (
-        <div className="w-72 bg-white dark:bg-[#151922] border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shrink-0 transition-colors duration-300">
-            <div className="p-5 border-b border-gray-200 dark:border-gray-800 relative space-y-4 transition-colors duration-300">
-                <div className="flex items-center gap-3 text-slate-800 dark:text-gray-200 font-extrabold tracking-wide">
-                    <div className="p-2 bg-emerald-100 dark:bg-emerald-500/10 rounded-lg">
-                        <TrendingUp className="text-emerald-600 dark:text-emerald-400" size={18} />
-                    </div>
-                    <h2>Watchlist</h2>
-                </div>
-
-                <form onSubmit={handleAdd} className="flex gap-2">
-                    <input
-                        type="text"
-                        value={newTicker}
-                        onChange={(e) => setNewTicker(e.target.value)}
-                        placeholder="Add ticker..."
-                        className="w-full bg-slate-50 dark:bg-[#1e222d] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 text-sm px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-800 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-sm dark:shadow-inner"
-                    />
-                    <button
-                        type="submit"
-                        disabled={!newTicker.trim()}
-                        className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:hover:bg-emerald-500 text-white p-2.5 rounded-xl transition-all flex items-center justify-center shadow-lg active:scale-95 shrink-0"
-                    >
-                        <Plus size={18} strokeWidth={3} />
-                    </button>
+        <aside className="flex h-full w-64 shrink-0 flex-col border-r bg-white dark:bg-[#10171d]" aria-label="Watchlist">
+            <div className="border-b p-4">
+                <div className="flex items-center gap-2 text-sm font-black"><Star className="text-emerald-500" size={17} /> Watchlist</div>
+                <p className="mt-1 text-xs text-slate-500">Stored on this device</p>
+                <form onSubmit={handleAdd} className="mt-4 flex gap-2">
+                    <label className="sr-only" htmlFor="watchlist-ticker">Add ticker to watchlist</label>
+                    <input id="watchlist-ticker" className="control-field min-w-0 py-2" value={newTicker} onChange={(event) => setNewTicker(event.target.value)} placeholder="Add ticker" />
+                    <button type="submit" className="primary-button min-h-9 px-3" disabled={!newTicker.trim()} aria-label="Add ticker"><Plus size={16} /></button>
                 </form>
-
-                {/* Sort Dropdown */}
-                <div className="flex items-center gap-2 pt-2">
-                    <ArrowUpDown size={14} className="text-slate-400 dark:text-gray-500 shrink-0" />
-                    <select
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as SortDimension)}
-                        className="w-full bg-slate-50 dark:bg-[#1e222d] text-slate-600 dark:text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 focus:outline-none focus:border-emerald-500/50 appearance-none cursor-pointer hover:bg-slate-100 dark:hover:bg-[#252a36] transition-colors"
-                        style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: `right 0.5rem center`, backgroundRepeat: `no-repeat`, backgroundSize: `1.5em 1.5em`, paddingRight: `2rem` }}
-                    >
-                        <option value="Default">Added Order</option>
-                        <option value="value">Value Score</option>
-                        <option value="quality">Quality Score</option>
-                        <option value="growth">Growth Score</option>
-                        <option value="health">Health Score</option>
-                        <option value="momentum">Momentum Score</option>
-                    </select>
-                </div>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 !scrollbar-hide relative">
-                {/* Optional faded overlay when loading scores */}
-                {loadingScores && (
-                    <div className="absolute top-0 right-0 p-2">
-                        <div className="w-3 h-3 bg-emerald-500/50 rounded-full animate-ping"></div>
-                    </div>
-                )}
-
-                {sortedWatchlist.map((ticker) => {
-                    const isSelected = ticker === currentTicker;
-                    const factorObj = factorScores[ticker];
-
-                    let activeScore = null;
-                    let isMissingData = false;
-
-                    if (factorObj) {
-                        const sums = Object.values(factorObj.factor_scores).reduce((a, b) => a + b, 0);
-                        if (sums === 0) {
-                            isMissingData = true;
-                        } else if (sortBy !== 'Default') {
-                            activeScore = factorObj.factor_scores[sortBy as keyof typeof factorObj.factor_scores];
-                        }
-                    } else if (!loadingScores) {
-                        isMissingData = true;
-                    }
-
+            <div className="custom-scrollbar flex-1 space-y-1 overflow-y-auto p-2">
+                {watchlist.map((ticker) => {
+                    const selected = ticker === currentTicker;
                     return (
-                        <div
-                            key={ticker}
-                            onClick={() => onSelectTicker(ticker)}
-                            className={`group flex items-center justify-between px-4 py-3.5 rounded-xl cursor-pointer transition-all duration-200 border-l-4 ${isSelected
-                                ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
-                                : 'border-transparent text-slate-600 dark:text-gray-300 hover:bg-slate-50 dark:hover:bg-[#1e222d] hover:text-slate-900 dark:hover:text-gray-100'
-                                }`}
-                        >
-                            <span className="tracking-wider text-sm whitespace-nowrap overflow-hidden text-ellipsis mr-2">{ticker}</span>
-
-                            <div className="flex items-center gap-2">
-                                {/* Score Badge */}
-                                {isMissingData ? (
-                                    <div className="flex items-center justify-center gap-1 text-[10px] font-mono px-2 py-1 rounded border bg-slate-100 text-slate-400 border-slate-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700 whitespace-nowrap" title="Sync required to view score">
-                                        <CloudOff size={10} /> <span>No Data</span>
-                                    </div>
-                                ) : (
-                                    sortBy !== 'Default' && activeScore !== null && (
-                                        <div className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${getScoreColor(activeScore)}`}>
-                                            {activeScore}
-                                        </div>
-                                    )
-                                )}
-
-                                {/* Delete Button (appears on hover) */}
-                                <button
-                                    onClick={(e) => handleRemove(e, ticker)}
-                                    className={`text-gray-600 hover:text-red-400 hover:bg-red-400/10 transition-all p-1.5 rounded-lg shrink-0 ${isSelected ? 'opacity-100' : 'hidden group-hover:block'
-                                        }`}
-                                    title="Remove from watchlist"
-                                >
-                                    <Trash2 size={15} />
-                                </button>
-                            </div>
+                        <div key={ticker} className={`group flex items-center gap-1 rounded-xl border ${selected ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30" : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60"}`}>
+                            <button type="button" onClick={() => onSelectTicker(ticker)} className={`min-w-0 flex-1 truncate px-3 py-3 text-left font-mono text-xs font-bold ${selected ? "text-emerald-700 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}>
+                                {ticker}
+                            </button>
+                            <button type="button" onClick={() => onRemove(ticker)} className="mr-2 rounded-lg p-1.5 text-slate-400 opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 focus:opacity-100 group-hover:opacity-100 dark:hover:bg-rose-950/30" aria-label={`Remove ${ticker} from watchlist`}><Trash2 size={14} /></button>
                         </div>
                     );
                 })}
-                {watchlist.length === 0 && (
-                    <div className="text-center py-10 flex flex-col items-center justify-center space-y-2 opacity-60">
-                        <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-gray-800/50 flex items-center justify-center mb-2">
-                            <TrendingUp className="text-slate-400 dark:text-gray-600" size={20} />
-                        </div>
-                        <p className="text-slate-500 dark:text-gray-500 text-sm font-medium">Empty Watchlist</p>
-                    </div>
-                )}
+                {watchlist.length === 0 && <p className="px-3 py-12 text-center text-xs leading-5 text-slate-500">Your watchlist is empty.<br />Add a ticker above.</p>}
             </div>
-        </div>
+        </aside>
     );
-};
-
-export default WatchlistSidebar;
+}

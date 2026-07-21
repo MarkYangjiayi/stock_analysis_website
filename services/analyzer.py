@@ -957,6 +957,7 @@ async def get_rrg_data_for_tickers(
         return {
             "benchmark": benchmark_upper,
             "update_time": current_time,
+            "data_as_of_date": None,
             "data": {}
         }
         
@@ -988,8 +989,13 @@ async def get_rrg_data_for_tickers(
             display_name = SECTOR_MAP.get(t_upper, t_upper)
             rrg_data[display_name] = result
             
+    data_as_of_date = max(
+        (point["date"] for series in rrg_data.values() for point in series),
+        default=None,
+    )
     return {
         "benchmark": benchmark_upper,
         "update_time": current_time,
+        "data_as_of_date": data_as_of_date,
         "data": rrg_data
     }

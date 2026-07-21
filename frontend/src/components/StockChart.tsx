@@ -12,6 +12,13 @@ interface StockChartProps {
     isLoading?: boolean;
 }
 
+type ValidCandlePoint = HistoricalDataPoint & {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+};
+
 const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onIntervalChange, isLoading }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
@@ -154,7 +161,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         if (!data || data.length === 0 || !chartRef.current) return;
 
         // Filter out any points that might have null/undefined values for essential properties
-        const validCandleData = data.filter(d =>
+        const validCandleData = data.filter((d): d is ValidCandlePoint =>
             d.open != null && d.high != null && d.low != null && d.close != null
         );
 
@@ -211,7 +218,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             }
 
             const activeDate = param.time as string;
-            const rawData = data.find(d => d.date === activeDate);
+            const rawData = validCandleData.find(d => d.date === activeDate);
 
             if (rawData) {
                 setTooltipData({
@@ -221,9 +228,9 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                     high: rawData.high,
                     low: rawData.low,
                     close: rawData.close,
-                    volume: rawData.volume,
-                    ma20: rawData.MA20,
-                    ma50: rawData.MA50,
+                    volume: rawData.volume ?? 0,
+                    ma20: rawData.MA20 ?? undefined,
+                    ma50: rawData.MA50 ?? undefined,
                     x: param.point.x,
                     y: param.point.y,
                     containerWidth: chartContainerRef.current?.clientWidth || Number.POSITIVE_INFINITY,
@@ -239,18 +246,20 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     }, [data]);
 
     return (
-        <div className="w-full relative shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800">
+        <div className="relative w-full overflow-hidden rounded-xl border bg-white dark:bg-[#121920]">
             {/* Interval Switcher UI */}
             {onIntervalChange && (
-                <div className="absolute top-4 left-4 z-20 flex bg-white dark:bg-[#151922] border border-gray-200 dark:border-gray-700/80 rounded-lg shadow-2xl p-1 gap-1 backdrop-blur-md">
+                <div className="absolute left-3 top-3 z-20 flex gap-1 rounded-lg border bg-white/95 p-1 shadow-sm backdrop-blur-md dark:bg-slate-900/95">
                     {['1d', '1wk', '1mo'].map(intv => (
                         <button
                             key={intv}
+                            type="button"
                             onClick={() => onIntervalChange(intv)}
                             disabled={isLoading}
-                            className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${interval === intv
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-                                : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-gray-800 border border-transparent'
+                            aria-pressed={interval === intv}
+                            className={`min-h-8 rounded-md border px-3 py-1 text-xs font-bold transition-colors ${interval === intv
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                                : 'border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100'
                                 }`}
                         >
                             {intv === '1d' ? 'D' : intv === '1wk' ? 'W' : 'M'}
@@ -258,18 +267,18 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                     ))}
                     {isLoading && (
                         <div className="flex items-center justify-center px-2">
-                            <div className="animate-spin h-3.5 w-3.5 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full"></div>
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
                         </div>
                     )}
                 </div>
             )}
 
-            <div ref={chartContainerRef} className="w-full h-full" />
+            <div ref={chartContainerRef} className="h-full w-full" role="img" aria-label="Interactive candlestick chart with price, volume, 20-day moving average, and 50-day moving average" />
 
             {/* Tooltip Overlay */}
             {tooltipData && tooltipData.visible && (
                 <div
-                    className="absolute z-30 pointer-events-none bg-white dark:bg-[#151922]/90 backdrop-blur-md border border-gray-200 dark:border-gray-700/50 rounded-lg p-3 text-sm shadow-xl"
+                    className="pointer-events-none absolute z-30 rounded-lg border bg-white/95 p-3 text-sm shadow-xl backdrop-blur-md dark:bg-slate-900/95"
                     style={{
                         left: Math.min(tooltipData.x + 15, tooltipData.containerWidth - 180),
                         top: Math.max(10, tooltipData.y - 120),
