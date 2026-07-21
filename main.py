@@ -7,14 +7,20 @@ import logging
 from core.config import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时执行
-    logging.getLogger(__name__).info("Initializing application and database")
+    logger.info("Initializing application and database")
+    if settings.ENVIRONMENT.lower() == "production" and not settings.ADMIN_API_KEY:
+        logger.warning(
+            "ADMIN_API_KEY is not configured; public APIs remain available "
+            "but admin operations are disabled"
+        )
     await init_db()
     yield
-    logging.getLogger(__name__).info("Shutting down application")
+    logger.info("Shutting down application")
 
 # 初始化 FastAPI 实例，挂载 lifespan 生命周期
 app = FastAPI(

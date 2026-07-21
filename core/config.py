@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import List
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +23,7 @@ class Settings(BaseSettings):
     # Notifications
     FEISHU_WEBHOOK_URL: str = ""
 
-    # API and browser security. ADMIN_API_KEY is mandatory in production.
+    # API and browser security. When omitted, admin operations are disabled.
     ADMIN_API_KEY: str = ""
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     EXPENSIVE_REQUESTS_PER_MINUTE: int = 10
@@ -54,12 +53,6 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
-
-    @model_validator(mode="after")
-    def validate_production_security(self):
-        if self.ENVIRONMENT.lower() == "production" and not self.ADMIN_API_KEY:
-            raise ValueError("ADMIN_API_KEY must be configured in production")
-        return self
 
     # 指定配置加载来源：.env 文件
     model_config = SettingsConfigDict(
