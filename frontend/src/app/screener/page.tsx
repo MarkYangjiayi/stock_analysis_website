@@ -449,7 +449,7 @@ export default function ScreenerPage() {
                                             <td className={`px-6 py-4 font-bold ${(stock.roe ?? 0) > 0.15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-gray-400'}`}>
                                                 {stock.roe != null ? `${(stock.roe * 100).toFixed(1)}%` : "-"}
                                             </td>
-                                            <td className={`px-6 py-4 font-bold ${(stock.debt_to_equity ?? Number.POSITIVE_INFINITY) < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                            <td className={`px-6 py-4 font-bold ${stock.debt_to_equity == null ? 'text-slate-500 dark:text-gray-400' : stock.debt_to_equity < 1.0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                                                 {stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(2) : "-"}
                                             </td>
                                             <td className="px-6 py-4 text-slate-700 dark:text-gray-300">
