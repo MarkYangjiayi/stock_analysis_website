@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
@@ -62,6 +63,185 @@ async def test_screener_defaults_to_latest_published_snapshot(db_session):
     assert result["total"] == 1
     assert result["as_of_date"] == "2025-01-02"
     assert result["items"][0]["close"] == 20.0
+
+
+@pytest.mark.asyncio
+async def test_screener_does_not_expose_unpublished_requested_snapshot(db_session):
+    db_session.add(Ticker(ticker="AAA.US"))
+    db_session.add(
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            date=date(2025, 1, 3),
+            close=30,
+            market_cap=300,
+        )
+    )
+    await db_session.commit()
+
+    result = await filter_screener_stocks(
+        {"as_of_date": date(2025, 1, 3), "limit": 50, "offset": 0},
+        db_session,
+    )
+
+    assert result["as_of_date"] == "2025-01-03"
+    assert result["total"] == 0
+    assert result["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_screener_keeps_published_snapshot_point_in_time(db_session, monkeypatch):
+    async def latest_valuation_must_not_be_used(*args, **kwargs):
+        raise AssertionError("published snapshots must not use mutable latest fundamentals")
+
+    monkeypatch.setattr(
+        "services.analyzer.get_fundamental_valuation",
+        latest_valuation_must_not_be_used,
+    )
+    db_session.add(Ticker(ticker="AAA.US"))
+    db_session.add(
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            date=date(2025, 1, 2),
+            close=20,
+            market_cap=None,
+            pe_ratio=None,
+        )
+    )
+    run = PipelineRun(pipeline_name="test", target_date=date(2025, 1, 2), status="published")
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(
+        DataPublication(
+            dataset="screener",
+            as_of_date=date(2025, 1, 2),
+            pipeline_run_id=run.id,
+        )
+    )
+    await db_session.commit()
+
+    result = await filter_screener_stocks(
+        {"as_of_date": date(2025, 1, 2), "limit": 50, "offset": 0},
+        db_session,
+    )
+
+    assert result["total"] == 1
+    assert result["items"][0]["market_cap"] is None
+    assert result["items"][0]["pe_ratio"] is None
+
+
+@pytest.mark.asyncio
+async def test_ticker_sync_locks_are_removed_when_idle():
+    from services.sync_coordinator import _ticker_locks, ticker_sync_lock
+
+    for index in range(1_000):
+        async with ticker_sync_lock(f"T{index}.US"):
+            pass
+
+    assert _ticker_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_ticker_sync_lock_keeps_single_flight_semantics():
+    from services.sync_coordinator import _ticker_locks, ticker_sync_lock
+
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    async def first_request():
+        async with ticker_sync_lock("AAA.US"):
+            first_entered.set()
+            await release_first.wait()
+
+    async def second_request():
+        await first_entered.wait()
+        async with ticker_sync_lock("aaa.us"):
+            second_entered.set()
+
+    first_task = asyncio.create_task(first_request())
+    second_task = asyncio.create_task(second_request())
+    await first_entered.wait()
+    await asyncio.sleep(0)
+
+    assert not second_entered.is_set()
+    release_first.set()
+    await asyncio.gather(first_task, second_task)
+
+    assert second_entered.is_set()
+    assert _ticker_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_read_through_cache_miss_consumes_rate_limit(db_session, monkeypatch):
+    from types import SimpleNamespace
+
+    from starlette.requests import Request
+
+    from api import routers
+
+    analysis_calls = 0
+    limited_clients = []
+
+    async def fake_analysis(*args, **kwargs):
+        nonlocal analysis_calls
+        analysis_calls += 1
+        return None if analysis_calls == 1 else {"profile": {}}
+
+    async def fake_freshness(*args, **kwargs):
+        return SimpleNamespace(needs_sync=True)
+
+    async def fake_limit(request):
+        limited_clients.append(request.client.host)
+
+    async def fake_sync(*args, **kwargs):
+        return True
+
+    async def fake_valuation(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(routers, "get_analyzed_stock_data", fake_analysis)
+    monkeypatch.setattr(routers, "assess_ticker_freshness", fake_freshness)
+    monkeypatch.setattr(routers, "limit_expensive_requests", fake_limit)
+    monkeypatch.setattr(routers, "sync_ticker_data", fake_sync)
+    monkeypatch.setattr(routers, "get_fundamental_valuation", fake_valuation)
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/stocks/AAA.US",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+    })
+
+    result = await routers.read_stock_analysis("AAA.US", request, db=db_session)
+
+    assert result["valuation_metrics"] == {}
+    assert limited_clients == ["127.0.0.1"]
+
+
+@pytest.mark.asyncio
+async def test_ws_monitor_backs_off_after_short_clean_disconnect(monkeypatch):
+    from services.ws_monitor import WSMonitor
+
+    monitor = WSMonitor()
+    connect_calls = 0
+    sleeps = []
+
+    async def short_connection():
+        nonlocal connect_calls
+        connect_calls += 1
+        if connect_calls == 3:
+            raise asyncio.CancelledError
+
+    async def record_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(monitor, "connect", short_connection)
+    monkeypatch.setattr("services.ws_monitor.asyncio.sleep", record_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await monitor.start()
+
+    assert sleeps == [1, 2]
 
 
 def test_quality_gate_detects_duplicates_and_low_coverage():

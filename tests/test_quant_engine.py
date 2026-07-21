@@ -5,9 +5,9 @@ import pandas as pd
 import pytest
 
 from services.quant.backtest import BacktestConfig, run_backtest_from_frames
-from services.quant.factor_engine import compute_factor_frame
+from services.quant.factor_engine import _price_factors, compute_factor_frame
 from services.quant.portfolio import construct_long_only_weights, portfolio_turnover
-from services.quant.research import evaluate_factor
+from services.quant.research import _forward_returns, evaluate_factor
 from services.quant.risk import calculate_performance_metrics
 
 
@@ -52,6 +52,21 @@ def test_factor_engine_rejects_future_price_information():
     future = compute_factor_frame(snapshots, synthetic_prices(as_of, True), as_of).set_index("ticker")
     pd.testing.assert_series_equal(clean["momentum"], future["momentum"])
     pd.testing.assert_series_equal(clean["composite"], future["composite"])
+
+
+def test_price_factors_ignore_non_positive_prices():
+    dates = pd.bdate_range(end="2025-12-31", periods=252)
+    prices = pd.DataFrame({
+        "ticker": ["ZERO.US"] * len(dates),
+        "date": dates,
+        "close": [0.0] + [100.0] * (len(dates) - 1),
+        "adjusted_close": [0.0] + [100.0] * (len(dates) - 1),
+    })
+
+    result = _price_factors(prices, date(2025, 12, 31)).iloc[0]
+
+    assert np.isfinite(result["momentum"])
+    assert np.isfinite(result["low_volatility"])
 
 
 def test_portfolio_respects_position_and_sector_caps():
@@ -246,6 +261,27 @@ def test_factor_research_reports_positive_rank_ic():
     result = evaluate_factor(factors, prices, horizon_days=5, quantiles=5)
     assert result["mean_rank_ic"] > 0.9
     assert result["long_short_spread"] > 0
+
+
+def test_factor_research_uses_first_close_after_availability():
+    prices = pd.DataFrame([
+        {"ticker": "AAA.US", "date": trading_date, "close": price, "adjusted_close": price}
+        for trading_date, price in [
+            ("2025-01-03", 100.0),
+            ("2025-01-06", 200.0),
+            ("2025-01-07", 210.0),
+            ("2025-01-08", 220.0),
+        ]
+    ])
+    factors = pd.DataFrame([{
+        "ticker": "AAA.US",
+        "as_of_date": pd.Timestamp("2025-01-02"),
+        "available_at": pd.Timestamp("2025-01-06 23:00:00"),
+    }])
+
+    result = _forward_returns(prices, factors, horizon_days=1)
+
+    assert result.iloc[0]["forward_return"] == pytest.approx(220.0 / 210.0 - 1.0)
 
 
 def test_factor_research_rejects_immature_forward_returns_cleanly():

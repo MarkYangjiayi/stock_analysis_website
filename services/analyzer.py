@@ -625,12 +625,31 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
     Dynamically filters the `StockScreenerSnapshot` table based on a variety of parameters.
     Supports min/max conditions, exact match for sector/industry, sorting, and pagination.
     """
+    limit = request_data.get("limit", 50)
+    offset = request_data.get("offset", 0)
     requested_date = request_data.get("as_of_date")
     if requested_date:
         try:
             selected_date = pd.Timestamp(requested_date).date()
         except (TypeError, ValueError) as exc:
             raise ValueError("as_of_date must use YYYY-MM-DD format") from exc
+        publication_result = await db.execute(
+            select(DataPublication.id).where(
+                DataPublication.dataset == "screener",
+                DataPublication.as_of_date == selected_date,
+                DataPublication.status == "published",
+            )
+        )
+        if publication_result.scalar_one_or_none() is None:
+            # A snapshot may exist while its quality gate is still pending or
+            # failed. Never expose those rows through a historical request.
+            return {
+                "total": 0,
+                "items": [],
+                "limit": limit,
+                "offset": offset,
+                "as_of_date": selected_date.isoformat(),
+            }
     else:
         publication_result = await db.execute(
             select(DataPublication.as_of_date)
@@ -644,8 +663,6 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
             date_result = await db.execute(select(func.max(StockScreenerSnapshot.date)))
             selected_date = date_result.scalar_one_or_none()
 
-    limit = request_data.get("limit", 50)
-    offset = request_data.get("offset", 0)
     if selected_date is None:
         return {"total": 0, "items": [], "limit": limit, "offset": offset, "as_of_date": None}
 
@@ -738,43 +755,10 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
     result = await db.execute(stmt)
     records = result.scalars().all()
     
-    # Pre-fetch on-the-fly fundamental valuations for any records missing market_cap or pe_ratio
-    async def fetch_valuation_for_missing(ticker: str):
-        try:
-            val = await get_fundamental_valuation(ticker, db)
-            return ticker, val
-        except Exception:
-            return ticker, None
-
-    tickers_to_fetch = [r.ticker for r in records if r.market_cap is None or r.pe_ratio is None]
-    valuation_map = {}
-    if tickers_to_fetch:
-        val_results = [await fetch_valuation_for_missing(t) for t in tickers_to_fetch]
-        for t, val in val_results:
-            valuation_map[t] = val
-
     items = []
     for r in records:
         market_cap = float(r.market_cap) if r.market_cap is not None else None
         pe_ratio = float(r.pe_ratio) if r.pe_ratio is not None else None
-        
-        # Hydrate fundamentals dynamically if missing and we have local financial statement data
-        if (market_cap is None or pe_ratio is None) and r.ticker in valuation_map:
-            val = valuation_map[r.ticker]
-            if val:
-                shares_out = val.get('balance_sheet_latest', {}).get('shares_outstanding', 0)
-                ttm_net_income = val.get('ttm', {}).get('net_income', 0)
-                current_price = float(r.close) if r.close is not None else 0
-                
-                if market_cap is None and shares_out > 0 and current_price > 0:
-                    market_cap = shares_out * current_price
-                    
-                if pe_ratio is None and shares_out > 0 and ttm_net_income > 0 and current_price > 0:
-                    eps = ttm_net_income / shares_out
-                    if eps > 0:
-                        pe_ratio = current_price / eps
-                    else:
-                        pe_ratio = -1 # Indicate negative P/E
         
         items.append({
             "ticker": r.ticker,

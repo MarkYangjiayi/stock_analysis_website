@@ -48,7 +48,10 @@ def _price_factors(prices: pd.DataFrame, as_of_date: date) -> pd.DataFrame:
     data["price"] = adjusted.fillna(close)
     rows = []
     for ticker, group in data.sort_values("date").groupby("ticker"):
-        series = group["price"].dropna()
+        # Zero and negative prices are invalid observations, not economic
+        # returns. Excluding them also prevents infinite momentum/volatility.
+        series = pd.to_numeric(group["price"], errors="coerce")
+        series = series.where(series > 0).dropna()
         momentum = np.nan
         if len(series) >= 252:
             momentum = series.iloc[-22] / series.iloc[-252] - 1.0

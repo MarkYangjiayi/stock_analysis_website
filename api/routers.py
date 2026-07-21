@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,7 +104,7 @@ async def sync_stock_data(ticker: str, db: AsyncSession = Depends(get_db)):
     return {"message": f"Successfully synchronized data for {ticker}", "ticker": ticker}
 
 @router.get("/api/stocks/{ticker}", response_model=StockDataResponse, tags=["Stocks Analysis Read"])
-async def read_stock_analysis(ticker: str, interval: str = "1d", financial_period: str = "Yearly", db: AsyncSession = Depends(get_db)):
+async def read_stock_analysis(ticker: str, request: Request, interval: str = "1d", financial_period: str = "Yearly", db: AsyncSession = Depends(get_db)):
     """
     读取指定股票的基础 Profile 以及经过量化分析 (MA, RSI, MACD等) 后的全量历史时间序列。
     实现了 Read-Through 策略: 如果本地数据陈旧或不存在，自动触发获取。
@@ -124,6 +124,9 @@ async def read_stock_analysis(ticker: str, interval: str = "1d", financial_perio
             freshness = await assess_ticker_freshness(db, ticker)
             success = True
             if freshness.needs_sync:
+                # Cached reads stay unrestricted, while each external API sync
+                # consumes the same per-client budget as other costly routes.
+                await limit_expensive_requests(request)
                 success = await sync_ticker_data(ticker, db)
             if not success:
                 raise HTTPException(
@@ -306,6 +309,7 @@ async def research_factor(request: FactorResearchRequest, db: AsyncSession = Dep
         {
             "ticker": row.ticker,
             "as_of_date": row.as_of_date,
+            "available_at": row.available_at,
             "normalized_value": row.normalized_value,
         }
         for row in factor_rows

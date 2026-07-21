@@ -3,21 +3,43 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
+from core.trading_calendar import is_us_market_session, us_market_close_utc
+
 
 def _forward_returns(prices: pd.DataFrame, factor_dates: pd.DataFrame, horizon_days: int) -> pd.DataFrame:
     price_data = prices.copy()
     price_data["date"] = pd.to_datetime(price_data["date"])
     adjusted = pd.to_numeric(price_data["adjusted_close"], errors="coerce") if "adjusted_close" in price_data else pd.Series(index=price_data.index, dtype=float)
     price_data["price"] = adjusted.fillna(pd.to_numeric(price_data["close"], errors="coerce"))
+    price_data = price_data.dropna(subset=["ticker", "date", "price"])
+    price_data = price_data[
+        price_data["date"].map(lambda value: is_us_market_session(value.date()))
+    ]
+    price_groups = {}
+    for ticker, group in price_data.groupby("ticker"):
+        series = group.sort_values("date").drop_duplicates("date", keep="last")
+        dates = pd.DatetimeIndex(series["date"])
+        close_times = pd.DatetimeIndex([us_market_close_utc(value.date()) for value in dates])
+        price_groups[ticker] = (dates, close_times, series["price"].to_numpy())
+
     rows = []
     for ticker, observations in factor_dates.groupby("ticker"):
-        series = price_data[price_data["ticker"] == ticker].dropna(subset=["price"]).sort_values("date")
-        dates = list(series["date"])
-        values = list(series["price"])
+        price_group = price_groups.get(ticker)
+        if price_group is None:
+            continue
+        dates, close_times, values = price_group
         for _, observation in observations.iterrows():
             as_of = pd.Timestamp(observation["as_of_date"])
-            entry_index = next((index for index, price_date in enumerate(dates) if price_date > as_of), None)
-            if entry_index is None or entry_index + horizon_days >= len(values):
+            available_at = pd.Timestamp(observation.get("available_at", as_of))
+            if pd.isna(available_at):
+                available_at = as_of
+            if available_at.tzinfo is not None:
+                available_at = available_at.tz_convert("UTC").tz_localize(None)
+            entry_index = max(
+                int(dates.searchsorted(as_of, side="right")),
+                int(close_times.searchsorted(available_at, side="right")),
+            )
+            if entry_index + horizon_days >= len(values):
                 continue
             entry = values[entry_index]
             exit_value = values[entry_index + horizon_days]
@@ -45,7 +67,10 @@ def evaluate_factor(
     factors["as_of_date"] = pd.to_datetime(factors["as_of_date"])
     if "score" not in factors:
         factors["score"] = pd.to_numeric(factors["normalized_value"], errors="coerce")
-    forward = _forward_returns(prices, factors[["ticker", "as_of_date"]], horizon_days)
+    forward_columns = ["ticker", "as_of_date"]
+    if "available_at" in factors:
+        forward_columns.append("available_at")
+    forward = _forward_returns(prices, factors[forward_columns], horizon_days)
     merged = factors.merge(forward, on=["ticker", "as_of_date"], how="inner").dropna(subset=["score", "forward_return"])
     if merged.empty:
         raise ValueError("No aligned forward returns are available")

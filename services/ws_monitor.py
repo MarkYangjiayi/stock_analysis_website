@@ -10,6 +10,8 @@ from services.notifications import NotificationManager
 
 logger = logging.getLogger(__name__)
 
+STABLE_CONNECTION_SECONDS = 30
+
 # Sliding window to store prices: { "AAPL": deque(maxlen=60) }
 price_window = collections.defaultdict(collections.deque)
 
@@ -102,12 +104,30 @@ class WSMonitor:
         logger.info("Starting WebSocket Monitor daemon...")
         reconnect_delay = 1
         while True:
+            connected_at = time.monotonic()
+            disconnect_error = None
             try:
                 await self.connect()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                disconnect_error = exc
+
+            connection_duration = time.monotonic() - connected_at
+            if connection_duration >= STABLE_CONNECTION_SECONDS:
                 reconnect_delay = 1
-            except Exception as e:
-                logger.error("WebSocket disconnected. Reconnecting in %s seconds: %s", reconnect_delay, e)
-                await asyncio.sleep(reconnect_delay)
-                reconnect_delay = min(reconnect_delay * 2, 60)
+            if disconnect_error is None:
+                logger.warning(
+                    "WebSocket connection closed cleanly. Reconnecting in %s seconds.",
+                    reconnect_delay,
+                )
+            else:
+                logger.error(
+                    "WebSocket disconnected. Reconnecting in %s seconds: %s",
+                    reconnect_delay,
+                    disconnect_error,
+                )
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, 60)
 
 ws_monitor = WSMonitor()
