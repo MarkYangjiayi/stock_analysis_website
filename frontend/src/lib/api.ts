@@ -23,6 +23,7 @@ export async function apiRequest<T>(
     timeoutMs = 30_000,
 ): Promise<T> {
     const controller = new AbortController();
+    if (init.signal?.aborted) controller.abort();
     let timedOut = false;
     const timeout = globalThis.setTimeout(() => {
         timedOut = true;
@@ -32,12 +33,11 @@ export async function apiRequest<T>(
     init.signal?.addEventListener("abort", onAbort, { once: true });
 
     try {
+        const headers = new Headers(init.headers);
+        if (!headers.has("Accept")) headers.set("Accept", "application/json");
         const response = await fetch(`${API_BASE_URL}${path}`, {
             ...init,
-            headers: {
-                Accept: "application/json",
-                ...init.headers,
-            },
+            headers,
             signal: controller.signal,
         });
         if (!response.ok) {

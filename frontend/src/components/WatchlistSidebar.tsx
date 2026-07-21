@@ -29,9 +29,14 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                 <div className="flex items-center gap-2 overflow-x-auto pb-2">
                     <span className="flex shrink-0 items-center gap-1.5 px-1 text-xs font-black uppercase tracking-wide text-slate-500"><Star size={14} /> Watchlist</span>
                     {watchlist.map((ticker) => (
-                        <button key={ticker} type="button" onClick={() => onSelectTicker(ticker)} className={`shrink-0 rounded-full border px-3 py-1.5 font-mono text-xs font-bold ${ticker === currentTicker ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
-                            {ticker.replace(".US", "")}
-                        </button>
+                        <div key={ticker} className={`flex shrink-0 items-center rounded-full border ${ticker === currentTicker ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
+                            <button type="button" onClick={() => onSelectTicker(ticker)} className="py-1.5 pl-3 pr-1 font-mono text-xs font-bold">
+                                {ticker.replace(".US", "")}
+                            </button>
+                            <button type="button" onClick={() => onRemove(ticker)} className="mr-1 flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 focus-visible:bg-rose-50 focus-visible:text-rose-500 dark:hover:bg-rose-950/30 dark:focus-visible:bg-rose-950/30" aria-label={`Remove ${ticker} from watchlist`}>
+                                <Trash2 size={12} />
+                            </button>
+                        </div>
                     ))}
                 </div>
                 <form onSubmit={handleAdd} className="mt-1 flex gap-2">

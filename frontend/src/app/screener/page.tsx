@@ -132,22 +132,21 @@ function ScreenerContent() {
     useEffect(() => {
         if (initialized.current) return;
         initialized.current = true;
-        const nextFilters = { ...filters };
-        let hasUrlState = false;
+        const nextFilters = { ...DEFAULT_SCREENER_FILTERS };
         for (const key of FILTER_KEYS) {
             const value = searchParams.get(key);
             if (value !== null) {
                 nextFilters[key] = value;
-                hasUrlState = true;
             }
         }
-        const requestedPage = Number(searchParams.get("page"));
+        const pageParam = searchParams.get("page");
+        const requestedPage = pageParam ? Number(pageParam) : 1;
         setScreenerState({
-            ...(hasUrlState ? { filters: nextFilters } : {}),
-            ...(Number.isInteger(requestedPage) && requestedPage > 0 ? { page: requestedPage - 1 } : {}),
+            filters: nextFilters,
+            page: Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage - 1 : 0,
         });
         setReady(true);
-    }, [filters, searchParams, setScreenerState]);
+    }, [searchParams, setScreenerState]);
 
     useEffect(() => {
         if (!ready) return;
