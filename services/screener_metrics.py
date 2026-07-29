@@ -1,0 +1,387 @@
+"""Normalization and derived-metric helpers for the daily stock screener."""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Any, Iterable, Optional
+
+import numpy as np
+import pandas as pd
+import pandas_ta_classic as ta
+
+
+def safe_float(value: Any) -> Optional[float]:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if np.isfinite(result) else None
+
+
+def safe_rate(value: Any) -> Optional[float]:
+    result = safe_float(value)
+    if result is None:
+        return None
+    # EODHD mixes decimal ratios with percentage-point fields.
+    return result / 100.0 if abs(result) > 2.0 else result
+
+
+def safe_ratio(numerator: Any, denominator: Any, *, positive_denominator: bool = True) -> Optional[float]:
+    num = safe_float(numerator)
+    den = safe_float(denominator)
+    if num is None or den is None or den == 0:
+        return None
+    if positive_denominator and den <= 0:
+        return None
+    result = num / den
+    return result if np.isfinite(result) else None
+
+
+def _first_present(*values: Any) -> Any:
+    return next((value for value in values if value is not None and value != ""), None)
+
+
+def _dated_values(section: Any) -> list[dict]:
+    if isinstance(section, dict):
+        values = [
+            {**value, "date": value.get("date") or value.get("reportDate") or key}
+            for key, value in section.items()
+            if isinstance(value, dict)
+        ]
+    elif isinstance(section, list):
+        values = [value for value in section if isinstance(value, dict)]
+    else:
+        return []
+    return sorted(values, key=lambda row: str(row.get("date") or row.get("reportDate") or ""), reverse=True)
+
+
+def _growth(new: Any, old: Any) -> Optional[float]:
+    new_value = safe_float(new)
+    old_value = safe_float(old)
+    if new_value is None or old_value is None or old_value == 0:
+        return None
+    result = new_value / old_value - 1.0
+    return result if np.isfinite(result) else None
+
+
+def _cagr(new: Any, old: Any, years: int) -> Optional[float]:
+    new_value = safe_float(new)
+    old_value = safe_float(old)
+    if new_value is None or old_value is None or new_value <= 0 or old_value <= 0 or years <= 0:
+        return None
+    result = (new_value / old_value) ** (1.0 / years) - 1.0
+    return result if np.isfinite(result) else None
+
+
+def _sum_metric(rows: list[dict], key: str, start: int, count: int) -> Optional[float]:
+    window = rows[start:start + count]
+    values = [safe_float(row.get(key)) for row in window]
+    if len(window) != count or any(value is None for value in values):
+        return None
+    return float(sum(value for value in values if value is not None))
+
+
+def _trend_growth(trend: Any, period_names: Iterable[str]) -> Optional[float]:
+    wanted = {name.lower() for name in period_names}
+    for row in _dated_values(trend):
+        if str(row.get("period") or "").lower() in wanted:
+            return safe_rate(_first_present(row.get("growth"), row.get("earningsEstimateGrowth")))
+    return None
+
+
+def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
+    """Extract one provider payload without silently coercing missing values."""
+    general = payload.get("General") or {}
+    highlights = payload.get("Highlights") or {}
+    valuation = payload.get("Valuation") or {}
+    shares = payload.get("SharesStats") or {}
+    dividends = payload.get("SplitsDividends") or {}
+    ratings = payload.get("AnalystRatings") or {}
+    earnings = payload.get("Earnings") or {}
+    financials = payload.get("Financials") or {}
+    income = financials.get("Income_Statement") or {}
+    balance = financials.get("Balance_Sheet") or {}
+    cash_flow = financials.get("Cash_Flow") or {}
+    quarterly_income = _dated_values(income.get("quarterly"))
+    yearly_income = _dated_values(income.get("yearly"))
+    quarterly_balance = _dated_values(balance.get("quarterly"))
+    quarterly_cash = _dated_values(cash_flow.get("quarterly"))
+    yearly_cash = _dated_values(cash_flow.get("yearly"))
+
+    latest_income = quarterly_income[0] if quarterly_income else (yearly_income[0] if yearly_income else {})
+    latest_balance = quarterly_balance[0] if quarterly_balance else {}
+    latest_cash = quarterly_cash[0] if quarterly_cash else (yearly_cash[0] if yearly_cash else {})
+
+    revenue_ttm = safe_float(highlights.get("RevenueTTM"))
+    if revenue_ttm is None:
+        revenue_ttm = _sum_metric(quarterly_income, "totalRevenue", 0, 4)
+    gross_profit_ttm = safe_float(highlights.get("GrossProfitTTM"))
+    if gross_profit_ttm is None:
+        gross_profit_ttm = _sum_metric(quarterly_income, "grossProfit", 0, 4)
+    operating_income_ttm = _sum_metric(quarterly_income, "operatingIncome", 0, 4)
+    net_income_ttm = _sum_metric(quarterly_income, "netIncome", 0, 4)
+    fcf_ttm = _sum_metric(quarterly_cash, "freeCashFlow", 0, 4)
+    if fcf_ttm is None:
+        fcf_ttm = safe_float(latest_cash.get("freeCashFlow"))
+
+    market_cap = safe_float(highlights.get("MarketCapitalization"))
+    cash = safe_float(_first_present(
+        latest_balance.get("cashAndShortTermInvestments"),
+        latest_balance.get("cashAndEquivalents"),
+        latest_balance.get("cash"),
+    ))
+    current_assets = safe_float(latest_balance.get("totalCurrentAssets"))
+    current_liabilities = safe_float(latest_balance.get("totalCurrentLiabilities"))
+    inventory = safe_float(latest_balance.get("inventory"))
+    equity = safe_float(latest_balance.get("totalStockholderEquity"))
+    long_term_debt = safe_float(_first_present(
+        latest_balance.get("longTermDebtTotal"),
+        latest_balance.get("longTermDebt"),
+    ))
+    total_debt = safe_float(_first_present(
+        latest_balance.get("shortLongTermDebtTotal"),
+        latest_balance.get("totalDebt"),
+        latest_balance.get("netDebt"),
+    ))
+    invested_capital = safe_float(latest_balance.get("netInvestedCapital"))
+    ebit = safe_float(_first_present(latest_income.get("ebit"), latest_income.get("operatingIncome")))
+    tax = safe_float(latest_income.get("incomeTaxExpense"))
+    pretax = safe_float(latest_income.get("incomeBeforeTax"))
+    tax_rate = safe_ratio(tax, pretax, positive_denominator=False)
+    if tax_rate is None or not 0 <= tax_rate <= 1:
+        tax_rate = 0.21
+
+    revenue_qoq = None
+    if len(quarterly_income) >= 5:
+        revenue_qoq = _growth(quarterly_income[0].get("totalRevenue"), quarterly_income[4].get("totalRevenue"))
+    revenue_ttm_previous = _sum_metric(quarterly_income, "totalRevenue", 4, 4)
+    sales_growth_ttm = _growth(revenue_ttm, revenue_ttm_previous)
+    sales_growth_3yr = _cagr(
+        yearly_income[0].get("totalRevenue") if yearly_income else None,
+        yearly_income[3].get("totalRevenue") if len(yearly_income) >= 4 else None,
+        3,
+    )
+    sales_growth_5yr = _cagr(
+        yearly_income[0].get("totalRevenue") if yearly_income else None,
+        yearly_income[5].get("totalRevenue") if len(yearly_income) >= 6 else None,
+        5,
+    )
+
+    annual_eps = _dated_values(earnings.get("Annual"))
+    eps_growth_3yr = _cagr(
+        annual_eps[0].get("epsActual") if annual_eps else None,
+        annual_eps[3].get("epsActual") if len(annual_eps) >= 4 else None,
+        3,
+    )
+    eps_growth_5yr = _cagr(
+        annual_eps[0].get("epsActual") if annual_eps else None,
+        annual_eps[5].get("epsActual") if len(annual_eps) >= 6 else None,
+        5,
+    )
+
+    ipo_date = general.get("IPODate")
+    try:
+        ipo_date = pd.Timestamp(ipo_date).date() if ipo_date else None
+    except (TypeError, ValueError):
+        ipo_date = None
+
+    return {
+        "exchange": general.get("Exchange"),
+        "country": general.get("CountryName") or general.get("CountryISO"),
+        "ipo_date": ipo_date,
+        "market_cap": market_cap,
+        "pe_ratio": safe_float(_first_present(highlights.get("PERatio"), valuation.get("TrailingPE"))),
+        "forward_pe": safe_float(valuation.get("ForwardPE")),
+        "peg_ratio": safe_float(highlights.get("PEGRatio")),
+        "ps_ratio": safe_float(valuation.get("PriceSalesTTM")),
+        "pb_ratio": safe_float(valuation.get("PriceBookMRQ")),
+        "price_cash": safe_ratio(market_cap, cash),
+        "price_fcf": safe_ratio(market_cap, fcf_ttm),
+        "ev_ebitda": safe_float(valuation.get("EnterpriseValueEbitda")),
+        "ev_sales": safe_float(valuation.get("EnterpriseValueRevenue")),
+        "dividend_yield": safe_rate(_first_present(
+            highlights.get("DividendYield"),
+            dividends.get("ForwardAnnualDividendYield"),
+        )),
+        "payout_ratio": safe_rate(dividends.get("PayoutRatio")),
+        "short_float": safe_rate(shares.get("ShortPercentFloat")),
+        "analyst_recommendation": safe_float(ratings.get("Rating")),
+        "target_price": safe_float(_first_present(
+            ratings.get("TargetPrice"),
+            highlights.get("WallStreetTargetPrice"),
+        )),
+        "shares_outstanding": int(value) if (value := safe_float(shares.get("SharesOutstanding"))) is not None else None,
+        "shares_float": int(value) if (value := safe_float(shares.get("SharesFloat"))) is not None else None,
+        "roe": safe_rate(highlights.get("ReturnOnEquityTTM")),
+        "roa": safe_rate(highlights.get("ReturnOnAssetsTTM")),
+        "roic": safe_ratio(
+            ebit * (1.0 - tax_rate) if ebit is not None else None,
+            invested_capital,
+        ),
+        "debt_to_equity": safe_ratio(total_debt, equity),
+        "lt_debt_to_equity": safe_ratio(long_term_debt, equity),
+        "current_ratio": safe_ratio(current_assets, current_liabilities),
+        "quick_ratio": safe_ratio(
+            current_assets - inventory if current_assets is not None and inventory is not None else None,
+            current_liabilities,
+        ),
+        "fcf": fcf_ttm,
+        "gross_margin": safe_ratio(gross_profit_ttm, revenue_ttm),
+        "operating_margin": _first_present(
+            safe_rate(highlights.get("OperatingMarginTTM")),
+            safe_ratio(operating_income_ttm, revenue_ttm, positive_denominator=False),
+        ),
+        "net_profit_margin": _first_present(
+            safe_rate(highlights.get("ProfitMargin")),
+            safe_ratio(net_income_ttm, revenue_ttm, positive_denominator=False),
+        ),
+        "sales_growth_qoq": _first_present(
+            safe_rate(highlights.get("QuarterlyRevenueGrowthYOY")),
+            revenue_qoq,
+        ),
+        "sales_growth_ttm": sales_growth_ttm,
+        "sales_growth_3yr": sales_growth_3yr,
+        "sales_growth_5yr": sales_growth_5yr,
+        "eps_growth_this_year": _trend_growth(earnings.get("Trend"), {"0y", "current year", "year"}),
+        "eps_growth_next_year": _trend_growth(earnings.get("Trend"), {"+1y", "next year"}),
+        "eps_growth_qoq": safe_rate(highlights.get("QuarterlyEarningsGrowthYOY")),
+        "eps_growth_ttm": _growth(
+            annual_eps[0].get("epsActual") if annual_eps else None,
+            annual_eps[1].get("epsActual") if len(annual_eps) >= 2 else None,
+        ),
+        "eps_growth_3yr": eps_growth_3yr,
+        "eps_growth_5yr": eps_growth_5yr,
+        "insider_ownership": safe_rate(shares.get("PercentInsiders")),
+        "institutional_ownership": safe_rate(shares.get("PercentInstitutions")),
+    }
+
+
+def classify_candlestick(rows: pd.DataFrame) -> Optional[str]:
+    if rows.empty or any(column not in rows for column in ("open_adj", "high_adj", "low_adj", "close_adj")):
+        return None
+    current = rows.iloc[-1]
+    open_, high, low, close = (safe_float(current[key]) for key in ("open_adj", "high_adj", "low_adj", "close_adj"))
+    if any(value is None for value in (open_, high, low, close)) or high <= low:
+        return None
+    body = abs(close - open_)
+    candle_range = high - low
+    upper = high - max(open_, close)
+    lower = min(open_, close) - low
+    if body <= candle_range * 0.10:
+        return "Doji"
+    if len(rows) >= 3:
+        first, middle = rows.iloc[-3], rows.iloc[-2]
+        first_open, first_close = safe_float(first["open_adj"]), safe_float(first["close_adj"])
+        middle_open, middle_close = safe_float(middle["open_adj"]), safe_float(middle["close_adj"])
+        if all(value is not None for value in (first_open, first_close, middle_open, middle_close)):
+            midpoint = (first_open + first_close) / 2
+            if first_close < first_open and abs(middle_close - middle_open) < abs(first_close - first_open) * 0.35 and close > midpoint:
+                return "Morning Star"
+            if first_close > first_open and abs(middle_close - middle_open) < abs(first_close - first_open) * 0.35 and close < midpoint:
+                return "Evening Star"
+    if len(rows) >= 2:
+        previous = rows.iloc[-2]
+        prev_open, prev_close = safe_float(previous["open_adj"]), safe_float(previous["close_adj"])
+        if prev_open is not None and prev_close is not None:
+            if prev_close < prev_open and close > open_ and open_ <= prev_close and close >= prev_open:
+                return "Bullish Engulfing"
+            if prev_close > prev_open and close < open_ and open_ >= prev_close and close <= prev_open:
+                return "Bearish Engulfing"
+    if lower >= body * 2 and upper <= body * 0.35:
+        return "Hammer"
+    if upper >= body * 2 and lower <= body * 0.35:
+        return "Inverted Hammer"
+    if body >= candle_range * 0.90:
+        return "Bullish Marubozu" if close > open_ else "Bearish Marubozu"
+    return None
+
+
+def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.Series] = None) -> dict[str, Any]:
+    rows = group.sort_values("date").copy()
+    if rows.empty:
+        return {}
+    factor = rows["adjusted_close"] / rows["close"].replace(0, np.nan)
+    factor = factor.replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    for column in ("open", "high", "low", "close"):
+        rows[f"{column}_adj"] = pd.to_numeric(rows[column], errors="coerce") * factor
+    close = rows["close_adj"]
+    returns = close.pct_change()
+
+    def perf(periods: int) -> Optional[float]:
+        if len(close.dropna()) <= periods:
+            return None
+        return _growth(close.iloc[-1], close.iloc[-periods - 1])
+
+    year_start = date(rows.iloc[-1]["date"].year, 1, 1)
+    ytd_rows = rows[rows["date"] >= year_start]
+    ytd = _growth(ytd_rows["close_adj"].iloc[-1], ytd_rows["close_adj"].iloc[0]) if len(ytd_rows) >= 2 else None
+    ma20 = safe_float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
+    ma50 = safe_float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
+    ma200 = safe_float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
+    rsi = ta.rsi(close, length=14)
+    previous_close = safe_float(close.iloc[-2]) if len(close) >= 2 else None
+    latest_open = safe_float(rows["open_adj"].iloc[-1])
+    latest_close = safe_float(close.iloc[-1])
+    high = rows["high_adj"]
+    low = rows["low_adj"]
+    true_range = pd.concat(
+        [(high - low), (high - close.shift(1)).abs(), (low - close.shift(1)).abs()],
+        axis=1,
+    ).max(axis=1)
+    atr = safe_float(true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean().iloc[-1])
+    average_volume = safe_float(pd.to_numeric(rows["volume"], errors="coerce").tail(63).mean())
+    current_volume = safe_float(rows["volume"].iloc[-1])
+    beta = None
+    if benchmark_returns is not None:
+        asset_returns = pd.Series(returns.values, index=pd.to_datetime(rows["date"])).dropna()
+        aligned = pd.concat([asset_returns.rename("asset"), benchmark_returns.rename("benchmark")], axis=1).dropna().tail(252)
+        if len(aligned) >= 126 and aligned["benchmark"].var() > 0:
+            beta = safe_float(aligned.cov().loc["asset", "benchmark"] / aligned["benchmark"].var())
+
+    result: dict[str, Any] = {
+        "ma20": ma20,
+        "ma50": ma50,
+        "ma200": ma200,
+        "rsi_14": safe_float(rsi.iloc[-1]) if rsi is not None and not rsi.empty else None,
+        "average_volume_3m": average_volume,
+        "relative_volume": safe_ratio(current_volume, average_volume),
+        "performance_1d": perf(1),
+        "performance_1w": perf(5),
+        "performance_1m": perf(21),
+        "performance_3m": perf(63),
+        "performance_6m": perf(126),
+        "performance_ytd": ytd,
+        "performance_1yr": perf(252),
+        "volatility_1w": safe_float(returns.tail(5).std(ddof=1) * np.sqrt(252)) if len(returns.dropna()) >= 5 else None,
+        "volatility_1m": safe_float(returns.tail(21).std(ddof=1) * np.sqrt(252)) if len(returns.dropna()) >= 21 else None,
+        "gap": _growth(latest_open, previous_close),
+        "change_from_open": _growth(latest_close, latest_open),
+        "beta_1yr": beta,
+        "atr_14": atr,
+        "candlestick": classify_candlestick(rows),
+    }
+    for window, suffix in ((20, "20d"), (50, "50d"), (252, "52w")):
+        if len(rows) >= window and latest_close is not None:
+            rolling_high = safe_float(high.tail(window).max())
+            rolling_low = safe_float(low.tail(window).min())
+            result[f"high_{suffix}_rel"] = _growth(latest_close, rolling_high)
+            result[f"low_{suffix}_rel"] = _growth(latest_close, rolling_low)
+        else:
+            result[f"high_{suffix}_rel"] = None
+            result[f"low_{suffix}_rel"] = None
+    return result
+
+
+def calculate_dividend_growth(actions: Iterable[tuple[date, Any]], as_of_date: date) -> dict[str, Optional[float]]:
+    yearly: dict[int, float] = {}
+    for ex_date, amount in actions:
+        value = safe_float(amount)
+        if ex_date <= as_of_date and value is not None and value > 0:
+            yearly[ex_date.year] = yearly.get(ex_date.year, 0.0) + value
+    latest_year = as_of_date.year - 1 if as_of_date.month < 12 else as_of_date.year
+    current = yearly.get(latest_year)
+    return {
+        "dividend_growth_1yr": _growth(current, yearly.get(latest_year - 1)),
+        "dividend_growth_3yr": _cagr(current, yearly.get(latest_year - 3), 3),
+        "dividend_growth_5yr": _cagr(current, yearly.get(latest_year - 5), 5),
+    }

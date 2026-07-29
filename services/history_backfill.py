@@ -33,6 +33,7 @@ async def backfill_price_history(
     days = history_days or settings.COLD_START_HISTORY_DAYS
     target = target_date or date.today()
     calendar_start = target - timedelta(days=int(days * 1.8) + 30)
+    dividend_start = target - timedelta(days=365 * 7)
     minimum_rows = max(1, int(days * 0.9))
     latest_acceptable_date = target - timedelta(days=7)
     run_id = await begin_pipeline_run("price_history_backfill", target)
@@ -78,7 +79,7 @@ async def backfill_price_history(
                             ticker, calendar_start.isoformat(), target.isoformat(), client=client
                         ),
                         eodhd_client.get_dividends(
-                            ticker, calendar_start.isoformat(), target.isoformat(), client=client
+                            ticker, dividend_start.isoformat(), target.isoformat(), client=client
                         ),
                     ])
                 responses = await asyncio.gather(*tasks)

@@ -1,333 +1,476 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight, FilterX, Loader2, SlidersHorizontal } from "lucide-react";
-import { fetchScreener, ScreenerPayload, ScreenerResult } from "@/lib/api";
-import { DEFAULT_SCREENER_FILTERS, ScreenerFilters, useAppStore } from "@/store/useAppStore";
+import {
+    AlertTriangle,
+    ChevronLeft,
+    ChevronRight,
+    Columns3,
+    Filter,
+    RefreshCw,
+    Search,
+    SlidersHorizontal,
+    X,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
-const LIMIT = 50;
-const FILTER_KEYS: Array<keyof ScreenerFilters> = [
-    "sector", "market_cap", "pe", "rsi", "price_ma50", "roe",
-    "debt_to_equity", "fcf", "gross_margin", "sales_growth_5yr",
-    "sort_by", "sort_desc",
-];
+import { API_BASE_URL } from "@/lib/api";
+import {
+    decodeFilters,
+    encodeFilters,
+    filterLabel,
+    formatScreenerValue,
+    ScreenerField,
+    ScreenerFilter,
+    ScreenerMetadata,
+    ScreenerQueryResponse,
+} from "@/lib/screener";
 
-const SECTORS = [
-    "Technology", "Healthcare", "Financial Services", "Consumer Cyclical",
-    "Consumer Defensive", "Communication Services", "Industrials", "Energy",
-    "Basic Materials", "Real Estate", "Utilities",
-];
+const PAGE_SIZE = 50;
+const CATEGORIES = ["Descriptive", "Fundamental", "Technical"] as const;
+const CORE_COLUMNS = ["ticker", "name"];
 
-type TabName = "Overview" | "Fundamentals" | "Technical";
+function parseColumns(value: string | null): string[] {
+    return value ? value.split(",").filter(Boolean) : [];
+}
 
-const selectClass = "control-field mt-1.5";
-
-function FilterField({ label, value, onChange, children }: {
-    label: string;
-    value: string;
-    onChange: (value: string) => void;
-    children: React.ReactNode;
+export function FieldControl({
+    field,
+    filter,
+    onChange,
+}: {
+    field: ScreenerField;
+    filter?: ScreenerFilter;
+    onChange: (filter?: ScreenerFilter) => void;
 }) {
-    return (
-        <label className="block text-xs font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
-            {label}
-            <select className={selectClass} value={value} onChange={(event) => onChange(event.target.value)}>
-                {children}
-            </select>
-        </label>
-    );
-}
+    const [draftOperator, setDraftOperator] = useState<ScreenerFilter["operator"]>(filter?.operator ?? "gte");
 
-const formatMarketCap = (value: unknown) => {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return "—";
-    if (num >= 1e12) return `${(num / 1e12).toFixed(2)}T`;
-    if (num >= 1e9) return `${(num / 1e9).toFixed(2)}B`;
-    if (num >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
-    return num.toLocaleString();
-};
+    if (field.type === "enum") {
+        const selected = filter && Array.isArray(filter.value) ? filter.value.map(String) : filter ? [String(filter.value)] : [];
+        return (
+            <details className="relative">
+                <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition hover:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                    <span className="truncate">{selected.length ? `${selected.length} selected` : "Any"}</span>
+                    <span className="text-slate-400">⌄</span>
+                </summary>
+                <div className="absolute z-40 mt-2 max-h-64 w-64 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                    {field.options.length === 0 ? (
+                        <p className="px-2 py-3 text-xs text-slate-500">No values in this snapshot.</p>
+                    ) : field.options.map((option) => {
+                        const checked = selected.includes(option.value);
+                        return (
+                            <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                                <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                        const next = checked ? selected.filter((value) => value !== option.value) : [...selected, option.value];
+                                        onChange(next.length ? { field: field.id, operator: "in", value: next } : undefined);
+                                    }}
+                                    className="accent-emerald-500"
+                                />
+                                <span>{option.label}</span>
+                            </label>
+                        );
+                    })}
+                </div>
+            </details>
+        );
+    }
 
-const formatNumber = (value: unknown, digits = 2) => {
-    const num = Number(value);
-    return Number.isFinite(num) ? num.toFixed(digits) : "—";
-};
-
-const formatPercent = (value: unknown) => {
-    const num = Number(value);
-    return Number.isFinite(num) ? `${(num * 100).toFixed(1)}%` : "—";
-};
-
-function buildPayload(filters: ScreenerFilters, page: number): ScreenerPayload {
-    const payload: ScreenerPayload = {
-        limit: LIMIT,
-        offset: page * LIMIT,
-        sort_by: filters.sort_by,
-        sort_desc: filters.sort_desc === "desc",
+    const operator = filter?.operator ?? draftOperator;
+    const rawValues = Array.isArray(filter?.value) ? filter.value : filter ? [filter.value] : [];
+    const displayValue = (value: string | number | undefined) => {
+        if (value === undefined) return "";
+        if (field.unit === "percent") return String(Number(value) * 100);
+        return String(value);
     };
-    if (filters.sector) payload.sector = filters.sector;
-    if (filters.market_cap === "mega") payload.market_cap_min = 200e9;
-    if (filters.market_cap === "large") { payload.market_cap_min = 10e9; payload.market_cap_max = 200e9; }
-    if (filters.market_cap === "mid") { payload.market_cap_min = 2e9; payload.market_cap_max = 10e9; }
-    if (filters.market_cap === "small") payload.market_cap_max = 2e9;
-    if (filters.pe === "under15") payload.pe_max = 15;
-    if (filters.pe === "over50") payload.pe_min = 50;
-    if (filters.rsi === "oversold") payload.rsi_14_max = 30;
-    if (filters.rsi === "overbought") payload.rsi_14_min = 70;
-    if (filters.price_ma50 === "above") payload.price_above_ma50 = true;
-    if (filters.price_ma50 === "below") payload.price_below_ma50 = true;
-    if (filters.roe === "over15") payload.roe_min = 0.15;
-    if (filters.roe === "over30") payload.roe_min = 0.30;
-    if (filters.debt_to_equity === "under1") payload.debt_to_equity_max = 1;
-    if (filters.debt_to_equity === "under05") payload.debt_to_equity_max = 0.5;
-    if (filters.fcf === "positive") payload.fcf_min = 0;
-    if (filters.fcf === "high") payload.fcf_min = 1e9;
-    if (filters.gross_margin === "over30") payload.gross_margin_min = 0.30;
-    if (filters.gross_margin === "over50") payload.gross_margin_min = 0.50;
-    if (filters.sales_growth_5yr === "over10") payload.sales_growth_5yr_min = 0.10;
-    if (filters.sales_growth_5yr === "over20") payload.sales_growth_5yr_min = 0.20;
-    return payload;
-}
+    const canonicalValue = (value: string) => {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return value;
+        return field.unit === "percent" ? number / 100 : number;
+    };
+    const update = (nextOperator: ScreenerFilter["operator"], values: Array<string | number>) => {
+        if (!values.length || values.some((value) => value === "")) {
+            onChange(undefined);
+            return;
+        }
+        onChange({
+            field: field.id,
+            operator: nextOperator,
+            value: nextOperator === "between" ? values : values[0],
+        });
+    };
 
-function StockCard({ stock }: { stock: ScreenerResult }) {
     return (
-        <Link href={`/?ticker=${encodeURIComponent(stock.ticker)}`} className="block rounded-xl border bg-white p-4 transition-colors hover:border-emerald-400 dark:bg-[#121920]">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">{stock.ticker.replace(".US", "")}</span>
-                        {stock.sector && <span className="truncate rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">{stock.sector}</span>}
-                    </div>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{stock.name || "Unnamed security"}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                    <p className="font-mono text-base font-black text-slate-900 dark:text-white">{stock.close == null ? "—" : `$${stock.close.toFixed(2)}`}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{formatMarketCap(stock.market_cap)}</p>
-                </div>
-            </div>
-            <dl className="mt-4 grid grid-cols-4 gap-2 border-t pt-3 text-center">
-                {[["P/E", formatNumber(stock.pe_ratio)], ["ROE", formatPercent(stock.roe)], ["D/E", formatNumber(stock.debt_to_equity)], ["5Y growth", formatPercent(stock.sales_growth_5yr)]].map(([label, value]) => (
-                    <div key={label}>
-                        <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
-                        <dd className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">{value}</dd>
-                    </div>
+        <div className="flex gap-1.5">
+            <select
+                aria-label={`${field.label} operator`}
+                value={operator}
+                onChange={(event) => {
+                    const next = event.target.value as ScreenerFilter["operator"];
+                    setDraftOperator(next);
+                    const values = next === "between" ? [rawValues[0] ?? "", rawValues[1] ?? ""] : [rawValues[0] ?? ""];
+                    if (values.every((value) => value !== "")) update(next, values);
+                }}
+                className="w-[76px] rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+            >
+                {field.operators.map((value) => (
+                    <option value={value} key={value}>{value}</option>
                 ))}
-            </dl>
-        </Link>
+            </select>
+            <input
+                aria-label={`${field.label} value`}
+                type={field.type === "date" ? "date" : "number"}
+                step="any"
+                value={displayValue(rawValues[0])}
+                onChange={(event) => update(operator, [canonicalValue(event.target.value), ...(operator === "between" ? [rawValues[1] ?? ""] : [])])}
+                placeholder={field.unit === "percent" ? "%" : "Value"}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950"
+            />
+            {operator === "between" && (
+                <input
+                    aria-label={`${field.label} maximum`}
+                    type={field.type === "date" ? "date" : "number"}
+                    step="any"
+                    value={displayValue(rawValues[1])}
+                    onChange={(event) => update(operator, [rawValues[0] ?? "", canonicalValue(event.target.value)])}
+                    placeholder="Max"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950"
+                />
+            )}
+        </div>
     );
 }
 
 function ScreenerContent() {
-    const searchParams = useSearchParams();
     const router = useRouter();
-    const pathname = usePathname();
-    const { filters, results, totalCount, page, asOfDate, setScreenerState } = useAppStore();
-    const [activeTab, setActiveTab] = useState<TabName>("Overview");
+    const searchParams = useSearchParams();
+    const [metadata, setMetadata] = useState<ScreenerMetadata | null>(null);
+    const [result, setResult] = useState<ScreenerQueryResponse | null>(null);
+    const [activeCategory, setActiveCategory] = useState<(typeof CATEGORIES)[number]>("Descriptive");
+    const [search, setSearch] = useState("");
+    const [filters, setFilters] = useState<ScreenerFilter[]>(() => decodeFilters(searchParams.get("filters")));
+    const [columns, setColumns] = useState<string[]>(() => parseColumns(searchParams.get("columns")));
+    const [sort, setSort] = useState(() => {
+        const [rawField, direction] = (searchParams.get("sort") ?? "").split(":");
+        return { field: rawField || "market_cap", direction: direction === "asc" ? "asc" as const : "desc" as const };
+    });
+    const [page, setPage] = useState(() => Math.max(0, Number(searchParams.get("page") ?? "1") - 1));
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
-    const [ready, setReady] = useState(false);
-    const initialized = useRef(false);
+    const [error, setError] = useState<string | null>(null);
+    const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
     useEffect(() => {
-        if (initialized.current) return;
-        initialized.current = true;
-        const nextFilters = { ...DEFAULT_SCREENER_FILTERS };
-        for (const key of FILTER_KEYS) {
-            const value = searchParams.get(key);
-            if (value !== null) {
-                nextFilters[key] = value;
-            }
-        }
-        const pageParam = searchParams.get("page");
-        const requestedPage = pageParam ? Number(pageParam) : 1;
-        setScreenerState({
-            filters: nextFilters,
-            page: Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage - 1 : 0,
-        });
-        setReady(true);
-    }, [searchParams, setScreenerState]);
+        let cancelled = false;
+        fetch(`${API_BASE_URL}/api/stocks/screener/metadata`)
+            .then(async (response) => {
+                if (!response.ok) throw new Error("Unable to load screener fields.");
+                return response.json() as Promise<ScreenerMetadata>;
+            })
+            .then((data) => {
+                if (cancelled) return;
+                setMetadata(data);
+                setColumns((current) => current.length ? current : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column)));
+            })
+            .catch((reason: Error) => !cancelled && setError(reason.message));
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
-        if (!ready) return;
         const params = new URLSearchParams();
-        for (const key of FILTER_KEYS) {
-            const value = filters[key];
-            if (value && value !== DEFAULT_SCREENER_FILTERS[key]) params.set(key, value);
-        }
+        if (filters.length) params.set("filters", encodeFilters(filters));
+        if (sort.field !== "market_cap" || sort.direction !== "desc") params.set("sort", `${sort.field}:${sort.direction}`);
+        const defaultColumns = metadata?.default_columns.filter((column) => !CORE_COLUMNS.includes(column)) ?? [];
+        if (columns.length && columns.join(",") !== defaultColumns.join(",")) params.set("columns", columns.join(","));
         if (page > 0) params.set("page", String(page + 1));
         const query = params.toString();
-        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-    }, [filters, page, pathname, ready, router]);
+        router.replace(query ? `?${query}` : "/screener", { scroll: false });
+    }, [columns, filters, metadata, page, router, sort]);
 
-    const payload = useMemo(() => buildPayload(filters, page), [filters, page]);
+    const runQuery = useCallback(async () => {
+        if (!metadata) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/stocks/screener/query`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    filters,
+                    sort,
+                    columns,
+                    limit: PAGE_SIZE,
+                    offset: page * PAGE_SIZE,
+                }),
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.detail ?? "The screener query failed.");
+            }
+            setResult(await response.json());
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "The screener query failed.");
+        } finally {
+            setLoading(false);
+        }
+    }, [columns, filters, metadata, page, sort]);
 
     useEffect(() => {
-        if (!ready) return;
-        const controller = new AbortController();
-        const timeout = window.setTimeout(async () => {
-            setLoading(true);
-            setError("");
-            try {
-                const data = await fetchScreener(payload, controller.signal);
-                setScreenerState({
-                    results: data.items,
-                    totalCount: data.total,
-                    asOfDate: data.as_of_date,
-                });
-            } catch (caught) {
-                if (caught instanceof DOMException && caught.name === "AbortError") return;
-                setError(caught instanceof Error ? caught.message : "Unable to load the market snapshot.");
-            } finally {
-                if (!controller.signal.aborted) setLoading(false);
-            }
-        }, 250);
-        return () => {
-            window.clearTimeout(timeout);
-            controller.abort();
-        };
-    }, [payload, ready, setScreenerState]);
+        const timeout = window.setTimeout(() => void runQuery(), 250);
+        return () => window.clearTimeout(timeout);
+    }, [runQuery]);
 
-    const handleFilterChange = useCallback((key: keyof ScreenerFilters, value: string) => {
-        setLoading(true);
-        setScreenerState({ filters: { ...filters, [key]: value }, page: 0 });
-    }, [filters, setScreenerState]);
-
-    const resetFilters = () => {
-        setLoading(true);
-        setScreenerState({ filters: { ...DEFAULT_SCREENER_FILTERS }, page: 0 });
+    const fieldMap = useMemo(
+        () => new Map(metadata?.fields.map((field) => [field.id, field]) ?? []),
+        [metadata],
+    );
+    const visibleFields = useMemo(
+        () => metadata?.fields.filter((field) =>
+            field.category === activeCategory &&
+            field.label.toLowerCase().includes(search.toLowerCase())
+        ) ?? [],
+        [activeCategory, metadata, search],
+    );
+    const selectedColumns = [...CORE_COLUMNS, ...columns.filter((column) => !CORE_COLUMNS.includes(column))];
+    const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE));
+    const updateFilter = (fieldId: string, next?: ScreenerFilter) => {
+        setFilters((current) => {
+            const without = current.filter((filter) => filter.field !== fieldId);
+            return next ? [...without, next] : without;
+        });
+        setPage(0);
     };
-    const totalPages = Math.ceil(totalCount / LIMIT);
-    const initialLoading = loading && totalCount === 0 && results.length === 0;
+    const applyPreset = (field: ScreenerField, presetIndex: number) => {
+        if (presetIndex < 0) return;
+        const preset = field.presets[presetIndex];
+        updateFilter(field.id, { field: field.id, operator: preset.operator, value: preset.value });
+    };
 
     return (
-        <div className="app-page">
-            <div className="page-container">
-                <header className="flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end">
-                    <div>
-                        <p className="eyebrow">Published market snapshot</p>
-                        <h1 className="page-title mt-1">Equity Screener</h1>
-                        <p className="page-description">Filter the quality-gated US equity universe across size, fundamentals, and technical conditions.</p>
+        <main className="min-h-screen bg-[#f5f7f8] px-3 py-5 text-slate-900 dark:bg-[#0b1014] dark:text-slate-100 md:px-7 md:py-7">
+            <div className="mx-auto max-w-[1580px] space-y-4">
+                <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
+                    <div className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between md:p-6">
+                        <div>
+                            <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-400">
+                                <SlidersHorizontal size={14} />
+                                Quantify Market Intelligence
+                            </div>
+                            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Stock Screener</h1>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                S&P 500 + Russell 2000 · {metadata?.supported_finviz_fields ?? "—"} Finviz-aligned fields
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-900">
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Matches</div>
+                                <div className="font-mono text-xl font-semibold">{loading ? "···" : (result?.total ?? 0).toLocaleString()}</div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-900">
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Published snapshot</div>
+                                <div className="font-mono text-sm font-semibold">{result?.as_of_date ?? metadata?.as_of_date ?? "No data"}</div>
+                            </div>
+                            <button
+                                onClick={() => void runQuery()}
+                                aria-label="Refresh results"
+                                className="grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-slate-700 dark:bg-slate-900"
+                            >
+                                <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        {asOfDate && <span className="status-pill"><CalendarDays size={13} /> Data as of {asOfDate}</span>}
-                        <span className="rounded-full border bg-white px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                            {loading ? (asOfDate ? "Refreshing…" : "Loading snapshot…") : `${totalCount.toLocaleString()} matches`}
-                        </span>
-                    </div>
+                    {(result?.freshness?.status === "stale" || metadata?.freshness?.status === "stale") && (
+                        <div className="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                            <AlertTriangle size={16} />
+                            Data is {(result?.freshness ?? metadata?.freshness)?.lag_sessions} market sessions behind the latest completed session.
+                        </div>
+                    )}
                 </header>
 
-                <section className="surface-panel overflow-hidden" aria-label="Screener filters">
-                    <div className="flex items-center justify-between border-b px-3 sm:px-5">
-                        <div className="flex min-w-0 overflow-x-auto" role="tablist" aria-label="Filter categories">
-                            {(["Overview", "Fundamentals", "Technical"] as TabName[]).map((tab) => (
-                                <button
-                                    key={tab}
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={activeTab === tab}
-                                    onClick={() => setActiveTab(tab)}
-                                    className={`shrink-0 border-b-2 px-3 py-4 text-sm font-bold sm:px-4 ${activeTab === tab ? "border-emerald-500 text-emerald-700 dark:text-emerald-300" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"}`}
-                                >
-                                    {tab}
-                                </button>
-                            ))}
-                        </div>
-                        <button type="button" onClick={resetFilters} className="secondary-button ml-1 min-h-9 shrink-0 px-2 py-1.5 sm:ml-3 sm:px-3" title="Reset all filters">
-                            <FilterX size={15} /><span className="hidden sm:inline">Reset</span>
+                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
+                    <div className="flex items-center justify-between border-b border-slate-200 p-3 dark:border-slate-800 md:hidden">
+                        <button onClick={() => setMobileFiltersOpen(true)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
+                            <Filter size={16} /> Filters {filters.length ? `(${filters.length})` : ""}
                         </button>
                     </div>
+                    <div className={`${mobileFiltersOpen ? "fixed inset-0 z-50 overflow-auto bg-white p-4 dark:bg-[#0b1014]" : "hidden"} md:block`}>
+                        <div className="mb-4 flex items-center justify-between md:hidden">
+                            <h2 className="text-lg font-semibold">Filters</h2>
+                            <button aria-label="Close filters" onClick={() => setMobileFiltersOpen(false)}><X /></button>
+                        </div>
+                        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+                                {CATEGORIES.map((category) => (
+                                    <button
+                                        key={category}
+                                        onClick={() => setActiveCategory(category)}
+                                        className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${activeCategory === category ? "bg-white text-emerald-600 shadow-sm dark:bg-slate-800 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}
+                                    >
+                                        {category}
+                                    </button>
+                                ))}
+                            </div>
+                            <label className="relative block w-full lg:w-72">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={search}
+                                    onChange={(event) => setSearch(event.target.value)}
+                                    placeholder="Search fields"
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900"
+                                />
+                            </label>
+                        </div>
 
-                    <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
-                        <FilterField label="Sort by" value={filters.sort_by} onChange={(value) => handleFilterChange("sort_by", value)}>
-                            <option value="market_cap">Market cap</option><option value="pe_ratio">P/E ratio</option><option value="roe">ROE</option><option value="debt_to_equity">Debt to equity</option><option value="sales_growth_5yr">5Y sales growth</option><option value="gross_margin">Gross margin</option><option value="fcf">Free cash flow</option><option value="volume">Volume</option><option value="rsi_14">RSI (14)</option><option value="close">Price</option>
-                        </FilterField>
-                        <FilterField label="Order" value={filters.sort_desc} onChange={(value) => handleFilterChange("sort_desc", value)}>
-                            <option value="desc">Descending</option><option value="asc">Ascending</option>
-                        </FilterField>
+                        {filters.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+                                {filters.map((filter) => {
+                                    const field = fieldMap.get(filter.field);
+                                    if (!field) return null;
+                                    return (
+                                        <button key={filter.field} onClick={() => updateFilter(filter.field)} className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:border-emerald-400 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                            {filterLabel(filter, field)} <X size={12} />
+                                        </button>
+                                    );
+                                })}
+                                <button onClick={() => { setFilters([]); setPage(0); }} className="px-2 text-xs font-semibold text-slate-500 hover:text-rose-500">Clear all</button>
+                            </div>
+                        )}
 
-                        {activeTab === "Overview" && <>
-                            <FilterField label="Sector" value={filters.sector} onChange={(value) => handleFilterChange("sector", value)}>
-                                <option value="">All sectors</option>{SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
-                            </FilterField>
-                            <FilterField label="Market cap" value={filters.market_cap} onChange={(value) => handleFilterChange("market_cap", value)}>
-                                <option value="">Any size</option><option value="mega">Mega (&gt; $200B)</option><option value="large">Large ($10B–$200B)</option><option value="mid">Mid ($2B–$10B)</option><option value="small">Small (&lt; $2B)</option>
-                            </FilterField>
-                        </>}
-
-                        {activeTab === "Fundamentals" && <>
-                            <FilterField label="P/E ratio" value={filters.pe} onChange={(value) => handleFilterChange("pe", value)}><option value="">Any</option><option value="under15">Under 15</option><option value="over50">Over 50</option></FilterField>
-                            <FilterField label="Return on equity" value={filters.roe} onChange={(value) => handleFilterChange("roe", value)}><option value="">Any</option><option value="over15">Over 15%</option><option value="over30">Over 30%</option></FilterField>
-                            <FilterField label="Debt to equity" value={filters.debt_to_equity} onChange={(value) => handleFilterChange("debt_to_equity", value)}><option value="">Any</option><option value="under1">Under 1.0</option><option value="under05">Under 0.5</option></FilterField>
-                            <FilterField label="Free cash flow" value={filters.fcf} onChange={(value) => handleFilterChange("fcf", value)}><option value="">Any</option><option value="positive">Positive</option><option value="high">Over $1B</option></FilterField>
-                            <FilterField label="Gross margin" value={filters.gross_margin} onChange={(value) => handleFilterChange("gross_margin", value)}><option value="">Any</option><option value="over30">Over 30%</option><option value="over50">Over 50%</option></FilterField>
-                            <FilterField label="5Y sales growth" value={filters.sales_growth_5yr} onChange={(value) => handleFilterChange("sales_growth_5yr", value)}><option value="">Any</option><option value="over10">Over 10%</option><option value="over20">Over 20%</option></FilterField>
-                        </>}
-
-                        {activeTab === "Technical" && <>
-                            <FilterField label="Price vs MA50" value={filters.price_ma50} onChange={(value) => handleFilterChange("price_ma50", value)}><option value="">Any</option><option value="above">Above MA50</option><option value="below">Below MA50</option></FilterField>
-                            <FilterField label="RSI (14)" value={filters.rsi} onChange={(value) => handleFilterChange("rsi", value)}><option value="">Any</option><option value="oversold">Oversold (&lt; 30)</option><option value="overbought">Overbought (&gt; 70)</option></FilterField>
-                        </>}
+                        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+                            {visibleFields.map((field) => {
+                                const active = filters.find((filter) => filter.field === field.id);
+                                return (
+                                    <div key={field.id} className={`rounded-xl border p-3 transition ${active ? "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-slate-200 dark:border-slate-800"} ${!field.available ? "opacity-50" : ""}`}>
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">{field.label}</label>
+                                                <span className={`text-[10px] ${field.coverage < 0.5 ? "text-amber-500" : "text-slate-400"}`}>{Math.round(field.coverage * 100)}% coverage</span>
+                                            </div>
+                                            {field.presets.length > 0 && (
+                                                <select
+                                                    aria-label={`${field.label} preset`}
+                                                    defaultValue="-1"
+                                                    onChange={(event) => applyPreset(field, Number(event.target.value))}
+                                                    disabled={!field.available}
+                                                    className="max-w-24 rounded-md border-0 bg-transparent text-[10px] text-slate-500 outline-none"
+                                                >
+                                                    <option value="-1">Preset</option>
+                                                    {field.presets.map((preset, index) => <option value={index} key={preset.label}>{preset.label}</option>)}
+                                                </select>
+                                            )}
+                                        </div>
+                                        <fieldset disabled={!field.available}>
+                                            <FieldControl field={field} filter={active} onChange={(next) => updateFilter(field.id, next)} />
+                                        </fieldset>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="sticky bottom-0 z-50 border-t border-slate-200 bg-white p-4 md:hidden dark:border-slate-800 dark:bg-[#0b1014]">
+                            <button onClick={() => setMobileFiltersOpen(false)} className="w-full rounded-xl bg-emerald-500 py-3 font-semibold text-slate-950">Show {result?.total ?? 0} matches</button>
+                        </div>
                     </div>
                 </section>
 
-                {error && <div className="error-panel" role="alert">{error} Previous results remain visible.</div>}
-
-                <section className="surface-panel overflow-hidden" aria-busy={loading}>
-                    <div className="flex items-center justify-between border-b px-4 py-3 lg:hidden">
-                        <span className="flex items-center gap-2 text-sm font-bold"><SlidersHorizontal size={15} /> Results</span>
-                        {loading && <Loader2 className="animate-spin text-emerald-500" size={16} />}
-                    </div>
-
-                    <div className="grid gap-3 p-3 lg:hidden">
-                        {!loading && results.length === 0
-                            ? <p className="py-12 text-center text-sm text-slate-500">No securities match these filters.</p>
-                            : results.map((stock) => <StockCard key={stock.ticker} stock={stock} />)}
-                    </div>
-
-                    <div className="hidden overflow-x-auto lg:block">
-                        <table className="w-full whitespace-nowrap text-left text-sm">
-                            <thead className="surface-subtle text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                <tr><th className="px-5 py-4">Ticker</th><th className="px-5 py-4">Company</th><th className="px-5 py-4">Sector</th><th className="px-5 py-4 text-right">Market cap</th><th className="px-5 py-4 text-right">Price</th><th className="px-5 py-4 text-right">P/E</th><th className="px-5 py-4 text-right">ROE</th><th className="px-5 py-4 text-right">D/E</th><th className="px-5 py-4 text-right">Gross margin</th><th className="px-5 py-4 text-right">5Y growth</th></tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {results.length === 0 ? <tr><td colSpan={10} className="px-6 py-16 text-center text-slate-500">{loading ? "Loading the published market snapshot…" : "No securities match these filters."}</td></tr> : results.map((stock) => (
-                                    <tr key={stock.ticker} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                        <td className="px-5 py-3.5"><Link href={`/?ticker=${encodeURIComponent(stock.ticker)}`} className="font-mono font-black text-emerald-600 hover:underline dark:text-emerald-400">{stock.ticker.replace(".US", "")}</Link></td>
-                                        <td className="max-w-[220px] truncate px-5 py-3.5 font-semibold" title={stock.name || undefined}>{stock.name || "—"}</td>
-                                        <td className="max-w-[150px] truncate px-5 py-3.5 text-slate-500 dark:text-slate-400">{stock.sector || "—"}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono">{formatMarketCap(stock.market_cap)}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono font-bold">{stock.close == null ? "—" : `$${stock.close.toFixed(2)}`}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono">{formatNumber(stock.pe_ratio)}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono">{formatPercent(stock.roe)}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono">{formatNumber(stock.debt_to_equity)}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono">{formatPercent(stock.gross_margin)}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono">{formatPercent(stock.sales_growth_5yr)}</td>
-                                    </tr>
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
+                    <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="font-semibold">Screening results</h2>
+                            <p className="text-xs text-slate-500">Click a column to sort. Results are calculated from the published snapshot.</p>
+                        </div>
+                        <details className="relative">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:border-emerald-400 dark:border-slate-700">
+                                <Columns3 size={15} /> Columns
+                            </summary>
+                            <div className="absolute right-0 z-30 mt-2 max-h-80 w-72 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                                {metadata?.fields.filter((field) => field.available).map((field) => (
+                                    <label key={field.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                                        <input
+                                            type="checkbox"
+                                            checked={columns.includes(field.id)}
+                                            onChange={() => setColumns((current) => current.includes(field.id) ? current.filter((value) => value !== field.id) : [...current, field.id].slice(0, 30))}
+                                            className="accent-emerald-500"
+                                        />
+                                        <span className="flex-1">{field.label}</span>
+                                        <span className="text-[10px] text-slate-400">{field.category.slice(0, 4)}</span>
+                                    </label>
                                 ))}
-                            </tbody>
-                        </table>
+                            </div>
+                        </details>
                     </div>
 
-                    <footer className="surface-subtle flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {initialLoading ? "Loading published snapshot…" : totalCount > 0 ? `${(page * LIMIT + 1).toLocaleString()}–${Math.min((page + 1) * LIMIT, totalCount).toLocaleString()} of ${totalCount.toLocaleString()}` : "No results"}
-                        </p>
-                        <div className="flex items-center justify-between gap-2 sm:justify-end">
-                            <button type="button" className="secondary-button min-h-9 px-3 py-1.5" disabled={page === 0 || loading} onClick={() => { setLoading(true); setScreenerState({ page: page - 1 }); }}><ChevronLeft size={16} /> Previous</button>
-                            <span className="px-2 text-xs font-semibold text-slate-500">{initialLoading ? "Loading…" : `Page ${totalPages ? page + 1 : 0} of ${totalPages}`}</span>
-                            <button type="button" className="secondary-button min-h-9 px-3 py-1.5" disabled={page >= totalPages - 1 || loading} onClick={() => { setLoading(true); setScreenerState({ page: page + 1 }); }}>Next <ChevronRight size={16} /></button>
+                    {error ? (
+                        <div className="m-4 flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                            <span>{error}</span>
+                            <button onClick={() => void runQuery()} className="font-semibold underline">Retry</button>
+                        </div>
+                    ) : (
+                        <div className="max-h-[680px] overflow-auto">
+                            <table className="min-w-full whitespace-nowrap text-left text-sm">
+                                <thead className="sticky top-0 z-10 bg-slate-100/95 text-[11px] uppercase tracking-wider text-slate-500 backdrop-blur dark:bg-slate-900/95">
+                                    <tr>
+                                        {selectedColumns.map((column) => {
+                                            const field = fieldMap.get(column);
+                                            return (
+                                                <th key={column} className="px-4 py-3 font-semibold">
+                                                    <button
+                                                        onClick={() => {
+                                                            if (column === "name" || column === "ticker" || field) {
+                                                                setSort((current) => ({ field: column, direction: current.field === column && current.direction === "desc" ? "asc" : "desc" }));
+                                                                setPage(0);
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-1 hover:text-emerald-500"
+                                                    >
+                                                        {column === "ticker" ? "Ticker" : column === "name" ? "Company" : field?.label ?? column}
+                                                        {sort.field === column && <span>{sort.direction === "desc" ? "↓" : "↑"}</span>}
+                                                    </button>
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {loading && !result ? (
+                                        Array.from({ length: 8 }).map((_, index) => (
+                                            <tr key={index}>{selectedColumns.map((column) => <td key={column} className="px-4 py-4"><div className="h-4 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /></td>)}</tr>
+                                        ))
+                                    ) : result?.items.length ? result.items.map((row, rowIndex) => (
+                                        <tr key={String(row.ticker ?? rowIndex)} className="transition hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20">
+                                            {selectedColumns.map((column) => (
+                                                <td key={column} className={`px-4 py-3 ${column === "ticker" ? "font-mono font-bold text-emerald-600 dark:text-emerald-400" : column === "name" ? "max-w-64 truncate font-medium" : "font-mono text-slate-700 dark:text-slate-300"}`}>
+                                                    {column === "ticker" ? String(row[column] ?? "").replace(".US", "") : formatScreenerValue(row[column], fieldMap.get(column))}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    )) : (
+                                        <tr><td colSpan={selectedColumns.length} className="px-6 py-20 text-center"><Filter className="mx-auto mb-3 text-slate-300" size={32} /><p className="font-semibold">No stocks match these filters</p><p className="mt-1 text-sm text-slate-500">Remove one or more conditions and try again.</p></td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    <footer className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                        <span className="text-slate-500">
+                            {result?.total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, result.total)} of ${result.total.toLocaleString()}` : "0 results"}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button aria-label="Previous page" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))} className="grid size-9 place-items-center rounded-lg border border-slate-200 disabled:opacity-30 dark:border-slate-700"><ChevronLeft size={16} /></button>
+                            <span className="min-w-24 text-center font-mono text-xs">Page {page + 1} / {totalPages}</span>
+                            <button aria-label="Next page" disabled={page + 1 >= totalPages} onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))} className="grid size-9 place-items-center rounded-lg border border-slate-200 disabled:opacity-30 dark:border-slate-700"><ChevronRight size={16} /></button>
                         </div>
                     </footer>
                 </section>
             </div>
-        </div>
+        </main>
     );
 }
 
 export default function ScreenerPage() {
     return (
-        <Suspense fallback={<div className="app-page"><div className="page-container"><div className="surface-panel h-[560px] animate-pulse" /></div></div>}>
+        <Suspense fallback={<div className="min-h-screen bg-[#f5f7f8] dark:bg-[#0b1014]" />}>
             <ScreenerContent />
         </Suspense>
     );
