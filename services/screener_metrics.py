@@ -218,7 +218,17 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     if len(quarterly_income) >= 5:
         revenue_qoq = _growth(quarterly_income[0].get("totalRevenue"), quarterly_income[4].get("totalRevenue"))
     revenue_ttm_previous = _sum_metric(quarterly_income, "totalRevenue", 4, 4)
-    sales_growth_ttm = _growth(revenue_ttm, revenue_ttm_previous)
+    if provider_revenue_ttm is not None and revenue_ttm_previous is not None:
+        sales_growth_ttm = _growth(provider_revenue_ttm, revenue_ttm_previous)
+    elif quarterly_revenue_ttm is not None and revenue_ttm_previous is not None:
+        sales_growth_ttm = _growth(quarterly_revenue_ttm, revenue_ttm_previous)
+    else:
+        previous_annual_revenue = safe_float(
+            yearly_income[1].get("totalRevenue")
+            if len(yearly_income) >= 2
+            else None
+        )
+        sales_growth_ttm = _growth(annual_revenue, previous_annual_revenue)
     sales_growth_3yr = _cagr(
         yearly_income[0].get("totalRevenue") if yearly_income else None,
         yearly_income[3].get("totalRevenue") if len(yearly_income) >= 4 else None,

@@ -249,6 +249,28 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
     })
     assert mixed_tax_windows["roic"] == pytest.approx(0.16)
 
+    mixed_revenue_windows = extract_fundamental_metrics({
+        "Financials": {
+            "Income_Statement": {
+                "quarterly": {
+                    "2025-12-31": {"totalRevenue": 100},
+                    "2025-09-30": {"totalRevenue": 100},
+                    "2025-06-30": {"totalRevenue": 100},
+                    "2025-03-31": {},
+                    "2024-12-31": {"totalRevenue": 50},
+                    "2024-09-30": {"totalRevenue": 50},
+                    "2024-06-30": {"totalRevenue": 50},
+                    "2024-03-31": {"totalRevenue": 50},
+                },
+                "yearly": {
+                    "2025-12-31": {"totalRevenue": 600},
+                    "2024-12-31": {"totalRevenue": 500},
+                },
+            },
+        },
+    })
+    assert mixed_revenue_windows["sales_growth_ttm"] == pytest.approx(0.2)
+
     annual_balance_metrics = extract_fundamental_metrics({
         "Highlights": {
             "MarketCapitalization": 1_000,
@@ -614,6 +636,17 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             }],
         })
         assert oversized_in_response.status_code == 422
+
+        oversized_offset_response = await client.post("/api/stocks/screener/query", json={
+            "offset": 1_000_001,
+        })
+        assert oversized_offset_response.status_code == 422
+
+        unavailable_date_response = await client.post("/api/stocks/screener/query", json={
+            "as_of_date": "0001-01-01",
+        })
+        assert unavailable_date_response.status_code == 200
+        assert unavailable_date_response.json()["freshness"] is None
 
         invalid_date_operand_response = await client.post("/api/stocks/screener/query", json={
             "filters": [{"field": "ipo_date", "operator": "eq", "value": ["2020-01-15"]}],

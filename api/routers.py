@@ -65,7 +65,7 @@ class ScreenerRequest(BaseModel):
     sort_by: Optional[str] = "market_cap" # e.g., "market_cap", "pe_ratio", "volume", "rsi_14", "close"
     sort_desc: Optional[bool] = True
     limit: int = Field(50, ge=1, le=500)
-    offset: int = Field(0, ge=0)
+    offset: int = Field(0, ge=0, le=1_000_000)
 
 
 async def _load_latest_published_factor_snapshot(ticker: str, db: AsyncSession) -> Optional[dict]:
@@ -134,7 +134,7 @@ class ScreenerQueryRequest(BaseModel):
     sort: ScreenerSort = Field(default_factory=ScreenerSort)
     columns: List[str] = Field(default_factory=list, max_length=30)
     limit: int = Field(50, ge=1, le=500)
-    offset: int = Field(0, ge=0)
+    offset: int = Field(0, ge=0, le=1_000_000)
 
     @field_validator("columns")
     @classmethod

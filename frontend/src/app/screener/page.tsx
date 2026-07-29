@@ -29,6 +29,7 @@ import {
 } from "@/lib/screener";
 
 const PAGE_SIZE = 50;
+const MAX_FILTERS = 64;
 const CATEGORIES = ["Descriptive", "Fundamental", "Technical"] as const;
 const CORE_COLUMNS = ["ticker", "name"];
 const EMPTY_COLUMNS_SENTINEL = "none";
@@ -41,6 +42,16 @@ export function parsePage(value: string | null): number {
     if (value === null) return 0;
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed - 1 : 0;
+}
+
+export function updateScreenerFilters(
+    current: ScreenerFilter[],
+    fieldId: string,
+    next?: ScreenerFilter,
+): ScreenerFilter[] {
+    const without = current.filter((filter) => filter.field !== fieldId);
+    if (next && without.length >= MAX_FILTERS) return current;
+    return next ? [...without, next] : without;
 }
 
 export function FieldControl({
@@ -346,11 +357,9 @@ export function ScreenerContent() {
     );
     const selectedColumns = [...CORE_COLUMNS, ...columns.filter((column) => !CORE_COLUMNS.includes(column))];
     const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE));
+    const filterLimitReached = filters.length >= MAX_FILTERS;
     const updateFilter = (fieldId: string, next?: ScreenerFilter) => {
-        setFilters((current) => {
-            const without = current.filter((filter) => filter.field !== fieldId);
-            return next ? [...without, next] : without;
-        });
+        setFilters((current) => updateScreenerFilters(current, fieldId, next));
         setPage(0);
     };
     const applyPreset = (field: ScreenerField, presetIndex: number) => {
@@ -446,6 +455,11 @@ export function ScreenerContent() {
                                     );
                                 })}
                                 <button onClick={() => { setFilters([]); setPage(0); }} className="px-2 text-xs font-semibold text-slate-500 hover:text-rose-500">Clear all</button>
+                                {filterLimitReached && (
+                                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                        Maximum {MAX_FILTERS} filters reached.
+                                    </span>
+                                )}
                             </div>
                         )}
 
@@ -469,7 +483,7 @@ export function ScreenerContent() {
                                                         )
                                                         : -1)}
                                                     onChange={(event) => applyPreset(field, Number(event.target.value))}
-                                                    disabled={!field.available}
+                                                    disabled={!field.available || (filterLimitReached && !active)}
                                                     className="max-w-24 rounded-md border-0 bg-transparent text-[10px] text-slate-500 outline-none"
                                                 >
                                                     <option value="-1">Preset</option>
@@ -477,7 +491,7 @@ export function ScreenerContent() {
                                                 </select>
                                             )}
                                         </div>
-                                        <fieldset disabled={!field.available}>
+                                        <fieldset disabled={!field.available || (filterLimitReached && !active)}>
                                             <FieldControl
                                                 field={field}
                                                 filter={active}

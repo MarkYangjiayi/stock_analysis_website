@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { FieldControl, parsePage } from "./page";
-import { ScreenerField } from "@/lib/screener";
+import { FieldControl, parsePage, updateScreenerFilters } from "./page";
+import { ScreenerField, ScreenerFilter } from "@/lib/screener";
 
 const numericField: ScreenerField = {
     id: "roe",
@@ -79,5 +79,27 @@ describe("parsePage", () => {
         ["3", 2],
     ])("normalizes %s to %s", (value, expected) => {
         expect(parsePage(value)).toBe(expected);
+    });
+});
+
+describe("updateScreenerFilters", () => {
+    it("caps new filters at the API limit while allowing replacements", () => {
+        const filters: ScreenerFilter[] = Array.from({ length: 64 }, (_, index) => ({
+            field: `field_${index}`,
+            operator: "gte",
+            value: index,
+        }));
+
+        expect(updateScreenerFilters(filters, "field_64", {
+            field: "field_64",
+            operator: "gte",
+            value: 64,
+        })).toBe(filters);
+        expect(updateScreenerFilters(filters, "field_0", {
+            field: "field_0",
+            operator: "gte",
+            value: 100,
+        })).toHaveLength(64);
+        expect(updateScreenerFilters(filters, "field_0")).toHaveLength(63);
     });
 });

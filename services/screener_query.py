@@ -314,7 +314,7 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
                 "limit": request_data.get("limit", 50),
                 "offset": request_data.get("offset", 0),
                 "as_of_date": selected_date.isoformat(),
-                "freshness": _freshness(selected_date),
+                "freshness": None,
             }
 
     requested_columns = (
