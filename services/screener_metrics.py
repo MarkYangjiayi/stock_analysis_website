@@ -108,11 +108,16 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     quarterly_income = _dated_values(income.get("quarterly"))
     yearly_income = _dated_values(income.get("yearly"))
     quarterly_balance = _dated_values(balance.get("quarterly"))
+    yearly_balance = _dated_values(balance.get("yearly"))
     quarterly_cash = _dated_values(cash_flow.get("quarterly"))
     yearly_cash = _dated_values(cash_flow.get("yearly"))
 
     latest_annual_income = yearly_income[0] if yearly_income else {}
-    latest_balance = quarterly_balance[0] if quarterly_balance else {}
+    latest_balance = (
+        quarterly_balance[0]
+        if quarterly_balance
+        else (yearly_balance[0] if yearly_balance else {})
+    )
     latest_annual_cash = yearly_cash[0] if yearly_cash else {}
 
     revenue_ttm = safe_float(highlights.get("RevenueTTM"))

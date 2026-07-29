@@ -221,6 +221,30 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
     assert metrics["roic"] is None
     assert metrics["eps_growth_ttm"] is None
 
+    annual_balance_metrics = extract_fundamental_metrics({
+        "Highlights": {
+            "MarketCapitalization": 1_000,
+        },
+        "Financials": {
+            "Balance_Sheet": {
+                "yearly": {
+                    "2025-12-31": {
+                        "cashAndShortTermInvestments": 100,
+                        "totalCurrentAssets": 300,
+                        "totalCurrentLiabilities": 150,
+                        "inventory": 30,
+                        "totalStockholderEquity": 400,
+                        "shortLongTermDebtTotal": 200,
+                    },
+                },
+            },
+        },
+    })
+    assert annual_balance_metrics["price_cash"] == pytest.approx(10)
+    assert annual_balance_metrics["current_ratio"] == pytest.approx(2)
+    assert annual_balance_metrics["quick_ratio"] == pytest.approx(1.8)
+    assert annual_balance_metrics["debt_to_equity"] == pytest.approx(0.5)
+
 
 @pytest.mark.parametrize(
     ("candles", "expected"),

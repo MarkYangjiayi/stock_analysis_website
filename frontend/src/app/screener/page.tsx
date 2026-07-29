@@ -213,8 +213,15 @@ export function ScreenerContent() {
             setSort((current) => validSortFields.has(current.field)
                 ? current
                 : { field: "market_cap", direction: "desc" });
+            setColumns((current) => {
+                const validColumns = current.filter((column) =>
+                    !CORE_COLUMNS.includes(column) && validSortFields.has(column)
+                );
+                return validColumns.length
+                    ? validColumns
+                    : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column));
+            });
             setMetadata(data);
-            setColumns((current) => current.length ? current : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column)));
         } catch (reason) {
             if (reason instanceof DOMException && reason.name === "AbortError") return;
             setError(reason instanceof Error ? reason.message : "Unable to load screener fields.");
@@ -261,7 +268,13 @@ export function ScreenerContent() {
                 const payload = await response.json().catch(() => ({}));
                 throw new Error(payload.detail ?? "The screener query failed.");
             }
-            setResult(await response.json());
+            const data = await response.json() as ScreenerQueryResponse;
+            const lastPage = Math.max(0, Math.ceil(data.total / PAGE_SIZE) - 1);
+            if (page > lastPage) {
+                setPage(lastPage);
+                return;
+            }
+            setResult(data);
         } catch (reason) {
             if (reason instanceof DOMException && reason.name === "AbortError") return;
             setError(reason instanceof Error ? reason.message : "The screener query failed.");

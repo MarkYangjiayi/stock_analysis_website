@@ -128,7 +128,7 @@ async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypat
             "date": "2025-01-02",
             "close": 100,
         }
-        for ticker in ["AAA", "BBB"]
+        for ticker in ["AAA", "BBB", "SPY"]
     ]
     raw_splits = [
         {"code": "AAA", "exchange": "US", "date": "2025-01-02", "split": "2/1"},
@@ -172,6 +172,7 @@ async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypat
     assert frame.attrs["raw_bulk_eod"] == bulk_prices
     assert frame.attrs["raw_bulk_splits"] == raw_splits
     assert frame.attrs["raw_bulk_dividends"] == raw_dividends
+    assert frame.attrs["benchmark_prices"] == [{**bulk_prices[2], "ticker": "SPY.US"}]
     assert {item["ticker"] for item in frame.attrs["bulk_splits"]} == {"AAA.US"}
     assert {item["ticker"] for item in frame.attrs["bulk_dividends"]} == {"BBB.US"}
 

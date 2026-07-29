@@ -89,3 +89,14 @@ test("recovers from an unknown URL sort field", async ({ page }, testInfo) => {
     await expect(page).not.toHaveURL(/removed_field/);
     await expect(page.getByText(/unsupported sort field/)).not.toBeVisible();
 });
+
+test("recovers from unknown URL columns and an out-of-range page", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "URL validation is viewport-independent");
+    await page.goto("/screener?columns=sector,removed_field&page=999");
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    await expect(page.getByText("Page 3 / 3")).toBeVisible();
+    await expect(page).toHaveURL(/columns=sector/);
+    await expect(page).not.toHaveURL(/removed_field/);
+    await expect(page).toHaveURL(/page=3/);
+    await expect(page.getByText("No stocks match these filters")).not.toBeVisible();
+});

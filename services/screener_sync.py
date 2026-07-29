@@ -180,6 +180,12 @@ async def fetch_and_merge_bulk_data(
         else:
             df_eod['ticker'] = df_eod['code'] + '.US'
 
+        benchmark_prices = df_eod[
+            df_eod["code"].astype(str).str.upper() == "SPY"
+        ].copy()
+        if not benchmark_prices.empty:
+            benchmark_prices["ticker"] = "SPY.US"
+
         # Discard all prices that are not in the observed target universe.
         df_eod = df_eod[df_eod['ticker'].isin(target_tickers)]
         logger.info(f"Filtered EOD prices down to {len(df_eod)} target index constituents.")
@@ -217,6 +223,7 @@ async def fetch_and_merge_bulk_data(
     df_merged.attrs["russell2000_tickers"] = sorted({ticker.upper() for ticker in russell_tickers})
     df_merged.attrs["priced_tickers"] = sorted(priced_tickers)
     df_merged.attrs["universe_coverage"] = universe_coverage
+    df_merged.attrs["benchmark_prices"] = benchmark_prices.to_dict("records")
     # Preserve the exact exchange-wide responses for immutable lineage. The
     # normalized action lists below remain limited to the target universe.
     df_merged.attrs["raw_bulk_eod"] = eod_data
@@ -306,7 +313,8 @@ async def calculate_technicals_locally(
     )
     benchmark_rows = benchmark_result.all()
     benchmark_returns = None
-    if benchmark_rows:
+    benchmark_as_of = as_of_date or date.today()
+    if benchmark_rows and benchmark_rows[-1].date == benchmark_as_of:
         benchmark = pd.DataFrame(benchmark_rows, columns=["date", "close", "adjusted_close"])
         benchmark["adjusted_close"] = pd.to_numeric(
             benchmark["adjusted_close"], errors="coerce"
@@ -378,6 +386,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         raw_bulk_eod = df_merged.attrs.get("raw_bulk_eod")
         raw_bulk_splits = df_merged.attrs.get("raw_bulk_splits")
         raw_bulk_dividends = df_merged.attrs.get("raw_bulk_dividends")
+        benchmark_prices = list(df_merged.attrs.get("benchmark_prices", []))
             
         # VERY IMPORTANT: EODHD bulk sometimes returns overlapping duplicates for the same day
         df_merged = df_merged.drop_duplicates(subset=['ticker'])
@@ -478,6 +487,39 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                             break
                 record[field_name] = value
             records_to_upsert.append(record)
+
+        existing_price_keys = {
+            (row["ticker"], row["date"])
+            for row in daily_price_inserts
+        }
+        for benchmark_row in benchmark_prices:
+            try:
+                benchmark_date = datetime.strptime(
+                    str(benchmark_row.get("date")),
+                    "%Y-%m-%d",
+                ).date()
+            except (TypeError, ValueError):
+                continue
+            benchmark_key = ("SPY.US", benchmark_date)
+            benchmark_close = _safe_float(benchmark_row.get("close"))
+            if benchmark_close is None or benchmark_key in existing_price_keys:
+                continue
+            benchmark_adjusted_close = _safe_float(benchmark_row.get("adjusted_close"))
+            benchmark_volume = benchmark_row.get("volume")
+            daily_price_inserts.append({
+                "ticker": "SPY.US",
+                "date": benchmark_date,
+                "open": _safe_float(benchmark_row.get("open")),
+                "high": _safe_float(benchmark_row.get("high")),
+                "low": _safe_float(benchmark_row.get("low")),
+                "close": benchmark_close,
+                "adjusted_close": (
+                    benchmark_adjusted_close
+                    if benchmark_adjusted_close is not None
+                    else benchmark_close
+                ),
+                "volume": int(benchmark_volume) if pd.notna(benchmark_volume) else None,
+            })
             
         logger.info(f"Prepared {len(records_to_upsert)} base records for snapshot.")
 
@@ -495,7 +537,10 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         await update_pipeline_run(run_id, "writing_prices", len(records_to_upsert))
         async with async_session_maker() as db, db.begin():
             # First, ensure all tickers exist in Tickers table to avoid foreign key violations in DailyPrice
-            ticker_list = list(set([r['ticker'] for r in records_to_upsert]))
+            ticker_list = list(
+                {record["ticker"] for record in records_to_upsert}
+                | {record["ticker"] for record in daily_price_inserts}
+            )
             
             # Fetch existing tickers in chunks to avoid max bind parameter limits
             existing_tickers = set()

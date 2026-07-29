@@ -311,6 +311,16 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         "dividend": "0.25",
         "currency": "USD",
     }]
+    frame.attrs["benchmark_prices"] = [{
+        "ticker": "SPY.US",
+        "date": target.isoformat(),
+        "open": 199,
+        "high": 202,
+        "low": 198,
+        "close": 200,
+        "adjusted_close": 200,
+        "volume": 2_000,
+    }]
 
     async def fake_bulk(*args, **kwargs):
         return frame.copy()
@@ -338,7 +348,8 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
     prices = (await db_session.execute(
         select(DailyPrice).order_by(DailyPrice.ticker)
     )).scalars().all()
-    assert [float(price.adjusted_close) for price in prices] == [100.0, 101.0]
+    assert [price.ticker for price in prices] == ["AAA.US", "BBB.US", "SPY.US"]
+    assert [float(price.adjusted_close) for price in prices] == [100.0, 101.0, 200.0]
     snapshots = (await db_session.execute(
         select(StockScreenerSnapshot).order_by(StockScreenerSnapshot.ticker)
     )).scalars().all()
