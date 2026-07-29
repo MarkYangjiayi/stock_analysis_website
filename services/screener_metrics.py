@@ -127,22 +127,50 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     )
     latest_annual_cash = yearly_cash[0] if yearly_cash else {}
 
-    revenue_ttm = safe_float(highlights.get("RevenueTTM"))
-    if revenue_ttm is None:
-        revenue_ttm = _sum_metric(quarterly_income, "totalRevenue", 0, 4)
-    if revenue_ttm is None:
-        revenue_ttm = safe_float(latest_annual_income.get("totalRevenue"))
-    gross_profit_ttm = safe_float(highlights.get("GrossProfitTTM"))
-    if gross_profit_ttm is None:
-        gross_profit_ttm = _sum_metric(quarterly_income, "grossProfit", 0, 4)
-    if gross_profit_ttm is None:
-        gross_profit_ttm = safe_float(latest_annual_income.get("grossProfit"))
-    operating_income_ttm = _sum_metric(quarterly_income, "operatingIncome", 0, 4)
-    if operating_income_ttm is None:
-        operating_income_ttm = safe_float(latest_annual_income.get("operatingIncome"))
-    net_income_ttm = _sum_metric(quarterly_income, "netIncome", 0, 4)
-    if net_income_ttm is None:
-        net_income_ttm = safe_float(latest_annual_income.get("netIncome"))
+    provider_revenue_ttm = safe_float(highlights.get("RevenueTTM"))
+    provider_gross_profit_ttm = safe_float(highlights.get("GrossProfitTTM"))
+    quarterly_revenue_ttm = _sum_metric(quarterly_income, "totalRevenue", 0, 4)
+    quarterly_gross_profit_ttm = _sum_metric(quarterly_income, "grossProfit", 0, 4)
+    quarterly_operating_income_ttm = _sum_metric(quarterly_income, "operatingIncome", 0, 4)
+    quarterly_net_income_ttm = _sum_metric(quarterly_income, "netIncome", 0, 4)
+    annual_revenue = safe_float(latest_annual_income.get("totalRevenue"))
+    annual_gross_profit = safe_float(latest_annual_income.get("grossProfit"))
+    annual_operating_income = safe_float(latest_annual_income.get("operatingIncome"))
+    annual_net_income = safe_float(latest_annual_income.get("netIncome"))
+    revenue_ttm = _first_present(
+        provider_revenue_ttm,
+        quarterly_revenue_ttm,
+        annual_revenue,
+    )
+    gross_margin = _first_present(
+        safe_ratio(provider_gross_profit_ttm, provider_revenue_ttm),
+        safe_ratio(quarterly_gross_profit_ttm, quarterly_revenue_ttm),
+        safe_ratio(annual_gross_profit, annual_revenue),
+    )
+    operating_margin_fallback = _first_present(
+        safe_ratio(
+            quarterly_operating_income_ttm,
+            quarterly_revenue_ttm,
+            positive_denominator=False,
+        ),
+        safe_ratio(
+            annual_operating_income,
+            annual_revenue,
+            positive_denominator=False,
+        ),
+    )
+    net_margin_fallback = _first_present(
+        safe_ratio(
+            quarterly_net_income_ttm,
+            quarterly_revenue_ttm,
+            positive_denominator=False,
+        ),
+        safe_ratio(
+            annual_net_income,
+            annual_revenue,
+            positive_denominator=False,
+        ),
+    )
     fcf_ttm = _sum_metric(quarterly_cash, "freeCashFlow", 0, 4)
     if fcf_ttm is None:
         fcf_ttm = safe_float(latest_annual_cash.get("freeCashFlow"))
@@ -281,14 +309,14 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
             current_liabilities,
         ),
         "fcf": fcf_ttm,
-        "gross_margin": safe_ratio(gross_profit_ttm, revenue_ttm),
+        "gross_margin": gross_margin,
         "operating_margin": _first_present(
             safe_decimal_rate(highlights.get("OperatingMarginTTM")),
-            safe_ratio(operating_income_ttm, revenue_ttm, positive_denominator=False),
+            operating_margin_fallback,
         ),
         "net_profit_margin": _first_present(
             safe_decimal_rate(highlights.get("ProfitMargin")),
-            safe_ratio(net_income_ttm, revenue_ttm, positive_denominator=False),
+            net_margin_fallback,
         ),
         "sales_growth_qoq": _first_present(
             safe_decimal_rate(highlights.get("QuarterlyRevenueGrowthYOY")),

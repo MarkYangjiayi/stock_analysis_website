@@ -9,11 +9,8 @@ from models import Base, DataPublication, PipelineRun, StockScreenerSnapshot, Un
 
 
 def assert_safe_e2e_database(environment: str, database_url: str) -> None:
-    normalized_url = database_url.lower()
-    if environment.lower() != "test" or not any(
-        marker in normalized_url
-        for marker in ("test", "e2e")
-    ):
+    allowed_database_url = "sqlite+aiosqlite:///./data/screener_e2e.db"
+    if environment.lower() != "test" or database_url != allowed_database_url:
         raise RuntimeError(
             "refusing to reset a database that is not explicitly marked for E2E tests"
         )

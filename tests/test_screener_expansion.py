@@ -226,6 +226,7 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
     annual_balance_metrics = extract_fundamental_metrics({
         "Highlights": {
             "MarketCapitalization": 1_000,
+            "RevenueTTM": 1_000,
         },
         "Financials": {
             "Balance_Sheet": {

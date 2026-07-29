@@ -35,6 +35,16 @@ def test_e2e_seed_refuses_non_test_databases():
             "production",
             "sqlite+aiosqlite:///./data/quantify_local.db",
         )
+    with pytest.raises(RuntimeError, match="refusing to reset"):
+        assert_safe_e2e_database(
+            "test",
+            "postgresql+asyncpg://test_user@production/quantify",
+        )
+    with pytest.raises(RuntimeError, match="refusing to reset"):
+        assert_safe_e2e_database(
+            "test",
+            "sqlite+aiosqlite:///./e2e-parent/quantify_local.db",
+        )
     assert_safe_e2e_database(
         "test",
         "sqlite+aiosqlite:///./data/screener_e2e.db",
