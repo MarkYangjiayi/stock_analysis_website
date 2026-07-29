@@ -164,6 +164,33 @@ def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs
     assert net_debt_only["debt_to_equity"] is None
 
 
+def test_quarterly_growth_does_not_compare_different_fiscal_quarters():
+    metrics = extract_fundamental_metrics({
+        "Financials": {
+            "Income_Statement": {
+                "quarterly": {
+                    "2025-12-31": {"totalRevenue": 120},
+                    "2025-09-30": {"totalRevenue": 110},
+                    "2025-06-30": {"totalRevenue": 100},
+                    "2025-03-31": {"totalRevenue": 90},
+                    "2024-09-30": {"totalRevenue": 80},
+                },
+            },
+        },
+        "Earnings": {
+            "History": {
+                "2025-12-31": {"epsActual": 1.20},
+                "2025-09-30": {"epsActual": 1.10},
+                "2025-06-30": {"epsActual": 1.00},
+                "2025-03-31": {"epsActual": 0.90},
+                "2024-09-30": {"epsActual": 0.80},
+            },
+        },
+    })
+    assert metrics["sales_growth_qoq"] is None
+    assert metrics["eps_growth_qoq"] is None
+
+
 def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows():
     metrics = extract_fundamental_metrics({
         "Highlights": {

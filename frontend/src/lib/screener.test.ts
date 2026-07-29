@@ -42,6 +42,15 @@ describe("screener URL state", () => {
         ];
         expect(sanitizeFilters(filters, [percentField])).toEqual([filters[0]]);
     });
+
+    it("caps restored URL filters at the API request limit", () => {
+        const filters = Array.from({ length: 65 }, (_, index) => ({
+            field: "roe",
+            operator: "gte" as const,
+            value: index,
+        }));
+        expect(sanitizeFilters(filters, [percentField])).toHaveLength(64);
+    });
 });
 
 describe("screener formatting", () => {

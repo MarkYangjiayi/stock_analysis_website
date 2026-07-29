@@ -21,6 +21,8 @@ import {
     encodeFilters,
     filterLabel,
     formatScreenerValue,
+    MAX_FILTER_VALUES,
+    MAX_SCREENER_FILTERS,
     sanitizeFilters,
     ScreenerField,
     ScreenerFilter,
@@ -29,7 +31,6 @@ import {
 } from "@/lib/screener";
 
 const PAGE_SIZE = 50;
-const MAX_FILTERS = 64;
 const MAX_OFFSET = 1_000_000;
 const MAX_PAGE = Math.floor(MAX_OFFSET / PAGE_SIZE);
 const CATEGORIES = ["Descriptive", "Fundamental", "Technical"] as const;
@@ -54,7 +55,7 @@ export function updateScreenerFilters(
     next?: ScreenerFilter,
 ): ScreenerFilter[] {
     const without = current.filter((filter) => filter.field !== fieldId);
-    if (next && without.length >= MAX_FILTERS) return current;
+    if (next && without.length >= MAX_SCREENER_FILTERS) return current;
     return next ? [...without, next] : without;
 }
 
@@ -108,11 +109,20 @@ export function FieldControl({
                         <p className="px-2 py-3 text-xs text-slate-500">No values in this snapshot.</p>
                     ) : field.options.map((option) => {
                         const checked = selected.includes(option.value);
+                        const selectionLimitReached = !checked && selected.length >= MAX_FILTER_VALUES;
                         return (
-                            <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <label
+                                key={option.value}
+                                className={`flex items-center gap-2 rounded-lg px-2 py-2 text-sm ${
+                                    selectionLimitReached
+                                        ? "cursor-not-allowed opacity-50"
+                                        : "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                                }`}
+                            >
                                 <input
                                     type="checkbox"
                                     checked={checked}
+                                    disabled={selectionLimitReached}
                                     onChange={() => {
                                         const next = checked ? selected.filter((value) => value !== option.value) : [...selected, option.value];
                                         onChange(next.length ? { field: field.id, operator: "in", value: next } : undefined);
@@ -366,7 +376,7 @@ export function ScreenerContent() {
     );
     const selectedColumns = [...CORE_COLUMNS, ...columns.filter((column) => !CORE_COLUMNS.includes(column))];
     const totalPages = Math.max(1, Math.ceil((result?.total ?? 0) / PAGE_SIZE));
-    const filterLimitReached = filters.length >= MAX_FILTERS;
+    const filterLimitReached = filters.length >= MAX_SCREENER_FILTERS;
     const updateFilter = (fieldId: string, next?: ScreenerFilter) => {
         setFilters((current) => updateScreenerFilters(current, fieldId, next));
         setPage(0);
@@ -466,7 +476,7 @@ export function ScreenerContent() {
                                 <button onClick={() => { setFilters([]); setPage(0); }} className="px-2 text-xs font-semibold text-slate-500 hover:text-rose-500">Clear all</button>
                                 {filterLimitReached && (
                                     <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                                        Maximum {MAX_FILTERS} filters reached.
+                                        Maximum {MAX_SCREENER_FILTERS} filters reached.
                                     </span>
                                 )}
                             </div>

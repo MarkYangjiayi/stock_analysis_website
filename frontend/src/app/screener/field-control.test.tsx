@@ -85,6 +85,35 @@ describe("FieldControl", () => {
             value: [0.1, 0.2],
         });
     });
+
+    it("disables additional enum values at the API limit", () => {
+        const options = Array.from({ length: 101 }, (_, index) => ({
+            value: `industry_${index}`,
+            label: `Industry ${index}`,
+        }));
+        const field: ScreenerField = {
+            ...numericField,
+            id: "industry",
+            label: "Industry",
+            type: "enum",
+            unit: "text",
+            operators: ["in"],
+            options,
+        };
+        render(
+            <FieldControl
+                field={field}
+                filter={{
+                    field: "industry",
+                    operator: "in",
+                    value: options.slice(0, 100).map((option) => option.value),
+                }}
+                onChange={vi.fn()}
+            />,
+        );
+        expect(screen.getByRole("checkbox", { name: "Industry 99" })).toBeEnabled();
+        expect(screen.getByRole("checkbox", { name: "Industry 100" })).toBeDisabled();
+    });
 });
 
 describe("parsePage", () => {

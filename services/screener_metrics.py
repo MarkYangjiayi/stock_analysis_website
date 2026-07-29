@@ -125,6 +125,40 @@ def _sum_metric(rows: list[dict], key: str, start: int, count: int) -> Optional[
     return float(sum(value for value in values if value is not None))
 
 
+def _fiscal_period(row: dict) -> Optional[tuple[int, int]]:
+    fiscal_year = safe_float(row.get("fiscalYear"))
+    fiscal_quarter = str(
+        row.get("fiscalQuarter") or row.get("quarter") or ""
+    ).strip().upper()
+    if fiscal_year is not None and fiscal_quarter:
+        try:
+            quarter = int(fiscal_quarter.removeprefix("Q"))
+        except ValueError:
+            quarter = 0
+        if fiscal_year.is_integer() and 1 <= quarter <= 4:
+            return int(fiscal_year), quarter
+    try:
+        report_date = pd.Timestamp(row.get("date") or row.get("reportDate"))
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(report_date):
+        return None
+    return report_date.year, report_date.quarter
+
+
+def _prior_year_quarter(rows: list[dict]) -> Optional[dict]:
+    if not rows:
+        return None
+    latest_period = _fiscal_period(rows[0])
+    if latest_period is None:
+        return None
+    target_period = (latest_period[0] - 1, latest_period[1])
+    return next(
+        (row for row in rows[1:] if _fiscal_period(row) == target_period),
+        None,
+    )
+
+
 def _trend_growth(trend: Any, period_names: Iterable[str]) -> Optional[float]:
     wanted = {name.lower() for name in period_names}
     for row in _dated_values(trend):
@@ -248,9 +282,15 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     if tax_rate is not None and not 0 <= tax_rate <= 1:
         tax_rate = None
 
-    revenue_qoq = None
-    if len(quarterly_income) >= 5:
-        revenue_qoq = _growth(quarterly_income[0].get("totalRevenue"), quarterly_income[4].get("totalRevenue"))
+    prior_year_revenue_quarter = _prior_year_quarter(quarterly_income)
+    revenue_qoq = (
+        _growth(
+            quarterly_income[0].get("totalRevenue"),
+            prior_year_revenue_quarter.get("totalRevenue"),
+        )
+        if quarterly_income and prior_year_revenue_quarter is not None
+        else None
+    )
     revenue_ttm_previous = _sum_metric(quarterly_income, "totalRevenue", 4, 4)
     if provider_revenue_ttm is not None and revenue_ttm_previous is not None:
         sales_growth_ttm = _growth(provider_revenue_ttm, revenue_ttm_previous)
@@ -280,16 +320,19 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     quarterly_eps = _dated_values(earnings.get("History") or earnings.get("Quarterly"))
     eps_ttm = _sum_metric(quarterly_eps, "epsActual", 0, 4)
     eps_ttm_previous = _sum_metric(quarterly_eps, "epsActual", 4, 4)
-    eps_qoq = None
-    if len(quarterly_eps) >= 5:
-        eps_qoq = _growth_with_positive_base(
+    prior_year_eps_quarter = _prior_year_quarter(quarterly_eps)
+    eps_qoq = (
+        _growth_with_positive_base(
             quarterly_eps[0].get("epsActual"),
-            quarterly_eps[4].get("epsActual"),
+            prior_year_eps_quarter.get("epsActual"),
         )
+        if quarterly_eps and prior_year_eps_quarter is not None
+        else None
+    )
     provider_eps_qoq = safe_decimal_rate(highlights.get("QuarterlyEarningsGrowthYOY"))
     comparison_eps = (
-        safe_float(quarterly_eps[4].get("epsActual"))
-        if len(quarterly_eps) >= 5
+        safe_float(prior_year_eps_quarter.get("epsActual"))
+        if prior_year_eps_quarter is not None
         else None
     )
     if comparison_eps is not None and comparison_eps <= 0:

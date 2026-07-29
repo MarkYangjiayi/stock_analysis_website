@@ -1,5 +1,8 @@
 export type FilterOperator = "eq" | "in" | "lt" | "lte" | "gt" | "gte" | "between";
 
+export const MAX_SCREENER_FILTERS = 64;
+export const MAX_FILTER_VALUES = 100;
+
 export interface ScreenerFilter {
     field: string;
     operator: FilterOperator;
@@ -80,7 +83,7 @@ export function sanitizeFilters(
             if (
                 !Array.isArray(values) ||
                 values.length === 0 ||
-                values.length > 100 ||
+                values.length > MAX_FILTER_VALUES ||
                 (!isIn && Array.isArray(filter.value))
             ) {
                 return false;
@@ -104,7 +107,7 @@ export function sanitizeFilters(
             value !== "" &&
             Number.isFinite(Number(value))
         );
-    });
+    }).slice(0, MAX_SCREENER_FILTERS);
 }
 
 export function formatScreenerValue(value: unknown, field?: ScreenerField): string {
