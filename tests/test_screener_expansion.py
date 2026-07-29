@@ -260,6 +260,26 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
     assert annual_balance_metrics["operating_margin"] == pytest.approx(0.2)
     assert annual_balance_metrics["net_profit_margin"] == pytest.approx(0.1)
 
+    negative_eps_base = extract_fundamental_metrics({
+        "Highlights": {
+            "QuarterlyEarningsGrowthYOY": 2.0,
+        },
+        "Earnings": {
+            "History": {
+                "2025-12-31": {"epsActual": 1},
+                "2025-09-30": {"epsActual": 1},
+                "2025-06-30": {"epsActual": 1},
+                "2025-03-31": {"epsActual": 1},
+                "2024-12-31": {"epsActual": -1},
+                "2024-09-30": {"epsActual": -1},
+                "2024-06-30": {"epsActual": -1},
+                "2024-03-31": {"epsActual": -1},
+            },
+        },
+    })
+    assert negative_eps_base["eps_growth_qoq"] is None
+    assert negative_eps_base["eps_growth_ttm"] is None
+
 
 @pytest.mark.parametrize(
     ("candles", "expected"),
@@ -308,6 +328,10 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
     assert metrics["atr_14"] is not None
     assert metrics["high_52w_rel"] <= 0
     assert metrics["low_52w_rel"] >= 0
+
+    short_history = calculate_price_metrics(rows.tail(10))
+    assert short_history["average_volume_3m"] is None
+    assert short_history["relative_volume"] is None
 
 
 def test_ytd_performance_uses_the_prior_year_close():

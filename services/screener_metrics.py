@@ -67,6 +67,13 @@ def _growth(new: Any, old: Any) -> Optional[float]:
     return result if np.isfinite(result) else None
 
 
+def _growth_with_positive_base(new: Any, old: Any) -> Optional[float]:
+    old_value = safe_float(old)
+    if old_value is None or old_value <= 0:
+        return None
+    return _growth(new, old_value)
+
+
 def _cagr(new: Any, old: Any, years: int) -> Optional[float]:
     new_value = safe_float(new)
     old_value = safe_float(old)
@@ -202,7 +209,20 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     eps_ttm_previous = _sum_metric(quarterly_eps, "epsActual", 4, 4)
     eps_qoq = None
     if len(quarterly_eps) >= 5:
-        eps_qoq = _growth(quarterly_eps[0].get("epsActual"), quarterly_eps[4].get("epsActual"))
+        eps_qoq = _growth_with_positive_base(
+            quarterly_eps[0].get("epsActual"),
+            quarterly_eps[4].get("epsActual"),
+        )
+    provider_eps_qoq = safe_decimal_rate(highlights.get("QuarterlyEarningsGrowthYOY"))
+    comparison_eps = (
+        safe_float(quarterly_eps[4].get("epsActual"))
+        if len(quarterly_eps) >= 5
+        else None
+    )
+    if comparison_eps is not None and comparison_eps <= 0:
+        eps_growth_qoq = None
+    else:
+        eps_growth_qoq = _first_present(provider_eps_qoq, eps_qoq)
     eps_growth_3yr = _cagr(
         annual_eps[0].get("epsActual") if annual_eps else None,
         annual_eps[3].get("epsActual") if len(annual_eps) >= 4 else None,
@@ -279,11 +299,8 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "sales_growth_5yr": sales_growth_5yr,
         "eps_growth_this_year": _trend_growth(earnings.get("Trend"), {"0y", "current year", "year"}),
         "eps_growth_next_year": _trend_growth(earnings.get("Trend"), {"+1y", "next year"}),
-        "eps_growth_qoq": _first_present(
-            safe_decimal_rate(highlights.get("QuarterlyEarningsGrowthYOY")),
-            eps_qoq,
-        ),
-        "eps_growth_ttm": _growth(eps_ttm, eps_ttm_previous),
+        "eps_growth_qoq": eps_growth_qoq,
+        "eps_growth_ttm": _growth_with_positive_base(eps_ttm, eps_ttm_previous),
         "eps_growth_3yr": eps_growth_3yr,
         "eps_growth_5yr": eps_growth_5yr,
         "insider_ownership": safe_percentage_points(shares.get("PercentInsiders")),
@@ -375,7 +392,8 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
         axis=1,
     ).max(axis=1)
     atr = safe_float(true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean().iloc[-1])
-    average_volume = safe_float(pd.to_numeric(rows["volume"], errors="coerce").tail(63).mean())
+    volume_window = pd.to_numeric(rows["volume"], errors="coerce").tail(63).dropna()
+    average_volume = safe_float(volume_window.mean()) if len(volume_window) == 63 else None
     current_volume = safe_float(rows["volume"].iloc[-1])
     beta = None
     if benchmark_returns is not None:
