@@ -312,6 +312,17 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
 
     monkeypatch.setattr("services.screener_sync.fetch_and_merge_bulk_data", fake_bulk)
 
+    async def partial_technicals(*args, **kwargs):
+        return pd.DataFrame([{
+            "ticker": "AAA.US",
+            "performance_1d": 0.1,
+        }])
+
+    monkeypatch.setattr(
+        "services.screener_sync.calculate_technicals_locally",
+        partial_technicals,
+    )
+
     result = await run_screener_pipeline(
         target.isoformat(),
         observe_current_universe=True,
@@ -323,6 +334,11 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         select(DailyPrice).order_by(DailyPrice.ticker)
     )).scalars().all()
     assert [float(price.adjusted_close) for price in prices] == [100.0, 101.0]
+    snapshots = (await db_session.execute(
+        select(StockScreenerSnapshot).order_by(StockScreenerSnapshot.ticker)
+    )).scalars().all()
+    assert float(snapshots[0].performance_1d) == pytest.approx(0.1)
+    assert snapshots[1].performance_1d is None
     assert (await db_session.execute(select(func.count(CorporateAction.id)))).scalar_one() == 2
     publications = set((await db_session.execute(
         select(DataPublication.dataset).where(DataPublication.as_of_date == target)

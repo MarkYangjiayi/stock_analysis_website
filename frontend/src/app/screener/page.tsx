@@ -63,6 +63,21 @@ export function FieldControl({
     const [draftOperator, setDraftOperator] = useState<ScreenerFilter["operator"]>(filter?.operator ?? "gte");
     const [draftValues, setDraftValues] = useState<string[]>(() => initialValues.map(displayValue));
 
+    useEffect(() => {
+        const nextValues = Array.isArray(filter?.value)
+            ? filter.value
+            : filter
+                ? [filter.value]
+                : [];
+        const timeout = window.setTimeout(() => {
+            setDraftOperator(filter?.operator ?? "gte");
+            setDraftValues(nextValues.map((value) =>
+                field.unit === "percent" ? String(Number(value) * 100) : String(value)
+            ));
+        }, 0);
+        return () => window.clearTimeout(timeout);
+    }, [field.unit, filter]);
+
     if (field.type === "enum") {
         const selected = filter && Array.isArray(filter.value) ? filter.value.map(String) : filter ? [String(filter.value)] : [];
         return (
@@ -386,7 +401,12 @@ export function ScreenerContent() {
                                             {field.presets.length > 0 && (
                                                 <select
                                                     aria-label={`${field.label} preset`}
-                                                    defaultValue="-1"
+                                                    value={String(active
+                                                        ? field.presets.findIndex((preset) =>
+                                                            preset.operator === active.operator &&
+                                                            JSON.stringify(preset.value) === JSON.stringify(active.value)
+                                                        )
+                                                        : -1)}
                                                     onChange={(event) => applyPreset(field, Number(event.target.value))}
                                                     disabled={!field.available}
                                                     className="max-w-24 rounded-md border-0 bg-transparent text-[10px] text-slate-500 outline-none"
@@ -398,7 +418,6 @@ export function ScreenerContent() {
                                         </div>
                                         <fieldset disabled={!field.available}>
                                             <FieldControl
-                                                key={`${field.id}:${JSON.stringify(active ?? null)}`}
                                                 field={field}
                                                 filter={active}
                                                 onChange={(next) => updateFilter(field.id, next)}

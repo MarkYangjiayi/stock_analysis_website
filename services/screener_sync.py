@@ -35,6 +35,35 @@ from core.time_utils import utc_now
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+TECHNICAL_SNAPSHOT_FIELDS = (
+    "ma20",
+    "ma50",
+    "ma200",
+    "rsi_14",
+    "average_volume_3m",
+    "relative_volume",
+    "performance_1d",
+    "performance_1w",
+    "performance_1m",
+    "performance_3m",
+    "performance_6m",
+    "performance_ytd",
+    "performance_1yr",
+    "volatility_1w",
+    "volatility_1m",
+    "gap",
+    "change_from_open",
+    "high_20d_rel",
+    "low_20d_rel",
+    "high_50d_rel",
+    "low_50d_rel",
+    "high_52w_rel",
+    "low_52w_rel",
+    "beta_1yr",
+    "atr_14",
+    "candlestick",
+)
+
 
 def _validate_universe_coverage(target_tickers: set[str], priced_tickers: set[str]) -> float:
     if len(target_tickers) < settings.PIPELINE_MIN_UNIVERSE_SIZE:
@@ -438,10 +467,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 "shares_float": int(value) if (value := _safe_float(row.get("shares_float"))) is not None else None,
                 "close": close_price,
                 "volume": int(volume_num) if pd.notna(volume_num) else None,
-                "ma20": None,
-                "ma50": None,
-                "ma200": None,
-                "rsi_14": None
+                **{field_name: None for field_name in TECHNICAL_SNAPSHOT_FIELDS},
             }
             for field_name in numeric_fundamental_fields:
                 value = _safe_float(row.get(field_name))

@@ -13,7 +13,9 @@ test("filters, sorts, paginates and restores URL state", async ({ page }, testIn
 
     await page.getByRole("button", { name: "Fundamental" }).click();
     await page.getByLabel("P/E operator", { exact: true }).selectOption("lte");
-    await page.getByLabel("P/E value", { exact: true }).fill("20");
+    await page.getByLabel("P/E value", { exact: true }).click();
+    await page.keyboard.type("20");
+    await expect(page.getByLabel("P/E value", { exact: true })).toHaveValue("20");
     await expect(page.getByText("25", { exact: true })).toBeVisible();
     await expect(page.getByText(/P\/E ≤ 20/)).toBeVisible();
     await expect(page).toHaveURL(/filters=/);
@@ -44,6 +46,21 @@ test("supports result column selection and empty states", async ({ page }, testI
     await page.getByLabel("P/E operator", { exact: true }).selectOption("gt");
     await page.getByLabel("P/E value", { exact: true }).fill("1000");
     await expect(page.getByText("No stocks match these filters")).toBeVisible();
+});
+
+test("resets and reapplies a cleared preset", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "preset state is viewport-independent");
+    await page.goto("/screener");
+    await page.getByRole("button", { name: "Fundamental" }).click();
+
+    const preset = page.getByLabel("P/E preset", { exact: true });
+    await preset.selectOption({ label: "Under 1" });
+    await expect(page.getByText(/P\/E ≤ 1/)).toBeVisible();
+    await page.getByRole("button", { name: "Clear all" }).click();
+    await expect(preset).toHaveValue("-1");
+
+    await preset.selectOption({ label: "Under 1" });
+    await expect(page.getByText(/P\/E ≤ 1/)).toBeVisible();
 });
 
 test("retries the initial metadata request", async ({ page }, testInfo) => {
