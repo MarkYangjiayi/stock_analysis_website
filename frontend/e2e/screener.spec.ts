@@ -155,3 +155,45 @@ test("ignores a stale manual refresh response after filters change", async ({ pa
     await expect(page.getByText("25", { exact: true })).toBeVisible();
     await expect(page.getByText("999", { exact: true })).not.toBeVisible();
 });
+
+test("restores an explicit ticker-and-company-only column selection", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "column picker behavior is covered on desktop");
+    await page.goto("/screener");
+    await page.getByText("Columns", { exact: true }).click();
+    const selectedColumns = page.locator('input[type="checkbox"]:checked');
+    while (await selectedColumns.count()) {
+        await selectedColumns.first().uncheck();
+    }
+    await expect(page).toHaveURL(/columns=none/);
+
+    await page.reload();
+    await expect(page.getByRole("columnheader")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "Ticker", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Company", exact: true })).toBeVisible();
+});
+
+test("drops unavailable URL state and pins queries to metadata", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "metadata state is viewport-independent");
+    await page.route("**/api/stocks/screener/metadata", async (route) => {
+        const response = await route.fetch();
+        const metadata = await response.json();
+        metadata.fields = metadata.fields.map((field: { id: string }) =>
+            field.id === "market_cap"
+                ? { ...field, available: false, coverage: 0 }
+                : field
+        );
+        await route.fulfill({ response, json: metadata });
+    });
+    let requestedSnapshot: string | undefined;
+    await page.route("**/api/stocks/screener/query", async (route) => {
+        requestedSnapshot = route.request().postDataJSON().as_of_date;
+        await route.continue();
+    });
+
+    await page.goto("/screener?sort=market_cap:desc&columns=market_cap,sector");
+    await expect(page.locator("header").getByText("120", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/sort=ticker%3Aasc/);
+    await expect(page).not.toHaveURL(/market_cap/);
+    await expect(page.getByRole("button", { name: "Sector" })).toBeVisible();
+    expect(requestedSnapshot).toBe("2025-01-02");
+});

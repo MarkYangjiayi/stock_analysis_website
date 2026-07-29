@@ -31,9 +31,10 @@ import {
 const PAGE_SIZE = 50;
 const CATEGORIES = ["Descriptive", "Fundamental", "Technical"] as const;
 const CORE_COLUMNS = ["ticker", "name"];
+const EMPTY_COLUMNS_SENTINEL = "none";
 
 function parseColumns(value: string | null): string[] {
-    return value ? value.split(",").filter(Boolean) : [];
+    return value && value !== EMPTY_COLUMNS_SENTINEL ? value.split(",").filter(Boolean) : [];
 }
 
 export function parsePage(value: string | null): number {
@@ -200,6 +201,9 @@ export function ScreenerContent() {
     const [error, setError] = useState<string | null>(null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const querySequence = useRef(0);
+    const [explicitEmptyColumns] = useState(
+        () => searchParams.get("columns") === EMPTY_COLUMNS_SENTINEL,
+    );
 
     const loadMetadata = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
@@ -210,18 +214,27 @@ export function ScreenerContent() {
             const data = await response.json() as ScreenerMetadata;
             const validSortFields = new Set([
                 ...CORE_COLUMNS,
-                ...data.fields.filter((field) => field.result_column).map((field) => field.id),
+                ...data.fields
+                    .filter((field) => field.result_column && field.available)
+                    .map((field) => field.id),
             ]);
+            const availableDefaultColumns = data.default_columns.filter((column) =>
+                !CORE_COLUMNS.includes(column) && validSortFields.has(column)
+            );
             setSort((current) => validSortFields.has(current.field)
                 ? current
-                : { field: "market_cap", direction: "desc" });
+                : validSortFields.has("market_cap")
+                    ? { field: "market_cap", direction: "desc" }
+                    : { field: "ticker", direction: "asc" });
             setColumns((current) => {
                 const validColumns = current.filter((column) =>
                     !CORE_COLUMNS.includes(column) && validSortFields.has(column)
                 );
                 return validColumns.length
                     ? validColumns
-                    : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column));
+                    : explicitEmptyColumns
+                        ? []
+                        : availableDefaultColumns;
             });
             setFilters((current) => sanitizeFilters(current, data.fields));
             setMetadata(data);
@@ -231,7 +244,7 @@ export function ScreenerContent() {
         } finally {
             if (!signal?.aborted) setLoading(false);
         }
-    }, []);
+    }, [explicitEmptyColumns]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -243,8 +256,19 @@ export function ScreenerContent() {
         const params = new URLSearchParams();
         if (filters.length) params.set("filters", encodeFilters(filters));
         if (sort.field !== "market_cap" || sort.direction !== "desc") params.set("sort", `${sort.field}:${sort.direction}`);
-        const defaultColumns = metadata?.default_columns.filter((column) => !CORE_COLUMNS.includes(column)) ?? [];
-        if (columns.length && columns.join(",") !== defaultColumns.join(",")) params.set("columns", columns.join(","));
+        const availableResultColumns = new Set(
+            metadata?.fields
+                .filter((field) => field.result_column && field.available)
+                .map((field) => field.id) ?? []
+        );
+        const defaultColumns = metadata?.default_columns.filter((column) =>
+            !CORE_COLUMNS.includes(column) && availableResultColumns.has(column)
+        ) ?? [];
+        if (metadata && columns.length === 0) {
+            params.set("columns", EMPTY_COLUMNS_SENTINEL);
+        } else if (columns.length && columns.join(",") !== defaultColumns.join(",")) {
+            params.set("columns", columns.join(","));
+        }
         if (page > 0) params.set("page", String(page + 1));
         const query = params.toString();
         router.replace(query ? `?${query}` : "/screener", { scroll: false });
@@ -263,6 +287,7 @@ export function ScreenerContent() {
                 headers: { "Content-Type": "application/json" },
                 signal,
                 body: JSON.stringify({
+                    as_of_date: metadata.as_of_date,
                     filters,
                     sort,
                     columns,

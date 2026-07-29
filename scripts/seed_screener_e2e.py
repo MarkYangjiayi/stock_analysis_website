@@ -3,11 +3,24 @@
 import asyncio
 from datetime import date
 
+from core.config import settings
 from database import async_session_maker, engine
 from models import Base, DataPublication, PipelineRun, StockScreenerSnapshot, UniverseMembership
 
 
+def assert_safe_e2e_database(environment: str, database_url: str) -> None:
+    normalized_url = database_url.lower()
+    if environment.lower() != "test" or not any(
+        marker in normalized_url
+        for marker in ("test", "e2e")
+    ):
+        raise RuntimeError(
+            "refusing to reset a database that is not explicitly marked for E2E tests"
+        )
+
+
 async def seed() -> None:
+    assert_safe_e2e_database(settings.ENVIRONMENT, settings.DATABASE_URL)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)

@@ -522,6 +522,15 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
         })
         assert invalid_operand_response.status_code == 422
 
+        oversized_in_response = await client.post("/api/stocks/screener/query", json={
+            "filters": [{
+                "field": "sector",
+                "operator": "in",
+                "value": [f"sector-{index}" for index in range(101)],
+            }],
+        })
+        assert oversized_in_response.status_code == 422
+
         invalid_date_operand_response = await client.post("/api/stocks/screener/query", json={
             "filters": [{"field": "ipo_date", "operator": "eq", "value": ["2020-01-15"]}],
         })

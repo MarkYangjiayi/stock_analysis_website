@@ -194,6 +194,8 @@ def _coerce_filter_value(field_type: str, operator: str, value: Any) -> Any:
         values = value if operator == "in" else [value]
         if operator == "in" and (not isinstance(value, list) or not value):
             raise ValueError("in operator requires a non-empty list")
+        if operator == "in" and len(value) > 100:
+            raise ValueError("in operator accepts at most 100 values")
         if operator != "in" and isinstance(value, list):
             raise ValueError(f"{operator} operator requires a scalar value")
         if any(not isinstance(item, str) or not item for item in values):

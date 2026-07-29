@@ -77,7 +77,12 @@ export function sanitizeFilters(
 
         if (field.type === "enum") {
             const values = isIn ? filter.value : [filter.value];
-            if (!Array.isArray(values) || values.length === 0 || (!isIn && Array.isArray(filter.value))) {
+            if (
+                !Array.isArray(values) ||
+                values.length === 0 ||
+                values.length > 100 ||
+                (!isIn && Array.isArray(filter.value))
+            ) {
                 return false;
             }
             const options = new Set(field.options.map((option) => option.value));

@@ -16,6 +16,7 @@ from services.raw_store import persist_snapshot
 from services.security_master import canonicalize_ticker, upsert_security
 from services.universe import record_universe_membership, universe_as_of
 from scripts.backup_sqlite import create_backup
+from scripts.seed_screener_e2e import assert_safe_e2e_database
 from core.trading_calendar import is_us_market_session, latest_completed_us_session, us_market_close_utc
 from services.freshness import assess_ticker_freshness
 from services.catchup import catch_up_latest_publications
@@ -26,6 +27,18 @@ from core.security import SlidingWindowRateLimiter
 async def test_schema_enables_sqlite_foreign_keys(db_session):
     result = await db_session.execute(text("PRAGMA foreign_keys"))
     assert result.scalar_one() == 1
+
+
+def test_e2e_seed_refuses_non_test_databases():
+    with pytest.raises(RuntimeError, match="refusing to reset"):
+        assert_safe_e2e_database(
+            "production",
+            "sqlite+aiosqlite:///./data/quantify_local.db",
+        )
+    assert_safe_e2e_database(
+        "test",
+        "sqlite+aiosqlite:///./data/screener_e2e.db",
+    )
 
 
 @pytest.mark.asyncio
