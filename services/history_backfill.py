@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert
 
 from core.config import settings
+from core.trading_calendar import is_us_market_session
 from database import async_session_maker
 from models import DailyPrice, RawDataSnapshot, StockScreenerSnapshot, Ticker
 from services import eodhd_client
@@ -29,6 +30,7 @@ DIVIDEND_HISTORY_DATASET = "dividend_history_7y_v1"
 async def backfill_dividend_history_once(
     tickers: Iterable[str],
     target_date: Optional[date] = None,
+    required_through_date: Optional[date] = None,
 ) -> dict:
     """Populate the expanded dividend window once, with retry-safe per-ticker writes."""
     target = target_date or date.today()
@@ -58,6 +60,10 @@ async def backfill_dividend_history_once(
             and details.get("window_version") == "7y_v1"
             and details.get("ticker")
             and str(details.get("from_date") or "") <= dividend_start.isoformat()
+            and (
+                required_through_date is None
+                or str(details.get("to_date") or "") >= required_through_date.isoformat()
+            )
         }
     pending = [ticker for ticker in symbols if ticker not in covered]
     published = await latest_published_date(DIVIDEND_HISTORY_DATASET)
@@ -180,9 +186,17 @@ async def backfill_latest_screener_dividends_once(
             )
         )
         tickers = result.scalars().all()
+    target = target_date or snapshot_date
+    session_count = 0
+    cursor = snapshot_date
+    while cursor < target and session_count < 2:
+        cursor += timedelta(days=1)
+        if is_us_market_session(cursor):
+            session_count += 1
     return await backfill_dividend_history_once(
         tickers,
-        target_date=target_date or snapshot_date,
+        target_date=target,
+        required_through_date=target if session_count > 1 else None,
     )
 
 
@@ -191,6 +205,7 @@ async def backfill_price_history(
     history_days: Optional[int] = None,
     target_date: Optional[date] = None,
     include_corporate_actions: bool = True,
+    include_dividends: bool = True,
 ) -> dict:
     symbols = sorted({ticker.upper() for ticker in tickers})
     days = history_days or settings.COLD_START_HISTORY_DAYS
@@ -237,14 +252,20 @@ async def backfill_price_history(
                         )
                     )
                 if include_corporate_actions:
-                    tasks.extend([
+                    tasks.append(
                         eodhd_client.get_splits(
                             ticker, calendar_start.isoformat(), target.isoformat(), client=client
-                        ),
-                        eodhd_client.get_dividends(
-                            ticker, dividend_start.isoformat(), target.isoformat(), client=client
-                        ),
-                    ])
+                        )
+                    )
+                    if include_dividends:
+                        tasks.append(
+                            eodhd_client.get_dividends(
+                                ticker,
+                                dividend_start.isoformat(),
+                                target.isoformat(),
+                                client=client,
+                            )
+                        )
                 responses = await asyncio.gather(*tasks)
                 response_index = 0
                 prices = []
@@ -253,9 +274,15 @@ async def backfill_price_history(
                     response_index += 1
                 if include_corporate_actions:
                     splits = responses[response_index]
-                    dividends = responses[response_index + 1]
-                    if splits is None or dividends is None:
-                        raise ValueError("provider failed to return corporate actions")
+                    response_index += 1
+                    if splits is None:
+                        raise ValueError("provider failed to return splits")
+                    if include_dividends:
+                        dividends = responses[response_index]
+                        if dividends is None:
+                            raise ValueError("provider failed to return dividends")
+                    else:
+                        dividends = []
                 else:
                     splits, dividends = [], []
                 if not prices_complete and not prices:
@@ -291,6 +318,7 @@ async def backfill_price_history(
                             as_of_date=target,
                             details=snapshot_identity,
                         )
+                    if include_corporate_actions and include_dividends:
                         await persist_snapshot(
                             db,
                             "EODHD",

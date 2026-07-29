@@ -158,12 +158,19 @@ async def test_dividend_history_upgrade_is_retry_safe_and_versioned(db_session, 
         ["AAA.US", "BBB.US", "CCC.US"],
         target_date=target + timedelta(days=1),
     )
+    recovered = await backfill_dividend_history_once(
+        ["AAA.US", "BBB.US", "CCC.US"],
+        target_date=target + timedelta(days=10),
+        required_through_date=target + timedelta(days=10),
+    )
 
     assert result["status"] == "published"
     assert repeated["reason"] == "already-published"
     assert entrant["status"] == "published"
     assert entrant["attempted"] == 1
-    assert len(calls) == 3
+    assert recovered["status"] == "published"
+    assert recovered["attempted"] == 3
+    assert len(calls) == 6
     publications = (await db_session.execute(
         select(DataPublication).where(
             DataPublication.dataset == DIVIDEND_HISTORY_DATASET
@@ -172,6 +179,7 @@ async def test_dividend_history_upgrade_is_retry_safe_and_versioned(db_session, 
     assert {publication.as_of_date for publication in publications} == {
         target,
         target + timedelta(days=1),
+        target + timedelta(days=10),
     }
     assert (await db_session.execute(
         select(func.count(CorporateAction.id))
@@ -350,7 +358,7 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         }
         for index, ticker in enumerate(["AAA.US", "BBB.US"])
     ])
-    frame.attrs["target_tickers"] = ["AAA.US", "BBB.US"]
+    frame.attrs["target_tickers"] = ["AAA.US", "BBB.US", "MISSING.US"]
     frame.attrs["priced_tickers"] = ["AAA.US", "BBB.US"]
     frame.attrs["universe_coverage"] = 1.0
     frame.attrs["bulk_splits"] = [{
@@ -382,7 +390,10 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
 
     monkeypatch.setattr("services.screener_sync.fetch_and_merge_bulk_data", fake_bulk)
 
-    async def skip_dividend_backfill(*args, **kwargs):
+    backfill_tickers = set()
+
+    async def skip_dividend_backfill(tickers, *args, **kwargs):
+        backfill_tickers.update(tickers)
         return {"status": "skipped", "reason": "fixture"}
 
     monkeypatch.setattr(
@@ -408,6 +419,7 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
     await db_session.rollback()
 
     assert result["status"] == "published"
+    assert backfill_tickers == {"AAA.US", "BBB.US"}
     prices = (await db_session.execute(
         select(DailyPrice).order_by(DailyPrice.ticker)
     )).scalars().all()
@@ -454,6 +466,7 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
     async def fake_backfill(tickers, **kwargs):
         captured["tickers"] = set(tickers)
         captured["target_date"] = kwargs["target_date"]
+        captured["include_dividends"] = kwargs["include_dividends"]
         return {"status": "published"}
 
     async def fake_refresh(target):
@@ -474,6 +487,7 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
     await cold_start_init.cold_start()
     assert {"AAA.US", *cold_start_init.BASE_TICKERS}.issubset(captured["tickers"])
     assert captured["target_date"] == snapshot_date
+    assert captured["include_dividends"] is False
     assert captured["refresh_date"] == snapshot_date
     assert captured["factor_date"] == snapshot_date
 

@@ -555,7 +555,8 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             raise ValueError(f"Provider returned {snapshot_date} for requested date {requested_date}")
 
         await update_pipeline_run(run_id, "backfilling_dividend_history")
-        await backfill_dividend_history_once(target_universe, snapshot_date)
+        publishable_tickers = {record["ticker"] for record in records_to_upsert}
+        await backfill_dividend_history_once(publishable_tickers, snapshot_date)
 
         # 2. Database Transactions
         # Initialize DB Session

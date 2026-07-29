@@ -77,7 +77,11 @@ async def cold_start():
         settings.COLD_START_HISTORY_DAYS,
         len(universe_tickers),
     )
-    await backfill_price_history(universe_tickers, target_date=snapshot_date)
+    await backfill_price_history(
+        universe_tickers,
+        target_date=snapshot_date,
+        include_dividends=False,
+    )
 
     logger.info("Step 4: Recomputing technical indicators after price warm-up...")
     updated = await refresh_screener_technicals(snapshot_date)
