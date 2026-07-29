@@ -343,7 +343,7 @@ async def calculate_technicals_locally(
             benchmark["adjusted_close"], errors="coerce"
         ).fillna(pd.to_numeric(benchmark["close"], errors="coerce"))
         benchmark_returns = pd.Series(
-            benchmark["adjusted_close"].pct_change().values,
+            benchmark["adjusted_close"].pct_change(fill_method=None).values,
             index=pd.to_datetime(benchmark["date"]),
         ).dropna()
 

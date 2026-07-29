@@ -77,6 +77,7 @@ describe("parsePage", () => {
         ["1.5", 0],
         ["0", 0],
         ["3", 2],
+        ["20002", 20_000],
     ])("normalizes %s to %s", (value, expected) => {
         expect(parsePage(value)).toBe(expected);
     });

@@ -30,6 +30,8 @@ import {
 
 const PAGE_SIZE = 50;
 const MAX_FILTERS = 64;
+const MAX_OFFSET = 1_000_000;
+const MAX_PAGE = Math.floor(MAX_OFFSET / PAGE_SIZE);
 const CATEGORIES = ["Descriptive", "Fundamental", "Technical"] as const;
 const CORE_COLUMNS = ["ticker", "name"];
 const EMPTY_COLUMNS_SENTINEL = "none";
@@ -41,7 +43,7 @@ function parseColumns(value: string | null): string[] {
 export function parsePage(value: string | null): number {
     if (value === null) return 0;
     const parsed = Number(value);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed - 1 : 0;
+    return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed - 1, MAX_PAGE) : 0;
 }
 
 export function updateScreenerFilters(

@@ -161,6 +161,7 @@ test("restores an explicit ticker-and-company-only column selection", async ({ p
     await page.goto("/screener");
     await page.getByText("Columns", { exact: true }).click();
     const selectedColumns = page.locator('input[type="checkbox"]:checked');
+    await expect(selectedColumns.first()).toBeVisible();
     while (await selectedColumns.count()) {
         await selectedColumns.first().uncheck();
     }

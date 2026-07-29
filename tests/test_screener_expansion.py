@@ -271,6 +271,33 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
     })
     assert mixed_revenue_windows["sales_growth_ttm"] == pytest.approx(0.2)
 
+    missing_fiscal_year = extract_fundamental_metrics({
+        "Financials": {
+            "Income_Statement": {
+                "yearly": {
+                    "2025-12-31": {"totalRevenue": 600},
+                    "2024-12-31": {"totalRevenue": 500},
+                    "2022-12-31": {"totalRevenue": 300},
+                    "2021-12-31": {"totalRevenue": 200},
+                    "2020-12-31": {"totalRevenue": 100},
+                },
+            },
+        },
+        "Earnings": {
+            "Annual": {
+                "2025-12-31": {"epsActual": 6},
+                "2024-12-31": {"epsActual": 5},
+                "2022-12-31": {"epsActual": 3},
+                "2021-12-31": {"epsActual": 2},
+                "2020-12-31": {"epsActual": 1},
+            },
+        },
+    })
+    assert missing_fiscal_year["sales_growth_3yr"] == pytest.approx(2 ** (1 / 3) - 1)
+    assert missing_fiscal_year["sales_growth_5yr"] == pytest.approx(6 ** (1 / 5) - 1)
+    assert missing_fiscal_year["eps_growth_3yr"] == pytest.approx(2 ** (1 / 3) - 1)
+    assert missing_fiscal_year["eps_growth_5yr"] == pytest.approx(6 ** (1 / 5) - 1)
+
     annual_balance_metrics = extract_fundamental_metrics({
         "Highlights": {
             "MarketCapitalization": 1_000,
@@ -385,6 +412,34 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
     assert short_history["relative_volume"] is None
 
 
+def test_beta_does_not_forward_fill_missing_closes():
+    dates = pd.bdate_range("2025-01-01", periods=130)
+    benchmark_prices = pd.Series(
+        [100 + index + index ** 2 / 100 for index in range(130)],
+        index=dates,
+    )
+    asset_prices = benchmark_prices.copy()
+    asset_prices.iloc[50] = None
+    rows = pd.DataFrame({
+        "date": [value.date() for value in dates],
+        "open": asset_prices.values,
+        "high": asset_prices.values + 1,
+        "low": asset_prices.values - 1,
+        "close": asset_prices.values,
+        "adjusted_close": asset_prices.values,
+        "volume": [1_000] * 130,
+    })
+    benchmark_returns = benchmark_prices.pct_change(fill_method=None)
+    asset_returns = asset_prices.pct_change(fill_method=None)
+    aligned = pd.concat(
+        [asset_returns.rename("asset"), benchmark_returns.rename("benchmark")],
+        axis=1,
+    ).dropna()
+    expected = aligned.cov().loc["asset", "benchmark"] / aligned["benchmark"].var()
+
+    assert calculate_price_metrics(rows, benchmark_returns)["beta_1yr"] == pytest.approx(expected)
+
+
 def test_atr_uses_wilder_initial_average():
     ranges = list(range(1, 16))
     rows = pd.DataFrame({
@@ -460,6 +515,15 @@ def test_dividend_growth_uses_complete_annual_buckets():
     assert metrics["dividend_growth_1yr"] == pytest.approx(1.5 / 1.4 - 1)
     assert metrics["dividend_growth_3yr"] == pytest.approx((1.5 / 1.2) ** (1 / 3) - 1)
     assert metrics["dividend_growth_5yr"] == pytest.approx((1.5 / 1) ** (1 / 5) - 1)
+
+
+def test_dividend_growth_uses_the_years_final_market_session():
+    actions = [
+        (date(2021, 3, 1), 1.0),
+        (date(2022, 3, 1), 1.2),
+    ]
+    metrics = calculate_dividend_growth(actions, date(2022, 12, 30))
+    assert metrics["dividend_growth_1yr"] == pytest.approx(0.2)
 
 
 def test_dividend_growth_ignores_an_incomplete_december():

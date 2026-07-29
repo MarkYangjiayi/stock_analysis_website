@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Iterable, Optional
 
 import numpy as np
 import pandas as pd
 import pandas_ta_classic as ta
+
+from core.trading_calendar import is_us_market_session
 
 
 def safe_float(value: Any) -> Optional[float]:
@@ -81,6 +83,38 @@ def _cagr(new: Any, old: Any, years: int) -> Optional[float]:
         return None
     result = (new_value / old_value) ** (1.0 / years) - 1.0
     return result if np.isfinite(result) else None
+
+
+def _annual_change(
+    rows: list[dict],
+    key: str,
+    years: int,
+    *,
+    cagr: bool,
+) -> Optional[float]:
+    if not rows:
+        return None
+    try:
+        latest_date = pd.Timestamp(rows[0].get("date") or rows[0].get("reportDate"))
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(latest_date):
+        return None
+    target_year = latest_date.year - years
+    comparison = None
+    for row in rows[1:]:
+        try:
+            report_date = pd.Timestamp(row.get("date") or row.get("reportDate"))
+        except (TypeError, ValueError):
+            continue
+        if not pd.isna(report_date) and report_date.year == target_year:
+            comparison = row
+            break
+    if comparison is None:
+        return None
+    if cagr:
+        return _cagr(rows[0].get(key), comparison.get(key), years)
+    return _growth(rows[0].get(key), comparison.get(key))
 
 
 def _sum_metric(rows: list[dict], key: str, start: int, count: int) -> Optional[float]:
@@ -223,21 +257,23 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     elif quarterly_revenue_ttm is not None and revenue_ttm_previous is not None:
         sales_growth_ttm = _growth(quarterly_revenue_ttm, revenue_ttm_previous)
     else:
-        previous_annual_revenue = safe_float(
-            yearly_income[1].get("totalRevenue")
-            if len(yearly_income) >= 2
-            else None
+        sales_growth_ttm = _annual_change(
+            yearly_income,
+            "totalRevenue",
+            1,
+            cagr=False,
         )
-        sales_growth_ttm = _growth(annual_revenue, previous_annual_revenue)
-    sales_growth_3yr = _cagr(
-        yearly_income[0].get("totalRevenue") if yearly_income else None,
-        yearly_income[3].get("totalRevenue") if len(yearly_income) >= 4 else None,
+    sales_growth_3yr = _annual_change(
+        yearly_income,
+        "totalRevenue",
         3,
+        cagr=True,
     )
-    sales_growth_5yr = _cagr(
-        yearly_income[0].get("totalRevenue") if yearly_income else None,
-        yearly_income[5].get("totalRevenue") if len(yearly_income) >= 6 else None,
+    sales_growth_5yr = _annual_change(
+        yearly_income,
+        "totalRevenue",
         5,
+        cagr=True,
     )
 
     annual_eps = _dated_values(earnings.get("Annual"))
@@ -260,15 +296,17 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         eps_growth_qoq = None
     else:
         eps_growth_qoq = _first_present(provider_eps_qoq, eps_qoq)
-    eps_growth_3yr = _cagr(
-        annual_eps[0].get("epsActual") if annual_eps else None,
-        annual_eps[3].get("epsActual") if len(annual_eps) >= 4 else None,
+    eps_growth_3yr = _annual_change(
+        annual_eps,
+        "epsActual",
         3,
+        cagr=True,
     )
-    eps_growth_5yr = _cagr(
-        annual_eps[0].get("epsActual") if annual_eps else None,
-        annual_eps[5].get("epsActual") if len(annual_eps) >= 6 else None,
+    eps_growth_5yr = _annual_change(
+        annual_eps,
+        "epsActual",
         5,
+        cagr=True,
     )
 
     ipo_date = general.get("IPODate")
@@ -404,7 +442,7 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
     for column in ("open", "high", "low", "close"):
         rows[f"{column}_adj"] = pd.to_numeric(rows[column], errors="coerce") * factor
     close = rows["close_adj"]
-    returns = close.pct_change()
+    returns = close.pct_change(fill_method=None)
 
     def perf(periods: int) -> Optional[float]:
         if len(close.dropna()) <= periods:
@@ -519,7 +557,10 @@ def calculate_dividend_growth(actions: Iterable[tuple[date, Any]], as_of_date: d
         value = safe_float(amount)
         if ex_date <= as_of_date and value is not None and value > 0:
             yearly[ex_date.year] = yearly.get(ex_date.year, 0.0) + value
-    latest_year = as_of_date.year if as_of_date == date(as_of_date.year, 12, 31) else as_of_date.year - 1
+    last_session = date(as_of_date.year, 12, 31)
+    while not is_us_market_session(last_session):
+        last_session -= timedelta(days=1)
+    latest_year = as_of_date.year if as_of_date >= last_session else as_of_date.year - 1
     current = yearly.get(latest_year)
     return {
         "dividend_growth_1yr": _growth(current, yearly.get(latest_year - 1)),
