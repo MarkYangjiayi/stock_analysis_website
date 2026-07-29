@@ -11,6 +11,7 @@ from models import (
     DailyPrice,
     FactorValue,
     PipelineRun,
+    RawDataSnapshot,
     SignalSnapshot,
     StockScreenerSnapshot,
     StrategyDefinition,
@@ -119,6 +120,10 @@ async def test_history_backfill_syncs_actions_when_prices_are_complete(db_sessio
     assert result["skipped"] == 1
     assert result["corporate_actions"] == 2
     assert (await db_session.execute(select(func.count(CorporateAction.id)))).scalar_one() == 2
+    dividend_snapshot = (await db_session.execute(
+        select(RawDataSnapshot).where(RawDataSnapshot.dataset == "dividends")
+    )).scalar_one()
+    assert dividend_snapshot.details["from_date"] == (target - timedelta(days=365 * 7)).isoformat()
 
 
 @pytest.mark.asyncio

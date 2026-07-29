@@ -351,6 +351,12 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
     latest_close = safe_float(close.iloc[-1])
     high = rows["high_adj"]
     low = rows["low_adj"]
+    daily_range = (high - low) / low.abs().replace(0, np.nan)
+
+    def average_daily_range(periods: int) -> Optional[float]:
+        window = daily_range.tail(periods).dropna()
+        return safe_float(window.mean()) if len(window) == periods else None
+
     true_range = pd.concat(
         [(high - low), (high - close.shift(1)).abs(), (low - close.shift(1)).abs()],
         axis=1,
@@ -379,8 +385,8 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
         "performance_6m": perf(126),
         "performance_ytd": ytd,
         "performance_1yr": perf(252),
-        "volatility_1w": safe_float(returns.tail(5).std(ddof=1) * np.sqrt(252)) if len(returns.dropna()) >= 5 else None,
-        "volatility_1m": safe_float(returns.tail(21).std(ddof=1) * np.sqrt(252)) if len(returns.dropna()) >= 21 else None,
+        "volatility_1w": average_daily_range(5),
+        "volatility_1m": average_daily_range(21),
         "gap": _growth(latest_open, previous_close),
         "change_from_open": _growth(latest_close, latest_open),
         "beta_1yr": beta,

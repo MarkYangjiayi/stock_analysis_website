@@ -7,7 +7,7 @@ from decimal import Decimal
 import math
 from typing import Any
 
-from sqlalchemy import and_, asc, desc, exists, func, or_, select
+from sqlalchemy import and_, asc, case, desc, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.trading_calendar import is_us_market_session, latest_completed_us_session
@@ -69,13 +69,35 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
     coverage: dict[str, float] = {}
     enum_options: dict[str, list[dict[str, str]]] = {}
     if selected_date is not None:
-        total_result = await db.execute(
-            select(func.count(StockScreenerSnapshot.id)).where(
+        aggregate_expressions = [func.count(StockScreenerSnapshot.id).label("_total")]
+        for definition in FIELD_DEFINITIONS:
+            column = MODEL_FIELD_MAP.get(definition.id)
+            if column is not None:
+                aggregate_expressions.append(func.count(column).label(definition.id))
+            elif definition.id.startswith("price_vs_ma"):
+                ma_column = getattr(StockScreenerSnapshot, definition.id.removeprefix("price_vs_"))
+                aggregate_expressions.append(
+                    func.count(case((
+                        and_(
+                            StockScreenerSnapshot.close.is_not(None),
+                            ma_column.is_not(None),
+                        ),
+                        1,
+                    ))).label(definition.id)
+                )
+        aggregate_result = await db.execute(
+            select(*aggregate_expressions).where(
                 StockScreenerSnapshot.date == selected_date
             )
         )
-        total = total_result.scalar_one() or 0
+        aggregate_row = aggregate_result.one()._mapping
+        total = aggregate_row["_total"] or 0
         if total:
+            for definition in FIELD_DEFINITIONS:
+                if definition.id in aggregate_row:
+                    coverage[definition.id] = (aggregate_row[definition.id] or 0) / total
+                elif definition.id != "index":
+                    coverage[definition.id] = 0.0
             membership_filter = (
                 UniverseMembership.universe.in_(("SP500", "RUSSELL2000")),
                 UniverseMembership.effective_from <= selected_date,
@@ -107,25 +129,6 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                 for universe, label in (("SP500", "S&P 500"), ("RUSSELL2000", "Russell 2000"))
                 if membership_counts.get(universe, 0) > 0
             ]
-            for definition in FIELD_DEFINITIONS:
-                column = MODEL_FIELD_MAP.get(definition.id)
-                if column is not None:
-                    count_result = await db.execute(
-                        select(func.count(column)).where(StockScreenerSnapshot.date == selected_date)
-                    )
-                    coverage[definition.id] = (count_result.scalar_one() or 0) / total
-                elif definition.id.startswith("price_vs_ma"):
-                    ma_column = getattr(StockScreenerSnapshot, definition.id.removeprefix("price_vs_"))
-                    count_result = await db.execute(
-                        select(func.count(StockScreenerSnapshot.id)).where(
-                            StockScreenerSnapshot.date == selected_date,
-                            StockScreenerSnapshot.close.is_not(None),
-                            ma_column.is_not(None),
-                        )
-                    )
-                    coverage[definition.id] = (count_result.scalar_one() or 0) / total
-                elif definition.id != "index":
-                    coverage[definition.id] = 0.0
             for field_id in ("exchange", "sector", "industry", "country", "candlestick"):
                 column = MODEL_FIELD_MAP.get(field_id)
                 if column is None:

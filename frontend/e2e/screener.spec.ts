@@ -81,3 +81,11 @@ test("retries the initial metadata request", async ({ page }, testInfo) => {
     await expect(page.getByText("120", { exact: true })).toBeVisible();
     expect(attempts).toBe(2);
 });
+
+test("recovers from an unknown URL sort field", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "URL validation is viewport-independent");
+    await page.goto("/screener?sort=removed_field:desc");
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    await expect(page).not.toHaveURL(/removed_field/);
+    await expect(page.getByText(/unsupported sort field/)).not.toBeVisible();
+});

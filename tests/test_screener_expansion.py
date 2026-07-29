@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from models import (
     CorporateAction,
@@ -256,6 +256,16 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
     assert metrics["ma200"] is not None
     assert metrics["performance_1yr"] is not None
     assert metrics["volatility_1m"] is not None
+    expected_weekly_range = sum(
+        3 / (99 + index)
+        for index in range(255, 260)
+    ) / 5
+    expected_monthly_range = sum(
+        3 / (99 + index)
+        for index in range(239, 260)
+    ) / 21
+    assert metrics["volatility_1w"] == pytest.approx(expected_weekly_range)
+    assert metrics["volatility_1m"] == pytest.approx(expected_monthly_range)
     assert metrics["atr_14"] is not None
     assert metrics["high_52w_rel"] <= 0
     assert metrics["low_52w_rel"] >= 0
@@ -355,7 +365,18 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     ])
     await db_session.commit()
 
-    metadata = await get_screener_metadata(db_session)
+    metadata_statements = []
+
+    def track_metadata_queries(*args):
+        metadata_statements.append(args[2])
+
+    event.listen(db_session.bind.sync_engine, "before_cursor_execute", track_metadata_queries)
+    try:
+        metadata = await get_screener_metadata(db_session)
+    finally:
+        event.remove(db_session.bind.sync_engine, "before_cursor_execute", track_metadata_queries)
+
+    assert len(metadata_statements) <= 10
     assert metadata["supported_finviz_fields"] == 66
     assert metadata["record_count"] == 2
     assert any(field["id"] == "pe_ratio" and field["available"] for field in metadata["fields"])

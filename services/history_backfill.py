@@ -103,6 +103,10 @@ async def backfill_price_history(
                     "from_date": calendar_start.isoformat(),
                     "to_date": target.isoformat(),
                 }
+                dividend_snapshot_identity = {
+                    **snapshot_identity,
+                    "from_date": dividend_start.isoformat(),
+                }
                 async with async_session_maker() as db, db.begin():
                     if prices:
                         await persist_snapshot(
@@ -130,7 +134,7 @@ async def backfill_price_history(
                             "dividends",
                             dividends or [],
                             as_of_date=target,
-                            details=snapshot_identity,
+                            details=dividend_snapshot_identity,
                         )
 
                 async with async_session_maker() as coverage_db:

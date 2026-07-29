@@ -206,6 +206,13 @@ export function ScreenerContent() {
             const response = await fetch(`${API_BASE_URL}/api/stocks/screener/metadata`, { signal });
             if (!response.ok) throw new Error("Unable to load screener fields.");
             const data = await response.json() as ScreenerMetadata;
+            const validSortFields = new Set([
+                ...CORE_COLUMNS,
+                ...data.fields.filter((field) => field.result_column).map((field) => field.id),
+            ]);
+            setSort((current) => validSortFields.has(current.field)
+                ? current
+                : { field: "market_cap", direction: "desc" });
             setMetadata(data);
             setColumns((current) => current.length ? current : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column)));
         } catch (reason) {
