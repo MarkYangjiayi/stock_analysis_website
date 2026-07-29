@@ -125,6 +125,9 @@ export function FieldControl({
             return;
         }
         if (values.some((value) => value === "")) return;
+        if (field.type === "number" && values.some((value) => !Number.isFinite(Number(value)))) {
+            return;
+        }
         const canonicalValues = values.map(canonicalValue);
         onChange({
             field: field.id,
@@ -161,8 +164,8 @@ export function FieldControl({
             </select>
             <input
                 aria-label={`${field.label} value`}
-                type={field.type === "date" ? "date" : "number"}
-                step="any"
+                type={field.type === "date" ? "date" : "text"}
+                inputMode={field.type === "number" ? "decimal" : undefined}
                 value={draftValues[0] ?? ""}
                 onChange={(event) => updateDraft(0, event.target.value)}
                 placeholder={field.unit === "percent" ? "%" : "Value"}
@@ -171,8 +174,8 @@ export function FieldControl({
             {operator === "between" && (
                 <input
                     aria-label={`${field.label} maximum`}
-                    type={field.type === "date" ? "date" : "number"}
-                    step="any"
+                    type={field.type === "date" ? "date" : "text"}
+                    inputMode={field.type === "number" ? "decimal" : undefined}
                     value={draftValues[1] ?? ""}
                     onChange={(event) => updateDraft(1, event.target.value)}
                     placeholder="Max"

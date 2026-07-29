@@ -223,6 +223,32 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
     assert metrics["roic"] is None
     assert metrics["eps_growth_ttm"] is None
 
+    mixed_tax_windows = extract_fundamental_metrics({
+        "Financials": {
+            "Balance_Sheet": {
+                "quarterly": {
+                    "2025-12-31": {"netInvestedCapital": 200},
+                },
+            },
+            "Income_Statement": {
+                "quarterly": {
+                    "2025-12-31": {"ebit": 10, "incomeTaxExpense": 2},
+                    "2025-09-30": {"ebit": 10, "incomeTaxExpense": 2},
+                    "2025-06-30": {"ebit": 10, "incomeTaxExpense": 2},
+                    "2025-03-31": {"ebit": 10, "incomeTaxExpense": 2},
+                },
+                "yearly": {
+                    "2025-12-31": {
+                        "ebit": 40,
+                        "incomeTaxExpense": 10,
+                        "incomeBeforeTax": 50,
+                    },
+                },
+            },
+        },
+    })
+    assert mixed_tax_windows["roic"] == pytest.approx(0.16)
+
     annual_balance_metrics = extract_fundamental_metrics({
         "Highlights": {
             "MarketCapitalization": 1_000,
@@ -351,6 +377,28 @@ def test_atr_uses_wilder_initial_average():
     initial_atr = sum(ranges[:14]) / 14
     expected = (initial_atr * 13 + ranges[14]) / 14
     assert calculate_price_metrics(rows)["atr_14"] == pytest.approx(expected)
+
+
+def test_price_range_distances_require_complete_ohlc_windows():
+    rows = pd.DataFrame({
+        "date": [value.date() for value in pd.bdate_range("2024-01-01", periods=252)],
+        "open": [100] * 252,
+        "high": [101] * 252,
+        "low": [99] * 252,
+        "close": [100] * 252,
+        "adjusted_close": [100] * 252,
+        "volume": [1_000] * 252,
+    })
+    rows.loc[240, "high"] = None
+
+    metrics = calculate_price_metrics(rows)
+
+    assert metrics["high_20d_rel"] is None
+    assert metrics["low_20d_rel"] is None
+    assert metrics["high_50d_rel"] is None
+    assert metrics["low_50d_rel"] is None
+    assert metrics["high_52w_rel"] is None
+    assert metrics["low_52w_rel"] is None
 
 
 def test_ytd_performance_uses_the_prior_year_close():

@@ -203,14 +203,13 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
             latest_annual_income.get("operatingIncome"),
         )),
     )
-    tax = _first_present(
-        _sum_metric(quarterly_income, "incomeTaxExpense", 0, 4),
-        safe_float(latest_annual_income.get("incomeTaxExpense")),
-    )
-    pretax = _first_present(
-        _sum_metric(quarterly_income, "incomeBeforeTax", 0, 4),
-        safe_float(latest_annual_income.get("incomeBeforeTax")),
-    )
+    quarterly_tax = _sum_metric(quarterly_income, "incomeTaxExpense", 0, 4)
+    quarterly_pretax = _sum_metric(quarterly_income, "incomeBeforeTax", 0, 4)
+    if quarterly_tax is not None and quarterly_pretax is not None:
+        tax, pretax = quarterly_tax, quarterly_pretax
+    else:
+        tax = safe_float(latest_annual_income.get("incomeTaxExpense"))
+        pretax = safe_float(latest_annual_income.get("incomeBeforeTax"))
     tax_rate = safe_ratio(tax, pretax, positive_denominator=False)
     if tax_rate is not None and not 0 <= tax_rate <= 1:
         tax_rate = None
@@ -472,9 +471,16 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
         "candlestick": classify_candlestick(rows),
     }
     for window, suffix in ((20, "20d"), (50, "50d"), (252, "52w")):
-        if len(rows) >= window and latest_close is not None:
-            rolling_high = safe_float(high.tail(window).max())
-            rolling_low = safe_float(low.tail(window).min())
+        high_window = high.tail(window)
+        low_window = low.tail(window)
+        if (
+            len(rows) >= window
+            and latest_close is not None
+            and high_window.notna().sum() == window
+            and low_window.notna().sum() == window
+        ):
+            rolling_high = safe_float(high_window.max())
+            rolling_low = safe_float(low_window.min())
             result[f"high_{suffix}_rel"] = _growth(latest_close, rolling_high)
             result[f"low_{suffix}_rel"] = _growth(latest_close, rolling_low)
         else:

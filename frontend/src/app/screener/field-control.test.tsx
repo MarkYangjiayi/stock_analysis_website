@@ -27,6 +27,19 @@ describe("FieldControl", () => {
         expect(onChange).toHaveBeenLastCalledWith({ field: "roe", operator: "gte", value: 0.15 });
     });
 
+    it("preserves a negative numeric draft until it is complete", () => {
+        const onChange = vi.fn();
+        render(<FieldControl field={numericField} onChange={onChange} />);
+        const input = screen.getByLabelText("Return on Equity value");
+
+        fireEvent.change(input, { target: { value: "-" } });
+        expect(input).toHaveValue("-");
+        expect(onChange).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: "-10" } });
+        expect(onChange).toHaveBeenLastCalledWith({ field: "roe", operator: "gte", value: -0.1 });
+    });
+
     it("supports a custom between range", () => {
         const onChange = vi.fn();
         render(
@@ -47,7 +60,7 @@ describe("FieldControl", () => {
         fireEvent.change(screen.getByLabelText("Return on Equity operator"), { target: { value: "between" } });
         fireEvent.change(screen.getByLabelText("Return on Equity value"), { target: { value: "10" } });
 
-        expect(screen.getByLabelText("Return on Equity value")).toHaveValue(10);
+        expect(screen.getByLabelText("Return on Equity value")).toHaveValue("10");
         fireEvent.change(screen.getByLabelText("Return on Equity maximum"), { target: { value: "20" } });
         expect(onChange).toHaveBeenLastCalledWith({
             field: "roe",
