@@ -26,12 +26,13 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
         "factors": "current",
         "dividend_history": "deferred",
     }
-    if latest_screener is not None:
-        dividend_result = await backfill_latest_screener_dividends_once(target)
-        result["dividend_history"] = dividend_result["status"]
     if latest_screener is None or latest_screener < target:
         await run_screener_pipeline(target.isoformat(), observe_current_universe=True)
         result["screener"] = "published"
+        result["dividend_history"] = "published"
+    else:
+        dividend_result = await backfill_latest_screener_dividends_once(target)
+        result["dividend_history"] = dividend_result["status"]
     latest_factors = await latest_published_date("factors")
     if latest_factors is None or latest_factors < target:
         await compute_latest_factors()

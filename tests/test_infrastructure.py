@@ -844,7 +844,7 @@ async def test_worker_catchup_publishes_only_latest_completed_session(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_worker_backfills_dividends_before_upgraded_screener(monkeypatch):
+async def test_worker_refreshes_stale_screener_before_old_universe_dividends(monkeypatch):
     calls = []
 
     async def latest_publication(dataset):
@@ -872,9 +872,39 @@ async def test_worker_backfills_dividends_before_upgraded_screener(monkeypatch):
 
     assert result["dividend_history"] == "published"
     assert calls == [
-        ("dividends", date(2025, 7, 3)),
         ("screener", "2025-07-03", True),
     ]
+
+
+@pytest.mark.asyncio
+async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
+    target = date(2025, 7, 3)
+    calls = []
+
+    async def latest_publication(dataset):
+        return target
+
+    async def fake_dividend_backfill(requested_target):
+        calls.append(("dividends", requested_target))
+        return {"status": "published"}
+
+    async def should_not_refresh_screener(*args, **kwargs):
+        raise AssertionError("current screener must not be republished")
+
+    monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
+    monkeypatch.setattr(
+        "services.catchup.backfill_latest_screener_dividends_once",
+        fake_dividend_backfill,
+    )
+    monkeypatch.setattr(
+        "services.catchup.run_screener_pipeline",
+        should_not_refresh_screener,
+    )
+
+    result = await catch_up_latest_publications(date(2025, 7, 7))
+
+    assert result["dividend_history"] == "published"
+    assert calls == [("dividends", target)]
 
 
 @pytest.mark.asyncio

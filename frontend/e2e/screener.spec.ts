@@ -156,6 +156,56 @@ test("ignores a stale manual refresh response after filters change", async ({ pa
     await expect(page.getByText("999", { exact: true })).not.toBeVisible();
 });
 
+test("manual refresh discovers a newer published snapshot", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "refresh behavior is viewport-independent");
+    await page.goto("/screener");
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+
+    await page.route("**/api/stocks/screener/metadata", async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        await route.fulfill({
+            response,
+            json: {
+                ...body,
+                as_of_date: "2025-01-13",
+                freshness: {
+                    status: "current",
+                    lag_sessions: 0,
+                    latest_completed_session: "2025-01-13",
+                },
+            },
+        });
+    });
+    await page.route("**/api/stocks/screener/query", async (route) => {
+        const request = route.request().postDataJSON();
+        if (request.as_of_date !== "2025-01-13") {
+            await route.continue();
+            return;
+        }
+        await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+                total: 321,
+                items: [],
+                limit: 50,
+                offset: 0,
+                as_of_date: "2025-01-13",
+                freshness: {
+                    status: "current",
+                    lag_sessions: 0,
+                    latest_completed_session: "2025-01-13",
+                },
+            }),
+        });
+    });
+
+    await page.getByRole("button", { name: "Refresh results" }).click();
+    await expect(page.getByText("321", { exact: true })).toBeVisible();
+    await expect(page.getByText("2025-01-13", { exact: true })).toBeVisible();
+});
+
 test("restores an explicit ticker-and-company-only column selection", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "column picker behavior is covered on desktop");
     await page.goto("/screener");

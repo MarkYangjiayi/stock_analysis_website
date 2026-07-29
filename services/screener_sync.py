@@ -16,6 +16,7 @@ from services.data_quality import DataQualityError, validate_screener_records
 from services.pipeline_runs import (
     begin_pipeline_run,
     finish_pipeline_run,
+    latest_published_date,
     publish_datasets_and_finish,
     update_pipeline_run,
 )
@@ -27,6 +28,7 @@ from services.data_sync import _upsert_financials
 from services.history_backfill import (
     backfill_dividend_history_once,
     backfill_price_history,
+    has_unpublished_market_session_gap,
 )
 from services.screener_metrics import (
     calculate_dividend_growth,
@@ -367,6 +369,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
     requested_date = datetime.strptime(target_date, "%Y-%m-%d").date() if target_date else None
     run_id = await begin_pipeline_run("daily_screener", requested_date)
     try:
+        previous_screener_date = await latest_published_date("screener")
         await update_pipeline_run(run_id, "resolving_universe")
         historical_universe = None
         if requested_date and requested_date < date.today() and not observe_current_universe:
@@ -559,7 +562,19 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
 
         await update_pipeline_run(run_id, "backfilling_dividend_history")
         publishable_tickers = {record["ticker"] for record in records_to_upsert}
-        await backfill_dividend_history_once(publishable_tickers, snapshot_date)
+        await backfill_dividend_history_once(
+            publishable_tickers,
+            snapshot_date,
+            required_through_date=(
+                snapshot_date
+                if previous_screener_date is not None
+                and has_unpublished_market_session_gap(
+                    previous_screener_date,
+                    snapshot_date,
+                )
+                else None
+            ),
+        )
         await update_pipeline_run(run_id, "backfilling_price_history")
         await backfill_price_history(
             publishable_tickers,

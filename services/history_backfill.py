@@ -27,6 +27,17 @@ logger = logging.getLogger(__name__)
 DIVIDEND_HISTORY_DATASET = "dividend_history_7y_v1"
 
 
+def has_unpublished_market_session_gap(previous: date, target: date) -> bool:
+    """Return whether more than one market session elapsed after a publication."""
+    session_count = 0
+    cursor = previous
+    while cursor < target and session_count < 2:
+        cursor += timedelta(days=1)
+        if is_us_market_session(cursor):
+            session_count += 1
+    return session_count > 1
+
+
 async def backfill_dividend_history_once(
     tickers: Iterable[str],
     target_date: Optional[date] = None,
@@ -187,16 +198,14 @@ async def backfill_latest_screener_dividends_once(
         )
         tickers = result.scalars().all()
     target = target_date or snapshot_date
-    session_count = 0
-    cursor = snapshot_date
-    while cursor < target and session_count < 2:
-        cursor += timedelta(days=1)
-        if is_us_market_session(cursor):
-            session_count += 1
     return await backfill_dividend_history_once(
         tickers,
         target_date=target,
-        required_through_date=target if session_count > 1 else None,
+        required_through_date=(
+            target
+            if has_unpublished_market_session_gap(snapshot_date, target)
+            else None
+        ),
     )
 
 
@@ -213,6 +222,7 @@ async def backfill_price_history(
     calendar_start = target - timedelta(days=int(days * 1.8) + 30)
     dividend_start = target - timedelta(days=365 * 7)
     minimum_rows = max(1, int(days * 0.9))
+    full_window_rows = days + 1
     latest_acceptable_date = target - timedelta(days=7)
     complete_symbols: set[str] = set()
     if not include_corporate_actions:
@@ -235,7 +245,7 @@ async def backfill_price_history(
                 complete_symbols.update(
                     ticker
                     for ticker, existing_count, existing_latest in coverage_result.all()
-                    if existing_count >= minimum_rows
+                    if existing_count >= full_window_rows
                     and existing_latest is not None
                     and existing_latest >= latest_acceptable_date
                 )
@@ -279,7 +289,7 @@ async def backfill_price_history(
                     )
                     existing_count, existing_latest = coverage_result.one()
                 prices_complete = (
-                    existing_count >= minimum_rows
+                    existing_count >= full_window_rows
                     and existing_latest is not None
                     and existing_latest >= latest_acceptable_date
                 )
@@ -422,6 +432,7 @@ async def backfill_price_history(
                 **stats,
                 "ticker_coverage": coverage,
                 "minimum_rows_per_ticker": minimum_rows,
+                "full_window_rows": full_window_rows,
                 "latest_acceptable_date": latest_acceptable_date.isoformat(),
             },
         }

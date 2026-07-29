@@ -32,7 +32,7 @@ from services.screener_sync import run_screener_pipeline
 async def test_resumable_history_backfill_with_mocked_provider(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="BBB.US")])
-    for offset in range(5):
+    for offset in range(6):
         db_session.add(DailyPrice(
             ticker="AAA.US",
             date=target - timedelta(days=offset),
@@ -46,7 +46,7 @@ async def test_resumable_history_backfill_with_mocked_provider(db_session, monke
         assert ticker == "BBB.US"
         return [
             {"date": (target - timedelta(days=offset)).isoformat(), "open": 10, "high": 11, "low": 9, "close": 10 + offset, "adjusted_close": 10 + offset, "volume": 1000}
-            for offset in range(5)
+            for offset in range(6)
         ]
 
     monkeypatch.setattr("services.history_backfill.eodhd_client.get_eod_historical_data", fake_prices)
@@ -57,7 +57,7 @@ async def test_resumable_history_backfill_with_mocked_provider(db_session, monke
     assert result["skipped"] == 1
     assert result["succeeded"] == 1
     count = (await db_session.execute(select(func.count(DailyPrice.id)))).scalar_one()
-    assert count == 10
+    assert count == 12
     publication = (await db_session.execute(
         select(DataPublication).where(DataPublication.dataset == "price_history")
     )).scalar_one()
@@ -100,10 +100,54 @@ async def test_history_backfill_rejects_one_row_as_complete(db_session, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_history_backfill_fetches_when_cache_only_meets_quality_tolerance(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    db_session.add(Ticker(ticker="AAA.US"))
+    for offset in range(10):
+        db_session.add(DailyPrice(
+            ticker="AAA.US",
+            date=target - timedelta(days=offset),
+            close=10,
+            adjusted_close=10,
+        ))
+    await db_session.commit()
+    calls = []
+
+    async def full_history(ticker, *args, **kwargs):
+        calls.append(ticker)
+        return [
+            {
+                "date": (target - timedelta(days=offset)).isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for offset in range(11)
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        full_history,
+    )
+    result = await backfill_price_history(
+        ["AAA.US"],
+        history_days=10,
+        target_date=target,
+        include_corporate_actions=False,
+    )
+
+    assert calls == ["AAA.US"]
+    assert result["succeeded"] == 1
+    assert result["full_window_rows"] == 11
+
+
+@pytest.mark.asyncio
 async def test_history_backfill_syncs_actions_when_prices_are_complete(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add(Ticker(ticker="AAA.US"))
-    for offset in range(9):
+    for offset in range(11):
         db_session.add(DailyPrice(
             ticker="AAA.US",
             date=target - timedelta(days=offset),
@@ -402,9 +446,11 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
     monkeypatch.setattr("services.screener_sync.fetch_and_merge_bulk_data", fake_bulk)
 
     backfill_tickers = set()
+    dividend_backfill_options = {}
 
     async def skip_dividend_backfill(tickers, *args, **kwargs):
         backfill_tickers.update(tickers)
+        dividend_backfill_options.update(kwargs)
         return {"status": "skipped", "reason": "fixture"}
 
     monkeypatch.setattr(
@@ -422,6 +468,15 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
     monkeypatch.setattr(
         "services.screener_sync.backfill_price_history",
         skip_price_history,
+    )
+
+    async def stale_screener_publication(dataset):
+        assert dataset == "screener"
+        return target - timedelta(days=3)
+
+    monkeypatch.setattr(
+        "services.screener_sync.latest_published_date",
+        stale_screener_publication,
     )
 
     async def partial_technicals(*args, **kwargs):
@@ -443,6 +498,7 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
 
     assert result["status"] == "published"
     assert backfill_tickers == {"AAA.US", "BBB.US"}
+    assert dividend_backfill_options["required_through_date"] == target
     assert price_history_tickers == {"AAA.US", "BBB.US"}
     prices = (await db_session.execute(
         select(DailyPrice).order_by(DailyPrice.ticker)

@@ -412,7 +412,7 @@ export function ScreenerContent() {
                                 <div className="font-mono text-sm font-semibold">{result?.as_of_date ?? metadata?.as_of_date ?? "No data"}</div>
                             </div>
                             <button
-                                onClick={() => void runQuery()}
+                                onClick={() => void loadMetadata()}
                                 aria-label="Refresh results"
                                 className="grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-slate-700 dark:bg-slate-900"
                             >
