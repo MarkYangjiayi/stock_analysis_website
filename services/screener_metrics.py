@@ -122,6 +122,14 @@ def _sum_metric(rows: list[dict], key: str, start: int, count: int) -> Optional[
     values = [safe_float(row.get(key)) for row in window]
     if len(window) != count or any(value is None for value in values):
         return None
+    latest_period = _fiscal_period(rows[0]) if rows else None
+    if latest_period is None:
+        return None
+    latest_index = latest_period[0] * 4 + latest_period[1] - 1
+    for offset, row in enumerate(window, start=start):
+        period = _fiscal_period(row)
+        if period is None or period[0] * 4 + period[1] - 1 != latest_index - offset:
+            return None
     return float(sum(value for value in values if value is not None))
 
 

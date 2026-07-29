@@ -82,6 +82,29 @@ test("retries the initial metadata request", async ({ page }, testInfo) => {
     expect(attempts).toBe(2);
 });
 
+test("retries metadata after a manual refresh failure", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "metadata retry is viewport-independent");
+    await page.goto("/screener");
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+
+    let attempts = 0;
+    await page.route("**/api/stocks/screener/metadata", async (route) => {
+        attempts += 1;
+        if (attempts === 1) {
+            await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+            return;
+        }
+        await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Refresh results" }).click();
+    await expect(page.getByText("Unable to load screener fields.")).toBeVisible();
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByText("Unable to load screener fields.")).not.toBeVisible();
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    expect(attempts).toBe(2);
+});
+
 test("recovers from an unknown URL sort field", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "URL validation is viewport-independent");
     await page.goto("/screener?sort=removed_field:desc");

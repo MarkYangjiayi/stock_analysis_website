@@ -560,7 +560,7 @@ export function ScreenerContent() {
                     {error ? (
                         <div className="m-4 flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
                             <span>{error}</span>
-                            <button onClick={() => void (metadata ? runQuery() : loadMetadata())} className="font-semibold underline">Retry</button>
+                            <button onClick={() => void loadMetadata()} className="font-semibold underline">Retry</button>
                         </div>
                     ) : (
                         <div className="max-h-[680px] overflow-auto">

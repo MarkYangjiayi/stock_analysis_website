@@ -116,7 +116,9 @@ export function formatScreenerValue(value: unknown, field?: ScreenerField): stri
     if (field.unit === "date" || field.unit === "text") return String(value);
     const number = Number(value);
     if (!Number.isFinite(number)) return "—";
-    if (field.unit === "percent") return `${(number * 100).toFixed(Math.abs(number) < 0.1 ? 1 : 0)}%`;
+    if (field.unit === "percent") {
+        return `${(number * 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+    }
     if (field.unit === "currency") {
         if (Math.abs(number) >= 1e12) return `$${(number / 1e12).toFixed(2)}T`;
         if (Math.abs(number) >= 1e9) return `$${(number / 1e9).toFixed(2)}B`;

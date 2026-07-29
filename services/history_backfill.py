@@ -219,6 +219,13 @@ async def backfill_price_history(
     symbols = sorted({ticker.upper() for ticker in tickers})
     days = history_days or settings.COLD_START_HISTORY_DAYS
     target = target_date or date.today()
+    if symbols:
+        async with async_session_maker() as security_db, security_db.begin():
+            await security_db.execute(
+                insert(Ticker)
+                .values([{"ticker": ticker} for ticker in symbols])
+                .on_conflict_do_nothing(index_elements=["ticker"])
+            )
     calendar_start = target - timedelta(days=int(days * 1.8) + 30)
     dividend_start = target - timedelta(days=365 * 7)
     minimum_rows = max(1, int(days * 0.9))

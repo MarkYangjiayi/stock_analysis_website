@@ -577,7 +577,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         )
         await update_pipeline_run(run_id, "backfilling_price_history")
         await backfill_price_history(
-            publishable_tickers,
+            publishable_tickers | {"SPY.US"},
             target_date=snapshot_date,
             include_corporate_actions=False,
         )

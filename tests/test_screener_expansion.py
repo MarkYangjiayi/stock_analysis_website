@@ -62,8 +62,11 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
         "AnalystRatings": {"Rating": 1.8, "TargetPrice": 15},
         "Earnings": {
             "History": {
-                f"2025-{month:02d}-01": {"epsActual": 2 if month >= 5 else 1}
-                for month in range(1, 9)
+                report_date: {"epsActual": 2 if report_date.startswith("2025") else 1}
+                for report_date in (
+                    "2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31",
+                    "2024-12-31", "2024-09-30", "2024-06-30", "2024-03-31",
+                )
             },
         },
         "Financials": {
@@ -83,7 +86,7 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
             },
             "Income_Statement": {
                 "quarterly": {
-                    f"2025-{quarter:02d}-01": {
+                    report_date: {
                         "totalRevenue": 125,
                         "grossProfit": 50,
                         "operatingIncome": 30,
@@ -92,7 +95,10 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
                         "incomeTaxExpense": 6,
                         "incomeBeforeTax": 30,
                     }
-                    for quarter in range(1, 9)
+                    for report_date in (
+                        "2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31",
+                        "2024-12-31", "2024-09-30", "2024-06-30", "2024-03-31",
+                    )
                 },
                 "yearly": {
                     f"{year}-12-31": {"totalRevenue": 100 * (year - 2018)}
@@ -101,8 +107,10 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
             },
             "Cash_Flow": {
                 "quarterly": {
-                    f"2025-{quarter:02d}-01": {"freeCashFlow": 10}
-                    for quarter in range(1, 5)
+                    report_date: {"freeCashFlow": 10}
+                    for report_date in (
+                        "2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31",
+                    )
                 }
             },
         },
@@ -189,6 +197,49 @@ def test_quarterly_growth_does_not_compare_different_fiscal_quarters():
     })
     assert metrics["sales_growth_qoq"] is None
     assert metrics["eps_growth_qoq"] is None
+
+
+def test_ttm_windows_require_consecutive_fiscal_quarters():
+    quarterly_dates = (
+        "2025-12-31",
+        "2025-09-30",
+        "2025-03-31",
+        "2024-12-31",
+        "2024-09-30",
+        "2024-06-30",
+        "2024-03-31",
+        "2023-12-31",
+    )
+    metrics = extract_fundamental_metrics({
+        "Financials": {
+            "Income_Statement": {
+                "quarterly": {
+                    report_date: {
+                        "totalRevenue": 100,
+                        "grossProfit": 40,
+                    }
+                    for report_date in quarterly_dates
+                },
+            },
+            "Cash_Flow": {
+                "quarterly": {
+                    report_date: {"freeCashFlow": 10}
+                    for report_date in quarterly_dates[:4]
+                },
+            },
+        },
+        "Earnings": {
+            "History": {
+                report_date: {"epsActual": 1}
+                for report_date in quarterly_dates
+            },
+        },
+    })
+
+    assert metrics["fcf"] is None
+    assert metrics["gross_margin"] is None
+    assert metrics["sales_growth_ttm"] is None
+    assert metrics["eps_growth_ttm"] is None
 
 
 def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows():

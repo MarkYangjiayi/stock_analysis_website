@@ -55,8 +55,10 @@ describe("screener URL state", () => {
 
 describe("screener formatting", () => {
     it("converts decimal rates to human percentages", () => {
-        expect(formatScreenerValue(0.156, percentField)).toBe("16%");
+        expect(formatScreenerValue(0.156, percentField)).toBe("15.6%");
         expect(filterLabel({ field: "roe", operator: "gte", value: 0.15 }, percentField))
             .toBe("Return on Equity ≥ 15%");
+        expect(filterLabel({ field: "roe", operator: "gte", value: 0.105 }, percentField))
+            .toBe("Return on Equity ≥ 10.5%");
     });
 });

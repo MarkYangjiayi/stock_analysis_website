@@ -543,7 +543,7 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
     assert result["status"] == "published"
     assert backfill_tickers == {"AAA.US", "BBB.US"}
     assert dividend_backfill_options["required_through_date"] == target
-    assert price_history_tickers == {"AAA.US", "BBB.US"}
+    assert price_history_tickers == {"AAA.US", "BBB.US", "SPY.US"}
     prices = (await db_session.execute(
         select(DailyPrice).order_by(DailyPrice.ticker)
     )).scalars().all()
