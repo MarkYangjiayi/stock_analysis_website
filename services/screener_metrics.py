@@ -355,9 +355,19 @@ def classify_candlestick(rows: pd.DataFrame) -> Optional[str]:
         middle_open, middle_close = safe_float(middle["open_adj"]), safe_float(middle["close_adj"])
         if all(value is not None for value in (first_open, first_close, middle_open, middle_close)):
             midpoint = (first_open + first_close) / 2
-            if first_close < first_open and abs(middle_close - middle_open) < abs(first_close - first_open) * 0.35 and close > midpoint:
+            if (
+                first_close < first_open
+                and abs(middle_close - middle_open) < abs(first_close - first_open) * 0.35
+                and close > open_
+                and close > midpoint
+            ):
                 return "Morning Star"
-            if first_close > first_open and abs(middle_close - middle_open) < abs(first_close - first_open) * 0.35 and close < midpoint:
+            if (
+                first_close > first_open
+                and abs(middle_close - middle_open) < abs(first_close - first_open) * 0.35
+                and close < open_
+                and close < midpoint
+            ):
                 return "Evening Star"
     if len(rows) >= 2:
         previous = rows.iloc[-2]
@@ -419,7 +429,16 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
         [(high - low), (high - close.shift(1)).abs(), (low - close.shift(1)).abs()],
         axis=1,
     ).max(axis=1)
-    atr = safe_float(true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean().iloc[-1])
+    true_range_values = true_range.dropna()
+    atr = None
+    if len(true_range_values) >= 14:
+        atr = safe_float(true_range_values.iloc[:14].mean())
+        for true_range_value in true_range_values.iloc[14:]:
+            atr = safe_float(
+                (atr * 13 + true_range_value) / 14
+                if atr is not None
+                else None
+            )
     volume_window = pd.to_numeric(rows["volume"], errors="coerce").tail(63).dropna()
     average_volume = safe_float(volume_window.mean()) if len(volume_window) == 63 else None
     current_volume = safe_float(rows["volume"].iloc[-1])

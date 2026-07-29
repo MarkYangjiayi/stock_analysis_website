@@ -292,6 +292,8 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
         ([(10, 11.2, 9.8, 11), (11.2, 11.5, 9.5, 9.8)], "Bearish Engulfing"),
         ([(12, 12.2, 9.8, 10), (9.5, 9.8, 9.3, 9.6), (9.7, 11.7, 9.5, 11.5)], "Morning Star"),
         ([(10, 12.2, 9.8, 12), (12.2, 12.4, 11.9, 12.1), (12, 12.2, 10.3, 10.5)], "Evening Star"),
+        ([(12, 12.2, 9.8, 10), (9.5, 9.8, 9.3, 9.6), (11.7, 12, 11.4, 11.5)], None),
+        ([(10, 12.2, 9.8, 12), (12.2, 12.4, 11.9, 12.1), (10.3, 10.6, 10.2, 10.5)], None),
         ([(10, 12.05, 9.95, 12)], "Bullish Marubozu"),
         ([(12, 12.05, 9.95, 10)], "Bearish Marubozu"),
     ],
@@ -333,6 +335,22 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
     short_history = calculate_price_metrics(rows.tail(10))
     assert short_history["average_volume_3m"] is None
     assert short_history["relative_volume"] is None
+
+
+def test_atr_uses_wilder_initial_average():
+    ranges = list(range(1, 16))
+    rows = pd.DataFrame({
+        "date": [value.date() for value in pd.bdate_range("2025-01-01", periods=15)],
+        "open": [100] * 15,
+        "high": [100 + value / 2 for value in ranges],
+        "low": [100 - value / 2 for value in ranges],
+        "close": [100] * 15,
+        "adjusted_close": [100] * 15,
+        "volume": [1_000] * 15,
+    })
+    initial_atr = sum(ranges[:14]) / 14
+    expected = (initial_atr * 13 + ranges[14]) / 14
+    assert calculate_price_metrics(rows)["atr_14"] == pytest.approx(expected)
 
 
 def test_ytd_performance_uses_the_prior_year_close():
