@@ -105,6 +105,7 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
     assert metrics["current_ratio"] == pytest.approx(2)
     assert metrics["quick_ratio"] == pytest.approx(275 / 150)
     assert metrics["short_float"] == pytest.approx(0.05)
+    assert metrics["roic"] == pytest.approx(0.192)
 
 
 def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs():
@@ -174,6 +175,19 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
     assert metrics["low_52w_rel"] >= 0
 
 
+def test_ytd_performance_uses_the_prior_year_close():
+    rows = pd.DataFrame({
+        "date": [date(2024, 12, 31), date(2025, 1, 2)],
+        "open": [100, 109],
+        "high": [101, 111],
+        "low": [99, 108],
+        "close": [100, 110],
+        "adjusted_close": [100, 110],
+        "volume": [1_000, 1_100],
+    })
+    assert calculate_price_metrics(rows)["performance_ytd"] == pytest.approx(0.10)
+
+
 def test_dividend_growth_uses_complete_annual_buckets():
     actions = [
         (date(year, 3, 1), amount)
@@ -183,6 +197,17 @@ def test_dividend_growth_uses_complete_annual_buckets():
     assert metrics["dividend_growth_1yr"] == pytest.approx(1.5 / 1.4 - 1)
     assert metrics["dividend_growth_3yr"] == pytest.approx((1.5 / 1.2) ** (1 / 3) - 1)
     assert metrics["dividend_growth_5yr"] == pytest.approx((1.5 / 1) ** (1 / 5) - 1)
+
+
+def test_dividend_growth_ignores_an_incomplete_december():
+    actions = [
+        (date(2023, 12, 1), 1.0),
+        (date(2024, 12, 1), 1.2),
+        (date(2025, 12, 1), 0.3),
+        (date(2025, 12, 20), 0.9),
+    ]
+    metrics = calculate_dividend_growth(actions, date(2025, 12, 15))
+    assert metrics["dividend_growth_1yr"] == pytest.approx(0.20)
 
 
 @pytest.mark.asyncio
@@ -211,6 +236,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             market_cap=10_000,
             pe_ratio=10,
             roe=0.20,
+            ipo_date=date(2020, 1, 15),
             close=100,
             volume=1000,
         ),
@@ -222,6 +248,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             market_cap=5_000,
             pe_ratio=30,
             roe=0.05,
+            ipo_date=date(2024, 6, 1),
             close=50,
             volume=500,
         ),
@@ -238,6 +265,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     assert metadata["supported_finviz_fields"] == 66
     assert metadata["record_count"] == 2
     assert any(field["id"] == "pe_ratio" and field["available"] for field in metadata["fields"])
+    assert next(field for field in metadata["fields"] if field["id"] == "index")["result_column"] is False
 
     result = await query_screener({
         "filters": [
@@ -257,6 +285,17 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
         "pe_ratio": 10.0,
         "roe": 0.2,
     }]
+
+    ipo_result = await query_screener({
+        "filters": [{
+            "field": "ipo_date",
+            "operator": "between",
+            "value": ["2019-01-01", "2021-12-31"],
+        }],
+        "columns": ["ipo_date"],
+    }, db_session)
+    assert ipo_result["total"] == 1
+    assert ipo_result["items"][0]["ipo_date"] == "2020-01-15"
 
     with pytest.raises(ValueError, match="unsupported filter"):
         await query_screener({

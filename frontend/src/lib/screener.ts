@@ -19,6 +19,7 @@ export interface ScreenerField {
     coverage: number;
     available: boolean;
     default_column: boolean;
+    result_column: boolean;
 }
 
 export interface ScreenerMetadata {

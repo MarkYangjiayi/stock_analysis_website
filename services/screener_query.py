@@ -141,6 +141,25 @@ def _condition_for(column: Any, operator: str, value: Any) -> Any:
     raise ValueError(f"unsupported operator: {operator}")
 
 
+def _coerce_filter_value(field_type: str, value: Any) -> Any:
+    if field_type != "date":
+        return value
+
+    def parse_date(item: Any) -> date:
+        if isinstance(item, date):
+            return item
+        if not isinstance(item, str):
+            raise ValueError("date filters require ISO date values")
+        try:
+            return date.fromisoformat(item)
+        except ValueError as exc:
+            raise ValueError(f"invalid ISO date: {item}") from exc
+
+    if isinstance(value, list):
+        return [parse_date(item) for item in value]
+    return parse_date(value)
+
+
 def _index_condition(selected_date: date, operator: str, value: Any) -> Any:
     universes = value if operator == "in" else [value]
     if operator not in {"eq", "in"}:
@@ -225,7 +244,13 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
         column = MODEL_FIELD_MAP.get(field_id)
         if column is None:
             raise ValueError(f"field is not queryable: {field_id}")
-        conditions.append(_condition_for(column, operator, value))
+        conditions.append(
+            _condition_for(
+                column,
+                operator,
+                _coerce_filter_value(definition.type, value),
+            )
+        )
 
     count_stmt = select(func.count(StockScreenerSnapshot.id)).where(and_(*conditions))
     total_result = await db.execute(count_stmt)

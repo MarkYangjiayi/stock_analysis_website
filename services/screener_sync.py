@@ -630,6 +630,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                     tickers=sp500_universe,
                     effective_date=snapshot_date,
                     source_run_id=run_id,
+                    minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
                 )
             if russell2000_universe:
                 await record_universe_membership(
@@ -638,6 +639,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                     tickers=russell2000_universe,
                     effective_date=snapshot_date,
                     source_run_id=run_id,
+                    minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
                 )
             
             # 3. Final bulk Insert to StockScreenerSnapshot (Delete and Replace)

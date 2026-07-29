@@ -34,6 +34,12 @@ function parseColumns(value: string | null): string[] {
     return value ? value.split(",").filter(Boolean) : [];
 }
 
+export function parsePage(value: string | null): number {
+    if (value === null) return 0;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed - 1 : 0;
+}
+
 export function FieldControl({
     field,
     filter,
@@ -43,7 +49,18 @@ export function FieldControl({
     filter?: ScreenerFilter;
     onChange: (filter?: ScreenerFilter) => void;
 }) {
+    const displayValue = (value: string | number | undefined) => {
+        if (value === undefined) return "";
+        if (field.unit === "percent") return String(Number(value) * 100);
+        return String(value);
+    };
+    const initialValues = Array.isArray(filter?.value)
+        ? filter.value
+        : filter
+            ? [filter.value]
+            : [];
     const [draftOperator, setDraftOperator] = useState<ScreenerFilter["operator"]>(filter?.operator ?? "gte");
+    const [draftValues, setDraftValues] = useState<string[]>(() => initialValues.map(displayValue));
 
     if (field.type === "enum") {
         const selected = filter && Array.isArray(filter.value) ? filter.value.map(String) : filter ? [String(filter.value)] : [];
@@ -78,28 +95,30 @@ export function FieldControl({
         );
     }
 
-    const operator = filter?.operator ?? draftOperator;
-    const rawValues = Array.isArray(filter?.value) ? filter.value : filter ? [filter.value] : [];
-    const displayValue = (value: string | number | undefined) => {
-        if (value === undefined) return "";
-        if (field.unit === "percent") return String(Number(value) * 100);
-        return String(value);
-    };
+    const operator = draftOperator;
     const canonicalValue = (value: string) => {
         const number = Number(value);
         if (!Number.isFinite(number)) return value;
         return field.unit === "percent" ? number / 100 : number;
     };
-    const update = (nextOperator: ScreenerFilter["operator"], values: Array<string | number>) => {
-        if (!values.length || values.some((value) => value === "")) {
+    const commit = (nextOperator: ScreenerFilter["operator"], values: string[]) => {
+        if (!values.length || values.every((value) => value === "")) {
             onChange(undefined);
             return;
         }
+        if (values.some((value) => value === "")) return;
+        const canonicalValues = values.map(canonicalValue);
         onChange({
             field: field.id,
             operator: nextOperator,
-            value: nextOperator === "between" ? values : values[0],
+            value: nextOperator === "between" ? canonicalValues : canonicalValues[0],
         });
+    };
+    const updateDraft = (index: number, value: string) => {
+        const next = [...draftValues];
+        next[index] = value;
+        setDraftValues(next);
+        commit(operator, operator === "between" ? [next[0] ?? "", next[1] ?? ""] : [next[0] ?? ""]);
     };
 
     return (
@@ -110,8 +129,11 @@ export function FieldControl({
                 onChange={(event) => {
                     const next = event.target.value as ScreenerFilter["operator"];
                     setDraftOperator(next);
-                    const values = next === "between" ? [rawValues[0] ?? "", rawValues[1] ?? ""] : [rawValues[0] ?? ""];
-                    if (values.every((value) => value !== "")) update(next, values);
+                    const values = next === "between"
+                        ? [draftValues[0] ?? "", draftValues[1] ?? ""]
+                        : [draftValues[0] ?? ""];
+                    setDraftValues(values);
+                    commit(next, values);
                 }}
                 className="w-[76px] rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
             >
@@ -123,8 +145,8 @@ export function FieldControl({
                 aria-label={`${field.label} value`}
                 type={field.type === "date" ? "date" : "number"}
                 step="any"
-                value={displayValue(rawValues[0])}
-                onChange={(event) => update(operator, [canonicalValue(event.target.value), ...(operator === "between" ? [rawValues[1] ?? ""] : [])])}
+                value={draftValues[0] ?? ""}
+                onChange={(event) => updateDraft(0, event.target.value)}
                 placeholder={field.unit === "percent" ? "%" : "Value"}
                 className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950"
             />
@@ -133,8 +155,8 @@ export function FieldControl({
                     aria-label={`${field.label} maximum`}
                     type={field.type === "date" ? "date" : "number"}
                     step="any"
-                    value={displayValue(rawValues[1])}
-                    onChange={(event) => update(operator, [rawValues[0] ?? "", canonicalValue(event.target.value)])}
+                    value={draftValues[1] ?? ""}
+                    onChange={(event) => updateDraft(1, event.target.value)}
                     placeholder="Max"
                     className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950"
                 />
@@ -156,7 +178,7 @@ function ScreenerContent() {
         const [rawField, direction] = (searchParams.get("sort") ?? "").split(":");
         return { field: rawField || "market_cap", direction: direction === "asc" ? "asc" as const : "desc" as const };
     });
-    const [page, setPage] = useState(() => Math.max(0, Number(searchParams.get("page") ?? "1") - 1));
+    const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -188,7 +210,7 @@ function ScreenerContent() {
         router.replace(query ? `?${query}` : "/screener", { scroll: false });
     }, [columns, filters, metadata, page, router, sort]);
 
-    const runQuery = useCallback(async () => {
+    const runQuery = useCallback(async (signal?: AbortSignal) => {
         if (!metadata) return;
         setLoading(true);
         setError(null);
@@ -196,6 +218,7 @@ function ScreenerContent() {
             const response = await fetch(`${API_BASE_URL}/api/stocks/screener/query`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                signal,
                 body: JSON.stringify({
                     filters,
                     sort,
@@ -210,15 +233,20 @@ function ScreenerContent() {
             }
             setResult(await response.json());
         } catch (reason) {
+            if (reason instanceof DOMException && reason.name === "AbortError") return;
             setError(reason instanceof Error ? reason.message : "The screener query failed.");
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
     }, [columns, filters, metadata, page, sort]);
 
     useEffect(() => {
-        const timeout = window.setTimeout(() => void runQuery(), 250);
-        return () => window.clearTimeout(timeout);
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => void runQuery(controller.signal), 250);
+        return () => {
+            window.clearTimeout(timeout);
+            controller.abort();
+        };
     }, [runQuery]);
 
     const fieldMap = useMemo(
@@ -361,7 +389,12 @@ function ScreenerContent() {
                                             )}
                                         </div>
                                         <fieldset disabled={!field.available}>
-                                            <FieldControl field={field} filter={active} onChange={(next) => updateFilter(field.id, next)} />
+                                            <FieldControl
+                                                key={`${field.id}:${JSON.stringify(active ?? null)}`}
+                                                field={field}
+                                                filter={active}
+                                                onChange={(next) => updateFilter(field.id, next)}
+                                            />
                                         </fieldset>
                                     </div>
                                 );
@@ -384,7 +417,7 @@ function ScreenerContent() {
                                 <Columns3 size={15} /> Columns
                             </summary>
                             <div className="absolute right-0 z-30 mt-2 max-h-80 w-72 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-                                {metadata?.fields.filter((field) => field.available).map((field) => (
+                                {metadata?.fields.filter((field) => field.available && field.result_column).map((field) => (
                                     <label key={field.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
                                         <input
                                             type="checkbox"

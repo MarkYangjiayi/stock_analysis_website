@@ -14,6 +14,7 @@ const percentField: ScreenerField = {
     coverage: 1,
     available: true,
     default_column: false,
+    result_column: true,
 };
 
 describe("screener URL state", () => {

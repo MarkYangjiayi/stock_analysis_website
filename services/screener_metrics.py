@@ -108,7 +108,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     quarterly_cash = _dated_values(cash_flow.get("quarterly"))
     yearly_cash = _dated_values(cash_flow.get("yearly"))
 
-    latest_income = quarterly_income[0] if quarterly_income else (yearly_income[0] if yearly_income else {})
+    latest_annual_income = yearly_income[0] if yearly_income else {}
     latest_balance = quarterly_balance[0] if quarterly_balance else {}
     latest_cash = quarterly_cash[0] if quarterly_cash else (yearly_cash[0] if yearly_cash else {})
 
@@ -144,9 +144,22 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         latest_balance.get("netDebt"),
     ))
     invested_capital = safe_float(latest_balance.get("netInvestedCapital"))
-    ebit = safe_float(_first_present(latest_income.get("ebit"), latest_income.get("operatingIncome")))
-    tax = safe_float(latest_income.get("incomeTaxExpense"))
-    pretax = safe_float(latest_income.get("incomeBeforeTax"))
+    ebit = _first_present(
+        _sum_metric(quarterly_income, "ebit", 0, 4),
+        _sum_metric(quarterly_income, "operatingIncome", 0, 4),
+        safe_float(_first_present(
+            latest_annual_income.get("ebit"),
+            latest_annual_income.get("operatingIncome"),
+        )),
+    )
+    tax = _first_present(
+        _sum_metric(quarterly_income, "incomeTaxExpense", 0, 4),
+        safe_float(latest_annual_income.get("incomeTaxExpense")),
+    )
+    pretax = _first_present(
+        _sum_metric(quarterly_income, "incomeBeforeTax", 0, 4),
+        safe_float(latest_annual_income.get("incomeBeforeTax")),
+    )
     tax_rate = safe_ratio(tax, pretax, positive_denominator=False)
     if tax_rate is None or not 0 <= tax_rate <= 1:
         tax_rate = 0.21
@@ -314,7 +327,12 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
 
     year_start = date(rows.iloc[-1]["date"].year, 1, 1)
     ytd_rows = rows[rows["date"] >= year_start]
-    ytd = _growth(ytd_rows["close_adj"].iloc[-1], ytd_rows["close_adj"].iloc[0]) if len(ytd_rows) >= 2 else None
+    prior_year_rows = rows[rows["date"] < year_start]
+    ytd = (
+        _growth(ytd_rows["close_adj"].iloc[-1], prior_year_rows["close_adj"].iloc[-1])
+        if not ytd_rows.empty and not prior_year_rows.empty
+        else None
+    )
     ma20 = safe_float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
     ma50 = safe_float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
     ma200 = safe_float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
@@ -378,7 +396,7 @@ def calculate_dividend_growth(actions: Iterable[tuple[date, Any]], as_of_date: d
         value = safe_float(amount)
         if ex_date <= as_of_date and value is not None and value > 0:
             yearly[ex_date.year] = yearly.get(ex_date.year, 0.0) + value
-    latest_year = as_of_date.year - 1 if as_of_date.month < 12 else as_of_date.year
+    latest_year = as_of_date.year if as_of_date == date(as_of_date.year, 12, 31) else as_of_date.year - 1
     current = yearly.get(latest_year)
     return {
         "dividend_growth_1yr": _growth(current, yearly.get(latest_year - 1)),

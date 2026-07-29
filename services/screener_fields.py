@@ -25,6 +25,7 @@ class ScreenerField:
     presets: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     options: tuple[dict[str, str], ...] = field(default_factory=tuple)
     default_column: bool = False
+    result_column: bool = True
 
     def metadata(self) -> dict[str, Any]:
         data = asdict(self)
@@ -65,6 +66,7 @@ def _enum(
     *,
     column: Optional[str] = None,
     finviz: Optional[str] = None,
+    result_column: bool = True,
 ) -> ScreenerField:
     return ScreenerField(
         id=field_id,
@@ -76,6 +78,7 @@ def _enum(
         column=column or field_id,
         finviz_field=finviz or label,
         options=tuple({"value": value, "label": option_label} for value, option_label in options),
+        result_column=result_column,
     )
 
 
@@ -99,6 +102,7 @@ FIELD_DEFINITIONS = [
         "Descriptive",
         (("SP500", "S&P 500"), ("RUSSELL2000", "Russell 2000")),
         column=None,
+        result_column=False,
     ),
     _enum("sector", "Sector", "Descriptive"),
     _enum("industry", "Industry", "Descriptive"),
