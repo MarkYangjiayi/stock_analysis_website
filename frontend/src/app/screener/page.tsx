@@ -234,6 +234,7 @@ export function ScreenerContent() {
     const [error, setError] = useState<string | null>(null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const querySequence = useRef(0);
+    const metadataLoaded = useRef(false);
     const [explicitEmptyColumns] = useState(
         () => searchParams.get("columns") === EMPTY_COLUMNS_SENTINEL,
     );
@@ -245,6 +246,7 @@ export function ScreenerContent() {
             const response = await fetch(`${API_BASE_URL}/api/stocks/screener/metadata`, { signal });
             if (!response.ok) throw new Error("Unable to load screener fields.");
             const data = await response.json() as ScreenerMetadata;
+            const isInitialMetadataLoad = !metadataLoaded.current;
             const validSortFields = new Set([
                 ...CORE_COLUMNS,
                 ...data.fields
@@ -265,11 +267,12 @@ export function ScreenerContent() {
                 ).slice(0, 30);
                 return validColumns.length
                     ? validColumns
-                    : explicitEmptyColumns
-                        ? []
-                        : availableDefaultColumns;
+                    : isInitialMetadataLoad && !explicitEmptyColumns
+                        ? availableDefaultColumns
+                        : [];
             });
             setFilters((current) => sanitizeFilters(current, data.fields));
+            metadataLoaded.current = true;
             setMetadata(data);
         } catch (reason) {
             if (reason instanceof DOMException && reason.name === "AbortError") return;

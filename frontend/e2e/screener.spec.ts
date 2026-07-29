@@ -217,6 +217,9 @@ test("restores an explicit ticker-and-company-only column selection", async ({ p
     }
     await expect(page).toHaveURL(/columns=none/);
 
+    await page.getByRole("button", { name: "Refresh results" }).click();
+    await expect(page.getByRole("columnheader")).toHaveCount(2);
+
     await page.reload();
     await expect(page.getByRole("columnheader")).toHaveCount(2);
     await expect(page.getByRole("button", { name: "Ticker", exact: true })).toBeVisible();
