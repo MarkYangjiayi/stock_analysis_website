@@ -32,9 +32,18 @@ from services.screener_sync import run_screener_pipeline
 async def test_resumable_history_backfill_with_mocked_provider(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="BBB.US")])
+    for offset in range(5):
+        db_session.add(DailyPrice(
+            ticker="AAA.US",
+            date=target - timedelta(days=offset),
+            close=10 + offset,
+            adjusted_close=10 + offset,
+            volume=1_000,
+        ))
     await db_session.commit()
 
     async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
+        assert ticker == "BBB.US"
         return [
             {"date": (target - timedelta(days=offset)).isoformat(), "open": 10, "high": 11, "low": 9, "close": 10 + offset, "adjusted_close": 10 + offset, "volume": 1000}
             for offset in range(5)
@@ -45,6 +54,8 @@ async def test_resumable_history_backfill_with_mocked_provider(db_session, monke
         ["AAA.US", "BBB.US"], history_days=5, target_date=target, include_corporate_actions=False
     )
     assert result["status"] == "published"
+    assert result["skipped"] == 1
+    assert result["succeeded"] == 1
     count = (await db_session.execute(select(func.count(DailyPrice.id)))).scalar_one()
     assert count == 10
     publication = (await db_session.execute(
@@ -400,6 +411,18 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         "services.screener_sync.backfill_dividend_history_once",
         skip_dividend_backfill,
     )
+    price_history_tickers = set()
+
+    async def skip_price_history(tickers, **kwargs):
+        price_history_tickers.update(tickers)
+        assert kwargs["target_date"] == target
+        assert kwargs["include_corporate_actions"] is False
+        return {"status": "skipped", "reason": "fixture"}
+
+    monkeypatch.setattr(
+        "services.screener_sync.backfill_price_history",
+        skip_price_history,
+    )
 
     async def partial_technicals(*args, **kwargs):
         return pd.DataFrame([{
@@ -420,6 +443,7 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
 
     assert result["status"] == "published"
     assert backfill_tickers == {"AAA.US", "BBB.US"}
+    assert price_history_tickers == {"AAA.US", "BBB.US"}
     prices = (await db_session.execute(
         select(DailyPrice).order_by(DailyPrice.ticker)
     )).scalars().all()

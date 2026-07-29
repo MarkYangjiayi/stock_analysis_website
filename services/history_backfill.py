@@ -214,10 +214,57 @@ async def backfill_price_history(
     dividend_start = target - timedelta(days=365 * 7)
     minimum_rows = max(1, int(days * 0.9))
     latest_acceptable_date = target - timedelta(days=7)
+    complete_symbols: set[str] = set()
+    if not include_corporate_actions:
+        async with async_session_maker() as coverage_db:
+            for start in range(0, len(symbols), 500):
+                chunk = symbols[start:start + 500]
+                coverage_result = await coverage_db.execute(
+                    select(
+                        DailyPrice.ticker,
+                        func.count(DailyPrice.id),
+                        func.max(DailyPrice.date),
+                    )
+                    .where(
+                        DailyPrice.ticker.in_(chunk),
+                        DailyPrice.date >= calendar_start,
+                        DailyPrice.date <= target,
+                    )
+                    .group_by(DailyPrice.ticker)
+                )
+                complete_symbols.update(
+                    ticker
+                    for ticker, existing_count, existing_latest in coverage_result.all()
+                    if existing_count >= minimum_rows
+                    and existing_latest is not None
+                    and existing_latest >= latest_acceptable_date
+                )
+    symbols_to_process = [
+        ticker for ticker in symbols if ticker not in complete_symbols
+    ]
+    if not symbols_to_process:
+        return {
+            "status": "skipped",
+            "reason": "price-history-complete",
+            "requested": len(symbols),
+            "succeeded": 0,
+            "skipped": len(symbols),
+            "failed": 0,
+            "price_rows": 0,
+            "corporate_actions": 0,
+            "ticker_coverage": 1.0,
+        }
     run_id = await begin_pipeline_run("price_history_backfill", target)
     semaphore = asyncio.Semaphore(settings.HISTORY_BACKFILL_CONCURRENCY)
     progress_lock = asyncio.Lock()
-    stats = {"requested": len(symbols), "succeeded": 0, "skipped": 0, "failed": 0, "price_rows": 0, "corporate_actions": 0}
+    stats = {
+        "requested": len(symbols),
+        "succeeded": 0,
+        "skipped": len(complete_symbols),
+        "failed": 0,
+        "price_rows": 0,
+        "corporate_actions": 0,
+    }
 
     async def process(ticker: str) -> None:
         async with semaphore:
@@ -359,8 +406,13 @@ async def backfill_price_history(
     try:
         await update_pipeline_run(run_id, "backfilling", 0)
         async with eodhd_client.create_http_client() as client:
-            for start in range(0, len(symbols), 250):
-                await asyncio.gather(*(process(ticker) for ticker in symbols[start:start + 250]))
+            for start in range(0, len(symbols_to_process), 250):
+                await asyncio.gather(
+                    *(
+                        process(ticker)
+                        for ticker in symbols_to_process[start:start + 250]
+                    )
+                )
                 await update_pipeline_run(run_id, "backfilling", stats["succeeded"] + stats["skipped"])
 
         coverage = (stats["succeeded"] + stats["skipped"]) / len(symbols) if symbols else 0.0
