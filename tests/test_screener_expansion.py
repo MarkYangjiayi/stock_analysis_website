@@ -7,9 +7,11 @@ from sqlalchemy import event, select
 
 from models import (
     CorporateAction,
+    DailyPrice,
     DataPublication,
     PipelineRun,
     StockScreenerSnapshot,
+    Ticker,
     UniverseMembership,
 )
 from services.screener_fields import SUPPORTED_FINVIZ_FIELDS
@@ -20,7 +22,7 @@ from services.screener_metrics import (
     extract_fundamental_metrics,
 )
 from services.screener_query import get_screener_metadata, query_screener
-from services.screener_sync import refresh_screener_technicals
+from services.screener_sync import calculate_technicals_locally, refresh_screener_technicals
 
 
 def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
@@ -238,12 +240,25 @@ def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows(
                     },
                 },
             },
+            "Income_Statement": {
+                "yearly": {
+                    "2025-12-31": {
+                        "totalRevenue": 500,
+                        "grossProfit": 200,
+                        "operatingIncome": 100,
+                        "netIncome": 50,
+                    },
+                },
+            },
         },
     })
     assert annual_balance_metrics["price_cash"] == pytest.approx(10)
     assert annual_balance_metrics["current_ratio"] == pytest.approx(2)
     assert annual_balance_metrics["quick_ratio"] == pytest.approx(1.8)
     assert annual_balance_metrics["debt_to_equity"] == pytest.approx(0.5)
+    assert annual_balance_metrics["gross_margin"] == pytest.approx(0.4)
+    assert annual_balance_metrics["operating_margin"] == pytest.approx(0.2)
+    assert annual_balance_metrics["net_profit_margin"] == pytest.approx(0.1)
 
 
 @pytest.mark.parametrize(
@@ -451,6 +466,11 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             "filters": [{"field": "drop_table", "operator": "eq", "value": 1}],
         }, db_session)
 
+    with pytest.raises(ValueError, match="at most 30 optional"):
+        await query_screener({
+            "columns": [f"field_{index}" for index in range(31)],
+        }, db_session)
+
     from main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -482,6 +502,35 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             "filters": [{"field": "ipo_date", "operator": "eq", "value": ["2020-01-15"]}],
         })
         assert invalid_date_operand_response.status_code == 422
+
+        too_many_columns_response = await client.post("/api/stocks/screener/query", json={
+            "columns": [f"field_{index}" for index in range(31)],
+        })
+        assert too_many_columns_response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_technicals_skip_price_history_that_does_not_reach_snapshot(db_session):
+    snapshot_date = date(2025, 1, 10)
+    db_session.add(Ticker(ticker="AAA.US"))
+    db_session.add(DailyPrice(
+        ticker="AAA.US",
+        date=snapshot_date - timedelta(days=1),
+        open=99,
+        high=101,
+        low=98,
+        close=100,
+        adjusted_close=100,
+        volume=1_000,
+    ))
+    await db_session.commit()
+
+    technicals = await calculate_technicals_locally(
+        db_session,
+        ["AAA.US"],
+        as_of_date=snapshot_date,
+    )
+    assert technicals.empty
 
 
 @pytest.mark.asyncio

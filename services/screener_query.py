@@ -316,9 +316,14 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
             }
 
     requested_columns = request_data.get("columns") or DEFAULT_COLUMNS
+    optional_columns = [
+        column
+        for column in dict.fromkeys(requested_columns)
+        if column not in {"ticker", "name"}
+    ]
+    if len(optional_columns) > 30:
+        raise ValueError("at most 30 optional result columns are allowed")
     columns = list(dict.fromkeys(["ticker", "name", *requested_columns]))
-    if len(columns) > 32:
-        raise ValueError("at most 32 result columns are allowed")
     selectable = {
         "ticker": StockScreenerSnapshot.ticker,
         "name": StockScreenerSnapshot.name,

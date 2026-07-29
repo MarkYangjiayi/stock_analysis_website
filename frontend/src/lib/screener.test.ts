@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeFilters, encodeFilters, filterLabel, formatScreenerValue, ScreenerField } from "./screener";
+import {
+    decodeFilters,
+    encodeFilters,
+    filterLabel,
+    formatScreenerValue,
+    sanitizeFilters,
+    ScreenerField,
+} from "./screener";
 
 const percentField: ScreenerField = {
     id: "roe",
@@ -25,6 +32,15 @@ describe("screener URL state", () => {
 
     it("fails closed for malformed state", () => {
         expect(decodeFilters("{bad")).toEqual([]);
+    });
+
+    it("keeps supported filters and drops stale or malformed clauses", () => {
+        const filters = [
+            { field: "roe", operator: "gte" as const, value: 0.15 },
+            { field: "removed", operator: "gte" as const, value: 1 },
+            { field: "roe", operator: "between" as const, value: [0.1] },
+        ];
+        expect(sanitizeFilters(filters, [percentField])).toEqual([filters[0]]);
     });
 });
 

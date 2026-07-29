@@ -132,7 +132,7 @@ class ScreenerQueryRequest(BaseModel):
     as_of_date: Optional[date] = None
     filters: List[ScreenerFilterClause] = Field(default_factory=list, max_length=64)
     sort: ScreenerSort = Field(default_factory=ScreenerSort)
-    columns: List[str] = Field(default_factory=list, max_length=32)
+    columns: List[str] = Field(default_factory=list, max_length=30)
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
 

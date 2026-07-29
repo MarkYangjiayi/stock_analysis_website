@@ -327,6 +327,8 @@ async def calculate_technicals_locally(
     logger.info("Calculating expanded screener technicals locally...")
     output = []
     for ticker, group in df_hist.groupby("ticker"):
+        if as_of_date is not None and group["date"].max() != as_of_date:
+            continue
         output.append({"ticker": ticker, **calculate_price_metrics(group, benchmark_returns)})
     return pd.DataFrame(output)
 

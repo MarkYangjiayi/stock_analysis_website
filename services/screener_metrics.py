@@ -123,11 +123,19 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     revenue_ttm = safe_float(highlights.get("RevenueTTM"))
     if revenue_ttm is None:
         revenue_ttm = _sum_metric(quarterly_income, "totalRevenue", 0, 4)
+    if revenue_ttm is None:
+        revenue_ttm = safe_float(latest_annual_income.get("totalRevenue"))
     gross_profit_ttm = safe_float(highlights.get("GrossProfitTTM"))
     if gross_profit_ttm is None:
         gross_profit_ttm = _sum_metric(quarterly_income, "grossProfit", 0, 4)
+    if gross_profit_ttm is None:
+        gross_profit_ttm = safe_float(latest_annual_income.get("grossProfit"))
     operating_income_ttm = _sum_metric(quarterly_income, "operatingIncome", 0, 4)
+    if operating_income_ttm is None:
+        operating_income_ttm = safe_float(latest_annual_income.get("operatingIncome"))
     net_income_ttm = _sum_metric(quarterly_income, "netIncome", 0, 4)
+    if net_income_ttm is None:
+        net_income_ttm = safe_float(latest_annual_income.get("netIncome"))
     fcf_ttm = _sum_metric(quarterly_cash, "freeCashFlow", 0, 4)
     if fcf_ttm is None:
         fcf_ttm = safe_float(latest_annual_cash.get("freeCashFlow"))

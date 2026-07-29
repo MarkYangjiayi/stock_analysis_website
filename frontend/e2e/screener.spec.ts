@@ -100,3 +100,58 @@ test("recovers from unknown URL columns and an out-of-range page", async ({ page
     await expect(page).toHaveURL(/page=3/);
     await expect(page.getByText("No stocks match these filters")).not.toBeVisible();
 });
+
+test("discards unsupported URL filters", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "URL validation is viewport-independent");
+    const filters = encodeURIComponent(JSON.stringify([
+        { field: "sector", operator: "in", value: ["Technology"] },
+        { field: "removed_field", operator: "gte", value: 1 },
+    ]));
+    await page.goto(`/screener?filters=${filters}`);
+    await expect(page.locator("header").getByText("60", { exact: true })).toBeVisible();
+    await expect(page).not.toHaveURL(/removed_field/);
+    await expect(page.getByText(/Sector in Technology/)).toBeVisible();
+});
+
+test("ignores a stale manual refresh response after filters change", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "request ordering is viewport-independent");
+    await page.goto("/screener");
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+
+    let releaseManualRequest: (() => void) | undefined;
+    const manualRequestStarted = new Promise<void>((resolve) => {
+        releaseManualRequest = resolve;
+    });
+    let intercepted = false;
+    await page.route("**/api/stocks/screener/query", async (route) => {
+        if (!intercepted) {
+            intercepted = true;
+            releaseManualRequest?.();
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    total: 999,
+                    items: [],
+                    limit: 50,
+                    offset: 0,
+                    as_of_date: "2025-01-10",
+                    freshness: { status: "stale", lag_sessions: 2, latest_completed_session: "2025-01-14" },
+                }),
+            });
+            return;
+        }
+        await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Refresh results" }).click();
+    await manualRequestStarted;
+    await page.getByRole("button", { name: "Fundamental" }).click();
+    await page.getByLabel("P/E operator", { exact: true }).selectOption("lte");
+    await page.getByLabel("P/E value", { exact: true }).fill("20");
+    await expect(page.getByText("25", { exact: true })).toBeVisible();
+    await page.waitForTimeout(1_000);
+    await expect(page.getByText("25", { exact: true })).toBeVisible();
+    await expect(page.getByText("999", { exact: true })).not.toBeVisible();
+});

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE_URL } from "@/lib/api";
 import {
@@ -21,6 +21,7 @@ import {
     encodeFilters,
     filterLabel,
     formatScreenerValue,
+    sanitizeFilters,
     ScreenerField,
     ScreenerFilter,
     ScreenerMetadata,
@@ -198,6 +199,7 @@ export function ScreenerContent() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+    const querySequence = useRef(0);
 
     const loadMetadata = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
@@ -221,6 +223,7 @@ export function ScreenerContent() {
                     ? validColumns
                     : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column));
             });
+            setFilters((current) => sanitizeFilters(current, data.fields));
             setMetadata(data);
         } catch (reason) {
             if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -247,7 +250,10 @@ export function ScreenerContent() {
         router.replace(query ? `?${query}` : "/screener", { scroll: false });
     }, [columns, filters, metadata, page, router, sort]);
 
-    const runQuery = useCallback(async (signal?: AbortSignal) => {
+    const runQuery = useCallback(async (
+        signal?: AbortSignal,
+        requestId = ++querySequence.current,
+    ) => {
         if (!metadata) return;
         setLoading(true);
         setError(null);
@@ -269,6 +275,7 @@ export function ScreenerContent() {
                 throw new Error(payload.detail ?? "The screener query failed.");
             }
             const data = await response.json() as ScreenerQueryResponse;
+            if (requestId !== querySequence.current) return;
             const lastPage = Math.max(0, Math.ceil(data.total / PAGE_SIZE) - 1);
             if (page > lastPage) {
                 setPage(lastPage);
@@ -277,15 +284,21 @@ export function ScreenerContent() {
             setResult(data);
         } catch (reason) {
             if (reason instanceof DOMException && reason.name === "AbortError") return;
-            setError(reason instanceof Error ? reason.message : "The screener query failed.");
+            if (requestId === querySequence.current) {
+                setError(reason instanceof Error ? reason.message : "The screener query failed.");
+            }
         } finally {
-            if (!signal?.aborted) setLoading(false);
+            if (!signal?.aborted && requestId === querySequence.current) setLoading(false);
         }
     }, [columns, filters, metadata, page, sort]);
 
     useEffect(() => {
         const controller = new AbortController();
-        const timeout = window.setTimeout(() => void runQuery(controller.signal), 250);
+        const requestId = ++querySequence.current;
+        const timeout = window.setTimeout(
+            () => void runQuery(controller.signal, requestId),
+            250,
+        );
         return () => {
             window.clearTimeout(timeout);
             controller.abort();

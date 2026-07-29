@@ -58,6 +58,50 @@ export function encodeFilters(filters: ScreenerFilter[]): string {
     return JSON.stringify(filters);
 }
 
+export function sanitizeFilters(
+    filters: ScreenerFilter[],
+    fields: ScreenerField[],
+): ScreenerFilter[] {
+    const fieldMap = new Map(fields.map((field) => [field.id, field]));
+    const isIsoDate = (value: unknown) => {
+        if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+        const parsed = new Date(`${value}T00:00:00Z`);
+        return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    };
+
+    return filters.filter((filter) => {
+        const field = fieldMap.get(filter.field);
+        if (!field?.available || !field.operators.includes(filter.operator)) return false;
+        const isBetween = filter.operator === "between";
+        const isIn = filter.operator === "in";
+
+        if (field.type === "enum") {
+            const values = isIn ? filter.value : [filter.value];
+            if (!Array.isArray(values) || values.length === 0 || (!isIn && Array.isArray(filter.value))) {
+                return false;
+            }
+            const options = new Set(field.options.map((option) => option.value));
+            return values.every((value) => typeof value === "string" && options.has(value));
+        }
+
+        const values = isBetween ? filter.value : [filter.value];
+        if (
+            !Array.isArray(values) ||
+            (isBetween && values.length !== 2) ||
+            (!isBetween && Array.isArray(filter.value))
+        ) {
+            return false;
+        }
+        if (field.type === "date") return values.every(isIsoDate);
+        return values.every((value) =>
+            typeof value !== "boolean" &&
+            value !== null &&
+            value !== "" &&
+            Number.isFinite(Number(value))
+        );
+    });
+}
+
 export function formatScreenerValue(value: unknown, field?: ScreenerField): string {
     if (value === null || value === undefined || value === "") return "—";
     if (!field) return String(value);
