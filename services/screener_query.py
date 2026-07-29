@@ -83,6 +83,11 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                     UniverseMembership.effective_to.is_(None),
                     UniverseMembership.effective_to >= selected_date,
                 ),
+                UniverseMembership.ticker.in_(
+                    select(StockScreenerSnapshot.ticker).where(
+                        StockScreenerSnapshot.date == selected_date
+                    )
+                ),
             )
             membership_counts_result = await db.execute(
                 select(
@@ -226,8 +231,12 @@ def _coerce_filter_value(field_type: str, operator: str, value: Any) -> Any:
         except ValueError as exc:
             raise ValueError(f"invalid ISO date: {item}") from exc
 
-    if isinstance(value, list):
+    if operator == "between":
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError("between operator requires [minimum, maximum]")
         return [parse_date(item) for item in value]
+    if isinstance(value, (list, dict)):
+        raise ValueError(f"{operator} operator requires a scalar value")
     return parse_date(value)
 
 

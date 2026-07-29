@@ -45,3 +45,22 @@ test("supports result column selection and empty states", async ({ page }, testI
     await page.getByLabel("P/E value", { exact: true }).fill("1000");
     await expect(page.getByText("No stocks match these filters")).toBeVisible();
 });
+
+test("retries the initial metadata request", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "metadata retry is viewport-independent");
+    let attempts = 0;
+    await page.route("**/api/stocks/screener/metadata", async (route) => {
+        attempts += 1;
+        if (attempts === 1) {
+            await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+            return;
+        }
+        await route.continue();
+    });
+
+    await page.goto("/screener");
+    await expect(page.getByText("Unable to load screener fields.")).toBeVisible();
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    expect(attempts).toBe(2);
+});

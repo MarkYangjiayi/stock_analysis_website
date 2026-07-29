@@ -53,11 +53,17 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
             "SharesOutstanding": 100,
             "SharesFloat": 80,
             "ShortPercentFloat": 0.05,
-            "PercentInsiders": 0.10,
-            "PercentInstitutions": 0.70,
+            "PercentInsiders": 10,
+            "PercentInstitutions": 70,
         },
         "SplitsDividends": {"PayoutRatio": 0.30, "ForwardAnnualDividendYield": 0.02},
         "AnalystRatings": {"Rating": 1.8, "TargetPrice": 15},
+        "Earnings": {
+            "History": {
+                f"2025-{month:02d}-01": {"epsActual": 2 if month >= 5 else 1}
+                for month in range(1, 9)
+            },
+        },
         "Financials": {
             "Balance_Sheet": {
                 "quarterly": {
@@ -108,6 +114,9 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
     assert metrics["current_ratio"] == pytest.approx(2)
     assert metrics["quick_ratio"] == pytest.approx(275 / 150)
     assert metrics["short_float"] == pytest.approx(0.05)
+    assert metrics["insider_ownership"] == pytest.approx(0.10)
+    assert metrics["institutional_ownership"] == pytest.approx(0.70)
+    assert metrics["eps_growth_ttm"] == pytest.approx(1)
     assert metrics["roic"] == pytest.approx(0.192)
 
 
@@ -151,6 +160,66 @@ def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs
         },
     })
     assert net_debt_only["debt_to_equity"] is None
+
+
+def test_fundamental_extractor_uses_semantic_units_and_complete_formula_windows():
+    metrics = extract_fundamental_metrics({
+        "Highlights": {
+            "MarketCapitalization": 800,
+            "ReturnOnEquityTTM": 2.5,
+            "TotalDebt": 50,
+        },
+        "SharesStats": {
+            "PercentInsiders": 63.091,
+            "PercentInstitutions": 8.134,
+            "ShortPercentFloat": 0.0001,
+        },
+        "Financials": {
+            "Balance_Sheet": {
+                "quarterly": {
+                    "2025-12-31": {
+                        "totalStockholderEquity": 100,
+                        "netInvestedCapital": 200,
+                    },
+                },
+            },
+            "Income_Statement": {
+                "yearly": {
+                    "2025-12-31": {
+                        "ebit": 40,
+                        "incomeBeforeTax": 40,
+                    },
+                },
+            },
+            "Cash_Flow": {
+                "quarterly": {
+                    "2025-12-31": {"freeCashFlow": 10},
+                },
+                "yearly": {
+                    "2025-12-31": {"freeCashFlow": 80},
+                },
+            },
+        },
+        "Earnings": {
+            "Annual": {
+                "2025-12-31": {"epsActual": 99},
+                "2024-12-31": {"epsActual": 1},
+            },
+            "History": {
+                f"2025-{month:02d}-01": {"epsActual": month}
+                for month in range(1, 8)
+            },
+        },
+    })
+    assert metrics["roe"] == pytest.approx(2.5)
+    assert metrics["insider_ownership"] == pytest.approx(0.63091)
+    assert metrics["institutional_ownership"] == pytest.approx(0.08134)
+    assert metrics["short_float"] == pytest.approx(0.0001)
+    assert metrics["debt_to_equity"] == pytest.approx(0.5)
+    assert metrics["fcf"] == pytest.approx(80)
+    assert metrics["price_fcf"] == pytest.approx(10)
+    assert metrics["roic"] is None
+    assert metrics["eps_growth_ttm"] is None
 
 
 @pytest.mark.parametrize(
@@ -277,6 +346,12 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             effective_from=as_of,
             source_run_id=run.id,
         ),
+        UniverseMembership(
+            universe="RUSSELL2000",
+            ticker="NOT-IN-SNAPSHOT.US",
+            effective_from=as_of,
+            source_run_id=run.id,
+        ),
     ])
     await db_session.commit()
 
@@ -284,7 +359,10 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     assert metadata["supported_finviz_fields"] == 66
     assert metadata["record_count"] == 2
     assert any(field["id"] == "pe_ratio" and field["available"] for field in metadata["fields"])
-    assert next(field for field in metadata["fields"] if field["id"] == "index")["result_column"] is False
+    index_metadata = next(field for field in metadata["fields"] if field["id"] == "index")
+    assert index_metadata["result_column"] is False
+    assert index_metadata["coverage"] == pytest.approx(0.5)
+    assert index_metadata["options"] == [{"value": "SP500", "label": "S&P 500"}]
 
     result = await query_screener({
         "filters": [
@@ -354,6 +432,11 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             "filters": [{"field": "pe_ratio", "operator": "gte", "value": None}],
         })
         assert invalid_operand_response.status_code == 422
+
+        invalid_date_operand_response = await client.post("/api/stocks/screener/query", json={
+            "filters": [{"field": "ipo_date", "operator": "eq", "value": ["2020-01-15"]}],
+        })
+        assert invalid_date_operand_response.status_code == 422
 
 
 @pytest.mark.asyncio

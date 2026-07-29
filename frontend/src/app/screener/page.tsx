@@ -166,7 +166,7 @@ export function FieldControl({
     );
 }
 
-function ScreenerContent() {
+export function ScreenerContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [metadata, setMetadata] = useState<ScreenerMetadata | null>(null);
@@ -184,21 +184,28 @@ function ScreenerContent() {
     const [error, setError] = useState<string | null>(null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-    useEffect(() => {
-        let cancelled = false;
-        fetch(`${API_BASE_URL}/api/stocks/screener/metadata`)
-            .then(async (response) => {
-                if (!response.ok) throw new Error("Unable to load screener fields.");
-                return response.json() as Promise<ScreenerMetadata>;
-            })
-            .then((data) => {
-                if (cancelled) return;
-                setMetadata(data);
-                setColumns((current) => current.length ? current : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column)));
-            })
-            .catch((reason: Error) => !cancelled && setError(reason.message));
-        return () => { cancelled = true; };
+    const loadMetadata = useCallback(async (signal?: AbortSignal) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/stocks/screener/metadata`, { signal });
+            if (!response.ok) throw new Error("Unable to load screener fields.");
+            const data = await response.json() as ScreenerMetadata;
+            setMetadata(data);
+            setColumns((current) => current.length ? current : data.default_columns.filter((column) => !CORE_COLUMNS.includes(column)));
+        } catch (reason) {
+            if (reason instanceof DOMException && reason.name === "AbortError") return;
+            setError(reason instanceof Error ? reason.message : "Unable to load screener fields.");
+        } finally {
+            if (!signal?.aborted) setLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        void loadMetadata(controller.signal);
+        return () => controller.abort();
+    }, [loadMetadata]);
 
     useEffect(() => {
         const params = new URLSearchParams();
@@ -437,7 +444,7 @@ function ScreenerContent() {
                     {error ? (
                         <div className="m-4 flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
                             <span>{error}</span>
-                            <button onClick={() => void runQuery()} className="font-semibold underline">Retry</button>
+                            <button onClick={() => void (metadata ? runQuery() : loadMetadata())} className="font-semibold underline">Retry</button>
                         </div>
                     ) : (
                         <div className="max-h-[680px] overflow-auto">

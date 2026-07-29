@@ -18,12 +18,15 @@ def safe_float(value: Any) -> Optional[float]:
     return result if np.isfinite(result) else None
 
 
-def safe_rate(value: Any) -> Optional[float]:
+def safe_decimal_rate(value: Any) -> Optional[float]:
+    """Normalize provider fields documented as decimal ratios."""
+    return safe_float(value)
+
+
+def safe_percentage_points(value: Any) -> Optional[float]:
+    """Normalize provider fields documented in percentage points."""
     result = safe_float(value)
-    if result is None:
-        return None
-    # EODHD mixes decimal ratios with percentage-point fields.
-    return result / 100.0 if abs(result) > 2.0 else result
+    return result / 100.0 if result is not None else None
 
 
 def safe_ratio(numerator: Any, denominator: Any, *, positive_denominator: bool = True) -> Optional[float]:
@@ -85,7 +88,7 @@ def _trend_growth(trend: Any, period_names: Iterable[str]) -> Optional[float]:
     wanted = {name.lower() for name in period_names}
     for row in _dated_values(trend):
         if str(row.get("period") or "").lower() in wanted:
-            return safe_rate(_first_present(row.get("growth"), row.get("earningsEstimateGrowth")))
+            return safe_decimal_rate(_first_present(row.get("growth"), row.get("earningsEstimateGrowth")))
     return None
 
 
@@ -110,7 +113,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
 
     latest_annual_income = yearly_income[0] if yearly_income else {}
     latest_balance = quarterly_balance[0] if quarterly_balance else {}
-    latest_cash = quarterly_cash[0] if quarterly_cash else (yearly_cash[0] if yearly_cash else {})
+    latest_annual_cash = yearly_cash[0] if yearly_cash else {}
 
     revenue_ttm = safe_float(highlights.get("RevenueTTM"))
     if revenue_ttm is None:
@@ -122,7 +125,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     net_income_ttm = _sum_metric(quarterly_income, "netIncome", 0, 4)
     fcf_ttm = _sum_metric(quarterly_cash, "freeCashFlow", 0, 4)
     if fcf_ttm is None:
-        fcf_ttm = safe_float(latest_cash.get("freeCashFlow"))
+        fcf_ttm = safe_float(latest_annual_cash.get("freeCashFlow"))
 
     market_cap = safe_float(highlights.get("MarketCapitalization"))
     cash = safe_float(_first_present(
@@ -141,6 +144,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     total_debt = safe_float(_first_present(
         latest_balance.get("shortLongTermDebtTotal"),
         latest_balance.get("totalDebt"),
+        highlights.get("TotalDebt"),
     ))
     invested_capital = safe_float(latest_balance.get("netInvestedCapital"))
     ebit = _first_present(
@@ -160,8 +164,8 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         safe_float(latest_annual_income.get("incomeBeforeTax")),
     )
     tax_rate = safe_ratio(tax, pretax, positive_denominator=False)
-    if tax_rate is None or not 0 <= tax_rate <= 1:
-        tax_rate = 0.21
+    if tax_rate is not None and not 0 <= tax_rate <= 1:
+        tax_rate = None
 
     revenue_qoq = None
     if len(quarterly_income) >= 5:
@@ -180,6 +184,12 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     )
 
     annual_eps = _dated_values(earnings.get("Annual"))
+    quarterly_eps = _dated_values(earnings.get("History") or earnings.get("Quarterly"))
+    eps_ttm = _sum_metric(quarterly_eps, "epsActual", 0, 4)
+    eps_ttm_previous = _sum_metric(quarterly_eps, "epsActual", 4, 4)
+    eps_qoq = None
+    if len(quarterly_eps) >= 5:
+        eps_qoq = _growth(quarterly_eps[0].get("epsActual"), quarterly_eps[4].get("epsActual"))
     eps_growth_3yr = _cagr(
         annual_eps[0].get("epsActual") if annual_eps else None,
         annual_eps[3].get("epsActual") if len(annual_eps) >= 4 else None,
@@ -211,12 +221,12 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "price_fcf": safe_ratio(market_cap, fcf_ttm),
         "ev_ebitda": safe_float(valuation.get("EnterpriseValueEbitda")),
         "ev_sales": safe_float(valuation.get("EnterpriseValueRevenue")),
-        "dividend_yield": safe_rate(_first_present(
+        "dividend_yield": safe_decimal_rate(_first_present(
             highlights.get("DividendYield"),
             dividends.get("ForwardAnnualDividendYield"),
         )),
-        "payout_ratio": safe_rate(dividends.get("PayoutRatio")),
-        "short_float": safe_rate(shares.get("ShortPercentFloat")),
+        "payout_ratio": safe_decimal_rate(dividends.get("PayoutRatio")),
+        "short_float": safe_decimal_rate(shares.get("ShortPercentFloat")),
         "analyst_recommendation": safe_float(ratings.get("Rating")),
         "target_price": safe_float(_first_present(
             ratings.get("TargetPrice"),
@@ -224,10 +234,10 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         )),
         "shares_outstanding": int(value) if (value := safe_float(shares.get("SharesOutstanding"))) is not None else None,
         "shares_float": int(value) if (value := safe_float(shares.get("SharesFloat"))) is not None else None,
-        "roe": safe_rate(highlights.get("ReturnOnEquityTTM")),
-        "roa": safe_rate(highlights.get("ReturnOnAssetsTTM")),
+        "roe": safe_decimal_rate(highlights.get("ReturnOnEquityTTM")),
+        "roa": safe_decimal_rate(highlights.get("ReturnOnAssetsTTM")),
         "roic": safe_ratio(
-            ebit * (1.0 - tax_rate) if ebit is not None else None,
+            ebit * (1.0 - tax_rate) if ebit is not None and tax_rate is not None else None,
             invested_capital,
         ),
         "debt_to_equity": safe_ratio(total_debt, equity),
@@ -240,15 +250,15 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "fcf": fcf_ttm,
         "gross_margin": safe_ratio(gross_profit_ttm, revenue_ttm),
         "operating_margin": _first_present(
-            safe_rate(highlights.get("OperatingMarginTTM")),
+            safe_decimal_rate(highlights.get("OperatingMarginTTM")),
             safe_ratio(operating_income_ttm, revenue_ttm, positive_denominator=False),
         ),
         "net_profit_margin": _first_present(
-            safe_rate(highlights.get("ProfitMargin")),
+            safe_decimal_rate(highlights.get("ProfitMargin")),
             safe_ratio(net_income_ttm, revenue_ttm, positive_denominator=False),
         ),
         "sales_growth_qoq": _first_present(
-            safe_rate(highlights.get("QuarterlyRevenueGrowthYOY")),
+            safe_decimal_rate(highlights.get("QuarterlyRevenueGrowthYOY")),
             revenue_qoq,
         ),
         "sales_growth_ttm": sales_growth_ttm,
@@ -256,15 +266,15 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "sales_growth_5yr": sales_growth_5yr,
         "eps_growth_this_year": _trend_growth(earnings.get("Trend"), {"0y", "current year", "year"}),
         "eps_growth_next_year": _trend_growth(earnings.get("Trend"), {"+1y", "next year"}),
-        "eps_growth_qoq": safe_rate(highlights.get("QuarterlyEarningsGrowthYOY")),
-        "eps_growth_ttm": _growth(
-            annual_eps[0].get("epsActual") if annual_eps else None,
-            annual_eps[1].get("epsActual") if len(annual_eps) >= 2 else None,
+        "eps_growth_qoq": _first_present(
+            safe_decimal_rate(highlights.get("QuarterlyEarningsGrowthYOY")),
+            eps_qoq,
         ),
+        "eps_growth_ttm": _growth(eps_ttm, eps_ttm_previous),
         "eps_growth_3yr": eps_growth_3yr,
         "eps_growth_5yr": eps_growth_5yr,
-        "insider_ownership": safe_rate(shares.get("PercentInsiders")),
-        "institutional_ownership": safe_rate(shares.get("PercentInstitutions")),
+        "insider_ownership": safe_percentage_points(shares.get("PercentInsiders")),
+        "institutional_ownership": safe_percentage_points(shares.get("PercentInstitutions")),
     }
 
 
