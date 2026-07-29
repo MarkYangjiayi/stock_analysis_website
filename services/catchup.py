@@ -5,7 +5,7 @@ from typing import Optional
 from core.trading_calendar import latest_completed_us_session
 from services.pipeline_runs import latest_published_date
 from services.quant.factor_engine import compute_latest_factors
-from services.screener_sync import run_screener_pipeline
+from services.screener_sync import refresh_screener_technicals, run_screener_pipeline
 from services.history_backfill import backfill_latest_screener_dividends_once
 
 
@@ -33,6 +33,8 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
     else:
         dividend_result = await backfill_latest_screener_dividends_once(target)
         result["dividend_history"] = dividend_result["status"]
+        if dividend_result["status"] == "published":
+            await refresh_screener_technicals(latest_screener)
     latest_factors = await latest_published_date("factors")
     if latest_factors is None or latest_factors < target:
         await compute_latest_factors()

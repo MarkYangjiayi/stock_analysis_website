@@ -56,8 +56,16 @@ async def test_resumable_history_backfill_with_mocked_provider(db_session, monke
     async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
         assert ticker == "BBB.US"
         return [
-            {"date": (target - timedelta(days=offset)).isoformat(), "open": 10, "high": 11, "low": 9, "close": 10 + offset, "adjusted_close": 10 + offset, "volume": 1000}
-            for offset in range(6)
+            {
+                "date": price_date.isoformat(),
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10,
+                "adjusted_close": 10,
+                "volume": 1_000,
+            }
+            for price_date in preceding_market_sessions(target, 6)
         ]
 
     monkeypatch.setattr("services.history_backfill.eodhd_client.get_eod_historical_data", fake_prices)
@@ -131,11 +139,11 @@ async def test_history_backfill_fetches_when_cache_only_meets_quality_tolerance(
         calls.append(ticker)
         return [
             {
-                "date": (target - timedelta(days=offset)).isoformat(),
+                "date": price_date.isoformat(),
                 "close": 10,
                 "adjusted_close": 10,
             }
-            for offset in range(11)
+            for price_date in preceding_market_sessions(target, 11)
         ]
 
     monkeypatch.setattr(
@@ -175,11 +183,11 @@ async def test_history_backfill_fetches_when_latest_session_is_missing(
         calls.append(ticker)
         return [
             {
-                "date": (target - timedelta(days=offset)).isoformat(),
+                "date": price_date.isoformat(),
                 "close": 10,
                 "adjusted_close": 10,
             }
-            for offset in range(11)
+            for price_date in preceding_market_sessions(target, 11)
         ]
 
     monkeypatch.setattr(

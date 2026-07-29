@@ -860,6 +860,36 @@ async def test_technicals_skip_price_history_that_does_not_reach_snapshot(db_ses
 
 
 @pytest.mark.asyncio
+async def test_technicals_do_not_replace_missing_adjusted_closes(db_session):
+    dates = [value.date() for value in pd.bdate_range("2025-01-02", periods=20)]
+    db_session.add(Ticker(ticker="AAA.US"))
+    db_session.add_all([
+        DailyPrice(
+            ticker="AAA.US",
+            date=price_date,
+            open=100,
+            high=101,
+            low=99,
+            close=100,
+            adjusted_close=100 if index < 19 else None,
+            volume=1_000,
+        )
+        for index, price_date in enumerate(dates)
+    ])
+    await db_session.commit()
+
+    technicals = await calculate_technicals_locally(
+        db_session,
+        ["AAA.US"],
+        as_of_date=dates[-1],
+    )
+
+    assert len(technicals) == 1
+    assert pd.isna(technicals.iloc[0]["ma20"])
+    assert pd.isna(technicals.iloc[0]["performance_1d"])
+
+
+@pytest.mark.asyncio
 async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db_session):
     as_of = date.today() - timedelta(days=1)
     run = PipelineRun(

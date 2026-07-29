@@ -382,22 +382,18 @@ async def backfill_price_history(
 
                 async with async_session_maker() as coverage_db:
                     final_coverage_result = await coverage_db.execute(
-                        select(func.count(DailyPrice.id), func.max(DailyPrice.date)).where(
+                        select(DailyPrice.date).where(
                             DailyPrice.ticker == ticker,
-                            DailyPrice.date >= calendar_start,
-                            DailyPrice.date <= target,
+                            DailyPrice.date.in_(expected_sessions),
                         )
                     )
-                    final_count, final_latest = final_coverage_result.one()
-                if (
-                    final_count < minimum_rows
-                    or final_latest is None
-                    or final_latest < latest_acceptable_date
-                ):
+                    final_sessions = set(final_coverage_result.scalars())
+                missing_sessions = expected_sessions - final_sessions
+                if missing_sessions:
                     raise ValueError(
                         "price history coverage is incomplete: "
-                        f"rows={final_count}/{minimum_rows}, latest={final_latest}, "
-                        f"required_latest={latest_acceptable_date}"
+                        f"missing {len(missing_sessions)} of {full_window_rows} "
+                        f"required market sessions through {latest_acceptable_date}"
                     )
                 async with progress_lock:
                     stats["skipped" if prices_complete else "succeeded"] += 1

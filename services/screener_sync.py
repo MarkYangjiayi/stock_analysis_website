@@ -325,7 +325,6 @@ async def calculate_technicals_locally(
     )
     for column in ("open", "high", "low", "close", "adjusted_close", "volume"):
         df_hist[column] = pd.to_numeric(df_hist[column], errors="coerce")
-    df_hist["adjusted_close"] = df_hist["adjusted_close"].fillna(df_hist["close"])
 
     benchmark_result = await db.execute(
         select(

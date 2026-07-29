@@ -10,7 +10,17 @@ import yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
-from models import DailyPrice, DataPublication, FactorValue, FinancialStatement, PipelineRun, SecurityMaster, StockScreenerSnapshot, Ticker
+from models import (
+    DailyPrice,
+    DataPublication,
+    FactorValue,
+    FinancialStatement,
+    PipelineRun,
+    SecurityMaster,
+    StockScreenerSnapshot,
+    Ticker,
+    UniverseMembership,
+)
 from services.analyzer import batch_get_factor_scores, filter_screener_stocks, get_fundamental_valuation
 from services.data_quality import validate_screener_records
 from services.raw_store import persist_snapshot
@@ -76,6 +86,44 @@ async def test_universe_membership_closes_exits(db_session):
     await db_session.commit()
     assert set(await universe_as_of(db_session, "TEST", date(2025, 1, 15))) == {"AAA.US", "BBB.US"}
     assert set(await universe_as_of(db_session, "TEST", date(2025, 2, 2))) == {"BBB.US", "CCC.US"}
+
+
+@pytest.mark.asyncio
+async def test_universe_membership_supports_same_date_corrections(db_session):
+    snapshot_date = date(2025, 1, 2)
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        ["AAA.US", "BBB.US"],
+        snapshot_date,
+    )
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        ["BBB.US", "CCC.US"],
+        snapshot_date,
+    )
+    assert set(await universe_as_of(db_session, "TEST", snapshot_date)) == {
+        "BBB.US",
+        "CCC.US",
+    }
+
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        ["AAA.US", "BBB.US", "CCC.US"],
+        snapshot_date,
+    )
+    memberships = (await db_session.execute(
+        select(UniverseMembership).where(
+            UniverseMembership.universe == "TEST",
+        )
+    )).scalars().all()
+    assert {row.ticker for row in memberships} == {"AAA.US", "BBB.US", "CCC.US"}
+    assert all(
+        row.effective_to is None or row.effective_to >= row.effective_from
+        for row in memberships
+    )
 
 
 @pytest.mark.asyncio
@@ -888,6 +936,10 @@ async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
         calls.append(("dividends", requested_target))
         return {"status": "published"}
 
+    async def fake_refresh(snapshot_date):
+        calls.append(("refresh", snapshot_date))
+        return 1
+
     async def should_not_refresh_screener(*args, **kwargs):
         raise AssertionError("current screener must not be republished")
 
@@ -900,11 +952,15 @@ async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
         "services.catchup.run_screener_pipeline",
         should_not_refresh_screener,
     )
+    monkeypatch.setattr(
+        "services.catchup.refresh_screener_technicals",
+        fake_refresh,
+    )
 
     result = await catch_up_latest_publications(date(2025, 7, 7))
 
     assert result["dividend_history"] == "published"
-    assert calls == [("dividends", target)]
+    assert calls == [("dividends", target), ("refresh", target)]
 
 
 @pytest.mark.asyncio
