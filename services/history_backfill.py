@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert
 
 from core.config import settings
-from core.trading_calendar import is_us_market_session
+from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from database import async_session_maker
 from models import DailyPrice, RawDataSnapshot, StockScreenerSnapshot, Ticker
 from services import eodhd_client
@@ -223,7 +223,7 @@ async def backfill_price_history(
     dividend_start = target - timedelta(days=365 * 7)
     minimum_rows = max(1, int(days * 0.9))
     full_window_rows = days + 1
-    latest_acceptable_date = target - timedelta(days=7)
+    latest_acceptable_date = latest_completed_us_session(target)
     complete_symbols: set[str] = set()
     if not include_corporate_actions:
         async with async_session_maker() as coverage_db:
