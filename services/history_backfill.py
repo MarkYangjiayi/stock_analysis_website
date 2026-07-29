@@ -4,10 +4,11 @@ from datetime import date, datetime, timedelta
 from typing import Iterable, Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.sqlite import insert
 
 from core.config import settings
 from database import async_session_maker
-from models import DailyPrice, StockScreenerSnapshot
+from models import DailyPrice, RawDataSnapshot, StockScreenerSnapshot, Ticker
 from services import eodhd_client
 from services.corporate_actions import upsert_corporate_actions
 from services.data_sync import _upsert_daily_prices
@@ -31,23 +32,49 @@ async def backfill_dividend_history_once(
 ) -> dict:
     """Populate the expanded dividend window once, with retry-safe per-ticker writes."""
     target = target_date or date.today()
-    published = await latest_published_date(DIVIDEND_HISTORY_DATASET)
-    if published is not None:
-        return {
-            "status": "skipped",
-            "reason": "already-published",
-            "as_of_date": published.isoformat(),
-        }
-
     symbols = sorted({ticker.upper() for ticker in tickers})
     if not symbols:
         return {"status": "deferred", "reason": "empty-universe"}
 
+    async with async_session_maker() as security_db, security_db.begin():
+        await security_db.execute(
+            insert(Ticker)
+            .values([{"ticker": ticker} for ticker in symbols])
+            .on_conflict_do_nothing(index_elements=["ticker"])
+        )
+
     dividend_start = target - timedelta(days=365 * 7)
+    async with async_session_maker() as coverage_db:
+        coverage_result = await coverage_db.execute(
+            select(RawDataSnapshot.details).where(
+                RawDataSnapshot.source == "EODHD",
+                RawDataSnapshot.dataset == "dividends",
+            )
+        )
+        covered = {
+            str(details.get("ticker")).upper()
+            for details in coverage_result.scalars()
+            if isinstance(details, dict)
+            and details.get("window_version") == "7y_v1"
+            and details.get("ticker")
+            and str(details.get("from_date") or "") <= dividend_start.isoformat()
+        }
+    pending = [ticker for ticker in symbols if ticker not in covered]
+    published = await latest_published_date(DIVIDEND_HISTORY_DATASET)
+    if published is not None and not pending:
+        return {
+            "status": "skipped",
+            "reason": "already-published",
+            "as_of_date": published.isoformat(),
+            "already_complete": len(symbols),
+        }
+
     run_id = await begin_pipeline_run("dividend_history_backfill", target, version="v1")
     semaphore = asyncio.Semaphore(settings.HISTORY_BACKFILL_CONCURRENCY)
     stats = {
         "requested": len(symbols),
+        "already_complete": len(symbols) - len(pending),
+        "attempted": len(pending),
         "succeeded": 0,
         "failed": 0,
         "corporate_actions": 0,
@@ -94,12 +121,12 @@ async def backfill_dividend_history_once(
     try:
         await update_pipeline_run(run_id, "backfilling_dividends", 0)
         async with eodhd_client.create_http_client() as client:
-            for start in range(0, len(symbols), 250):
-                await asyncio.gather(*(process(ticker) for ticker in symbols[start:start + 250]))
+            for start in range(0, len(pending), 250):
+                await asyncio.gather(*(process(ticker) for ticker in pending[start:start + 250]))
                 await update_pipeline_run(
                     run_id,
                     "backfilling_dividends",
-                    stats["succeeded"],
+                    stats["already_complete"] + stats["succeeded"],
                 )
         if stats["failed"]:
             raise RuntimeError(
@@ -113,7 +140,7 @@ async def backfill_dividend_history_once(
                 target,
                 run_id,
                 quality_report=quality,
-                records_processed=stats["succeeded"],
+                records_processed=stats["already_complete"] + stats["succeeded"],
             )
         return {
             "run_id": run_id,

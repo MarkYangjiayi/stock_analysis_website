@@ -40,6 +40,23 @@ describe("FieldControl", () => {
         expect(onChange).toHaveBeenLastCalledWith({ field: "roe", operator: "gte", value: -0.1 });
     });
 
+    it("preserves a trailing decimal separator until the number is complete", () => {
+        const onChange = vi.fn();
+        render(<FieldControl field={numericField} onChange={onChange} />);
+        const input = screen.getByLabelText("Return on Equity value");
+
+        fireEvent.change(input, { target: { value: "10." } });
+        expect(input).toHaveValue("10.");
+        expect(onChange).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: "10.5" } });
+        expect(onChange).toHaveBeenLastCalledWith({
+            field: "roe",
+            operator: "gte",
+            value: 0.105,
+        });
+    });
+
     it("supports a custom between range", () => {
         const onChange = vi.fn();
         render(

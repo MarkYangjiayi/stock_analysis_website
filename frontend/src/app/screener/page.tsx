@@ -140,7 +140,12 @@ export function FieldControl({
             return;
         }
         if (values.some((value) => value === "")) return;
-        if (field.type === "number" && values.some((value) => !Number.isFinite(Number(value)))) {
+        if (
+            field.type === "number"
+            && values.some((value) =>
+                value.trim().endsWith(".") || !Number.isFinite(Number(value))
+            )
+        ) {
             return;
         }
         const canonicalValues = values.map(canonicalValue);

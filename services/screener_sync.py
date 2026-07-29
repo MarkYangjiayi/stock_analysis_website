@@ -24,6 +24,7 @@ from services.security_master import bulk_upsert_securities
 from services.universe import record_universe_membership
 from services.raw_store import persist_snapshot
 from services.data_sync import _upsert_financials
+from services.history_backfill import backfill_dividend_history_once
 from services.screener_metrics import (
     calculate_dividend_growth,
     calculate_price_metrics,
@@ -552,6 +553,9 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         snapshot_date = next(iter(snapshot_dates))
         if requested_date and snapshot_date != requested_date:
             raise ValueError(f"Provider returned {snapshot_date} for requested date {requested_date}")
+
+        await update_pipeline_run(run_id, "backfilling_dividend_history")
+        await backfill_dividend_history_once(target_universe, snapshot_date)
 
         # 2. Database Transactions
         # Initialize DB Session

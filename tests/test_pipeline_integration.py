@@ -154,18 +154,31 @@ async def test_dividend_history_upgrade_is_retry_safe_and_versioned(db_session, 
         ["AAA.US", "BBB.US"],
         target_date=target,
     )
+    entrant = await backfill_dividend_history_once(
+        ["AAA.US", "BBB.US", "CCC.US"],
+        target_date=target + timedelta(days=1),
+    )
 
     assert result["status"] == "published"
     assert repeated["reason"] == "already-published"
-    assert len(calls) == 2
-    assert (await db_session.execute(
+    assert entrant["status"] == "published"
+    assert entrant["attempted"] == 1
+    assert len(calls) == 3
+    publications = (await db_session.execute(
         select(DataPublication).where(
             DataPublication.dataset == DIVIDEND_HISTORY_DATASET
         )
-    )).scalar_one().as_of_date == target
+    )).scalars().all()
+    assert {publication.as_of_date for publication in publications} == {
+        target,
+        target + timedelta(days=1),
+    }
     assert (await db_session.execute(
         select(func.count(CorporateAction.id))
-    )).scalar_one() == 2
+    )).scalar_one() == 3
+    assert (await db_session.execute(
+        select(Ticker).where(Ticker.ticker == "CCC.US")
+    )).scalar_one().ticker == "CCC.US"
 
 
 @pytest.mark.asyncio
@@ -368,6 +381,14 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         return frame.copy()
 
     monkeypatch.setattr("services.screener_sync.fetch_and_merge_bulk_data", fake_bulk)
+
+    async def skip_dividend_backfill(*args, **kwargs):
+        return {"status": "skipped", "reason": "fixture"}
+
+    monkeypatch.setattr(
+        "services.screener_sync.backfill_dividend_history_once",
+        skip_dividend_backfill,
+    )
 
     async def partial_technicals(*args, **kwargs):
         return pd.DataFrame([{
