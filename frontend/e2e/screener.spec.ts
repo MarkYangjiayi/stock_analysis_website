@@ -29,6 +29,8 @@ test("filters, sorts, paginates and restores URL state", async ({ page }, testIn
         await page.getByRole("button", { name: "Show 25 matches" }).click();
     }
     await expect(page.getByText("T024", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "T024", exact: true }))
+        .toHaveAttribute("href", "/?ticker=T024.US");
 });
 
 test("supports result column selection and empty states", async ({ page }, testInfo) => {

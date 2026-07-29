@@ -729,7 +729,7 @@ if __name__ == "__main__":
 
 
 async def refresh_screener_technicals(snapshot_date: date) -> int:
-    """Recompute a published snapshot after cold-start price history is loaded."""
+    """Recompute price and dividend-derived fields after cold-start history loads."""
     from sqlalchemy import update
 
     async with async_session_maker() as db:
@@ -738,14 +738,36 @@ async def refresh_screener_technicals(snapshot_date: date) -> int:
         )
         tickers = list(result.scalars().all())
         technicals = await calculate_technicals_locally(db, tickers, as_of_date=snapshot_date)
-        if technicals.empty:
-            return 0
+        technical_by_ticker = (
+            technicals.drop_duplicates(subset=["ticker"]).set_index("ticker").to_dict("index")
+            if not technicals.empty
+            else {}
+        )
+        dividend_result = await db.execute(
+            select(
+                CorporateAction.ticker,
+                CorporateAction.ex_date,
+                CorporateAction.cash_amount,
+            ).where(
+                CorporateAction.ticker.in_(tickers),
+                CorporateAction.action_type == "dividend",
+                CorporateAction.ex_date <= snapshot_date,
+                CorporateAction.ex_date >= snapshot_date - timedelta(days=365 * 7),
+            )
+        )
+        dividends_by_security: Dict[str, list] = {}
+        for dividend_ticker, ex_date, cash_amount in dividend_result.all():
+            dividends_by_security.setdefault(dividend_ticker, []).append((ex_date, cash_amount))
+
         updated = 0
         async with db.begin_nested():
-            for row in technicals.to_dict("records"):
-                values = {}
-                for field_name, value in row.items():
-                    if field_name == "ticker" or not hasattr(StockScreenerSnapshot, field_name):
+            for ticker in tickers:
+                values = calculate_dividend_growth(
+                    dividends_by_security.get(ticker, []),
+                    snapshot_date,
+                )
+                for field_name, value in technical_by_ticker.get(ticker, {}).items():
+                    if not hasattr(StockScreenerSnapshot, field_name):
                         continue
                     if pd.isna(value):
                         values[field_name] = None
@@ -756,7 +778,7 @@ async def refresh_screener_technicals(snapshot_date: date) -> int:
                 await db.execute(
                     update(StockScreenerSnapshot)
                     .where(
-                        StockScreenerSnapshot.ticker == row["ticker"],
+                        StockScreenerSnapshot.ticker == ticker,
                         StockScreenerSnapshot.date == snapshot_date,
                     )
                     .values(**values)

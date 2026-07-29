@@ -3,8 +3,10 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from models import (
+    CorporateAction,
     DataPublication,
     PipelineRun,
     StockScreenerSnapshot,
@@ -18,6 +20,7 @@ from services.screener_metrics import (
     extract_fundamental_metrics,
 )
 from services.screener_query import get_screener_metadata, query_screener
+from services.screener_sync import refresh_screener_technicals
 
 
 def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
@@ -135,6 +138,20 @@ def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs
     assert metrics["quick_ratio"] is None
     assert metrics["roic"] is None
 
+    net_debt_only = extract_fundamental_metrics({
+        "Financials": {
+            "Balance_Sheet": {
+                "quarterly": {
+                    "2025-12-31": {
+                        "netDebt": -50,
+                        "totalStockholderEquity": 100,
+                    },
+                },
+            },
+        },
+    })
+    assert net_debt_only["debt_to_equity"] is None
+
 
 @pytest.mark.parametrize(
     ("candles", "expected"),
@@ -238,6 +255,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             roe=0.20,
             ipo_date=date(2020, 1, 15),
             close=100,
+            ma50=90,
             volume=1000,
         ),
         StockScreenerSnapshot(
@@ -250,6 +268,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             roe=0.05,
             ipo_date=date(2024, 6, 1),
             close=50,
+            ma50=60,
             volume=500,
         ),
         UniverseMembership(
@@ -297,6 +316,13 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     assert ipo_result["total"] == 1
     assert ipo_result["items"][0]["ipo_date"] == "2020-01-15"
 
+    above_ma_result = await query_screener({
+        "filters": [{"field": "price_vs_ma50", "operator": "eq", "value": "above"}],
+        "columns": ["close", "ma50"],
+    }, db_session)
+    assert above_ma_result["total"] == 1
+    assert above_ma_result["items"][0]["ticker"] == "AAA.US"
+
     with pytest.raises(ValueError, match="unsupported filter"):
         await query_screener({
             "filters": [{"field": "drop_table", "operator": "eq", "value": 1}],
@@ -323,3 +349,93 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             "filters": [{"field": "drop_table", "operator": "eq", "value": 1}],
         })
         assert invalid_response.status_code == 422
+
+        invalid_operand_response = await client.post("/api/stocks/screener/query", json={
+            "filters": [{"field": "pe_ratio", "operator": "gte", "value": None}],
+        })
+        assert invalid_operand_response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db_session):
+    as_of = date.today() - timedelta(days=1)
+    run = PipelineRun(
+        pipeline_name="daily_screener",
+        target_date=as_of,
+        status="published",
+        stage="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add_all([
+        DataPublication(
+            dataset="screener",
+            as_of_date=as_of,
+            pipeline_run_id=run.id,
+            status="published",
+        ),
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            name="Alpha",
+            date=as_of,
+            close=100,
+            volume=1_000,
+        ),
+        UniverseMembership(
+            universe="SP500_RUSSELL2000",
+            ticker="AAA.US",
+            effective_from=as_of,
+            source_run_id=run.id,
+        ),
+    ])
+    await db_session.commit()
+
+    metadata = await get_screener_metadata(db_session)
+    index_field = next(field for field in metadata["fields"] if field["id"] == "index")
+    assert index_field["available"] is False
+    assert index_field["coverage"] == 0
+    assert index_field["options"] == []
+
+
+@pytest.mark.asyncio
+async def test_cold_start_refresh_populates_dividend_growth_without_price_rows(db_session, monkeypatch):
+    snapshot_date = date(2025, 12, 31)
+    db_session.add(StockScreenerSnapshot(
+        ticker="AAA.US",
+        name="Alpha",
+        date=snapshot_date,
+        close=100,
+        volume=1_000,
+    ))
+    db_session.add_all([
+        CorporateAction(
+            ticker="AAA.US",
+            ex_date=date(2024, 3, 1),
+            action_type="dividend",
+            cash_amount=1.0,
+            source_id="2024",
+        ),
+        CorporateAction(
+            ticker="AAA.US",
+            ex_date=date(2025, 3, 1),
+            action_type="dividend",
+            cash_amount=1.2,
+            source_id="2025",
+        ),
+    ])
+    await db_session.commit()
+
+    async def no_technicals(*args, **kwargs):
+        return pd.DataFrame()
+
+    monkeypatch.setattr("services.screener_sync.calculate_technicals_locally", no_technicals)
+    assert await refresh_screener_technicals(snapshot_date) == 1
+
+    await db_session.rollback()
+    refreshed = (await db_session.execute(
+        select(StockScreenerSnapshot).where(
+            StockScreenerSnapshot.ticker == "AAA.US",
+            StockScreenerSnapshot.date == snapshot_date,
+        )
+    )).scalar_one()
+    assert float(refreshed.dividend_growth_1yr) == pytest.approx(0.2)

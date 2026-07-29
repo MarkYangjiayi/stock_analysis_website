@@ -141,7 +141,6 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     total_debt = safe_float(_first_present(
         latest_balance.get("shortLongTermDebtTotal"),
         latest_balance.get("totalDebt"),
-        latest_balance.get("netDebt"),
     ))
     invested_capital = safe_float(latest_balance.get("netInvestedCapital"))
     ebit = _first_present(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+import math
 from typing import Any
 
 from sqlalchemy import and_, asc, desc, exists, func, or_, select
@@ -75,6 +76,32 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
         )
         total = total_result.scalar_one() or 0
         if total:
+            membership_filter = (
+                UniverseMembership.universe.in_(("SP500", "RUSSELL2000")),
+                UniverseMembership.effective_from <= selected_date,
+                or_(
+                    UniverseMembership.effective_to.is_(None),
+                    UniverseMembership.effective_to >= selected_date,
+                ),
+            )
+            membership_counts_result = await db.execute(
+                select(
+                    UniverseMembership.universe,
+                    func.count(func.distinct(UniverseMembership.ticker)),
+                )
+                .where(*membership_filter)
+                .group_by(UniverseMembership.universe)
+            )
+            membership_counts = dict(membership_counts_result.all())
+            index_ticker_count_result = await db.execute(
+                select(func.count(func.distinct(UniverseMembership.ticker))).where(*membership_filter)
+            )
+            coverage["index"] = (index_ticker_count_result.scalar_one() or 0) / total
+            enum_options["index"] = [
+                {"value": universe, "label": label}
+                for universe, label in (("SP500", "S&P 500"), ("RUSSELL2000", "Russell 2000"))
+                if membership_counts.get(universe, 0) > 0
+            ]
             for definition in FIELD_DEFINITIONS:
                 column = MODEL_FIELD_MAP.get(definition.id)
                 if column is not None:
@@ -82,8 +109,18 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                         select(func.count(column)).where(StockScreenerSnapshot.date == selected_date)
                     )
                     coverage[definition.id] = (count_result.scalar_one() or 0) / total
-                else:
-                    coverage[definition.id] = 1.0 if definition.id == "index" else 0.0
+                elif definition.id.startswith("price_vs_ma"):
+                    ma_column = getattr(StockScreenerSnapshot, definition.id.removeprefix("price_vs_"))
+                    count_result = await db.execute(
+                        select(func.count(StockScreenerSnapshot.id)).where(
+                            StockScreenerSnapshot.date == selected_date,
+                            StockScreenerSnapshot.close.is_not(None),
+                            ma_column.is_not(None),
+                        )
+                    )
+                    coverage[definition.id] = (count_result.scalar_one() or 0) / total
+                elif definition.id != "index":
+                    coverage[definition.id] = 0.0
             for field_id in ("exchange", "sector", "industry", "country", "candlestick"):
                 column = MODEL_FIELD_MAP.get(field_id)
                 if column is None:
@@ -141,9 +178,43 @@ def _condition_for(column: Any, operator: str, value: Any) -> Any:
     raise ValueError(f"unsupported operator: {operator}")
 
 
-def _coerce_filter_value(field_type: str, value: Any) -> Any:
-    if field_type != "date":
+def _coerce_filter_value(field_type: str, operator: str, value: Any) -> Any:
+    if value is None:
+        raise ValueError("filter value cannot be null")
+
+    if field_type == "enum":
+        values = value if operator == "in" else [value]
+        if operator == "in" and (not isinstance(value, list) or not value):
+            raise ValueError("in operator requires a non-empty list")
+        if operator != "in" and isinstance(value, list):
+            raise ValueError(f"{operator} operator requires a scalar value")
+        if any(not isinstance(item, str) or not item for item in values):
+            raise ValueError("enum filters require non-empty string values")
         return value
+
+    if field_type == "number":
+        values = value if operator == "between" else [value]
+        if operator == "between" and (not isinstance(value, list) or len(value) != 2):
+            raise ValueError("between operator requires [minimum, maximum]")
+        if operator != "between" and isinstance(value, (list, dict)):
+            raise ValueError(f"{operator} operator requires a scalar value")
+
+        def parse_number(item: Any) -> float:
+            if isinstance(item, bool):
+                raise ValueError("numeric filters do not accept booleans")
+            try:
+                parsed = float(item)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("numeric filters require finite numbers") from exc
+            if not math.isfinite(parsed):
+                raise ValueError("numeric filters require finite numbers")
+            return parsed
+
+        parsed_values = [parse_number(item) for item in values]
+        return parsed_values if operator == "between" else parsed_values[0]
+
+    if field_type != "date":
+        raise ValueError(f"unsupported field type: {field_type}")
 
     def parse_date(item: Any) -> date:
         if isinstance(item, date):
@@ -177,6 +248,21 @@ def _index_condition(selected_date: date, operator: str, value: Any) -> Any:
             ),
         )
     )
+
+
+def _price_vs_ma_condition(field_id: str, operator: str, value: Any) -> Any:
+    values = value if operator == "in" else [value]
+    if operator not in {"eq", "in"}:
+        raise ValueError("price-versus-SMA filters only support eq/in")
+    if not values or any(item not in {"above", "below"} for item in values):
+        raise ValueError("unsupported price-versus-SMA value")
+    ma_column = getattr(StockScreenerSnapshot, field_id.removeprefix("price_vs_"))
+    comparisons = [
+        StockScreenerSnapshot.close > ma_column if item == "above"
+        else StockScreenerSnapshot.close < ma_column
+        for item in values
+    ]
+    return or_(*comparisons)
 
 
 async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict[str, Any]:
@@ -238,8 +324,12 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
         definition = FIELD_MAP.get(field_id)
         if definition is None or operator not in definition.operators:
             raise ValueError(f"unsupported filter: {field_id}/{operator}")
+        value = _coerce_filter_value(definition.type, operator, value)
         if field_id == "index":
             conditions.append(_index_condition(selected_date, operator, value))
+            continue
+        if field_id.startswith("price_vs_ma"):
+            conditions.append(_price_vs_ma_condition(field_id, operator, value))
             continue
         column = MODEL_FIELD_MAP.get(field_id)
         if column is None:
@@ -248,7 +338,7 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
             _condition_for(
                 column,
                 operator,
-                _coerce_filter_value(definition.type, value),
+                value,
             )
         )
 

@@ -11,6 +11,7 @@ import {
     SlidersHorizontal,
     X,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
@@ -473,7 +474,14 @@ function ScreenerContent() {
                                         <tr key={String(row.ticker ?? rowIndex)} className="transition hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20">
                                             {selectedColumns.map((column) => (
                                                 <td key={column} className={`px-4 py-3 ${column === "ticker" ? "font-mono font-bold text-emerald-600 dark:text-emerald-400" : column === "name" ? "max-w-64 truncate font-medium" : "font-mono text-slate-700 dark:text-slate-300"}`}>
-                                                    {column === "ticker" ? String(row[column] ?? "").replace(".US", "") : formatScreenerValue(row[column], fieldMap.get(column))}
+                                                    {column === "ticker" ? (
+                                                        <Link
+                                                            href={`/?ticker=${encodeURIComponent(String(row[column] ?? ""))}`}
+                                                            className="hover:underline"
+                                                        >
+                                                            {String(row[column] ?? "").replace(".US", "")}
+                                                        </Link>
+                                                    ) : formatScreenerValue(row[column], fieldMap.get(column))}
                                                 </td>
                                             ))}
                                         </tr>
