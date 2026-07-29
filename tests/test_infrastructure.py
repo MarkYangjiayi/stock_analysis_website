@@ -2,6 +2,7 @@ import asyncio
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from services.security_master import canonicalize_ticker, upsert_security
 from services.universe import record_universe_membership, universe_as_of
 from scripts.backup_sqlite import create_backup
 from scripts.seed_screener_e2e import assert_safe_e2e_database
+from scripts.validate_screener import is_non_finite_numeric
 from core.trading_calendar import is_us_market_session, latest_completed_us_session, us_market_close_utc
 from services.freshness import assess_ticker_freshness
 from services.catchup import catch_up_latest_publications
@@ -49,6 +51,12 @@ def test_e2e_seed_refuses_non_test_databases():
         "test",
         "sqlite+aiosqlite:///./data/screener_e2e.db",
     )
+
+
+def test_screener_validation_detects_non_finite_decimal_values():
+    assert is_non_finite_numeric(Decimal("NaN"))
+    assert is_non_finite_numeric(Decimal("Infinity"))
+    assert not is_non_finite_numeric(Decimal("1.25"))
 
 
 @pytest.mark.asyncio

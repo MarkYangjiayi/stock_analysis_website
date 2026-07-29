@@ -6,6 +6,7 @@ import json
 import math
 import sys
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -16,6 +17,12 @@ from database import async_session_maker
 from models import StockScreenerSnapshot
 from services.screener_fields import FIELD_DEFINITIONS
 from services.screener_query import get_screener_metadata, query_screener
+
+
+def is_non_finite_numeric(value: object) -> bool:
+    if isinstance(value, Decimal):
+        return not value.is_finite()
+    return isinstance(value, float) and not math.isfinite(value)
 
 
 async def validate(min_core_coverage: float) -> dict:
@@ -43,7 +50,7 @@ async def validate(min_core_coverage: float) -> dict:
                 if not definition.column or not hasattr(row, definition.column):
                     continue
                 value = getattr(row, definition.column)
-                if isinstance(value, float) and not math.isfinite(value):
+                if is_non_finite_numeric(value):
                     invalid[definition.id] = invalid.get(definition.id, 0) + 1
         if invalid:
             failures.append("non-finite values: " + ", ".join(sorted(invalid)))

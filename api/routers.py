@@ -158,7 +158,7 @@ async def read_screener_metadata(db: AsyncSession = Depends(get_db)):
 @router.post("/api/stocks/screener/query", tags=["Stocks Analysis Read"])
 async def read_screener_query(request: ScreenerQueryRequest, db: AsyncSession = Depends(get_db)):
     try:
-        return await query_screener(request.model_dump(), db)
+        return await query_screener(request.model_dump(exclude_unset=True), db)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

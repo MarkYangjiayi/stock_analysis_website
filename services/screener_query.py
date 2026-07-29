@@ -307,7 +307,7 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
     if publication_result.scalar_one_or_none() is None:
         # Preserve the legacy fallback only for pre-publication-tracking latest data.
         latest = await latest_published_screener_date(db)
-        if requested_date is not None or latest != selected_date:
+        if latest != selected_date:
             return {
                 "total": 0,
                 "items": [],
@@ -317,7 +317,11 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
                 "freshness": _freshness(selected_date),
             }
 
-    requested_columns = request_data.get("columns") or DEFAULT_COLUMNS
+    requested_columns = (
+        request_data["columns"]
+        if "columns" in request_data
+        else DEFAULT_COLUMNS
+    )
     optional_columns = [
         column
         for column in dict.fromkeys(requested_columns)

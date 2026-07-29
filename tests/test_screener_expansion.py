@@ -542,6 +542,12 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
         })
         assert too_many_columns_response.status_code == 422
 
+        empty_columns_response = await client.post("/api/stocks/screener/query", json={
+            "columns": [],
+        })
+        assert empty_columns_response.status_code == 200
+        assert set(empty_columns_response.json()["items"][0]) == {"ticker", "name"}
+
 
 @pytest.mark.asyncio
 async def test_technicals_skip_price_history_that_does_not_reach_snapshot(db_session):
@@ -606,6 +612,34 @@ async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db
     assert index_field["available"] is False
     assert index_field["coverage"] == 0
     assert index_field["options"] == []
+
+
+@pytest.mark.asyncio
+async def test_pinned_latest_legacy_snapshot_remains_queryable(db_session):
+    snapshot_date = date(2025, 1, 10)
+    db_session.add(StockScreenerSnapshot(
+        ticker="AAA.US",
+        name="Alpha",
+        date=snapshot_date,
+        close=100,
+        volume=1_000,
+    ))
+    await db_session.commit()
+
+    metadata = await get_screener_metadata(db_session)
+    assert metadata["as_of_date"] == snapshot_date.isoformat()
+    result = await query_screener({
+        "as_of_date": snapshot_date.isoformat(),
+        "columns": [],
+    }, db_session)
+    assert result["total"] == 1
+    assert result["items"] == [{"ticker": "AAA.US", "name": "Alpha"}]
+
+    unavailable_date = await query_screener({
+        "as_of_date": (snapshot_date - timedelta(days=1)).isoformat(),
+        "columns": [],
+    }, db_session)
+    assert unavailable_date["total"] == 0
 
 
 @pytest.mark.asyncio
