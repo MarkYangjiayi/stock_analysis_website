@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { FieldControl, parsePage, updateScreenerFilters } from "./page";
+import { FieldControl, parseColumns, parsePage, updateScreenerFilters } from "./page";
 import { ScreenerField, ScreenerFilter } from "@/lib/screener";
 
 const numericField: ScreenerField = {
@@ -80,6 +80,13 @@ describe("parsePage", () => {
         ["20002", 20_000],
     ])("normalizes %s to %s", (value, expected) => {
         expect(parsePage(value)).toBe(expected);
+    });
+});
+
+describe("parseColumns", () => {
+    it("deduplicates and caps shared URL columns at the API limit", () => {
+        const columns = Array.from({ length: 31 }, (_, index) => `field_${index}`);
+        expect(parseColumns([...columns, "field_0"].join(","))).toEqual(columns.slice(0, 30));
     });
 });
 

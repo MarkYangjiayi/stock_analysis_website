@@ -18,7 +18,11 @@ from models import (
     Ticker,
     UniverseMembership,
 )
-from services.history_backfill import backfill_price_history
+from services.history_backfill import (
+    DIVIDEND_HISTORY_DATASET,
+    backfill_dividend_history_once,
+    backfill_price_history,
+)
 from services.quant.backtest import BacktestConfig, run_and_store_backtest
 from services.quant.factor_engine import FACTOR_VERSION, compute_and_store_factors
 from services.screener_sync import run_screener_pipeline
@@ -124,6 +128,44 @@ async def test_history_backfill_syncs_actions_when_prices_are_complete(db_sessio
         select(RawDataSnapshot).where(RawDataSnapshot.dataset == "dividends")
     )).scalar_one()
     assert dividend_snapshot.details["from_date"] == (target - timedelta(days=365 * 7)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_dividend_history_upgrade_is_retry_safe_and_versioned(db_session, monkeypatch):
+    target = date(2025, 1, 10)
+    db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="BBB.US")])
+    await db_session.commit()
+    calls = []
+
+    async def fake_dividends(ticker, from_date=None, to_date=None, **kwargs):
+        calls.append((ticker, from_date, to_date))
+        return [{"date": "2020-03-01", "dividend": "0.25", "currency": "USD"}]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_dividends",
+        fake_dividends,
+    )
+
+    result = await backfill_dividend_history_once(
+        ["AAA.US", "BBB.US"],
+        target_date=target,
+    )
+    repeated = await backfill_dividend_history_once(
+        ["AAA.US", "BBB.US"],
+        target_date=target,
+    )
+
+    assert result["status"] == "published"
+    assert repeated["reason"] == "already-published"
+    assert len(calls) == 2
+    assert (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == DIVIDEND_HISTORY_DATASET
+        )
+    )).scalar_one().as_of_date == target
+    assert (await db_session.execute(
+        select(func.count(CorporateAction.id))
+    )).scalar_one() == 2
 
 
 @pytest.mark.asyncio

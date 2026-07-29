@@ -438,7 +438,7 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
     if rows.empty:
         return {}
     factor = rows["adjusted_close"] / rows["close"].replace(0, np.nan)
-    factor = factor.replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    factor = factor.replace([np.inf, -np.inf], np.nan)
     for column in ("open", "high", "low", "close"):
         rows[f"{column}_adj"] = pd.to_numeric(rows[column], errors="coerce") * factor
     close = rows["close_adj"]

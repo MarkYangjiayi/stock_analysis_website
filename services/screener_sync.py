@@ -341,7 +341,7 @@ async def calculate_technicals_locally(
         benchmark = pd.DataFrame(benchmark_rows, columns=["date", "close", "adjusted_close"])
         benchmark["adjusted_close"] = pd.to_numeric(
             benchmark["adjusted_close"], errors="coerce"
-        ).fillna(pd.to_numeric(benchmark["close"], errors="coerce"))
+        )
         benchmark_returns = pd.Series(
             benchmark["adjusted_close"].pct_change(fill_method=None).values,
             index=pd.to_datetime(benchmark["date"]),
@@ -457,7 +457,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                     "high": _safe_float(row.get("high")),
                     "low": _safe_float(row.get("low")),
                     "close": close_price,
-                    "adjusted_close": adjusted_close if adjusted_close is not None else close_price,
+                    "adjusted_close": adjusted_close,
                     "volume": int(volume_num) if pd.notna(volume_num) else None,
                 })
             
@@ -538,11 +538,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 "high": _safe_float(benchmark_row.get("high")),
                 "low": _safe_float(benchmark_row.get("low")),
                 "close": benchmark_close,
-                "adjusted_close": (
-                    benchmark_adjusted_close
-                    if benchmark_adjusted_close is not None
-                    else benchmark_close
-                ),
+                "adjusted_close": benchmark_adjusted_close,
                 "volume": int(benchmark_volume) if pd.notna(benchmark_volume) else None,
             })
             

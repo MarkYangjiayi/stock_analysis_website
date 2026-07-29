@@ -440,6 +440,24 @@ def test_beta_does_not_forward_fill_missing_closes():
     assert calculate_price_metrics(rows, benchmark_returns)["beta_1yr"] == pytest.approx(expected)
 
 
+def test_price_metrics_do_not_mix_raw_and_adjusted_prices():
+    rows = pd.DataFrame({
+        "date": [value.date() for value in pd.bdate_range("2025-01-01", periods=20)],
+        "open": [100] * 20,
+        "high": [101] * 20,
+        "low": [99] * 20,
+        "close": [100] * 20,
+        "adjusted_close": [50] * 19 + [None],
+        "volume": [1_000] * 20,
+    })
+
+    metrics = calculate_price_metrics(rows)
+
+    assert metrics["ma20"] is None
+    assert metrics["performance_1d"] is None
+    assert metrics["atr_14"] is None
+
+
 def test_atr_uses_wilder_initial_average():
     ranges = list(range(1, 16))
     rows = pd.DataFrame({
@@ -681,6 +699,16 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
         })
         assert query_response.status_code == 200
         assert query_response.json()["items"][0]["ticker"] == "AAA.US"
+
+        default_direction_response = await client.post("/api/stocks/screener/query", json={
+            "sort": {"field": "pe_ratio"},
+            "columns": ["pe_ratio"],
+        })
+        assert default_direction_response.status_code == 200
+        assert [
+            item["ticker"]
+            for item in default_direction_response.json()["items"]
+        ] == ["BBB.US", "AAA.US"]
 
         invalid_response = await client.post("/api/stocks/screener/query", json={
             "filters": [{"field": "drop_table", "operator": "eq", "value": 1}],

@@ -36,8 +36,10 @@ const CATEGORIES = ["Descriptive", "Fundamental", "Technical"] as const;
 const CORE_COLUMNS = ["ticker", "name"];
 const EMPTY_COLUMNS_SENTINEL = "none";
 
-function parseColumns(value: string | null): string[] {
-    return value && value !== EMPTY_COLUMNS_SENTINEL ? value.split(",").filter(Boolean) : [];
+export function parseColumns(value: string | null): string[] {
+    return value && value !== EMPTY_COLUMNS_SENTINEL
+        ? [...new Set(value.split(",").filter(Boolean))].slice(0, 30)
+        : [];
 }
 
 export function parsePage(value: string | null): number {
@@ -245,7 +247,7 @@ export function ScreenerContent() {
             setColumns((current) => {
                 const validColumns = current.filter((column) =>
                     !CORE_COLUMNS.includes(column) && validSortFields.has(column)
-                );
+                ).slice(0, 30);
                 return validColumns.length
                     ? validColumns
                     : explicitEmptyColumns

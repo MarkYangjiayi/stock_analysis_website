@@ -374,7 +374,11 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
     sort_column = selectable.get(sort_field)
     if sort_column is None:
         raise ValueError(f"unsupported sort field: {sort_field}")
-    order = desc(sort_column).nulls_last() if sort_request.get("direction") == "desc" else asc(sort_column).nulls_last()
+    order = (
+        desc(sort_column).nulls_last()
+        if sort_request.get("direction", "desc") == "desc"
+        else asc(sort_column).nulls_last()
+    )
     selected_expressions = [selectable[column].label(column) for column in columns]
     stmt = (
         select(*selected_expressions)

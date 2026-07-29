@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from core.config import settings
 from database import async_session_maker
-from models import DailyPrice
+from models import DailyPrice, StockScreenerSnapshot
 from services import eodhd_client
 from services.corporate_actions import upsert_corporate_actions
 from services.data_sync import _upsert_daily_prices
@@ -16,11 +16,147 @@ from services.pipeline_runs import (
     finish_pipeline_run,
     publish_datasets_and_finish,
     update_pipeline_run,
+    latest_published_date,
 )
 from services.raw_store import persist_snapshot
 
 
 logger = logging.getLogger(__name__)
+DIVIDEND_HISTORY_DATASET = "dividend_history_7y_v1"
+
+
+async def backfill_dividend_history_once(
+    tickers: Iterable[str],
+    target_date: Optional[date] = None,
+) -> dict:
+    """Populate the expanded dividend window once, with retry-safe per-ticker writes."""
+    target = target_date or date.today()
+    published = await latest_published_date(DIVIDEND_HISTORY_DATASET)
+    if published is not None:
+        return {
+            "status": "skipped",
+            "reason": "already-published",
+            "as_of_date": published.isoformat(),
+        }
+
+    symbols = sorted({ticker.upper() for ticker in tickers})
+    if not symbols:
+        return {"status": "deferred", "reason": "empty-universe"}
+
+    dividend_start = target - timedelta(days=365 * 7)
+    run_id = await begin_pipeline_run("dividend_history_backfill", target, version="v1")
+    semaphore = asyncio.Semaphore(settings.HISTORY_BACKFILL_CONCURRENCY)
+    stats = {
+        "requested": len(symbols),
+        "succeeded": 0,
+        "failed": 0,
+        "corporate_actions": 0,
+    }
+
+    async def process(ticker: str) -> None:
+        async with semaphore:
+            try:
+                dividends = await eodhd_client.get_dividends(
+                    ticker,
+                    dividend_start.isoformat(),
+                    target.isoformat(),
+                    client=client,
+                )
+                if dividends is None:
+                    raise ValueError("provider failed to return dividends")
+                identity = {
+                    "ticker": ticker,
+                    "from_date": dividend_start.isoformat(),
+                    "to_date": target.isoformat(),
+                    "window_version": "7y_v1",
+                }
+                async with async_session_maker() as db, db.begin():
+                    await persist_snapshot(
+                        db,
+                        "EODHD",
+                        "dividends",
+                        dividends,
+                        as_of_date=target,
+                        details=identity,
+                    )
+                    action_count = await upsert_corporate_actions(
+                        db,
+                        ticker,
+                        [],
+                        dividends,
+                    )
+                stats["succeeded"] += 1
+                stats["corporate_actions"] += action_count
+            except Exception as exc:
+                stats["failed"] += 1
+                logger.warning("Dividend history backfill failed for %s: %s", ticker, exc)
+
+    try:
+        await update_pipeline_run(run_id, "backfilling_dividends", 0)
+        async with eodhd_client.create_http_client() as client:
+            for start in range(0, len(symbols), 250):
+                await asyncio.gather(*(process(ticker) for ticker in symbols[start:start + 250]))
+                await update_pipeline_run(
+                    run_id,
+                    "backfilling_dividends",
+                    stats["succeeded"],
+                )
+        if stats["failed"]:
+            raise RuntimeError(
+                f"Dividend history backfill failed for {stats['failed']} securities"
+            )
+        quality = {"passed": True, "metrics": stats}
+        async with async_session_maker() as db, db.begin():
+            await publish_datasets_and_finish(
+                db,
+                [DIVIDEND_HISTORY_DATASET],
+                target,
+                run_id,
+                quality_report=quality,
+                records_processed=stats["succeeded"],
+            )
+        return {
+            "run_id": run_id,
+            "status": "published",
+            "as_of_date": target.isoformat(),
+            **stats,
+        }
+    except asyncio.CancelledError:
+        await finish_pipeline_run(
+            run_id,
+            "cancelled",
+            quality_report={"metrics": stats},
+            error_message="Dividend history backfill was cancelled",
+        )
+        raise
+    except Exception as exc:
+        await finish_pipeline_run(
+            run_id,
+            "failed",
+            quality_report={"metrics": stats},
+            error_message=str(exc),
+        )
+        raise
+
+
+async def backfill_latest_screener_dividends_once(
+    target_date: Optional[date] = None,
+) -> dict:
+    """Run the versioned dividend upgrade for the latest published screener universe."""
+    snapshot_date = await latest_published_date("screener")
+    if snapshot_date is None:
+        return {"status": "deferred", "reason": "screener-not-published"}
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(StockScreenerSnapshot.ticker).where(
+                StockScreenerSnapshot.date == snapshot_date
+            )
+        )
+        tickers = result.scalars().all()
+    return await backfill_dividend_history_once(
+        tickers,
+        target_date=target_date or snapshot_date,
+    )
 
 
 async def backfill_price_history(

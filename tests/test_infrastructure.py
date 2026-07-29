@@ -844,6 +844,40 @@ async def test_worker_catchup_publishes_only_latest_completed_session(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_worker_backfills_dividends_before_upgraded_screener(monkeypatch):
+    calls = []
+
+    async def latest_publication(dataset):
+        return {
+            "screener": date(2025, 7, 2),
+            "factors": date(2025, 7, 3),
+        }.get(dataset)
+
+    async def fake_dividend_backfill(target):
+        calls.append(("dividends", target))
+        return {"status": "published"}
+
+    async def fake_screener(target_date, observe_current_universe=False):
+        calls.append(("screener", target_date, observe_current_universe))
+        return {"status": "published"}
+
+    monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
+    monkeypatch.setattr(
+        "services.catchup.backfill_latest_screener_dividends_once",
+        fake_dividend_backfill,
+    )
+    monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
+
+    result = await catch_up_latest_publications(date(2025, 7, 7))
+
+    assert result["dividend_history"] == "published"
+    assert calls == [
+        ("dividends", date(2025, 7, 3)),
+        ("screener", "2025-07-03", True),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_scheduled_jobs_are_publication_idempotent(monkeypatch):
     from core import scheduler
 
