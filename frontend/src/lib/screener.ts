@@ -66,15 +66,16 @@ export function sanitizeFilters(
     fields: ScreenerField[],
 ): ScreenerFilter[] {
     const fieldMap = new Map(fields.map((field) => [field.id, field]));
+    const decimalPattern = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
     const isIsoDate = (value: unknown) => {
         if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
         const parsed = new Date(`${value}T00:00:00Z`);
         return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
     };
 
-    return filters.filter((filter) => {
+    return filters.flatMap((filter) => {
         const field = fieldMap.get(filter.field);
-        if (!field?.available || !field.operators.includes(filter.operator)) return false;
+        if (!field?.available || !field.operators.includes(filter.operator)) return [];
         const isBetween = filter.operator === "between";
         const isIn = filter.operator === "in";
 
@@ -86,10 +87,12 @@ export function sanitizeFilters(
                 values.length > MAX_FILTER_VALUES ||
                 (!isIn && Array.isArray(filter.value))
             ) {
-                return false;
+                return [];
             }
             const options = new Set(field.options.map((option) => option.value));
-            return values.every((value) => typeof value === "string" && options.has(value));
+            return values.every((value) => typeof value === "string" && options.has(value))
+                ? [filter]
+                : [];
         }
 
         const values = isBetween ? filter.value : [filter.value];
@@ -98,15 +101,25 @@ export function sanitizeFilters(
             (isBetween && values.length !== 2) ||
             (!isBetween && Array.isArray(filter.value))
         ) {
-            return false;
+            return [];
         }
-        if (field.type === "date") return values.every(isIsoDate);
-        return values.every((value) =>
-            typeof value !== "boolean" &&
-            value !== null &&
-            value !== "" &&
-            Number.isFinite(Number(value))
-        );
+        if (field.type === "date") return values.every(isIsoDate) ? [filter] : [];
+        const normalized = values.map((value) => {
+            if (
+                typeof value === "boolean" ||
+                value === null ||
+                (typeof value === "string" && !decimalPattern.test(value.trim()))
+            ) {
+                return null;
+            }
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        });
+        if (normalized.some((value) => value === null)) return [];
+        return [{
+            ...filter,
+            value: isBetween ? normalized as number[] : normalized[0] as number,
+        }];
     }).slice(0, MAX_SCREENER_FILTERS);
 }
 

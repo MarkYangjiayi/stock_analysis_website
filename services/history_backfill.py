@@ -231,34 +231,35 @@ async def backfill_price_history(
     minimum_rows = max(1, int(days * 0.9))
     full_window_rows = days + 1
     latest_acceptable_date = latest_completed_us_session(target)
+    expected_sessions: set[date] = set()
+    session_cursor = latest_acceptable_date
+    while len(expected_sessions) < full_window_rows:
+        if is_us_market_session(session_cursor):
+            expected_sessions.add(session_cursor)
+        session_cursor -= timedelta(days=1)
     complete_symbols: set[str] = set()
-    if not include_corporate_actions:
-        async with async_session_maker() as coverage_db:
-            for start in range(0, len(symbols), 500):
-                chunk = symbols[start:start + 500]
-                coverage_result = await coverage_db.execute(
-                    select(
-                        DailyPrice.ticker,
-                        func.count(DailyPrice.id),
-                        func.max(DailyPrice.date),
-                    )
-                    .where(
-                        DailyPrice.ticker.in_(chunk),
-                        DailyPrice.date >= calendar_start,
-                        DailyPrice.date <= target,
-                    )
-                    .group_by(DailyPrice.ticker)
+    async with async_session_maker() as coverage_db:
+        for start in range(0, len(symbols), 500):
+            chunk = symbols[start:start + 500]
+            coverage_result = await coverage_db.execute(
+                select(DailyPrice.ticker, DailyPrice.date).where(
+                    DailyPrice.ticker.in_(chunk),
+                    DailyPrice.date.in_(expected_sessions),
                 )
-                complete_symbols.update(
-                    ticker
-                    for ticker, existing_count, existing_latest in coverage_result.all()
-                    if existing_count >= full_window_rows
-                    and existing_latest is not None
-                    and existing_latest >= latest_acceptable_date
-                )
-    symbols_to_process = [
-        ticker for ticker in symbols if ticker not in complete_symbols
-    ]
+            )
+            dates_by_ticker: dict[str, set[date]] = {}
+            for ticker, price_date in coverage_result.all():
+                dates_by_ticker.setdefault(ticker, set()).add(price_date)
+            complete_symbols.update(
+                ticker
+                for ticker, price_dates in dates_by_ticker.items()
+                if expected_sessions.issubset(price_dates)
+            )
+    symbols_to_process = (
+        symbols
+        if include_corporate_actions
+        else [ticker for ticker in symbols if ticker not in complete_symbols]
+    )
     if not symbols_to_process:
         return {
             "status": "skipped",
@@ -277,7 +278,7 @@ async def backfill_price_history(
     stats = {
         "requested": len(symbols),
         "succeeded": 0,
-        "skipped": len(complete_symbols),
+        "skipped": len(complete_symbols) if not include_corporate_actions else 0,
         "failed": 0,
         "price_rows": 0,
         "corporate_actions": 0,
@@ -286,20 +287,7 @@ async def backfill_price_history(
     async def process(ticker: str) -> None:
         async with semaphore:
             try:
-                async with async_session_maker() as check_db:
-                    coverage_result = await check_db.execute(
-                        select(func.count(DailyPrice.id), func.max(DailyPrice.date)).where(
-                            DailyPrice.ticker == ticker,
-                            DailyPrice.date >= calendar_start,
-                            DailyPrice.date <= target,
-                        )
-                    )
-                    existing_count, existing_latest = coverage_result.one()
-                prices_complete = (
-                    existing_count >= full_window_rows
-                    and existing_latest is not None
-                    and existing_latest >= latest_acceptable_date
-                )
+                prices_complete = ticker in complete_symbols
                 if prices_complete and not include_corporate_actions:
                     async with progress_lock:
                         stats["skipped"] += 1

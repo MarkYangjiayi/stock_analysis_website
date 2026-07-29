@@ -5,6 +5,7 @@ import pytest
 import pandas as pd
 from sqlalchemy import func, select
 
+from core.trading_calendar import is_us_market_session
 from models import (
     DataPublication,
     CorporateAction,
@@ -28,16 +29,26 @@ from services.quant.factor_engine import FACTOR_VERSION, compute_and_store_facto
 from services.screener_sync import run_screener_pipeline
 
 
+def preceding_market_sessions(target: date, count: int) -> list[date]:
+    sessions = []
+    cursor = target - timedelta(days=1)
+    while len(sessions) < count:
+        if is_us_market_session(cursor):
+            sessions.append(cursor)
+        cursor -= timedelta(days=1)
+    return sessions
+
+
 @pytest.mark.asyncio
 async def test_resumable_history_backfill_with_mocked_provider(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="BBB.US")])
-    for offset in range(6):
+    for price_date in preceding_market_sessions(target, 6):
         db_session.add(DailyPrice(
             ticker="AAA.US",
-            date=target - timedelta(days=offset),
-            close=10 + offset,
-            adjusted_close=10 + offset,
+            date=price_date,
+            close=10,
+            adjusted_close=10,
             volume=1_000,
         ))
     await db_session.commit()
@@ -188,13 +199,58 @@ async def test_history_backfill_fetches_when_latest_session_is_missing(
 
 
 @pytest.mark.asyncio
+async def test_history_backfill_fetches_when_an_internal_session_is_missing(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    db_session.add(Ticker(ticker="AAA.US"))
+    cached_sessions = preceding_market_sessions(target, 12)
+    cached_sessions.pop(5)
+    for price_date in cached_sessions:
+        db_session.add(DailyPrice(
+            ticker="AAA.US",
+            date=price_date,
+            close=10,
+            adjusted_close=10,
+        ))
+    await db_session.commit()
+    calls = []
+
+    async def current_history(ticker, *args, **kwargs):
+        calls.append(ticker)
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for price_date in preceding_market_sessions(target, 11)
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        current_history,
+    )
+    result = await backfill_price_history(
+        ["AAA.US"],
+        history_days=10,
+        target_date=target,
+        include_corporate_actions=False,
+    )
+
+    assert calls == ["AAA.US"]
+    assert result["succeeded"] == 1
+
+
+@pytest.mark.asyncio
 async def test_history_backfill_syncs_actions_when_prices_are_complete(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add(Ticker(ticker="AAA.US"))
-    for offset in range(11):
+    for price_date in preceding_market_sessions(target, 11):
         db_session.add(DailyPrice(
             ticker="AAA.US",
-            date=target - timedelta(days=offset),
+            date=price_date,
             close=10,
             adjusted_close=10,
         ))

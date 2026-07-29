@@ -129,11 +129,13 @@ test("discards unsupported URL filters", async ({ page }, testInfo) => {
     const filters = encodeURIComponent(JSON.stringify([
         { field: "sector", operator: "in", value: ["Technology"] },
         { field: "removed_field", operator: "gte", value: 1 },
+        { field: "pe_ratio", operator: "gte", value: "0x10" },
     ]));
     await page.goto(`/screener?filters=${filters}`);
     await expect(page.locator("header").getByText("60", { exact: true })).toBeVisible();
     await expect(page).not.toHaveURL(/removed_field/);
     await expect(page.getByText(/Sector in Technology/)).toBeVisible();
+    await expect(page.getByText(/P\/E ≥/)).not.toBeVisible();
 });
 
 test("ignores a stale manual refresh response after filters change", async ({ page }, testInfo) => {

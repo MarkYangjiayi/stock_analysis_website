@@ -51,6 +51,17 @@ describe("screener URL state", () => {
         }));
         expect(sanitizeFilters(filters, [percentField])).toHaveLength(64);
     });
+
+    it("normalizes backend-compatible decimal strings and rejects JavaScript-only numbers", () => {
+        const filters = [
+            { field: "roe", operator: "gte" as const, value: " 10.5 " },
+            { field: "roe", operator: "gte" as const, value: "1e2" },
+            { field: "roe", operator: "gte" as const, value: "0x10" },
+            { field: "roe", operator: "gte" as const, value: " " },
+        ];
+        expect(sanitizeFilters(filters, [percentField]).map((filter) => filter.value))
+            .toEqual([10.5, 100]);
+    });
 });
 
 describe("screener formatting", () => {
