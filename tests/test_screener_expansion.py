@@ -379,6 +379,21 @@ def test_atr_uses_wilder_initial_average():
     assert calculate_price_metrics(rows)["atr_14"] == pytest.approx(expected)
 
 
+def test_atr_requires_a_contiguous_complete_price_window():
+    rows = pd.DataFrame({
+        "date": [value.date() for value in pd.bdate_range("2025-01-01", periods=15)],
+        "open": [100] * 15,
+        "high": [101] * 15,
+        "low": [99] * 15,
+        "close": [100] * 15,
+        "adjusted_close": [100] * 15,
+        "volume": [1_000] * 15,
+    })
+    rows.loc[1, "high"] = None
+
+    assert calculate_price_metrics(rows)["atr_14"] is None
+
+
 def test_price_range_distances_require_complete_ohlc_windows():
     rows = pd.DataFrame({
         "date": [value.date() for value in pd.bdate_range("2024-01-01", periods=252)],
@@ -508,6 +523,8 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
 
     assert len(metadata_statements) <= 10
     assert metadata["supported_finviz_fields"] == 66
+    fcf_metadata = next(field for field in metadata["fields"] if field["id"] == "fcf")
+    assert fcf_metadata["finviz_field"] is None
     assert metadata["record_count"] == 2
     assert any(field["id"] == "pe_ratio" and field["available"] for field in metadata["fields"])
     index_metadata = next(field for field in metadata["fields"] if field["id"] == "index")

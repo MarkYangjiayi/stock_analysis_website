@@ -427,8 +427,22 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
     true_range = pd.concat(
         [(high - low), (high - close.shift(1)).abs(), (low - close.shift(1)).abs()],
         axis=1,
-    ).max(axis=1)
-    true_range_values = true_range.dropna()
+    ).max(axis=1, skipna=False)
+    complete_inputs = (
+        high.notna()
+        & low.notna()
+        & close.notna()
+        & close.shift(1).notna()
+    )
+    true_range = true_range.where(complete_inputs)
+    if high.iloc[:1].notna().all() and low.iloc[:1].notna().all() and close.iloc[:1].notna().all():
+        true_range.iloc[0] = high.iloc[0] - low.iloc[0]
+    invalid_positions = np.flatnonzero(true_range.isna().to_numpy())
+    true_range_values = (
+        true_range.iloc[invalid_positions[-1] + 1:]
+        if len(invalid_positions)
+        else true_range
+    )
     atr = None
     if len(true_range_values) >= 14:
         atr = safe_float(true_range_values.iloc[:14].mean())

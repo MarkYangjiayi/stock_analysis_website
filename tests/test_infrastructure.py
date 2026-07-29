@@ -145,6 +145,32 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bulk_screener_rejects_an_incomplete_index_feed(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_components(index_ticker, client=None):
+        if index_ticker == "GSPC.INDX":
+            return ["SP0.US", "SP1.US"]
+        return []
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_index_components",
+        fake_components,
+    )
+
+    with pytest.raises(ValueError, match="Russell 2000 component universe is too small"):
+        await fetch_and_merge_bulk_data("2025-01-02")
+
+
+@pytest.mark.asyncio
 async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypatch):
     from services.screener_sync import fetch_and_merge_bulk_data
 

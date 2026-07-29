@@ -81,6 +81,19 @@ def _validate_universe_coverage(target_tickers: set[str], priced_tickers: set[st
     return coverage
 
 
+def _validate_index_components(
+    universe: str,
+    tickers: list[str],
+    minimum_size: int,
+) -> None:
+    component_count = len({ticker.upper() for ticker in tickers})
+    if component_count < minimum_size:
+        raise ValueError(
+            f"{universe} component universe is too small: "
+            f"{component_count} < {minimum_size}"
+        )
+
+
 async def fetch_target_universe_fundamentals(
     tickers: set,
     client=None,
@@ -150,6 +163,16 @@ async def fetch_and_merge_bulk_data(
             sp500_task = eodhd_client.get_index_components("GSPC.INDX", client=client)
             russell_task = eodhd_client.get_index_components("RUT.INDX", client=client)
             sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
+            _validate_index_components(
+                "S&P 500",
+                sp500_tickers,
+                settings.PIPELINE_MIN_SP500_SIZE,
+            )
+            _validate_index_components(
+                "Russell 2000",
+                russell_tickers,
+                settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+            )
             target_tickers = set(sp500_tickers + russell_tickers)
         target_tickers = {ticker.upper() for ticker in target_tickers}
         logger.info(f"Total unique target tickers from S&P 500 and Russell 2000: {len(target_tickers)}")

@@ -10,6 +10,7 @@ from models import StockScreenerSnapshot
 
 NUMERIC_OPERATORS = ("lt", "lte", "gt", "gte", "between")
 ENUM_OPERATORS = ("eq", "in")
+_DEFAULT_FINVIZ_FIELD = object()
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ def _number(
     category: str,
     *,
     unit: str = "number",
-    finviz: Optional[str] = None,
+    finviz: Any = _DEFAULT_FINVIZ_FIELD,
     presets: tuple[dict[str, Any], ...] = (),
     default: bool = False,
 ) -> ScreenerField:
@@ -52,7 +53,7 @@ def _number(
         category=category,
         unit=unit,
         column=field_id,
-        finviz_field=finviz or label,
+        finviz_field=label if finviz is _DEFAULT_FINVIZ_FIELD else finviz,
         presets=presets,
         default_column=default,
     )
@@ -65,7 +66,7 @@ def _enum(
     options: tuple[tuple[str, str], ...] = (),
     *,
     column: Optional[str] = None,
-    finviz: Optional[str] = None,
+    finviz: Any = _DEFAULT_FINVIZ_FIELD,
     result_column: bool = True,
 ) -> ScreenerField:
     return ScreenerField(
@@ -76,7 +77,7 @@ def _enum(
         unit="text",
         operators=ENUM_OPERATORS,
         column=column or field_id,
-        finviz_field=finviz or label,
+        finviz_field=label if finviz is _DEFAULT_FINVIZ_FIELD else finviz,
         options=tuple({"value": value, "label": option_label} for value, option_label in options),
         result_column=result_column,
     )
@@ -179,7 +180,7 @@ FIELD_DEFINITIONS = [
     _number("fcf", "Free Cash Flow", "Fundamental", unit="currency", finviz=None),
 
     _number("performance_1d", "Performance (Day)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),
-    _number("performance_1w", "Performance (Week)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),
+    _number("performance_1w", "Performance (Week)", "Technical", unit="percent", finviz="Performance 2", presets=PERCENT_PRESETS),
     _number("performance_1m", "Performance (Month)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),
     _number("performance_3m", "Performance (Quarter)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),
     _number("performance_6m", "Performance (Half Year)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),
