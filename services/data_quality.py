@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field
+import math
 from typing import Any, Dict, List
 
 from core.config import settings
@@ -35,6 +36,33 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
         "market_cap_coverage": market_cap_count / count if count else 0.0,
         "ma50_coverage": technical_count / count if count else 0.0,
     }
+    excluded = {"ticker", "date", "name", "sector", "industry", "exchange", "country", "ipo_date", "candlestick"}
+    numeric_fields = sorted(
+        {
+            key
+            for record in records
+            for key, value in record.items()
+            if key not in excluded and (value is None or isinstance(value, (int, float)))
+        }
+    )
+    field_coverage = {}
+    invalid_numeric_values = {}
+    for field_name in numeric_fields:
+        populated = 0
+        invalid = 0
+        for record in records:
+            value = record.get(field_name)
+            if value is None:
+                continue
+            if isinstance(value, float) and not math.isfinite(value):
+                invalid += 1
+            else:
+                populated += 1
+        field_coverage[field_name] = populated / count if count else 0.0
+        if invalid:
+            invalid_numeric_values[field_name] = invalid
+    metrics["field_coverage"] = field_coverage
+    metrics["invalid_numeric_values"] = invalid_numeric_values
     errors: List[str] = []
     warnings: List[str] = []
     if count < settings.PIPELINE_MIN_UNIVERSE_SIZE:
@@ -47,4 +75,15 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
         errors.append(f"fundamental coverage below threshold: {metrics['market_cap_coverage']:.2%}")
     if metrics["ma50_coverage"] < 0.5:
         warnings.append("technical history is still warming up; MA50 coverage below 50%")
+    sparse_fields = [
+        field_name
+        for field_name, coverage in field_coverage.items()
+        if field_name not in {"market_cap", "close", "volume"} and coverage < 0.5
+    ]
+    if sparse_fields:
+        warnings.append(
+            "optional field coverage below 50%: " + ", ".join(sparse_fields)
+        )
+    if invalid_numeric_values:
+        errors.append("non-finite numeric values present: " + ", ".join(invalid_numeric_values))
     return QualityReport(passed=not errors, metrics=metrics, errors=errors, warnings=warnings)

@@ -13,6 +13,8 @@ os.environ["DATA_DIR"] = str(TEST_ROOT)
 os.environ["ADMIN_API_KEY"] = "test-secret"
 os.environ["ENVIRONMENT"] = "test"
 os.environ["PIPELINE_MIN_UNIVERSE_SIZE"] = "2"
+os.environ["PIPELINE_MIN_SP500_SIZE"] = "2"
+os.environ["PIPELINE_MIN_RUSSELL2000_SIZE"] = "2"
 os.environ["PIPELINE_MIN_FUNDAMENTAL_COVERAGE"] = "0.80"
 os.environ["PIPELINE_MIN_PRICE_FACTOR_COVERAGE"] = "0.80"
 

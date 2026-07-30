@@ -2,6 +2,7 @@ import asyncio
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -9,13 +10,25 @@ import yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
-from models import DailyPrice, DataPublication, FactorValue, FinancialStatement, PipelineRun, SecurityMaster, StockScreenerSnapshot, Ticker
+from models import (
+    DailyPrice,
+    DataPublication,
+    FactorValue,
+    FinancialStatement,
+    PipelineRun,
+    SecurityMaster,
+    StockScreenerSnapshot,
+    Ticker,
+    UniverseMembership,
+)
 from services.analyzer import batch_get_factor_scores, filter_screener_stocks, get_fundamental_valuation
 from services.data_quality import validate_screener_records
 from services.raw_store import persist_snapshot
 from services.security_master import canonicalize_ticker, upsert_security
 from services.universe import record_universe_membership, universe_as_of
 from scripts.backup_sqlite import create_backup
+from scripts.seed_screener_e2e import assert_safe_e2e_database
+from scripts.validate_screener import is_non_finite_numeric
 from core.trading_calendar import is_us_market_session, latest_completed_us_session, us_market_close_utc
 from services.freshness import assess_ticker_freshness
 from services.catchup import catch_up_latest_publications
@@ -26,6 +39,34 @@ from core.security import SlidingWindowRateLimiter
 async def test_schema_enables_sqlite_foreign_keys(db_session):
     result = await db_session.execute(text("PRAGMA foreign_keys"))
     assert result.scalar_one() == 1
+
+
+def test_e2e_seed_refuses_non_test_databases():
+    with pytest.raises(RuntimeError, match="refusing to reset"):
+        assert_safe_e2e_database(
+            "production",
+            "sqlite+aiosqlite:///./data/quantify_local.db",
+        )
+    with pytest.raises(RuntimeError, match="refusing to reset"):
+        assert_safe_e2e_database(
+            "test",
+            "postgresql+asyncpg://test_user@production/quantify",
+        )
+    with pytest.raises(RuntimeError, match="refusing to reset"):
+        assert_safe_e2e_database(
+            "test",
+            "sqlite+aiosqlite:///./e2e-parent/quantify_local.db",
+        )
+    assert_safe_e2e_database(
+        "test",
+        "sqlite+aiosqlite:///./data/screener_e2e.db",
+    )
+
+
+def test_screener_validation_detects_non_finite_decimal_values():
+    assert is_non_finite_numeric(Decimal("NaN"))
+    assert is_non_finite_numeric(Decimal("Infinity"))
+    assert not is_non_finite_numeric(Decimal("1.25"))
 
 
 @pytest.mark.asyncio
@@ -45,6 +86,44 @@ async def test_universe_membership_closes_exits(db_session):
     await db_session.commit()
     assert set(await universe_as_of(db_session, "TEST", date(2025, 1, 15))) == {"AAA.US", "BBB.US"}
     assert set(await universe_as_of(db_session, "TEST", date(2025, 2, 2))) == {"BBB.US", "CCC.US"}
+
+
+@pytest.mark.asyncio
+async def test_universe_membership_supports_same_date_corrections(db_session):
+    snapshot_date = date(2025, 1, 2)
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        ["AAA.US", "BBB.US"],
+        snapshot_date,
+    )
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        ["BBB.US", "CCC.US"],
+        snapshot_date,
+    )
+    assert set(await universe_as_of(db_session, "TEST", snapshot_date)) == {
+        "BBB.US",
+        "CCC.US",
+    }
+
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        ["AAA.US", "BBB.US", "CCC.US"],
+        snapshot_date,
+    )
+    memberships = (await db_session.execute(
+        select(UniverseMembership).where(
+            UniverseMembership.universe == "TEST",
+        )
+    )).scalars().all()
+    assert {row.ticker for row in memberships} == {"AAA.US", "BBB.US", "CCC.US"}
+    assert all(
+        row.effective_to is None or row.effective_to >= row.effective_from
+        for row in memberships
+    )
 
 
 @pytest.mark.asyncio
@@ -114,6 +193,32 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bulk_screener_rejects_an_incomplete_index_feed(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_components(index_ticker, client=None):
+        if index_ticker == "GSPC.INDX":
+            return ["SP0.US", "SP1.US"]
+        return []
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_index_components",
+        fake_components,
+    )
+
+    with pytest.raises(ValueError, match="Russell 2000 component universe is too small"):
+        await fetch_and_merge_bulk_data("2025-01-02")
+
+
+@pytest.mark.asyncio
 async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypatch):
     from services.screener_sync import fetch_and_merge_bulk_data
 
@@ -128,7 +233,7 @@ async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypat
             "date": "2025-01-02",
             "close": 100,
         }
-        for ticker in ["AAA", "BBB"]
+        for ticker in ["AAA", "BBB", "SPY"]
     ]
     raw_splits = [
         {"code": "AAA", "exchange": "US", "date": "2025-01-02", "split": "2/1"},
@@ -172,6 +277,7 @@ async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypat
     assert frame.attrs["raw_bulk_eod"] == bulk_prices
     assert frame.attrs["raw_bulk_splits"] == raw_splits
     assert frame.attrs["raw_bulk_dividends"] == raw_dividends
+    assert frame.attrs["benchmark_prices"] == [{**bulk_prices[2], "ticker": "SPY.US"}]
     assert {item["ticker"] for item in frame.attrs["bulk_splits"]} == {"AAA.US"}
     assert {item["ticker"] for item in frame.attrs["bulk_dividends"]} == {"BBB.US"}
 
@@ -783,6 +889,78 @@ async def test_worker_catchup_publishes_only_latest_completed_session(monkeypatc
     result = await catch_up_latest_publications(date(2025, 7, 7))
     assert result["target_date"] == "2025-07-03"
     assert calls == [("screener", "2025-07-03", True), ("factors",)]
+
+
+@pytest.mark.asyncio
+async def test_worker_refreshes_stale_screener_before_old_universe_dividends(monkeypatch):
+    calls = []
+
+    async def latest_publication(dataset):
+        return {
+            "screener": date(2025, 7, 2),
+            "factors": date(2025, 7, 3),
+        }.get(dataset)
+
+    async def fake_dividend_backfill(target):
+        calls.append(("dividends", target))
+        return {"status": "published"}
+
+    async def fake_screener(target_date, observe_current_universe=False):
+        calls.append(("screener", target_date, observe_current_universe))
+        return {"status": "published"}
+
+    monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
+    monkeypatch.setattr(
+        "services.catchup.backfill_latest_screener_dividends_once",
+        fake_dividend_backfill,
+    )
+    monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
+
+    result = await catch_up_latest_publications(date(2025, 7, 7))
+
+    assert result["dividend_history"] == "published"
+    assert calls == [
+        ("screener", "2025-07-03", True),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
+    target = date(2025, 7, 3)
+    calls = []
+
+    async def latest_publication(dataset):
+        return target
+
+    async def fake_dividend_backfill(requested_target):
+        calls.append(("dividends", requested_target))
+        return {"status": "published"}
+
+    async def fake_refresh(snapshot_date):
+        calls.append(("refresh", snapshot_date))
+        return 1
+
+    async def should_not_refresh_screener(*args, **kwargs):
+        raise AssertionError("current screener must not be republished")
+
+    monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
+    monkeypatch.setattr(
+        "services.catchup.backfill_latest_screener_dividends_once",
+        fake_dividend_backfill,
+    )
+    monkeypatch.setattr(
+        "services.catchup.run_screener_pipeline",
+        should_not_refresh_screener,
+    )
+    monkeypatch.setattr(
+        "services.catchup.refresh_screener_technicals",
+        fake_refresh,
+    )
+
+    result = await catch_up_latest_publications(date(2025, 7, 7))
+
+    assert result["dividend_history"] == "published"
+    assert calls == [("dividends", target), ("refresh", target)]
 
 
 @pytest.mark.asyncio

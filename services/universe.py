@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from typing import Iterable, List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,15 +36,30 @@ async def record_universe_membership(
                 )
     exited = set(active) - current
     if exited:
-        await db.execute(
-            update(UniverseMembership)
-            .where(
-                UniverseMembership.universe == universe,
-                UniverseMembership.ticker.in_(exited),
-                UniverseMembership.effective_to.is_(None),
+        same_day_exits = {
+            ticker
+            for ticker in exited
+            if active[ticker].effective_from == effective_date
+        }
+        if same_day_exits:
+            await db.execute(
+                delete(UniverseMembership).where(
+                    UniverseMembership.universe == universe,
+                    UniverseMembership.ticker.in_(same_day_exits),
+                    UniverseMembership.effective_from == effective_date,
+                )
             )
-            .values(effective_to=effective_date - timedelta(days=1))
-        )
+        earlier_exits = exited - same_day_exits
+        if earlier_exits:
+            await db.execute(
+                update(UniverseMembership)
+                .where(
+                    UniverseMembership.universe == universe,
+                    UniverseMembership.ticker.in_(earlier_exits),
+                    UniverseMembership.effective_to.is_(None),
+                )
+                .values(effective_to=effective_date - timedelta(days=1))
+            )
     new_rows = [
         {
             "universe": universe,

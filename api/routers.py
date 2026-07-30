@@ -1,7 +1,7 @@
 # api/routers.py
 from datetime import date, timedelta
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -28,6 +28,7 @@ from services.quant.backtest import BacktestConfig, run_and_store_backtest
 from services.quant.factor_engine import compute_and_store_factors
 from services.quant.research import evaluate_factor
 from services.freshness import assess_ticker_freshness
+from services.screener_query import get_screener_metadata, query_screener
 from services.sync_coordinator import ticker_sync_lock
 import pandas as pd
 
@@ -64,7 +65,7 @@ class ScreenerRequest(BaseModel):
     sort_by: Optional[str] = "market_cap" # e.g., "market_cap", "pe_ratio", "volume", "rsi_14", "close"
     sort_desc: Optional[bool] = True
     limit: int = Field(50, ge=1, le=500)
-    offset: int = Field(0, ge=0)
+    offset: int = Field(0, ge=0, le=1_000_000)
 
 
 async def _load_latest_published_factor_snapshot(ticker: str, db: AsyncSession) -> Optional[dict]:
@@ -115,6 +116,31 @@ async def _load_latest_published_factor_snapshot(ticker: str, db: AsyncSession) 
         },
     }
 
+
+class ScreenerFilterClause(BaseModel):
+    field: str = Field(min_length=1, max_length=64)
+    operator: Literal["eq", "in", "lt", "lte", "gt", "gte", "between"]
+    value: Any
+
+
+class ScreenerSort(BaseModel):
+    field: str = "market_cap"
+    direction: Literal["asc", "desc"] = "desc"
+
+
+class ScreenerQueryRequest(BaseModel):
+    as_of_date: Optional[date] = None
+    filters: List[ScreenerFilterClause] = Field(default_factory=list, max_length=64)
+    sort: ScreenerSort = Field(default_factory=ScreenerSort)
+    columns: List[str] = Field(default_factory=list, max_length=30)
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0, le=1_000_000)
+
+    @field_validator("columns")
+    @classmethod
+    def unique_columns(cls, value: List[str]) -> List[str]:
+        return list(dict.fromkeys(value))
+
 @router.post("/api/stocks/screener", tags=["Stocks Analysis Read"])
 async def read_stock_screener(request: ScreenerRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -122,6 +148,19 @@ async def read_stock_screener(request: ScreenerRequest, db: AsyncSession = Depen
     """
     results = await filter_screener_stocks(request.model_dump(), db)
     return results
+
+
+@router.get("/api/stocks/screener/metadata", tags=["Stocks Analysis Read"])
+async def read_screener_metadata(db: AsyncSession = Depends(get_db)):
+    return await get_screener_metadata(db)
+
+
+@router.post("/api/stocks/screener/query", tags=["Stocks Analysis Read"])
+async def read_screener_query(request: ScreenerQueryRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        return await query_screener(request.model_dump(exclude_unset=True), db)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 @router.post("/api/stocks/batch-factors", tags=["Stocks Analysis Read"])
 async def read_batch_factors(request: BatchFactorsRequest, db: AsyncSession = Depends(get_db)):
