@@ -169,6 +169,13 @@ def _filter_delisted_components(
 ) -> list[str]:
     return [ticker for ticker in tickers if _ticker_code(ticker) not in delisted_codes]
 
+
+def _materialize_screener_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    """Detach large lineage attrs before pandas finalizes per-row objects."""
+    frame.attrs.clear()
+    return frame.drop_duplicates(subset=["ticker"]).to_dict("records")
+
+
 async def fetch_and_merge_bulk_data(
     target_date: str = None,
     target_tickers: set = None,
@@ -511,9 +518,10 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         raw_bulk_splits = df_merged.attrs.get("raw_bulk_splits")
         raw_bulk_dividends = df_merged.attrs.get("raw_bulk_dividends")
         benchmark_prices = list(df_merged.attrs.get("benchmark_prices", []))
-            
-        # VERY IMPORTANT: EODHD bulk sometimes returns overlapping duplicates for the same day
-        df_merged = df_merged.drop_duplicates(subset=['ticker'])
+        # Pandas propagates DataFrame attrs via deepcopy when materializing rows.
+        # The lineage attrs above contain the full exchange-wide raw payloads, so
+        # detach them before deduplication and row iteration.
+        merged_rows = _materialize_screener_rows(df_merged)
 
         # Prepare mapping of basic columns depending on EODHD exact json keys
         # The dictionary extraction must be robust to missing keys
@@ -534,7 +542,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
 
         records_to_upsert = []
         daily_price_inserts = []
-        for index, row in df_merged.iterrows():
+        for row in merged_rows:
             # Safely unpack row
             ticker = row.get('ticker')
             
