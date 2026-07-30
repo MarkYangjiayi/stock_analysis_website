@@ -391,7 +391,7 @@ export function ScreenerContent() {
     };
 
     return (
-        <main className="min-h-screen bg-[#f5f7f8] px-3 py-5 text-slate-900 dark:bg-[#0b1014] dark:text-slate-100 md:px-7 md:py-7">
+        <main className="h-full overflow-y-auto bg-[#f5f7f8] px-3 py-5 text-slate-900 dark:bg-[#0b1014] dark:text-slate-100 md:px-7 md:py-7">
             <div className="mx-auto max-w-[1580px] space-y-4">
                 <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
                     <div className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between md:p-6">
@@ -634,7 +634,7 @@ export function ScreenerContent() {
 
 export default function ScreenerPage() {
     return (
-        <Suspense fallback={<div className="min-h-screen bg-[#f5f7f8] dark:bg-[#0b1014]" />}>
+        <Suspense fallback={<div className="h-full bg-[#f5f7f8] dark:bg-[#0b1014]" />}>
             <ScreenerContent />
         </Suspense>
     );

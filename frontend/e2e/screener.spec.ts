@@ -1,5 +1,29 @@
 import { expect, test } from "@playwright/test";
 
+test("scrolls the screener page to its results", async ({ page }) => {
+    await page.goto("/screener");
+    await expect(page.getByRole("heading", { name: "Stock Screener" })).toBeVisible();
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+
+    const screener = page.locator("#main-content > main");
+    await expect.poll(() => screener.evaluate((element) => element.scrollHeight > element.clientHeight))
+        .toBe(true);
+    await screener.hover({ position: { x: 1, y: 300 } });
+    const resultsFooter = page.locator("#main-content > main footer");
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+        const inViewport = await resultsFooter.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.bottom > 0 && bounds.top < window.innerHeight;
+        });
+        if (inViewport) break;
+        await page.mouse.wheel(0, 300);
+    }
+
+    await expect.poll(() => screener.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+    await expect(resultsFooter).toBeInViewport();
+});
+
 test("filters, sorts, paginates and restores URL state", async ({ page }, testInfo) => {
     await page.goto("/screener");
     await expect(page.getByRole("heading", { name: "Stock Screener" })).toBeVisible();
