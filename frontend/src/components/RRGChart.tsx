@@ -14,6 +14,8 @@ export interface RRGResponse {
     benchmark: string;
     update_time: string;
     data_as_of_date?: string | null;
+    data_complete?: boolean;
+    missing_tickers?: string[];
     data: Record<string, RRGDataPoint[]>;
 }
 

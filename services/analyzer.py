@@ -1,12 +1,27 @@
 import logging
+import math
 from typing import Optional, Dict, Any
 
 import pandas as pd
 import pandas_ta_classic as ta
-from sqlalchemy import select, asc, desc, func
+from sqlalchemy import and_, select, asc, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import DataPublication, DailyPrice, FinancialStatement, PipelineRun, StockScreenerSnapshot, Ticker
+from models import (
+    DataPublication,
+    DailyPrice,
+    FinancialStatement,
+    PipelineRun,
+    RRGPriceSnapshot,
+    StockScreenerSnapshot,
+    Ticker,
+)
+from services.rrg_prices import (
+    RRG_PRICE_HISTORY_DATASET,
+    RRG_PRICE_TICKERS,
+    RRG_SECTOR_NAMES,
+    RRG_WARMUP_DAYS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -920,15 +935,79 @@ async def get_rrg_data_for_tickers(
     拉取过去 (history_days + 100) 个交易日的数据，以确保充足的均线预热窗口。
     计算并返回它们各自的 RRG (相对轮动图) 轨迹有效数据。
     """
-    tickers_to_fetch = set([t.upper() for t in tickers] + [benchmark.upper()])
+    requested_tickers = list(dict.fromkeys(t.upper() for t in tickers))
+    benchmark_upper = benchmark.upper()
+    tickers_to_fetch = set(requested_tickers + [benchmark_upper])
+
+    # Read the immutable rows attached to the latest successful RRG publication.
+    # Before the first dedicated publication, retain the legacy shared-date
+    # fallback so an existing installation can serve its previous live history.
+    data_cutoff = None
+    snapshot_run_id = None
+    if tickers_to_fetch.issubset(set(RRG_PRICE_TICKERS)):
+        publication_stmt = (
+            select(
+                DataPublication.as_of_date,
+                DataPublication.pipeline_run_id,
+            )
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+            .where(
+                DataPublication.dataset == RRG_PRICE_HISTORY_DATASET,
+                DataPublication.status == "published",
+                PipelineRun.status == "published",
+            )
+            .order_by(desc(DataPublication.as_of_date))
+            .limit(1)
+        )
+        publication_result = await db_session.execute(publication_stmt)
+        publication = publication_result.first()
+        if publication is not None:
+            data_cutoff = publication.as_of_date
+            snapshot_run_id = publication.pipeline_run_id
+    if snapshot_run_id is None:
+        valid_price = or_(
+            DailyPrice.adjusted_close > 0,
+            and_(DailyPrice.adjusted_close.is_(None), DailyPrice.close > 0),
+        )
+        latest_dates_stmt = (
+            select(DailyPrice.ticker, func.max(DailyPrice.date))
+            .where(
+                DailyPrice.ticker.in_(tickers_to_fetch),
+                valid_price,
+            )
+            .group_by(DailyPrice.ticker)
+        )
+        latest_dates_result = await db_session.execute(latest_dates_stmt)
+        latest_dates = dict(latest_dates_result.all())
+        if tickers_to_fetch.issubset(latest_dates):
+            data_cutoff = min(latest_dates.values())
     
     # 因为 AsyncSession 不支持在同一个 session 生命周期内真正的并发 execute，这里采用串行查询
     data_frames = {}
     
     # 扩大数据抓取边界：所需展现的历史天数 + 100 天滑动窗口前置预热天数
-    fetch_limit = history_days + 100
+    fetch_limit = history_days + RRG_WARMUP_DAYS
     for t in tickers_to_fetch:
-        stmt = select(DailyPrice).where(DailyPrice.ticker == t).order_by(desc(DailyPrice.date)).limit(fetch_limit)
+        if snapshot_run_id is not None:
+            stmt = (
+                select(RRGPriceSnapshot)
+                .where(
+                    RRGPriceSnapshot.pipeline_run_id == snapshot_run_id,
+                    RRGPriceSnapshot.ticker == t,
+                )
+                .order_by(desc(RRGPriceSnapshot.date))
+                .limit(fetch_limit)
+            )
+        else:
+            price_filters = [DailyPrice.ticker == t]
+            if data_cutoff is not None:
+                price_filters.append(DailyPrice.date <= data_cutoff)
+            stmt = (
+                select(DailyPrice)
+                .where(*price_filters)
+                .order_by(desc(DailyPrice.date))
+                .limit(fetch_limit)
+            )
         res = await db_session.execute(stmt)
         records = res.scalars().all()
         
@@ -938,10 +1017,26 @@ async def get_rrg_data_for_tickers(
             continue
             
         # 转换为 DataFrame，为了更好的对比精度，优先使用并提取调整后收盘价
-        df = pd.DataFrame([{
-            'date': r.date,
-            'close': float(r.adjusted_close) if r.adjusted_close is not None else (float(r.close) if r.close is not None else 0.0)
-        } for r in records])
+        valid_records = []
+        for record in records:
+            raw_close = (
+                record.close
+                if snapshot_run_id is not None
+                else (
+                    record.adjusted_close
+                    if record.adjusted_close is not None
+                    else record.close
+                )
+            )
+            if raw_close is None:
+                continue
+            close = float(raw_close)
+            if not math.isfinite(close) or close <= 0:
+                continue
+            valid_records.append({"date": record.date, "close": close})
+        if not valid_records:
+            continue
+        df = pd.DataFrame(valid_records)
         
         # 摘取出来的数据是倒序(desc)，反转回升序以匹配时序演变
         df = df.iloc[::-1].reset_index(drop=True)
@@ -950,7 +1045,6 @@ async def get_rrg_data_for_tickers(
         
         data_frames[t] = df
 
-    benchmark_upper = benchmark.upper()
     current_time = pd.Timestamp.now().isoformat()
     
     if benchmark_upper not in data_frames:
@@ -958,21 +1052,16 @@ async def get_rrg_data_for_tickers(
             "benchmark": benchmark_upper,
             "update_time": current_time,
             "data_as_of_date": None,
-            "data": {}
+            "data_complete": False,
+            "missing_tickers": sorted(tickers_to_fetch - set(data_frames)),
+            "data": {},
         }
         
     benchmark_df = data_frames[benchmark_upper]
     
-    SECTOR_MAP = {
-        "XLK.US": "Technology", "XLF.US": "Financials", "XLV.US": "Health Care",
-        "XLY.US": "Cons. Discret.", "XLP.US": "Cons. Staples", "XLE.US": "Energy",
-        "XLI.US": "Industrials", "XLB.US": "Materials", "XLU.US": "Utilities",
-        "XLRE.US": "Real Estate", "XLC.US": "Comm. Svcs"
-    }
-    
     rrg_data = {}
-    for t in tickers:
-        t_upper = t.upper()
+    generated_tickers = set()
+    for t_upper in requested_tickers:
         if t_upper == benchmark_upper or t_upper not in data_frames:
             continue
             
@@ -982,20 +1071,50 @@ async def get_rrg_data_for_tickers(
         result = calculate_rrg(ticker_df, benchmark_df, window=14)
         
         if result:
-            # 只截取用户最终所需的 history_days 长度发送回前端（计算好的最近一年）
-            result = result[-history_days:]
-            
             # 如果配置了映射名，使用更友好的行业名称作为客户端显示的键
-            display_name = SECTOR_MAP.get(t_upper, t_upper)
+            display_name = RRG_SECTOR_NAMES.get(t_upper, t_upper)
             rrg_data[display_name] = result
+            generated_tickers.add(t_upper)
             
-    data_as_of_date = max(
-        (point["date"] for series in rrg_data.values() for point in series),
-        default=None,
+    missing_tickers = sorted(
+        ticker
+        for ticker in requested_tickers
+        if ticker != benchmark_upper and ticker not in generated_tickers
     )
+    data_complete = not missing_tickers
+    data_as_of_date = None
+    if data_complete:
+        date_sets = [
+            {point["date"] for point in series}
+            for series in rrg_data.values()
+            if series
+        ]
+        common_dates = sorted(set.intersection(*date_sets)) if date_sets else []
+        if common_dates:
+            selected_dates = common_dates[-history_days:]
+            selected_date_set = set(selected_dates)
+            rrg_data = {
+                name: [
+                    point
+                    for point in series
+                    if point["date"] in selected_date_set
+                ]
+                for name, series in rrg_data.items()
+            }
+            data_as_of_date = selected_dates[-1]
+        else:
+            data_complete = False
+            missing_tickers = sorted(
+                ticker
+                for ticker in requested_tickers
+                if ticker != benchmark_upper
+            )
+            rrg_data = {}
     return {
         "benchmark": benchmark_upper,
         "update_time": current_time,
         "data_as_of_date": data_as_of_date,
-        "data": rrg_data
+        "data_complete": data_complete,
+        "missing_tickers": missing_tickers,
+        "data": rrg_data,
     }

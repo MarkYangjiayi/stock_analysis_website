@@ -74,6 +74,31 @@ class DailyPrice(Base):
     ticker_info: Mapped["Ticker"] = relationship(back_populates="daily_prices")
 
 
+class RRGPriceSnapshot(Base):
+    """Immutable effective-close history for one published RRG pipeline run."""
+
+    __tablename__ = "rrg_price_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id"),
+    )
+    ticker: Mapped[str] = mapped_column(
+        ForeignKey("tickers.ticker"),
+    )
+    date: Mapped[dt_date] = mapped_column(Date)
+    close: Mapped[Decimal] = mapped_column(Numeric)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "pipeline_run_id",
+            "ticker",
+            "date",
+            name="uix_rrg_snapshot_run_ticker_date",
+        ),
+    )
+
+
 class FinancialStatement(Base):
     """
     3. financial_statements (财务报表表)

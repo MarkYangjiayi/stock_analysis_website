@@ -1,5 +1,8 @@
 import asyncio
+import os
 import sqlite3
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -16,12 +19,18 @@ from models import (
     FactorValue,
     FinancialStatement,
     PipelineRun,
+    RRGPriceSnapshot,
     SecurityMaster,
     StockScreenerSnapshot,
     Ticker,
     UniverseMembership,
 )
-from services.analyzer import batch_get_factor_scores, filter_screener_stocks, get_fundamental_valuation
+from services.analyzer import (
+    batch_get_factor_scores,
+    filter_screener_stocks,
+    get_fundamental_valuation,
+    get_rrg_data_for_tickers,
+)
 from services.data_quality import validate_screener_records
 from services.raw_store import persist_snapshot
 from services.security_master import canonicalize_ticker, upsert_security
@@ -33,12 +42,157 @@ from core.trading_calendar import is_us_market_session, latest_completed_us_sess
 from services.freshness import assess_ticker_freshness
 from services.catchup import catch_up_latest_publications
 from core.security import SlidingWindowRateLimiter
+from services.rrg_prices import (
+    RRG_CORPORATE_ACTIONS_DATASET,
+    RRG_PRICE_HISTORY_DATASET,
+    RRG_PRICE_TICKERS,
+    refresh_rrg_corporate_actions,
+    refresh_rrg_price_history,
+)
 
 
 @pytest.mark.asyncio
 async def test_schema_enables_sqlite_foreign_keys(db_session):
     result = await db_session.execute(text("PRAGMA foreign_keys"))
     assert result.scalar_one() == 1
+
+
+def test_alembic_upgrade_adds_rrg_snapshot_table(tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    database_path = tmp_path / "migration.db"
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{database_path}",
+        "ENVIRONMENT": "test",
+    }
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "upgrade",
+            "0003_expand_screener_snapshot",
+        ],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DROP TABLE IF EXISTS rrg_price_snapshots")
+        connection.commit()
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(rrg_price_snapshots)"
+            )
+        }
+    assert columns == {"id", "pipeline_run_id", "ticker", "date", "close"}
+    with sqlite3.connect(database_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO pipeline_runs (
+                pipeline_name, target_date, status, stage, version,
+                started_at, records_processed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "rrg_price_history_backfill",
+                "2025-01-10",
+                "published",
+                "published",
+                "v2",
+                "2025-01-10 00:00:00",
+                0,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO data_publications (
+                dataset, as_of_date, pipeline_run_id, status, published_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                RRG_PRICE_HISTORY_DATASET,
+                "2025-01-10",
+                cursor.lastrowid,
+                "published",
+                "2025-01-10 00:00:00",
+            ),
+        )
+        connection.commit()
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "downgrade",
+            "0003_expand_screener_snapshot",
+        ],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        publication_count = connection.execute(
+            "SELECT COUNT(*) FROM data_publications WHERE dataset = ?",
+            (RRG_PRICE_HISTORY_DATASET,),
+        ).fetchone()[0]
+        snapshot_columns = list(connection.execute(
+            "PRAGMA table_info(rrg_price_snapshots)"
+        ))
+    assert publication_count == 0
+    assert snapshot_columns == []
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        reupgraded_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(rrg_price_snapshots)"
+            )
+        }
+        publication_count = connection.execute(
+            "SELECT COUNT(*) FROM data_publications WHERE dataset = ?",
+            (RRG_PRICE_HISTORY_DATASET,),
+        ).fetchone()[0]
+    assert reupgraded_columns == columns
+    assert publication_count == 0
+
+
+def test_rrg_history_days_are_bounded_before_execution():
+    from main import app
+
+    with TestClient(app) as client:
+        too_small = client.get(
+            "/api/v1/rrg",
+            params={"tickers": "XLK.US", "history_days": 0},
+        )
+        too_large = client.get(
+            "/api/v1/rrg",
+            params={"tickers": "XLK.US", "history_days": 253},
+        )
+
+    assert too_small.status_code == 422
+    assert too_large.status_code == 422
 
 
 def test_e2e_seed_refuses_non_test_databases():
@@ -1021,12 +1175,22 @@ async def test_worker_catchup_publishes_only_latest_completed_session(monkeypatc
         calls.append(("factors",))
         return {"status": "published"}
 
+    async def fake_rrg(target):
+        calls.append(("rrg", target))
+        return {"status": "published"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", no_publication)
     monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
     monkeypatch.setattr("services.catchup.compute_latest_factors", fake_factors)
+    monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
     result = await catch_up_latest_publications(date(2025, 7, 7))
     assert result["target_date"] == "2025-07-03"
-    assert calls == [("screener", "2025-07-03", True), ("factors",)]
+    assert result["rrg_prices"] == "published"
+    assert calls == [
+        ("rrg", date(2025, 7, 3)),
+        ("screener", "2025-07-03", True),
+        ("factors",),
+    ]
 
 
 @pytest.mark.asyncio
@@ -1047,17 +1211,23 @@ async def test_worker_refreshes_stale_screener_before_old_universe_dividends(mon
         calls.append(("screener", target_date, observe_current_universe))
         return {"status": "published"}
 
+    async def fake_rrg(target):
+        calls.append(("rrg", target))
+        return {"status": "published"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
     monkeypatch.setattr(
         "services.catchup.backfill_latest_screener_dividends_once",
         fake_dividend_backfill,
     )
     monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
+    monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
 
     result = await catch_up_latest_publications(date(2025, 7, 7))
 
     assert result["dividend_history"] == "published"
     assert calls == [
+        ("rrg", date(2025, 7, 3)),
         ("screener", "2025-07-03", True),
     ]
 
@@ -1081,6 +1251,10 @@ async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
     async def should_not_refresh_screener(*args, **kwargs):
         raise AssertionError("current screener must not be republished")
 
+    async def fake_rrg(requested_target):
+        calls.append(("rrg", requested_target))
+        return {"status": "skipped"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
     monkeypatch.setattr(
         "services.catchup.backfill_latest_screener_dividends_once",
@@ -1094,11 +1268,336 @@ async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
         "services.catchup.refresh_screener_technicals",
         fake_refresh,
     )
+    monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
 
     result = await catch_up_latest_publications(date(2025, 7, 7))
 
     assert result["dividend_history"] == "published"
-    assert calls == [("dividends", target), ("refresh", target)]
+    assert calls == [("rrg", target), ("dividends", target), ("refresh", target)]
+
+
+@pytest.mark.asyncio
+async def test_worker_attempts_rrg_before_unrelated_catchup_failure(monkeypatch):
+    target = date(2025, 7, 3)
+    calls = []
+
+    async def no_publication(dataset):
+        return None
+
+    async def fake_rrg(requested_target):
+        calls.append(("rrg", requested_target))
+        return {"status": "published"}
+
+    async def failing_screener(*args, **kwargs):
+        calls.append(("screener",))
+        raise RuntimeError("screener unavailable")
+
+    monkeypatch.setattr("services.catchup.latest_published_date", no_publication)
+    monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr("services.catchup.run_screener_pipeline", failing_screener)
+
+    with pytest.raises(RuntimeError, match="screener unavailable"):
+        await catch_up_latest_publications(date(2025, 7, 7))
+
+    assert calls == [("rrg", target), ("screener",)]
+
+
+@pytest.mark.asyncio
+async def test_worker_continues_other_catchups_after_rrg_failure(monkeypatch):
+    calls = []
+
+    async def no_publication(dataset):
+        return None
+
+    async def failing_rrg(target):
+        calls.append(("rrg", target))
+        raise RuntimeError("provider unavailable")
+
+    async def fake_screener(target_date, observe_current_universe=False):
+        calls.append(("screener", target_date, observe_current_universe))
+        return {"status": "published"}
+
+    async def fake_factors():
+        calls.append(("factors",))
+        return {"status": "published"}
+
+    monkeypatch.setattr("services.catchup.latest_published_date", no_publication)
+    monkeypatch.setattr("services.catchup.refresh_rrg_price_history", failing_rrg)
+    monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
+    monkeypatch.setattr("services.catchup.compute_latest_factors", fake_factors)
+
+    result = await catch_up_latest_publications(date(2025, 7, 7))
+
+    assert result["rrg_prices"] == "failed"
+    assert result["screener"] == "published"
+    assert result["factors"] == "published"
+    assert calls == [
+        ("rrg", date(2025, 7, 3)),
+        ("screener", "2025-07-03", True),
+        ("factors",),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rrg_refresh_skips_an_already_published_target(monkeypatch):
+    target = date(2025, 7, 3)
+    calls = []
+
+    async def fake_latest(expected_rows):
+        calls.append(expected_rows)
+        return target
+
+    monkeypatch.setattr(
+        "services.rrg_prices._latest_complete_publication",
+        fake_latest,
+    )
+
+    result = await refresh_rrg_price_history(target)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "already-published"
+    assert calls == [
+        len(RRG_PRICE_TICKERS) * (252 + 100 + 1)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rrg_corporate_actions_are_isolated_from_price_publication(monkeypatch):
+    target = date(2025, 7, 3)
+    captured = {}
+
+    async def fake_backfill(tickers, **kwargs):
+        captured["tickers"] = tuple(tickers)
+        captured.update(kwargs)
+        return {"status": "published"}
+
+    monkeypatch.setattr(
+        "services.rrg_prices.backfill_price_history",
+        fake_backfill,
+    )
+
+    result = await refresh_rrg_corporate_actions(target)
+
+    assert result["status"] == "published"
+    assert captured["tickers"] == RRG_PRICE_TICKERS
+    assert captured["include_corporate_actions"] is True
+    assert captured["include_dividends"] is False
+    assert captured["publication_dataset"] == RRG_CORPORATE_ACTIONS_DATASET
+    assert captured["minimum_ticker_coverage"] == 0.90
+    assert captured["include_target_session"] is True
+
+
+@pytest.mark.asyncio
+async def test_rrg_freshness_uses_the_oldest_series_latest_date(db_session, monkeypatch):
+    db_session.add_all([
+        Ticker(ticker="SPY.US"),
+        Ticker(ticker="XLK.US"),
+        Ticker(ticker="XLF.US"),
+    ])
+    db_session.add_all([
+        DailyPrice(ticker="SPY.US", date=date(2025, 7, 2), close=99),
+        DailyPrice(ticker="SPY.US", date=date(2025, 7, 3), close=100),
+        DailyPrice(ticker="XLK.US", date=date(2025, 7, 2), close=99),
+        DailyPrice(ticker="XLK.US", date=date(2025, 7, 3), close=100),
+        DailyPrice(ticker="XLF.US", date=date(2025, 7, 2), close=100),
+    ])
+    await db_session.commit()
+
+    def fake_calculate(ticker_df, benchmark_df, window):
+        latest = ticker_df["date"].iloc[-1].date().isoformat()
+        return [{"date": latest, "rs_ratio": 100.0, "rs_momentum": 100.0}]
+
+    monkeypatch.setattr("services.analyzer.calculate_rrg", fake_calculate)
+
+    result = await get_rrg_data_for_tickers(
+        ["XLK.US", "XLF.US"],
+        db_session,
+        history_days=1,
+    )
+
+    assert result["data_as_of_date"] == "2025-07-02"
+    assert result["data_complete"] is True
+    assert result["missing_tickers"] == []
+
+
+@pytest.mark.asyncio
+async def test_rrg_series_are_aligned_to_a_shared_date_grid(db_session, monkeypatch):
+    dates = [date(2025, 7, 1), date(2025, 7, 2), date(2025, 7, 3)]
+    db_session.add_all([
+        Ticker(ticker="SPY.US"),
+        Ticker(ticker="XLK.US"),
+        Ticker(ticker="XLF.US"),
+    ])
+    for ticker, close in (("SPY.US", 100), ("XLK.US", 110), ("XLF.US", 120)):
+        for price_date in dates:
+            db_session.add(DailyPrice(
+                ticker=ticker,
+                date=price_date,
+                close=close,
+            ))
+    await db_session.commit()
+
+    def fake_calculate(ticker_df, benchmark_df, window):
+        point_dates = dates if ticker_df["close"].iloc[-1] == 110 else [dates[0], dates[2]]
+        return [
+            {
+                "date": point_date.isoformat(),
+                "rs_ratio": 100.0,
+                "rs_momentum": 100.0,
+            }
+            for point_date in point_dates
+        ]
+
+    monkeypatch.setattr("services.analyzer.calculate_rrg", fake_calculate)
+
+    result = await get_rrg_data_for_tickers(
+        ["XLK.US", "XLF.US"],
+        db_session,
+        history_days=3,
+    )
+
+    expected_dates = ["2025-07-01", "2025-07-03"]
+    assert result["data_complete"] is True
+    assert result["data_as_of_date"] == "2025-07-03"
+    assert {
+        tuple(point["date"] for point in series)
+        for series in result["data"].values()
+    } == {tuple(expected_dates)}
+
+
+@pytest.mark.asyncio
+async def test_rrg_response_reports_missing_series(db_session, monkeypatch):
+    db_session.add_all([
+        Ticker(ticker="SPY.US"),
+        Ticker(ticker="XLK.US"),
+    ])
+    db_session.add_all([
+        DailyPrice(ticker="SPY.US", date=date(2025, 7, 3), close=100),
+        DailyPrice(ticker="XLK.US", date=date(2025, 7, 3), close=100),
+    ])
+    await db_session.commit()
+
+    def fake_calculate(ticker_df, benchmark_df, window):
+        latest = ticker_df["date"].iloc[-1].date().isoformat()
+        return [{"date": latest, "rs_ratio": 100.0, "rs_momentum": 100.0}]
+
+    monkeypatch.setattr("services.analyzer.calculate_rrg", fake_calculate)
+
+    result = await get_rrg_data_for_tickers(
+        ["XLK.US", "XLF.US"],
+        db_session,
+        history_days=1,
+    )
+
+    assert result["data_complete"] is False
+    assert result["missing_tickers"] == ["XLF.US"]
+    assert result["data_as_of_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_rrg_response_identifies_a_missing_benchmark(db_session):
+    db_session.add_all([
+        Ticker(ticker="XLK.US"),
+        Ticker(ticker="XLF.US"),
+    ])
+    db_session.add_all([
+        DailyPrice(ticker="XLK.US", date=date(2025, 7, 3), close=100),
+        DailyPrice(ticker="XLF.US", date=date(2025, 7, 3), close=100),
+    ])
+    await db_session.commit()
+
+    result = await get_rrg_data_for_tickers(
+        ["XLK.US", "XLF.US"],
+        db_session,
+        history_days=1,
+    )
+
+    assert result["data_complete"] is False
+    assert result["missing_tickers"] == ["SPY.US"]
+    assert result["data_as_of_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_rrg_reads_only_through_latest_successful_publication(
+    db_session,
+    monkeypatch,
+):
+    published_date = date(2025, 7, 2)
+    partial_refresh_date = date(2025, 7, 3)
+    run = PipelineRun(
+        pipeline_name="rrg_price_history_backfill",
+        target_date=published_date,
+        status="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset=RRG_PRICE_HISTORY_DATASET,
+        as_of_date=published_date,
+        pipeline_run_id=run.id,
+    ))
+    db_session.add_all([
+        Ticker(ticker="SPY.US"),
+        Ticker(ticker="XLK.US"),
+        Ticker(ticker="XLF.US"),
+    ])
+    await db_session.flush()
+    for ticker in ("SPY.US", "XLK.US", "XLF.US"):
+        db_session.add(RRGPriceSnapshot(
+            pipeline_run_id=run.id,
+            ticker=ticker,
+            date=published_date,
+            close=100,
+        ))
+        db_session.add(DailyPrice(
+            ticker=ticker,
+            date=published_date,
+            close=999,
+        ))
+    for ticker in ("SPY.US", "XLK.US"):
+        db_session.add(DailyPrice(
+            ticker=ticker,
+            date=partial_refresh_date,
+            close=101,
+        ))
+    await db_session.commit()
+
+    def fake_calculate(ticker_df, benchmark_df, window):
+        latest = ticker_df["date"].iloc[-1].date().isoformat()
+        return [{"date": latest, "rs_ratio": 100.0, "rs_momentum": 100.0}]
+
+    monkeypatch.setattr("services.analyzer.calculate_rrg", fake_calculate)
+
+    result = await get_rrg_data_for_tickers(
+        ["XLK.US", "XLF.US"],
+        db_session,
+        history_days=1,
+    )
+
+    assert result["data_complete"] is True
+    assert result["data_as_of_date"] == published_date.isoformat()
+    assert {
+        series[-1]["date"]
+        for series in result["data"].values()
+    } == {published_date.isoformat()}
+
+
+@pytest.mark.asyncio
+async def test_scheduled_rrg_sync_targets_latest_completed_session(monkeypatch):
+    from core import scheduler
+
+    calls = []
+
+    async def fake_refresh(target):
+        calls.append(target)
+        return {"status": "published"}
+
+    monkeypatch.setattr(scheduler, "refresh_rrg_price_history", fake_refresh)
+
+    result = await scheduler.scheduled_rrg_sync(date(2025, 7, 7))
+
+    assert result["status"] == "published"
+    assert calls == [date(2025, 7, 3)]
 
 
 @pytest.mark.asyncio

@@ -680,6 +680,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             publishable_tickers | {"SPY.US"},
             target_date=snapshot_date,
             include_corporate_actions=False,
+            publish_dataset=False,
         )
 
         # 2. Database Transactions
