@@ -1166,9 +1166,12 @@ def test_deploy_waits_for_service_health_and_fails_closed():
     deploy_steps = workflow["jobs"]["deploy"]["steps"]
     deploy_step = next(step for step in deploy_steps if step["name"].startswith("Deploy on Aliyun"))
 
-    assert deploy_step["with"]["script_stop"] is True
+    assert "script_stop" not in deploy_step["with"]
     script = deploy_step["with"]["script"]
+    assert script.startswith("set -eu\n")
     assert "docker compose up -d --remove-orphans" in script
     assert "until curl -fsS http://127.0.0.1:8000/health/ready" in script
     assert "curl -fsS http://127.0.0.1:3000/" in script
     assert 'if [ "$attempt" -ge 60 ]' in script
+    assert "docker compose logs --tail=200 backend worker frontend" in script
+    assert "exit 1" in script
