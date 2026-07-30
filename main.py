@@ -5,6 +5,10 @@ from database import init_db
 from api.routers import router as api_router
 import logging
 from core.config import settings
+from services.anomaly_scans import (
+    recover_interrupted_anomaly_scans,
+    shutdown_anomaly_scan_tasks,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -19,7 +23,9 @@ async def lifespan(app: FastAPI):
             "but admin operations are disabled"
         )
     await init_db()
+    await recover_interrupted_anomaly_scans()
     yield
+    await shutdown_anomaly_scan_tasks()
     logger.info("Shutting down application")
 
 # 初始化 FastAPI 实例，挂载 lifespan 生命周期

@@ -13,6 +13,7 @@ from database import init_db
 from services.notifications import NotificationManager
 from services.ws_monitor import ws_monitor
 from services.catchup import catch_up_latest_publications
+from services.anomaly_scans import recover_interrupted_anomaly_scans
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 async def run_worker() -> None:
     await init_db()
+    await recover_interrupted_anomaly_scans()
     try:
         await catch_up_latest_publications()
     except Exception as exc:

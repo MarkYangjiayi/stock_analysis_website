@@ -6,6 +6,11 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+class AttributionGenerationError(RuntimeError):
+    """Raised when the anomaly attribution provider cannot complete."""
+
+
 async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
     """
     Generates a concise markdown investment report from the current published snapshot.
@@ -91,20 +96,24 @@ async def generate_anomaly_attribution(ticker: str, price_change: float, news_li
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         logger.error("GEMINI_API_KEY environment variable is missing.")
-        return "Error: LLM API key not configured."
+        raise AttributionGenerationError("Attribution service is not configured")
 
     try:
         # 每次调用时独立初始化 Client
         client = genai.Client(api_key=api_key)
-        
+        numbered_news = "\n\n".join(
+            f"[{index}] {summary}"
+            for index, summary in enumerate(news_list, start=1)
+        )
         prompt = f"""
-        你是一个华尔街量化分析师。今日开盘，{ticker} 股价异动，涨跌幅为 {price_change}%。
+        你是一个华尔街量化分析师。今日 {ticker} 股价异动，涨跌幅为 {price_change}%。
         以下是过去 24 小时的相关新闻摘要：
-        {news_list}
+        {numbered_news}
         
         请严格根据这些新闻，分析导致该股票异动的最核心原因。
         如果新闻中没有明确原因，请回复‘缺乏明确新闻催化剂，可能为资金面或技术面行为’。
-        输出要求专业、简洁，不超过 150 字。
+        输出要求专业、简洁，不超过 150 字。引用新闻事实时用 [1]、[2] 这样的编号标明来源，
+        不得补充输入中不存在的数字、评级或事件。
         """
 
         response = await client.aio.models.generate_content(
@@ -114,6 +123,8 @@ async def generate_anomaly_attribution(ticker: str, price_change: float, news_li
         
         return response.text or "无法生成归因分析"
         
-    except Exception as e:
-        logger.error(f"Error generating anomaly attribution for {ticker}: {e}")
-        return f"Error generation attribution: {str(e)}"
+    except Exception as exc:
+        logger.exception("Error generating anomaly attribution for %s", ticker)
+        raise AttributionGenerationError(
+            "Attribution service is temporarily unavailable"
+        ) from exc

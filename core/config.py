@@ -26,7 +26,19 @@ class Settings(BaseSettings):
     # API and browser security. When omitted, admin operations are disabled.
     ADMIN_API_KEY: str = ""
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
-    EXPENSIVE_REQUESTS_PER_MINUTE: int = 10
+    EXPENSIVE_REQUESTS_PER_MINUTE: int = 3
+    TRUSTED_PROXY_IPS: str = "127.0.0.1,::1,172.16.0.0/12"
+
+    # On-demand anomaly scans are persisted and run outside the HTTP request.
+    # Keep the fan-out and individual provider calls bounded so one scan cannot
+    # monopolize the web process or create unbounded third-party spend.
+    ANOMALY_MOVE_THRESHOLD_PCT: float = 4.0
+    ANOMALY_RESULT_LIMIT: int = 5
+    ANOMALY_ATTRIBUTION_CONCURRENCY: int = 3
+    ANOMALY_ATTRIBUTION_TIMEOUT_SECONDS: float = 30.0
+    ANOMALY_SCAN_TIMEOUT_SECONDS: float = 90.0
+    ANOMALY_SCAN_LEASE_SECONDS: float = 15.0
+    ANOMALY_NEWS_LOOKBACK_HOURS: int = 24
 
     # Background workers are intentionally disabled in the web process. Run
     # `python worker.py` as a separate service instead.
@@ -55,6 +67,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def trusted_proxy_ips(self) -> List[str]:
+        return [value.strip() for value in self.TRUSTED_PROXY_IPS.split(",") if value.strip()]
 
     # 指定配置加载来源：.env 文件
     model_config = SettingsConfigDict(

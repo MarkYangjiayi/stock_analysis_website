@@ -1,8 +1,9 @@
 import asyncio
+import ipaddress
 import secrets
 import time
 from collections import defaultdict, deque
-from typing import Deque, DefaultDict
+from typing import Deque, DefaultDict, Union
 
 from fastapi import Header, HTTPException, Request, status
 
@@ -63,6 +64,45 @@ class SlidingWindowRateLimiter:
 _expensive_limiter = SlidingWindowRateLimiter(settings.EXPENSIVE_REQUESTS_PER_MINUTE)
 
 
+def _is_trusted_proxy(
+    address: Union[ipaddress.IPv4Address, ipaddress.IPv6Address],
+) -> bool:
+    for value in settings.trusted_proxy_ips:
+        try:
+            if address in ipaddress.ip_network(value, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _client_identifier(request: Request) -> str:
+    """Resolve a client IP while trusting forwarding headers only from known proxies."""
+    peer = request.client.host if request.client else "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+
+    if not _is_trusted_proxy(peer_ip):
+        return peer
+
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if not forwarded_for:
+        return peer
+
+    # Trusted proxies append their observed upstream address to the right side
+    # of X-Forwarded-For. Walk from that trusted edge and stop at the first
+    # untrusted hop, ignoring any client-supplied addresses farther left.
+    for raw_hop in reversed(forwarded_for.split(",")):
+        try:
+            hop = ipaddress.ip_address(raw_hop.strip())
+        except ValueError:
+            return peer
+        if not _is_trusted_proxy(hop):
+            return str(hop)
+    return peer
+
+
 async def limit_expensive_requests(request: Request) -> None:
-    client = request.client.host if request.client else "unknown"
-    await _expensive_limiter.check(client)
+    await _expensive_limiter.check(_client_identifier(request))

@@ -2,8 +2,7 @@ import logging
 from google import genai
 from core.config import settings
 from services.notifications import NotificationManager
-from services.anomaly_detector import scan_and_analyze_anomalies
-from database import async_session_maker
+from services.anomaly_scans import run_persisted_anomaly_scan
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +28,10 @@ async def generate_morning_briefing():
     """Generates the morning briefing using intraday anomaly data and broadcasts it."""
     logger.info("Executing Morning Briefing Task...")
     try:
-        anomalies_data = []
-        async with async_session_maker() as session:
-            # We fetch 5 top anomalies 
-            anomalies_data = await scan_and_analyze_anomalies(session, limit_count=5)
+        anomalies_data = await run_persisted_anomaly_scan(
+            trigger="morning_briefing",
+            limit_count=5,
+        )
             
         if not anomalies_data:
             logger.info("No anomalies detected for Morning Briefing.")
@@ -70,10 +69,10 @@ async def generate_post_market_summary():
     """Generates the post market summary and broadcasts it."""
     logger.info("Executing Post Market Summary Task...")
     try:
-        anomalies_data = []
-        async with async_session_maker() as session:
-            # For post market, we might also just rely on anomaly logic or a different scanner
-            anomalies_data = await scan_and_analyze_anomalies(session, limit_count=10)
+        anomalies_data = await run_persisted_anomaly_scan(
+            trigger="post_market_summary",
+            limit_count=10,
+        )
             
         if not anomalies_data:
             logger.info("No anomalies detected for Post Market Summary.")
