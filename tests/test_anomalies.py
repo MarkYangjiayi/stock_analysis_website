@@ -301,7 +301,7 @@ async def test_anomaly_scan_propagates_market_data_failure(
 
 
 @pytest.mark.asyncio
-async def test_startup_recovery_fails_all_active_scans_immediately(
+async def test_startup_recovery_only_fails_scans_owned_by_executor(
     db_session,
 ):
     from services.anomaly_scans import recover_interrupted_anomaly_scans
@@ -337,20 +337,42 @@ async def test_startup_recovery_fails_all_active_scans_immediately(
 
     await recover_interrupted_anomaly_scans()
     db_session.expire_all()
-    runs = (
+    runs_after_web_start = (
         await db_session.execute(
             select(AnomalyScanRun).order_by(AnomalyScanRun.id)
         )
     ).scalars().all()
 
-    assert [run.status for run in runs] == ["failed", "failed", "completed"]
-    assert all(run.active_key is None for run in runs[:2])
-    assert all(run.finished_at is not None for run in runs[:2])
-    assert all(
-        run.error_message == "Scan was interrupted before it completed"
-        for run in runs[:2]
+    assert [run.status for run in runs_after_web_start] == [
+        "failed",
+        "running",
+        "completed",
+    ]
+    assert runs_after_web_start[0].active_key is None
+    assert runs_after_web_start[0].finished_at is not None
+    assert (
+        runs_after_web_start[0].error_message
+        == "Scan was interrupted before it completed"
     )
-    assert runs[2].error_message is None
+    assert runs_after_web_start[1].active_key == "scheduled"
+    assert runs_after_web_start[1].finished_at is None
+
+    await recover_interrupted_anomaly_scans(executor_role="worker")
+    db_session.expire_all()
+    runs_after_worker_start = (
+        await db_session.execute(
+            select(AnomalyScanRun).order_by(AnomalyScanRun.id)
+        )
+    ).scalars().all()
+
+    assert [run.status for run in runs_after_worker_start] == [
+        "failed",
+        "failed",
+        "completed",
+    ]
+    assert runs_after_worker_start[1].active_key is None
+    assert runs_after_worker_start[1].finished_at is not None
+    assert runs_after_worker_start[2].error_message is None
 
 
 @pytest.mark.asyncio
@@ -403,6 +425,76 @@ async def test_durable_scan_records_completed_payload(db_session, monkeypatch):
     assert run.quote_as_of == quote_time.replace(tzinfo=None)
     assert run.results[0]["ticker"] == "AAA.US"
     assert run.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_scheduled_scan_waits_for_incompatible_active_limit(
+    db_session,
+    monkeypatch,
+):
+    from database import async_session_maker
+    from services import anomaly_scans
+
+    active = AnomalyScanRun(
+        trigger="manual",
+        status="running",
+        active_key="market",
+        requested_limit=5,
+        threshold_pct=4.0,
+        results=[],
+    )
+    db_session.add(active)
+    await db_session.commit()
+    await db_session.refresh(active)
+
+    quote_time = datetime.now(timezone.utc).replace(microsecond=0)
+
+    async def complete_active():
+        await asyncio.sleep(0.05)
+        async with async_session_maker() as session:
+            run = await session.get(AnomalyScanRun, active.id)
+            run.status = "completed"
+            run.active_key = None
+            run.results = [{"ticker": f"OLD{index}.US"} for index in range(5)]
+            run.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            await session.commit()
+
+    async def fake_scan(*args, limit_count, **kwargs):
+        assert limit_count == 10
+        return AnomalyScanData(
+            universe_as_of=date(2026, 7, 30),
+            quote_as_of=quote_time,
+            results=[
+                {"ticker": f"NEW{index}.US"}
+                for index in range(limit_count)
+            ],
+        )
+
+    monkeypatch.setattr(
+        anomaly_scans,
+        "scan_and_analyze_anomalies",
+        fake_scan,
+    )
+
+    release_task = asyncio.create_task(complete_active())
+    results = await anomaly_scans.run_persisted_anomaly_scan(
+        trigger="post_market_summary",
+        limit_count=10,
+    )
+    await release_task
+
+    db_session.expire_all()
+    runs = (
+        await db_session.execute(
+            select(AnomalyScanRun).order_by(AnomalyScanRun.id)
+        )
+    ).scalars().all()
+    assert len(runs) == 2
+    assert runs[1].trigger == "post_market_summary"
+    assert runs[1].requested_limit == 10
+    assert runs[1].status == "completed"
+    assert len(results) == 10
+    assert results[0]["ticker"] == "NEW0.US"
 
 
 @pytest.mark.asyncio
@@ -523,7 +615,10 @@ def test_proxy_client_identifier_only_trusts_configured_peers(monkeypatch):
         "type": "http",
         "method": "POST",
         "path": "/",
-        "headers": [(b"x-forwarded-for", b"203.0.113.9, 172.18.0.1")],
+        "headers": [(
+            b"x-forwarded-for",
+            b"198.51.100.99, 203.0.113.9, 172.18.0.1",
+        )],
         "client": ("172.18.0.1", 1234),
     })
     untrusted_request = Request({

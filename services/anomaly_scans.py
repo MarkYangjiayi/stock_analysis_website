@@ -20,6 +20,10 @@ from services.anomaly_detector import (
 
 logger = logging.getLogger(__name__)
 ACTIVE_SCAN_STATUSES = ("queued", "running")
+EXECUTOR_SCAN_TRIGGERS = {
+    "web": ("manual",),
+    "worker": ("morning_briefing", "post_market_summary"),
+}
 _enqueue_lock = asyncio.Lock()
 _running_tasks: Dict[int, asyncio.Task[None]] = {}
 
@@ -97,12 +101,22 @@ async def _expire_stale_scans(db: AsyncSession) -> None:
     )
 
 
-async def recover_interrupted_anomaly_scans() -> None:
+async def recover_interrupted_anomaly_scans(
+    executor_role: str = "web",
+) -> None:
+    """Fail orphaned runs owned by the executor process that is starting."""
+    owned_triggers = EXECUTOR_SCAN_TRIGGERS.get(executor_role)
+    if owned_triggers is None:
+        raise ValueError(f"Unknown anomaly scan executor role: {executor_role}")
+
     async with async_session_maker() as db:
         finished_at = utc_now()
         result = await db.execute(
             update(AnomalyScanRun)
-            .where(AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES))
+            .where(
+                AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
+                AnomalyScanRun.trigger.in_(owned_triggers),
+            )
             .values(
                 status="failed",
                 active_key=None,
@@ -113,8 +127,9 @@ async def recover_interrupted_anomaly_scans() -> None:
         await db.commit()
         if result.rowcount:
             logger.warning(
-                "Marked %s interrupted anomaly scan(s) as failed during startup",
+                "Marked %s interrupted %s anomaly scan(s) as failed during startup",
                 result.rowcount,
+                executor_role,
             )
 
 
@@ -166,7 +181,24 @@ async def enqueue_manual_anomaly_scan(
         return scan, True
 
 
-async def _create_scan_run(trigger: str, limit_count: int) -> Tuple[int, bool]:
+def _scan_satisfies_request(
+    scan: AnomalyScanRun,
+    *,
+    limit_count: int,
+    threshold_pct: float,
+) -> bool:
+    return (
+        scan.requested_limit >= limit_count
+        and scan.threshold_pct == threshold_pct
+    )
+
+
+async def _create_scan_run(
+    trigger: str,
+    limit_count: int,
+) -> Tuple[int, bool, bool]:
+    normalized_limit = max(1, min(limit_count, 10))
+    threshold_pct = settings.ANOMALY_MOVE_THRESHOLD_PCT
     async with async_session_maker() as db:
         await _expire_stale_scans(db)
         existing_result = await db.execute(
@@ -177,14 +209,22 @@ async def _create_scan_run(trigger: str, limit_count: int) -> Tuple[int, bool]:
         existing = existing_result.scalar_one_or_none()
         if existing is not None:
             await db.commit()
-            return existing.id, False
+            return (
+                existing.id,
+                False,
+                _scan_satisfies_request(
+                    existing,
+                    limit_count=normalized_limit,
+                    threshold_pct=threshold_pct,
+                ),
+            )
 
         scan = AnomalyScanRun(
             trigger=trigger,
             status="queued",
             active_key="market",
-            requested_limit=max(1, min(limit_count, 10)),
-            threshold_pct=settings.ANOMALY_MOVE_THRESHOLD_PCT,
+            requested_limit=normalized_limit,
+            threshold_pct=threshold_pct,
             results=[],
         )
         db.add(scan)
@@ -205,9 +245,17 @@ async def _create_scan_run(trigger: str, limit_count: int) -> Tuple[int, bool]:
                     .limit(1)
                 )
                 concurrent = latest_result.scalar_one()
-            return concurrent.id, False
+            return (
+                concurrent.id,
+                False,
+                _scan_satisfies_request(
+                    concurrent,
+                    limit_count=normalized_limit,
+                    threshold_pct=threshold_pct,
+                ),
+            )
         await db.refresh(scan)
-        return scan.id, True
+        return scan.id, True, True
 
 
 async def execute_anomaly_scan(scan_id: int) -> None:
@@ -324,17 +372,36 @@ async def run_persisted_anomaly_scan(
     limit_count: int,
 ) -> list[dict]:
     """Run and persist a scheduled scan, returning results to the reporter."""
-    scan_id, created = await _create_scan_run(trigger, limit_count)
-    if created:
-        await execute_anomaly_scan(scan_id)
-    else:
-        deadline = time.monotonic() + settings.ANOMALY_SCAN_TIMEOUT_SECONDS + 30
+    normalized_limit = max(1, min(limit_count, 10))
+    deadline = time.monotonic() + (
+        (settings.ANOMALY_SCAN_TIMEOUT_SECONDS + 30) * 2
+    )
+
+    while True:
+        scan_id, created, compatible = await _create_scan_run(
+            trigger,
+            normalized_limit,
+        )
+        if created:
+            await execute_anomaly_scan(scan_id)
+            break
+
         while time.monotonic() < deadline:
             async with async_session_maker() as db:
                 active = await db.get(AnomalyScanRun, scan_id)
                 if active is None or active.status not in ACTIVE_SCAN_STATUSES:
                     break
             await asyncio.sleep(0.5)
+        else:
+            raise AnomalyScanError(
+                "Timed out waiting for the active anomaly scan"
+            )
+
+        if compatible:
+            break
+        # The completed run requested fewer results (or a different threshold)
+        # and cannot satisfy this caller. Once its active key is released, loop
+        # and create the requested scheduled scan.
 
     async with async_session_maker() as db:
         scan = await db.get(AnomalyScanRun, scan_id)
@@ -345,4 +412,4 @@ async def run_persisted_anomaly_scan(
                 else "Anomaly scan did not complete"
             )
             raise AnomalyScanError(message)
-        return scan.results or []
+        return (scan.results or [])[:normalized_limit]

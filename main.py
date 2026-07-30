@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
             "but admin operations are disabled"
         )
     await init_db()
-    await recover_interrupted_anomaly_scans()
+    await recover_interrupted_anomaly_scans(executor_role="web")
     yield
     await shutdown_anomaly_scan_tasks()
     logger.info("Shutting down application")
