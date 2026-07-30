@@ -227,6 +227,32 @@ async def get_index_components(
     logger.info(f"Found {len(components)} components for {index_ticker}")
     return components
 
+
+async def get_exchange_symbol_list(
+    exchange: str = "US",
+    *,
+    delisted: Optional[bool] = None,
+    instrument_type: Optional[str] = None,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[list[Dict[str, Any]]]:
+    """Return the provider's active or delisted symbol list for an exchange."""
+    params: Dict[str, Any] = {}
+    if delisted is not None:
+        params["delisted"] = int(delisted)
+    if instrument_type:
+        params["type"] = instrument_type
+    logger.info(
+        "Fetching exchange symbol list for %s%s...",
+        exchange,
+        " (delisted)" if delisted else "",
+    )
+    return await _fetch_from_eodhd(
+        endpoint="exchange-symbol-list",
+        ticker=exchange,
+        params=params,
+        client=client,
+    )
+
 async def get_bulk_realtime_prices(
     exchange: str = "US",
     client: Optional[httpx.AsyncClient] = None,

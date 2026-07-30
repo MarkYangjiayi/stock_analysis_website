@@ -146,6 +146,29 @@ async def fetch_target_universe_fundamentals(
 
     return results
 
+
+def _ticker_code(ticker: str) -> str:
+    """Normalize a provider ticker to its exchange-independent symbol code."""
+    return str(ticker).split(".", 1)[0].strip().upper()
+
+
+def _extract_delisted_codes(rows: Any) -> set[str]:
+    """Extract exchange-independent codes from EODHD's symbol-list response."""
+    if not isinstance(rows, list):
+        raise ValueError("Failed to retrieve the EODHD delisted symbol list.")
+    return {
+        str(row.get("Code") or row.get("code") or "").strip().upper()
+        for row in rows
+        if isinstance(row, dict) and (row.get("Code") or row.get("code"))
+    }
+
+
+def _filter_delisted_components(
+    tickers: list[str],
+    delisted_codes: set[str],
+) -> list[str]:
+    return [ticker for ticker in tickers if _ticker_code(ticker) not in delisted_codes]
+
 async def fetch_and_merge_bulk_data(
     target_date: str = None,
     target_tickers: set = None,
@@ -165,7 +188,12 @@ async def fetch_and_merge_bulk_data(
     async with eodhd_client.create_http_client() as client:
         sp500_tickers: list[str] = []
         russell_tickers: list[str] = []
-        if target_tickers is None:
+        delisted_codes: set[str] = set()
+        known_exits: set[str] = set()
+        sp500_known_exits: set[str] = set()
+        russell2000_known_exits: set[str] = set()
+        loaded_index_components = target_tickers is None
+        if loaded_index_components:
             sp500_task = eodhd_client.get_index_components("GSPC.INDX", client=client)
             russell_task = eodhd_client.get_index_components("RUT.INDX", client=client)
             sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
@@ -179,6 +207,13 @@ async def fetch_and_merge_bulk_data(
                 russell_tickers,
                 settings.PIPELINE_MIN_RUSSELL2000_SIZE,
             )
+            delisted_rows = await eodhd_client.get_exchange_symbol_list(
+                exchange="US",
+                delisted=True,
+                instrument_type="common_stock",
+                client=client,
+            )
+            delisted_codes = _extract_delisted_codes(delisted_rows)
             target_tickers = set(sp500_tickers + russell_tickers)
         target_tickers = {ticker.upper() for ticker in target_tickers}
         logger.info(f"Total unique target tickers from S&P 500 and Russell 2000: {len(target_tickers)}")
@@ -208,6 +243,52 @@ async def fetch_and_merge_bulk_data(
             df_eod['ticker'] = df_eod['code'] + '.' + df_eod['exchange_short_name']
         else:
             df_eod['ticker'] = df_eod['code'] + '.US'
+
+        if loaded_index_components:
+            # A code can be reused by a new active listing. Treat a component as
+            # stale only when the code is both delisted and absent from today's
+            # exchange-wide price batch.
+            priced_codes = {
+                str(code).strip().upper()
+                for code in df_eod["code"].dropna()
+                if str(code).strip()
+            }
+            inactive_delisted_codes = delisted_codes - priced_codes
+            original_sp500_tickers = sp500_tickers
+            original_russell_tickers = russell_tickers
+            sp500_tickers = _filter_delisted_components(
+                original_sp500_tickers,
+                inactive_delisted_codes,
+            )
+            russell_tickers = _filter_delisted_components(
+                original_russell_tickers,
+                inactive_delisted_codes,
+            )
+            sp500_known_exits = set(original_sp500_tickers) - set(sp500_tickers)
+            russell2000_known_exits = (
+                set(original_russell_tickers) - set(russell_tickers)
+            )
+            known_exits = sp500_known_exits | russell2000_known_exits
+            _validate_index_components(
+                "S&P 500 after delisted-symbol filter",
+                sp500_tickers,
+                settings.PIPELINE_MIN_SP500_SIZE,
+            )
+            _validate_index_components(
+                "Russell 2000 after delisted-symbol filter",
+                russell_tickers,
+                settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+            )
+            target_tickers = {
+                ticker.upper()
+                for ticker in sp500_tickers + russell_tickers
+            }
+            logger.info(
+                "Excluded %s delisted index components absent from the current "
+                "price batch; %s active candidates remain.",
+                len(known_exits),
+                len(target_tickers),
+            )
 
         benchmark_prices = df_eod[
             df_eod["code"].astype(str).str.upper() == "SPY"
@@ -250,6 +331,13 @@ async def fetch_and_merge_bulk_data(
     df_merged.attrs["target_tickers"] = sorted(target_tickers)
     df_merged.attrs["sp500_tickers"] = sorted({ticker.upper() for ticker in sp500_tickers})
     df_merged.attrs["russell2000_tickers"] = sorted({ticker.upper() for ticker in russell_tickers})
+    df_merged.attrs["known_exits"] = sorted({ticker.upper() for ticker in known_exits})
+    df_merged.attrs["sp500_known_exits"] = sorted(
+        {ticker.upper() for ticker in sp500_known_exits}
+    )
+    df_merged.attrs["russell2000_known_exits"] = sorted(
+        {ticker.upper() for ticker in russell2000_known_exits}
+    )
     df_merged.attrs["priced_tickers"] = sorted(priced_tickers)
     df_merged.attrs["universe_coverage"] = universe_coverage
     df_merged.attrs["benchmark_prices"] = benchmark_prices.to_dict("records")
@@ -412,6 +500,11 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         target_universe = set(df_merged.attrs.get("target_tickers", df_merged["ticker"]))
         sp500_universe = set(df_merged.attrs.get("sp500_tickers", []))
         russell2000_universe = set(df_merged.attrs.get("russell2000_tickers", []))
+        known_exits = set(df_merged.attrs.get("known_exits", []))
+        sp500_known_exits = set(df_merged.attrs.get("sp500_known_exits", []))
+        russell2000_known_exits = set(
+            df_merged.attrs.get("russell2000_known_exits", [])
+        )
         bulk_splits = list(df_merged.attrs.get("bulk_splits", []))
         bulk_dividends = list(df_merged.attrs.get("bulk_dividends", []))
         raw_bulk_eod = df_merged.attrs.get("raw_bulk_eod")
@@ -742,6 +835,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 effective_date=snapshot_date,
                 source_run_id=run_id,
                 minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                known_exits=known_exits,
             )
             if sp500_universe:
                 await record_universe_membership(
@@ -751,6 +845,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                     effective_date=snapshot_date,
                     source_run_id=run_id,
                     minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                    known_exits=sp500_known_exits,
                 )
             if russell2000_universe:
                 await record_universe_membership(
@@ -760,6 +855,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                     effective_date=snapshot_date,
                     source_run_id=run_id,
                     minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                    known_exits=russell2000_known_exits,
                 )
             
             # 3. Final bulk Insert to StockScreenerSnapshot (Delete and Replace)

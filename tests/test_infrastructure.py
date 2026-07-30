@@ -145,6 +145,27 @@ async def test_universe_membership_rejects_partial_observation(db_session):
 
 
 @pytest.mark.asyncio
+async def test_universe_membership_allows_verified_exits(db_session):
+    initial = [f"T{index}.US" for index in range(10)]
+    await record_universe_membership(db_session, "TEST", initial, date(2025, 1, 1))
+    await db_session.commit()
+
+    retained = initial[:2]
+    await record_universe_membership(
+        db_session,
+        "TEST",
+        retained,
+        date(2025, 1, 2),
+        minimum_retained_fraction=0.9,
+        known_exits=initial[2:],
+    )
+
+    assert set(await universe_as_of(db_session, "TEST", date(2025, 1, 2))) == set(
+        retained
+    )
+
+
+@pytest.mark.asyncio
 async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
     from services.screener_sync import fetch_and_merge_bulk_data
 
@@ -175,6 +196,14 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
         "services.screener_sync.eodhd_client.get_index_components",
         fake_components,
     )
+
+    async def no_delisted_symbols(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_exchange_symbol_list",
+        no_delisted_symbols,
+    )
     monkeypatch.setattr(
         "services.screener_sync.eodhd_client.get_bulk_eod_prices",
         partial_bulk,
@@ -190,6 +219,88 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
 
     with pytest.raises(ValueError, match="universe coverage"):
         await fetch_and_merge_bulk_data("2025-01-02")
+
+
+@pytest.mark.asyncio
+async def test_bulk_screener_filters_delisted_index_components(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_components(index_ticker, client=None):
+        if index_ticker == "GSPC.INDX":
+            return ["ACTIVE.US", "STALE.US", "REUSED.US", "SP2.US"]
+        return ["RU0.US", "RU1.US"]
+
+    async def fake_delisted_symbols(*args, **kwargs):
+        return [
+            {"Code": "STALE", "Exchange": "NASDAQ", "Name": "Old Co"},
+            {"Code": "REUSED", "Exchange": "NYSE", "Name": "Former Reused Co"},
+        ]
+
+    async def full_bulk(*args, **kwargs):
+        return [
+            {
+                "code": ticker,
+                "exchange_short_name": "US",
+                "date": "2025-01-02",
+                "close": 100,
+            }
+            for ticker in ["ACTIVE", "REUSED", "SP2", "RU0", "RU1", "SPY"]
+        ]
+
+    async def empty_actions(*args, **kwargs):
+        return []
+
+    async def no_fundamentals(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_index_components",
+        fake_components,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_exchange_symbol_list",
+        fake_delisted_symbols,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_eod_prices",
+        full_bulk,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_corporate_actions",
+        empty_actions,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.fetch_target_universe_fundamentals",
+        no_fundamentals,
+    )
+
+    frame = await fetch_and_merge_bulk_data("2025-01-02")
+
+    assert set(frame.attrs["target_tickers"]) == {
+        "ACTIVE.US",
+        "REUSED.US",
+        "SP2.US",
+        "RU0.US",
+        "RU1.US",
+    }
+    assert set(frame.attrs["sp500_tickers"]) == {
+        "ACTIVE.US",
+        "REUSED.US",
+        "SP2.US",
+    }
+    assert set(frame.attrs["russell2000_tickers"]) == {"RU0.US", "RU1.US"}
+    assert set(frame.attrs["known_exits"]) == {"STALE.US"}
+    assert set(frame.attrs["sp500_known_exits"]) == {"STALE.US"}
+    assert set(frame.attrs["russell2000_known_exits"]) == set()
+    assert frame.attrs["universe_coverage"] == pytest.approx(1.0)
 
 
 @pytest.mark.asyncio
