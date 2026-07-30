@@ -3,11 +3,17 @@ from datetime import date, timedelta
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.schemas import BacktestRequest, FactorComputeRequest, FactorResearchRequest, StockDataResponse
+from api.schemas import (
+    AnomalyScanResponse,
+    BacktestRequest,
+    FactorComputeRequest,
+    FactorResearchRequest,
+    StockDataResponse,
+)
 from database import database_ready, get_db
 from sqlalchemy import and_, select, func
 from models import BacktestRun, DailyPrice, DataPublication, FactorValue, PipelineRun
@@ -20,8 +26,14 @@ from services.analyzer import (
     get_rrg_data_for_tickers
 )
 from services.ai_assistant import generate_stock_report
-from services.news_fetcher import fetch_yahoo_news
-from services.anomaly_detector import scan_and_analyze_anomalies
+from services.news_fetcher import NewsFetchError, fetch_yahoo_news
+from services.anomaly_scans import (
+    enqueue_manual_anomaly_scan,
+    get_anomaly_scan,
+    get_latest_completed_anomaly_scan,
+    schedule_anomaly_scan,
+    serialize_anomaly_scan,
+)
 from core.security import limit_expensive_requests, require_admin_api_key
 from services.security_master import canonicalize_ticker
 from services.quant.backtest import BacktestConfig, run_and_store_backtest
@@ -276,21 +288,53 @@ async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/api/stocks/{ticker}/news")
 async def get_stock_news(ticker: str):
-    """"
+    """
     Returns the latest news for a given stock ticker from the past 72 hours.
-    Empty array is returned if no news or an error occurs.
     """
-    news_items = await fetch_yahoo_news(canonicalize_ticker(ticker))
-    return news_items
+    try:
+        return await fetch_yahoo_news(canonicalize_ticker(ticker))
+    except NewsFetchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
 
-@router.get("/api/market/anomalies", dependencies=[Depends(limit_expensive_requests)])
+@router.get(
+    "/api/market/anomalies",
+    response_model=Optional[AnomalyScanResponse],
+)
 async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
-    """
-    Returns a list of anomalous stock price movements with AI-generated attribution reports.
-    Executes synchronously in the request path for MVP.
-    """
-    anomalies = await scan_and_analyze_anomalies(db, limit_count=10)
-    return anomalies
+    """Return the latest successfully completed anomaly scan without external work."""
+    scan = await get_latest_completed_anomaly_scan(db)
+    return serialize_anomaly_scan(scan) if scan else None
+
+
+@router.post(
+    "/api/market/anomalies/scans",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(limit_expensive_requests)],
+    response_model=AnomalyScanResponse,
+)
+async def start_market_anomaly_scan(db: AsyncSession = Depends(get_db)):
+    """Queue a single-flight anomaly scan and return immediately."""
+    scan, created = await enqueue_manual_anomaly_scan(db)
+    if created:
+        schedule_anomaly_scan(scan.id)
+    return serialize_anomaly_scan(scan)
+
+
+@router.get(
+    "/api/market/anomalies/scans/{scan_id}",
+    response_model=AnomalyScanResponse,
+)
+async def get_market_anomaly_scan(
+    scan_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    scan = await get_anomaly_scan(db, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail="Anomaly scan not found")
+    return serialize_anomaly_scan(scan)
 
 @router.get("/api/v1/rrg", tags=["Stocks Analysis Read"])
 async def get_rrg(

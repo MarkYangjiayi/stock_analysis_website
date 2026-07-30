@@ -1,6 +1,6 @@
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 
 class StockProfileModel(BaseModel):
     ticker: str
@@ -107,3 +107,44 @@ class BacktestRequest(BaseModel):
     slippage_bps: float = Field(5.0, ge=0, le=500)
     require_point_in_time_universe: bool = True
     missing_price_policy: Literal["fail", "liquidate_last"] = "fail"
+
+
+class AnomalyNewsSource(BaseModel):
+    title: str
+    link: str
+    pub_date: datetime
+    summary: str
+    publisher: str
+
+
+class AnomalyReportModel(BaseModel):
+    ticker: str
+    company_name: str
+    date: date
+    quote_timestamp: datetime
+    price_change: float
+    ai_analysis: str
+    attribution_status: Literal[
+        "completed",
+        "no_news",
+        "timed_out",
+        "news_unavailable",
+        "attribution_unavailable",
+    ]
+    news: List[AnomalyNewsSource] = Field(default_factory=list)
+    top_news_links: List[str] = Field(default_factory=list)
+
+
+class AnomalyScanResponse(BaseModel):
+    id: int
+    trigger: str
+    status: Literal["queued", "running", "completed", "failed"]
+    requested_limit: int
+    threshold_pct: float
+    universe_as_of: Optional[date] = None
+    quote_as_of: Optional[datetime] = None
+    results: List[AnomalyReportModel] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None

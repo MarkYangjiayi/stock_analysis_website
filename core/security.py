@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import secrets
 import time
 from collections import defaultdict, deque
@@ -63,6 +64,33 @@ class SlidingWindowRateLimiter:
 _expensive_limiter = SlidingWindowRateLimiter(settings.EXPENSIVE_REQUESTS_PER_MINUTE)
 
 
+def _client_identifier(request: Request) -> str:
+    """Resolve a client IP while trusting forwarding headers only from known proxies."""
+    peer = request.client.host if request.client else "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+
+    trusted = False
+    for value in settings.trusted_proxy_ips:
+        try:
+            if peer_ip in ipaddress.ip_network(value, strict=False):
+                trusted = True
+                break
+        except ValueError:
+            continue
+
+    if not trusted:
+        return peer
+
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    first_hop = forwarded_for.split(",", 1)[0].strip()
+    try:
+        return str(ipaddress.ip_address(first_hop)) if first_hop else peer
+    except ValueError:
+        return peer
+
+
 async def limit_expensive_requests(request: Request) -> None:
-    client = request.client.host if request.client else "unknown"
-    await _expensive_limiter.check(client)
+    await _expensive_limiter.check(_client_identifier(request))

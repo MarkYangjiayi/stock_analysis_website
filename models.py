@@ -248,6 +248,26 @@ class StockScreenerSnapshot(Base):
     )
 
 
+class AnomalyScanRun(Base):
+    """Durable state and result payload for one market anomaly scan."""
+
+    __tablename__ = "anomaly_scan_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trigger: Mapped[str] = mapped_column(String, default="manual", index=True)
+    status: Mapped[str] = mapped_column(String, default="queued", index=True)
+    active_key: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    requested_limit: Mapped[int] = mapped_column(Integer, default=5)
+    threshold_pct: Mapped[float] = mapped_column(Float, default=4.0)
+    universe_as_of: Mapped[Optional[dt_date]] = mapped_column(Date, index=True)
+    quote_as_of: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    results: Mapped[Optional[Any]] = mapped_column(JSON)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
 class SecurityMaster(Base):
     """Canonical security identity independent of a vendor ticker spelling."""
     __tablename__ = "security_master"

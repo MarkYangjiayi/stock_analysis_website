@@ -161,9 +161,27 @@ export interface AnomalyReport {
     ticker: string;
     company_name: string;
     date: string;
+    quote_timestamp: string;
     price_change: number;
     ai_analysis: string;
+    attribution_status: "completed" | "no_news" | "timed_out" | "news_unavailable" | "attribution_unavailable";
+    news: NewsItem[];
     top_news_links: string[];
+}
+
+export interface AnomalyScan {
+    id: number;
+    trigger: string;
+    status: "queued" | "running" | "completed" | "failed";
+    requested_limit: number;
+    threshold_pct: number;
+    universe_as_of: string | null;
+    quote_as_of: string | null;
+    results: AnomalyReport[];
+    error_message: string | null;
+    created_at: string;
+    started_at: string | null;
+    finished_at: string | null;
 }
 
 export interface ScreenerPayload {
@@ -268,8 +286,17 @@ export const fetchQuantCoverage = (signal?: AbortSignal) =>
 export const fetchStockNews = (ticker: string, signal?: AbortSignal) =>
     apiRequest<NewsItem[]>(`/api/stocks/${encodeURIComponent(ticker)}/news`, { signal });
 
-export const fetchMarketAnomalies = (signal?: AbortSignal) =>
-    apiRequest<AnomalyReport[]>("/api/market/anomalies", { signal }, 180_000);
+export const fetchLatestAnomalyScan = (signal?: AbortSignal) =>
+    apiRequest<AnomalyScan | null>("/api/market/anomalies", { signal });
+
+export const startAnomalyScan = (signal?: AbortSignal) =>
+    apiRequest<AnomalyScan>("/api/market/anomalies/scans", {
+        method: "POST",
+        signal,
+    });
+
+export const fetchAnomalyScan = (scanId: number, signal?: AbortSignal) =>
+    apiRequest<AnomalyScan>(`/api/market/anomalies/scans/${scanId}`, { signal });
 
 export const fetchScreener = (payload: ScreenerPayload, signal?: AbortSignal) =>
     apiRequest<ScreenerResponse>("/api/stocks/screener", {
