@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 async def run_worker() -> None:
     await init_db()
-    await recover_interrupted_anomaly_scans(executor_role="worker")
+    await recover_interrupted_anomaly_scans()
     try:
         await catch_up_latest_publications()
     except Exception as exc:

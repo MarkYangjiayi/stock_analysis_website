@@ -55,6 +55,8 @@ def test_alembic_upgrade_adds_anomaly_scan_runs(tmp_path):
         "trigger",
         "status",
         "active_key",
+        "owner_token",
+        "lease_expires_at",
         "requested_limit",
         "threshold_pct",
         "universe_as_of",
@@ -192,6 +194,67 @@ async def test_anomaly_scan_excludes_prior_session_symbols_from_fresh_batch(
 
 
 @pytest.mark.asyncio
+async def test_scheduled_scan_rejects_entirely_prior_session_batch(
+    db_session,
+    monkeypatch,
+):
+    from services import anomaly_detector
+
+    await _seed_universe(db_session, ["STALE.US"])
+    stale_time = (
+        datetime.now(timezone.utc) - timedelta(days=1)
+    ).replace(microsecond=0)
+
+    async def fake_quotes(*args, **kwargs):
+        return [_quote("STALE", 12.0, stale_time)]
+
+    monkeypatch.setattr(
+        anomaly_detector,
+        "latest_completed_us_session",
+        lambda reference_date: stale_time.astimezone(
+            anomaly_detector._NEW_YORK
+        ).date(),
+    )
+    monkeypatch.setattr(anomaly_detector, "get_bulk_realtime_prices", fake_quotes)
+
+    with pytest.raises(AnomalyDataUnavailable, match="current session"):
+        await scan_and_analyze_anomalies(
+            db_session,
+            require_current_session=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_anomaly_scan_requires_finite_price_changes(
+    db_session,
+    monkeypatch,
+):
+    from services import anomaly_detector
+
+    await _seed_universe(
+        db_session,
+        ["NONE.US", "NAN.US", "INFINITY.US"],
+    )
+    quote_time = datetime.now(timezone.utc)
+
+    async def fake_quotes(*args, **kwargs):
+        return [
+            {"code": "NONE", "change_p": None, "timestamp": quote_time.timestamp()},
+            {"code": "NAN", "change_p": "NaN", "timestamp": quote_time.timestamp()},
+            {
+                "code": "INFINITY",
+                "change_p": "Infinity",
+                "timestamp": quote_time.timestamp(),
+            },
+        ]
+
+    monkeypatch.setattr(anomaly_detector, "get_bulk_realtime_prices", fake_quotes)
+
+    with pytest.raises(AnomalyDataUnavailable, match="usable price changes"):
+        await scan_and_analyze_anomalies(db_session)
+
+
+@pytest.mark.asyncio
 async def test_anomaly_attribution_is_bounded_and_partial_failures_survive(
     db_session,
     monkeypatch,
@@ -301,16 +364,21 @@ async def test_anomaly_scan_propagates_market_data_failure(
 
 
 @pytest.mark.asyncio
-async def test_startup_recovery_only_fails_scans_owned_by_executor(
+async def test_recovery_only_expires_dead_process_leases(
     db_session,
+    monkeypatch,
 ):
+    from services import anomaly_scans
     from services.anomaly_scans import recover_interrupted_anomaly_scans
 
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     active_runs = [
         AnomalyScanRun(
             trigger="manual",
-            status="queued",
+            status="running",
             active_key="market",
+            owner_token="live-other-process",
+            lease_expires_at=now + timedelta(minutes=1),
             requested_limit=5,
             threshold_pct=4.0,
             results=[],
@@ -318,7 +386,9 @@ async def test_startup_recovery_only_fails_scans_owned_by_executor(
         AnomalyScanRun(
             trigger="post_market_summary",
             status="running",
-            active_key="scheduled",
+            active_key="expired",
+            owner_token="dead-process",
+            lease_expires_at=now - timedelta(seconds=1),
             requested_limit=10,
             threshold_pct=4.0,
             results=[],
@@ -335,44 +405,40 @@ async def test_startup_recovery_only_fails_scans_owned_by_executor(
     db_session.add_all([*active_runs, completed])
     await db_session.commit()
 
-    await recover_interrupted_anomaly_scans()
-    db_session.expire_all()
-    runs_after_web_start = (
-        await db_session.execute(
-            select(AnomalyScanRun).order_by(AnomalyScanRun.id)
-        )
-    ).scalars().all()
+    async def should_not_run(*args, **kwargs):
+        pytest.fail("A live lease owned by another process was claimed")
 
-    assert [run.status for run in runs_after_web_start] == [
-        "failed",
-        "running",
-        "completed",
-    ]
-    assert runs_after_web_start[0].active_key is None
-    assert runs_after_web_start[0].finished_at is not None
-    assert (
-        runs_after_web_start[0].error_message
-        == "Scan was interrupted before it completed"
+    monkeypatch.setattr(
+        anomaly_scans,
+        "scan_and_analyze_anomalies",
+        should_not_run,
     )
-    assert runs_after_web_start[1].active_key == "scheduled"
-    assert runs_after_web_start[1].finished_at is None
-
-    await recover_interrupted_anomaly_scans(executor_role="worker")
+    await recover_interrupted_anomaly_scans()
+    await execute_anomaly_scan(active_runs[0].id)
     db_session.expire_all()
-    runs_after_worker_start = (
+    runs = (
         await db_session.execute(
             select(AnomalyScanRun).order_by(AnomalyScanRun.id)
         )
     ).scalars().all()
 
-    assert [run.status for run in runs_after_worker_start] == [
-        "failed",
+    assert [run.status for run in runs] == [
+        "running",
         "failed",
         "completed",
     ]
-    assert runs_after_worker_start[1].active_key is None
-    assert runs_after_worker_start[1].finished_at is not None
-    assert runs_after_worker_start[2].error_message is None
+    assert runs[0].active_key == "market"
+    assert runs[0].owner_token == "live-other-process"
+    assert runs[0].finished_at is None
+    assert runs[1].active_key is None
+    assert runs[1].owner_token is None
+    assert runs[1].lease_expires_at is None
+    assert runs[1].finished_at is not None
+    assert (
+        runs[1].error_message
+        == "Scan ownership lease expired before completion"
+    )
+    assert runs[2].error_message is None
 
 
 @pytest.mark.asyncio
@@ -421,6 +487,8 @@ async def test_durable_scan_records_completed_payload(db_session, monkeypatch):
 
     assert run.status == "completed"
     assert run.active_key is None
+    assert run.owner_token is None
+    assert run.lease_expires_at is None
     assert run.universe_as_of == date(2026, 7, 30)
     assert run.quote_as_of == quote_time.replace(tzinfo=None)
     assert run.results[0]["ticker"] == "AAA.US"
@@ -436,9 +504,13 @@ async def test_scheduled_scan_waits_for_incompatible_active_limit(
     from services import anomaly_scans
 
     active = AnomalyScanRun(
-        trigger="manual",
+        trigger="morning_briefing",
         status="running",
         active_key="market",
+        owner_token="other-process",
+        lease_expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=1)
+        ).replace(tzinfo=None),
         requested_limit=5,
         threshold_pct=4.0,
         results=[],
@@ -455,12 +527,15 @@ async def test_scheduled_scan_waits_for_incompatible_active_limit(
             run = await session.get(AnomalyScanRun, active.id)
             run.status = "completed"
             run.active_key = None
+            run.owner_token = None
+            run.lease_expires_at = None
             run.results = [{"ticker": f"OLD{index}.US"} for index in range(5)]
             run.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
             await session.commit()
 
     async def fake_scan(*args, limit_count, **kwargs):
         assert limit_count == 10
+        assert kwargs["require_current_session"] is True
         return AnomalyScanData(
             universe_as_of=date(2026, 7, 30),
             quote_as_of=quote_time,
@@ -495,6 +570,98 @@ async def test_scheduled_scan_waits_for_incompatible_active_limit(
     assert runs[1].status == "completed"
     assert len(results) == 10
     assert results[0]["ticker"] == "NEW0.US"
+
+
+def test_scheduled_scan_does_not_reuse_manual_freshness_policy():
+    from services.anomaly_scans import _scan_satisfies_request
+
+    manual_scan = AnomalyScanRun(
+        trigger="manual",
+        status="running",
+        requested_limit=10,
+        threshold_pct=4.0,
+        results=[],
+    )
+
+    assert not _scan_satisfies_request(
+        manual_scan,
+        trigger="morning_briefing",
+        limit_count=5,
+        threshold_pct=4.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_scheduled_scan_retries_after_compatible_active_failure(
+    db_session,
+    monkeypatch,
+):
+    from database import async_session_maker
+    from services import anomaly_scans
+
+    active = AnomalyScanRun(
+        trigger="morning_briefing",
+        status="running",
+        active_key="market",
+        owner_token="other-process",
+        lease_expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=1)
+        ).replace(tzinfo=None),
+        requested_limit=5,
+        threshold_pct=4.0,
+        results=[],
+    )
+    db_session.add(active)
+    await db_session.commit()
+    await db_session.refresh(active)
+
+    quote_time = datetime.now(timezone.utc).replace(microsecond=0)
+
+    async def fail_active():
+        await asyncio.sleep(0.05)
+        async with async_session_maker() as session:
+            run = await session.get(AnomalyScanRun, active.id)
+            run.status = "failed"
+            run.active_key = None
+            run.owner_token = None
+            run.lease_expires_at = None
+            run.error_message = "Provider failed"
+            run.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            await session.commit()
+
+    async def fake_scan(*args, limit_count, **kwargs):
+        assert kwargs["require_current_session"] is True
+        return AnomalyScanData(
+            universe_as_of=date(2026, 7, 30),
+            quote_as_of=quote_time,
+            results=[
+                {"ticker": f"RETRY{index}.US"}
+                for index in range(limit_count)
+            ],
+        )
+
+    monkeypatch.setattr(
+        anomaly_scans,
+        "scan_and_analyze_anomalies",
+        fake_scan,
+    )
+
+    failure_task = asyncio.create_task(fail_active())
+    results = await anomaly_scans.run_persisted_anomaly_scan(
+        trigger="morning_briefing",
+        limit_count=5,
+    )
+    await failure_task
+
+    db_session.expire_all()
+    runs = (
+        await db_session.execute(
+            select(AnomalyScanRun).order_by(AnomalyScanRun.id)
+        )
+    ).scalars().all()
+    assert [run.status for run in runs] == ["failed", "completed"]
+    assert len(results) == 5
+    assert results[0]["ticker"] == "RETRY0.US"
 
 
 @pytest.mark.asyncio

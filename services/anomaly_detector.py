@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -164,6 +165,7 @@ async def scan_and_analyze_anomalies(
     limit_count: int = 5,
     *,
     threshold_pct: Optional[float] = None,
+    require_current_session: bool = False,
 ) -> AnomalyScanData:
     """Scan current US quotes and attribute the largest moves with bounded fan-out."""
     limit_count = max(1, min(int(limit_count), 10))
@@ -207,7 +209,6 @@ async def scan_and_analyze_anomalies(
     minimum_quote_date = latest_completed_us_session(
         now_utc.astimezone(_NEW_YORK).date()
     )
-    matching_quote_times: List[datetime] = []
     matching_quotes: List[Dict[str, Any]] = []
 
     for quote in all_realtime_data:
@@ -218,10 +219,11 @@ async def scan_and_analyze_anomalies(
         quote_time = _quote_timestamp(quote.get("timestamp"))
         if quote_time is None or quote_time > now_utc + timedelta(minutes=5):
             continue
-        matching_quote_times.append(quote_time)
         try:
             change_pct = float(quote.get("change_p"))
         except (TypeError, ValueError):
+            continue
+        if not math.isfinite(change_pct):
             continue
         matching_quotes.append({
             "ticker": code,
@@ -230,10 +232,23 @@ async def scan_and_analyze_anomalies(
             "quote_timestamp": quote_time,
         })
 
-    if not matching_quote_times:
-        raise AnomalyDataUnavailable("Real-time market data has no valid timestamps")
-    quote_as_of = max(matching_quote_times)
+    if not matching_quotes:
+        raise AnomalyDataUnavailable(
+            "Real-time market data has no usable price changes"
+        )
+    quote_as_of = max(
+        quote["quote_timestamp"]
+        for quote in matching_quotes
+    )
     quote_session_date = quote_as_of.astimezone(_NEW_YORK).date()
+    current_market_date = now_utc.astimezone(_NEW_YORK).date()
+    if (
+        require_current_session
+        and quote_session_date != current_market_date
+    ):
+        raise AnomalyDataUnavailable(
+            "Real-time market data is not from the current session"
+        )
     if quote_session_date < minimum_quote_date:
         raise AnomalyDataUnavailable("Real-time market data is stale")
 

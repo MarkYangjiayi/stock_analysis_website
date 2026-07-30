@@ -257,6 +257,11 @@ class AnomalyScanRun(Base):
     trigger: Mapped[str] = mapped_column(String, default="manual", index=True)
     status: Mapped[str] = mapped_column(String, default="queued", index=True)
     active_key: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    owner_token: Mapped[Optional[str]] = mapped_column(String, index=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        index=True,
+    )
     requested_limit: Mapped[int] = mapped_column(Integer, default=5)
     threshold_pct: Mapped[float] = mapped_column(Float, default=4.0)
     universe_as_of: Mapped[Optional[dt_date]] = mapped_column(Date, index=True)

@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import time
+import uuid
 from datetime import timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from core.time_utils import utc_now
 from database import async_session_maker
 from models import AnomalyScanRun
 from services.anomaly_detector import (
+    AnomalyScanData,
     AnomalyScanError,
     scan_and_analyze_anomalies,
 )
@@ -20,10 +22,8 @@ from services.anomaly_detector import (
 
 logger = logging.getLogger(__name__)
 ACTIVE_SCAN_STATUSES = ("queued", "running")
-EXECUTOR_SCAN_TRIGGERS = {
-    "web": ("manual",),
-    "worker": ("morning_briefing", "post_market_summary"),
-}
+SCHEDULED_SCAN_TRIGGERS = ("morning_briefing", "post_market_summary")
+_PROCESS_OWNER_TOKEN = uuid.uuid4().hex
 _enqueue_lock = asyncio.Lock()
 _running_tasks: Dict[int, asyncio.Task[None]] = {}
 
@@ -64,6 +64,8 @@ async def get_anomaly_scan(
     db: AsyncSession,
     scan_id: int,
 ) -> Optional[AnomalyScanRun]:
+    await _expire_stale_scans(db)
+    await db.commit()
     return await db.get(AnomalyScanRun, scan_id)
 
 
@@ -83,54 +85,38 @@ async def get_latest_completed_anomaly_scan(
 
 
 async def _expire_stale_scans(db: AsyncSession) -> None:
-    cutoff = utc_now() - timedelta(
-        seconds=settings.ANOMALY_SCAN_TIMEOUT_SECONDS + 30
-    )
+    now = utc_now()
     await db.execute(
         update(AnomalyScanRun)
         .where(
             AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
-            AnomalyScanRun.created_at < cutoff,
+            or_(
+                AnomalyScanRun.lease_expires_at.is_(None),
+                AnomalyScanRun.lease_expires_at <= now,
+            ),
         )
         .values(
             status="failed",
             active_key=None,
-            error_message="Scan was interrupted before it completed",
-            finished_at=utc_now(),
+            owner_token=None,
+            lease_expires_at=None,
+            error_message="Scan ownership lease expired before completion",
+            finished_at=now,
         )
     )
 
 
-async def recover_interrupted_anomaly_scans(
-    executor_role: str = "web",
-) -> None:
-    """Fail orphaned runs owned by the executor process that is starting."""
-    owned_triggers = EXECUTOR_SCAN_TRIGGERS.get(executor_role)
-    if owned_triggers is None:
-        raise ValueError(f"Unknown anomaly scan executor role: {executor_role}")
-
+async def recover_interrupted_anomaly_scans() -> None:
+    """Release only scans whose owning process lease has expired."""
     async with async_session_maker() as db:
-        finished_at = utc_now()
-        result = await db.execute(
-            update(AnomalyScanRun)
-            .where(
-                AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
-                AnomalyScanRun.trigger.in_(owned_triggers),
-            )
-            .values(
-                status="failed",
-                active_key=None,
-                error_message="Scan was interrupted before it completed",
-                finished_at=finished_at,
-            )
-        )
+        await _expire_stale_scans(db)
         await db.commit()
-        if result.rowcount:
-            logger.warning(
-                "Marked %s interrupted %s anomaly scan(s) as failed during startup",
-                result.rowcount,
-                executor_role,
-            )
+
+
+def _lease_deadline():
+    return utc_now() + timedelta(
+        seconds=max(1.0, settings.ANOMALY_SCAN_LEASE_SECONDS)
+    )
 
 
 async def enqueue_manual_anomaly_scan(
@@ -154,6 +140,8 @@ async def enqueue_manual_anomaly_scan(
             trigger="manual",
             status="queued",
             active_key="market",
+            owner_token=_PROCESS_OWNER_TOKEN,
+            lease_expires_at=_lease_deadline(),
             requested_limit=settings.ANOMALY_RESULT_LIMIT,
             threshold_pct=settings.ANOMALY_MOVE_THRESHOLD_PCT,
             results=[],
@@ -184,12 +172,21 @@ async def enqueue_manual_anomaly_scan(
 def _scan_satisfies_request(
     scan: AnomalyScanRun,
     *,
+    trigger: str,
     limit_count: int,
     threshold_pct: float,
 ) -> bool:
+    requires_current_session = trigger in SCHEDULED_SCAN_TRIGGERS
+    existing_requires_current_session = (
+        scan.trigger in SCHEDULED_SCAN_TRIGGERS
+    )
     return (
         scan.requested_limit >= limit_count
         and scan.threshold_pct == threshold_pct
+        and (
+            not requires_current_session
+            or existing_requires_current_session
+        )
     )
 
 
@@ -214,6 +211,7 @@ async def _create_scan_run(
                 False,
                 _scan_satisfies_request(
                     existing,
+                    trigger=trigger,
                     limit_count=normalized_limit,
                     threshold_pct=threshold_pct,
                 ),
@@ -223,6 +221,8 @@ async def _create_scan_run(
             trigger=trigger,
             status="queued",
             active_key="market",
+            owner_token=_PROCESS_OWNER_TOKEN,
+            lease_expires_at=_lease_deadline(),
             requested_limit=normalized_limit,
             threshold_pct=threshold_pct,
             results=[],
@@ -250,6 +250,7 @@ async def _create_scan_run(
                 False,
                 _scan_satisfies_request(
                     concurrent,
+                    trigger=trigger,
                     limit_count=normalized_limit,
                     threshold_pct=threshold_pct,
                 ),
@@ -258,19 +259,117 @@ async def _create_scan_run(
         return scan.id, True, True
 
 
+async def _claim_anomaly_scan(
+    scan_id: int,
+) -> Optional[Tuple[int, float, str]]:
+    """Atomically claim an unowned, expired, or already-owned scan."""
+    now = utc_now()
+    async with async_session_maker() as db:
+        result = await db.execute(
+            update(AnomalyScanRun)
+            .where(
+                AnomalyScanRun.id == scan_id,
+                AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
+                or_(
+                    AnomalyScanRun.owner_token == _PROCESS_OWNER_TOKEN,
+                    AnomalyScanRun.owner_token.is_(None),
+                    AnomalyScanRun.lease_expires_at.is_(None),
+                    AnomalyScanRun.lease_expires_at <= now,
+                ),
+            )
+            .values(
+                status="running",
+                owner_token=_PROCESS_OWNER_TOKEN,
+                lease_expires_at=_lease_deadline(),
+                started_at=now,
+                error_message=None,
+            )
+        )
+        await db.commit()
+        if result.rowcount != 1:
+            return None
+        scan = await db.get(AnomalyScanRun, scan_id)
+        if scan is None:
+            return None
+        return (
+            scan.requested_limit,
+            scan.threshold_pct,
+            scan.trigger,
+        )
+
+
+async def _renew_scan_lease(scan_id: int) -> None:
+    lease_seconds = max(1.0, settings.ANOMALY_SCAN_LEASE_SECONDS)
+    interval = max(0.25, lease_seconds / 3)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with async_session_maker() as db:
+                result = await db.execute(
+                    update(AnomalyScanRun)
+                    .where(
+                        AnomalyScanRun.id == scan_id,
+                        AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
+                        AnomalyScanRun.owner_token == _PROCESS_OWNER_TOKEN,
+                    )
+                    .values(lease_expires_at=_lease_deadline())
+                )
+                await db.commit()
+                if result.rowcount != 1:
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Failed to renew ownership lease for anomaly scan %s",
+                scan_id,
+            )
+            return
+
+
+async def _record_scan_completion(
+    scan_id: int,
+    data: AnomalyScanData,
+) -> None:
+    async with async_session_maker() as db:
+        result = await db.execute(
+            update(AnomalyScanRun)
+            .where(
+                AnomalyScanRun.id == scan_id,
+                AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
+                AnomalyScanRun.owner_token == _PROCESS_OWNER_TOKEN,
+            )
+            .values(
+                status="completed",
+                active_key=None,
+                owner_token=None,
+                lease_expires_at=None,
+                universe_as_of=data.universe_as_of,
+                quote_as_of=data.quote_as_of.astimezone(
+                    timezone.utc
+                ).replace(tzinfo=None),
+                results=data.results,
+                error_message=None,
+                finished_at=utc_now(),
+            )
+        )
+        await db.commit()
+        if result.rowcount != 1:
+            logger.warning(
+                "Ignored completion from a process that no longer owns anomaly scan %s",
+                scan_id,
+            )
+
+
 async def execute_anomaly_scan(scan_id: int) -> None:
-    """Execute one durable scan, recording either a completed or failed state."""
+    """Execute one durable scan while holding a renewable process lease."""
+    heartbeat_task: Optional[asyncio.Task[None]] = None
     try:
-        async with async_session_maker() as db:
-            scan = await db.get(AnomalyScanRun, scan_id)
-            if scan is None or scan.status not in ACTIVE_SCAN_STATUSES:
-                return
-            scan.status = "running"
-            scan.started_at = utc_now()
-            scan.error_message = None
-            await db.commit()
-            requested_limit = scan.requested_limit
-            threshold_pct = scan.threshold_pct
+        claimed = await _claim_anomaly_scan(scan_id)
+        if claimed is None:
+            return
+        requested_limit, threshold_pct, trigger = claimed
+        heartbeat_task = asyncio.create_task(_renew_scan_lease(scan_id))
 
         async def run_detection():
             async with async_session_maker() as db:
@@ -278,26 +377,16 @@ async def execute_anomaly_scan(scan_id: int) -> None:
                     db,
                     limit_count=requested_limit,
                     threshold_pct=threshold_pct,
+                    require_current_session=(
+                        trigger in SCHEDULED_SCAN_TRIGGERS
+                    ),
                 )
 
         data = await asyncio.wait_for(
             run_detection(),
             timeout=settings.ANOMALY_SCAN_TIMEOUT_SECONDS,
         )
-
-        async with async_session_maker() as db:
-            scan = await db.get(AnomalyScanRun, scan_id)
-            if scan is None:
-                return
-            scan.status = "completed"
-            scan.active_key = None
-            scan.universe_as_of = data.universe_as_of
-            scan.quote_as_of = data.quote_as_of.astimezone(
-                timezone.utc
-            ).replace(tzinfo=None)
-            scan.results = data.results
-            scan.finished_at = utc_now()
-            await db.commit()
+        await _record_scan_completion(scan_id, data)
     except asyncio.TimeoutError:
         logger.warning("Anomaly scan %s exceeded its total time budget", scan_id)
         await _record_scan_failure(scan_id, "Scan timed out before completion")
@@ -310,17 +399,30 @@ async def execute_anomaly_scan(scan_id: int) -> None:
             scan_id,
             "An unexpected error prevented the scan from completing",
         )
+    finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
 
 
 async def _record_scan_failure(scan_id: int, message: str) -> None:
     async with async_session_maker() as db:
-        scan = await db.get(AnomalyScanRun, scan_id)
-        if scan is None:
-            return
-        scan.status = "failed"
-        scan.active_key = None
-        scan.error_message = message
-        scan.finished_at = utc_now()
+        await db.execute(
+            update(AnomalyScanRun)
+            .where(
+                AnomalyScanRun.id == scan_id,
+                AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES),
+                AnomalyScanRun.owner_token == _PROCESS_OWNER_TOKEN,
+            )
+            .values(
+                status="failed",
+                active_key=None,
+                owner_token=None,
+                lease_expires_at=None,
+                error_message=message,
+                finished_at=utc_now(),
+            )
+        )
         await db.commit()
 
 
@@ -386,10 +488,14 @@ async def run_persisted_anomaly_scan(
             await execute_anomaly_scan(scan_id)
             break
 
+        terminal_status: Optional[str] = None
         while time.monotonic() < deadline:
             async with async_session_maker() as db:
+                await _expire_stale_scans(db)
+                await db.commit()
                 active = await db.get(AnomalyScanRun, scan_id)
-                if active is None or active.status not in ACTIVE_SCAN_STATUSES:
+                terminal_status = active.status if active else None
+                if terminal_status not in ACTIVE_SCAN_STATUSES:
                     break
             await asyncio.sleep(0.5)
         else:
@@ -397,11 +503,10 @@ async def run_persisted_anomaly_scan(
                 "Timed out waiting for the active anomaly scan"
             )
 
-        if compatible:
+        if compatible and terminal_status == "completed":
             break
-        # The completed run requested fewer results (or a different threshold)
-        # and cannot satisfy this caller. Once its active key is released, loop
-        # and create the requested scheduled scan.
+        # Failed runs and parameter-incompatible results cannot satisfy this
+        # caller. Once their active key is released, loop and create a new run.
 
     async with async_session_maker() as db:
         scan = await db.get(AnomalyScanRun, scan_id)

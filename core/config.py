@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     ANOMALY_ATTRIBUTION_CONCURRENCY: int = 3
     ANOMALY_ATTRIBUTION_TIMEOUT_SECONDS: float = 30.0
     ANOMALY_SCAN_TIMEOUT_SECONDS: float = 90.0
+    ANOMALY_SCAN_LEASE_SECONDS: float = 15.0
     ANOMALY_NEWS_LOOKBACK_HOURS: int = 24
 
     # Background workers are intentionally disabled in the web process. Run
