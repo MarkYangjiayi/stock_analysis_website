@@ -146,6 +146,29 @@ async def fetch_target_universe_fundamentals(
 
     return results
 
+
+def _ticker_code(ticker: str) -> str:
+    """Normalize a provider ticker to its exchange-independent symbol code."""
+    return str(ticker).split(".", 1)[0].strip().upper()
+
+
+def _extract_delisted_codes(rows: Any) -> set[str]:
+    """Extract exchange-independent codes from EODHD's symbol-list response."""
+    if not isinstance(rows, list):
+        raise ValueError("Failed to retrieve the EODHD delisted symbol list.")
+    return {
+        str(row.get("Code") or row.get("code") or "").strip().upper()
+        for row in rows
+        if isinstance(row, dict) and (row.get("Code") or row.get("code"))
+    }
+
+
+def _filter_delisted_components(
+    tickers: list[str],
+    delisted_codes: set[str],
+) -> list[str]:
+    return [ticker for ticker in tickers if _ticker_code(ticker) not in delisted_codes]
+
 async def fetch_and_merge_bulk_data(
     target_date: str = None,
     target_tickers: set = None,
@@ -165,7 +188,8 @@ async def fetch_and_merge_bulk_data(
     async with eodhd_client.create_http_client() as client:
         sp500_tickers: list[str] = []
         russell_tickers: list[str] = []
-        if target_tickers is None:
+        loaded_index_components = target_tickers is None
+        if loaded_index_components:
             sp500_task = eodhd_client.get_index_components("GSPC.INDX", client=client)
             russell_task = eodhd_client.get_index_components("RUT.INDX", client=client)
             sp500_tickers, russell_tickers = await asyncio.gather(sp500_task, russell_task)
@@ -178,6 +202,31 @@ async def fetch_and_merge_bulk_data(
                 "Russell 2000",
                 russell_tickers,
                 settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+            )
+            delisted_rows = await eodhd_client.get_exchange_symbol_list(
+                exchange="US",
+                delisted=True,
+                instrument_type="common_stock",
+                client=client,
+            )
+            delisted_codes = _extract_delisted_codes(delisted_rows)
+            original_component_count = len(set(sp500_tickers + russell_tickers))
+            sp500_tickers = _filter_delisted_components(sp500_tickers, delisted_codes)
+            russell_tickers = _filter_delisted_components(russell_tickers, delisted_codes)
+            _validate_index_components(
+                "S&P 500 after delisted-symbol filter",
+                sp500_tickers,
+                settings.PIPELINE_MIN_SP500_SIZE,
+            )
+            _validate_index_components(
+                "Russell 2000 after delisted-symbol filter",
+                russell_tickers,
+                settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+            )
+            logger.info(
+                "Excluded %s delisted index components; %s active candidates remain.",
+                original_component_count - len(set(sp500_tickers + russell_tickers)),
+                len(set(sp500_tickers + russell_tickers)),
             )
             target_tickers = set(sp500_tickers + russell_tickers)
         target_tickers = {ticker.upper() for ticker in target_tickers}
