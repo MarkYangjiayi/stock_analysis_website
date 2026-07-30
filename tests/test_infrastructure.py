@@ -69,6 +69,33 @@ def test_screener_validation_detects_non_finite_decimal_values():
     assert not is_non_finite_numeric(Decimal("1.25"))
 
 
+def test_screener_row_materialization_does_not_copy_lineage_attrs():
+    import pandas as pd
+
+    from services.screener_sync import _materialize_screener_rows
+
+    class FailOnDeepcopy:
+        def __deepcopy__(self, memo):
+            raise AssertionError("lineage attrs must be detached before row materialization")
+
+    frame = pd.DataFrame(
+        [
+            {"ticker": "AAA.US", "close": 100},
+            {"ticker": "AAA.US", "close": 101},
+            {"ticker": "BBB.US", "close": 200},
+        ]
+    )
+    frame.attrs["raw_bulk_eod"] = FailOnDeepcopy()
+
+    rows = _materialize_screener_rows(frame)
+
+    assert rows == [
+        {"ticker": "AAA.US", "close": 100},
+        {"ticker": "BBB.US", "close": 200},
+    ]
+    assert frame.attrs == {}
+
+
 @pytest.mark.asyncio
 async def test_raw_snapshot_is_immutable_and_deduplicated(db_session):
     first = await persist_snapshot(db_session, "TEST", "prices", [{"x": 1}], date(2025, 1, 1), {"ticker": "AAA.US"})
