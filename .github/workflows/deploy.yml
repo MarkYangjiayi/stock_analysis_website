@@ -66,7 +66,6 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
           script: |
             set -eu
             cd /home/admin/stock_analysis_website
