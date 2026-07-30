@@ -15,15 +15,18 @@ from services.screener_sync import refresh_screener_technicals, run_screener_pip
 from core.config import settings
 from services.quant.factor_engine import compute_and_store_factors
 from services.pipeline_runs import latest_published_date
+from services.rrg_prices import (
+    RRG_PRICE_TICKERS,
+    refresh_rrg_corporate_actions,
+    refresh_rrg_price_history,
+)
 from core.trading_calendar import latest_completed_us_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 BASE_TICKERS = [
-    "AAPL.US", "MSFT.US", "SPY.US",
-    "XLK.US", "XLF.US", "XLV.US", "XLY.US", "XLP.US", "XLE.US",
-    "XLI.US", "XLB.US", "XLU.US", "XLRE.US", "XLC.US",
+    "AAPL.US", "MSFT.US", *RRG_PRICE_TICKERS,
 ]
 
 async def idempotent_seed_base_tickers():
@@ -71,17 +74,26 @@ async def cold_start():
         )
         universe_tickers = set(result.scalars().all())
     universe_tickers.update(BASE_TICKERS)
+    general_history_tickers = universe_tickers.difference(RRG_PRICE_TICKERS)
 
     logger.info(
         "Step 3: Backfilling %s trading days for %s securities...",
         settings.COLD_START_HISTORY_DAYS,
-        len(universe_tickers),
+        len(general_history_tickers),
     )
     await backfill_price_history(
-        universe_tickers,
+        general_history_tickers,
         target_date=snapshot_date,
         include_dividends=False,
+        publish_dataset=False,
     )
+
+    logger.info("Step 3.5: Ensuring the RRG ETF universe has its extra warm-up window...")
+    await refresh_rrg_price_history(snapshot_date)
+    try:
+        await refresh_rrg_corporate_actions(snapshot_date)
+    except Exception as exc:
+        logger.warning("RRG split history could not be completed: %s", exc)
 
     logger.info("Step 4: Recomputing technical indicators after price warm-up...")
     updated = await refresh_screener_technicals(snapshot_date)

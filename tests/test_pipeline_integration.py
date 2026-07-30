@@ -13,6 +13,7 @@ from models import (
     FactorValue,
     PipelineRun,
     RawDataSnapshot,
+    RRGPriceSnapshot,
     SignalSnapshot,
     StockScreenerSnapshot,
     StrategyDefinition,
@@ -26,12 +27,17 @@ from services.history_backfill import (
 )
 from services.quant.backtest import BacktestConfig, run_and_store_backtest
 from services.quant.factor_engine import FACTOR_VERSION, compute_and_store_factors
+from services.rrg_prices import (
+    RRG_PRICE_HISTORY_DATASET,
+    RRG_PRICE_TICKERS,
+    refresh_rrg_price_history,
+)
 from services.screener_sync import run_screener_pipeline
 
 
-def preceding_market_sessions(target: date, count: int) -> list[date]:
+def market_sessions_through(target: date, count: int) -> list[date]:
     sessions = []
-    cursor = target - timedelta(days=1)
+    cursor = target
     while len(sessions) < count:
         if is_us_market_session(cursor):
             sessions.append(cursor)
@@ -43,7 +49,7 @@ def preceding_market_sessions(target: date, count: int) -> list[date]:
 async def test_resumable_history_backfill_with_mocked_provider(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="BBB.US")])
-    for price_date in preceding_market_sessions(target, 6):
+    for price_date in market_sessions_through(target, 6):
         db_session.add(DailyPrice(
             ticker="AAA.US",
             date=price_date,
@@ -65,12 +71,16 @@ async def test_resumable_history_backfill_with_mocked_provider(db_session, monke
                 "adjusted_close": 10,
                 "volume": 1_000,
             }
-            for price_date in preceding_market_sessions(target, 6)
+            for price_date in market_sessions_through(target, 6)
         ]
 
     monkeypatch.setattr("services.history_backfill.eodhd_client.get_eod_historical_data", fake_prices)
     result = await backfill_price_history(
-        ["AAA.US", "BBB.US"], history_days=5, target_date=target, include_corporate_actions=False
+        ["AAA.US", "BBB.US"],
+        history_days=5,
+        target_date=target,
+        include_corporate_actions=False,
+        include_target_session=True,
     )
     assert result["status"] == "published"
     assert result["skipped"] == 1
@@ -81,6 +91,463 @@ async def test_resumable_history_backfill_with_mocked_provider(db_session, monke
         select(DataPublication).where(DataPublication.dataset == "price_history")
     )).scalar_one()
     assert publication.as_of_date == target
+
+
+@pytest.mark.asyncio
+async def test_history_backfill_default_does_not_require_reference_session(
+    db_session,
+    monkeypatch,
+):
+    reference_date = date(2025, 1, 10)
+    previous_session = date(2025, 1, 9)
+    db_session.add(Ticker(ticker="AAA.US"))
+    for price_date in market_sessions_through(previous_session, 6):
+        db_session.add(DailyPrice(
+            ticker="AAA.US",
+            date=price_date,
+            close=10,
+            adjusted_close=10,
+        ))
+    await db_session.commit()
+
+    async def prices_must_not_run(*args, **kwargs):
+        raise AssertionError("reference session must not trigger a history download")
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        prices_must_not_run,
+    )
+
+    result = await backfill_price_history(
+        ["AAA.US"],
+        history_days=5,
+        target_date=reference_date,
+        include_corporate_actions=False,
+    )
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "price-history-complete"
+
+
+@pytest.mark.asyncio
+async def test_history_backfill_can_defer_publication_to_parent(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+
+    async def fake_prices(*args, **kwargs):
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for price_date in market_sessions_through(target, 2)
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    result = await backfill_price_history(
+        ["AAA.US"],
+        history_days=1,
+        target_date=target,
+        include_corporate_actions=False,
+        include_target_session=True,
+        publish_dataset=False,
+    )
+
+    assert result["status"] == "published"
+    assert (await db_session.execute(
+        select(DataPublication).where(DataPublication.dataset == "price_history")
+    )).scalar_one_or_none() is None
+    run = (await db_session.execute(
+        select(PipelineRun).where(PipelineRun.id == result["run_id"])
+    )).scalar_one()
+    assert run.status == "published"
+
+
+@pytest.mark.asyncio
+async def test_rrg_price_publications_are_versioned_and_atomic(
+    db_session,
+    monkeypatch,
+):
+    first_target = date(2025, 1, 9)
+    second_target = date(2025, 1, 10)
+    failed_target = date(2025, 1, 13)
+    state = {"revision": 1, "failed_ticker": None}
+    monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 2)
+
+    async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
+        if ticker == state["failed_ticker"]:
+            return None
+        target = date.fromisoformat(to_date)
+        close = 100 * state["revision"]
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": close,
+                "adjusted_close": close,
+            }
+            for price_date in market_sessions_through(target, 3)
+        ]
+
+    monkeypatch.setattr(
+        "services.rrg_prices.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    first = await refresh_rrg_price_history(first_target)
+    state["revision"] = 2
+    second = await refresh_rrg_price_history(second_target)
+
+    first_run_id = first["run_id"]
+    second_run_id = second["run_id"]
+    old_value = (await db_session.execute(
+        select(RRGPriceSnapshot.close).where(
+            RRGPriceSnapshot.pipeline_run_id == first_run_id,
+            RRGPriceSnapshot.ticker == "XLK.US",
+            RRGPriceSnapshot.date == first_target,
+        )
+    )).scalar_one()
+    revised_value = (await db_session.execute(
+        select(RRGPriceSnapshot.close).where(
+            RRGPriceSnapshot.pipeline_run_id == second_run_id,
+            RRGPriceSnapshot.ticker == "XLK.US",
+            RRGPriceSnapshot.date == first_target,
+        )
+    )).scalar_one()
+    assert float(old_value) == 100
+    assert float(revised_value) == 200
+    assert first["snapshot_rows"] == len(RRG_PRICE_TICKERS) * 3
+    assert second["snapshot_rows"] == len(RRG_PRICE_TICKERS) * 3
+
+    state["failed_ticker"] = "XLF.US"
+    with pytest.raises(RuntimeError, match="XLF.US"):
+        await refresh_rrg_price_history(failed_target)
+
+    latest_publication = (await db_session.execute(
+        select(DataPublication)
+        .where(DataPublication.dataset == RRG_PRICE_HISTORY_DATASET)
+        .order_by(DataPublication.as_of_date.desc())
+        .limit(1)
+    )).scalar_one()
+    assert latest_publication.as_of_date == second_target
+    assert latest_publication.pipeline_run_id == second_run_id
+    failed_run = (await db_session.execute(
+        select(PipelineRun)
+        .where(
+            PipelineRun.pipeline_name == f"{RRG_PRICE_HISTORY_DATASET}_backfill",
+            PipelineRun.target_date == failed_target,
+        )
+    )).scalar_one()
+    assert failed_run.status == "failed"
+    assert (await db_session.execute(
+        select(func.count(RRGPriceSnapshot.id)).where(
+            RRGPriceSnapshot.pipeline_run_id == failed_run.id
+        )
+    )).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_rrg_snapshot_retention_keeps_only_recent_runs(
+    db_session,
+    monkeypatch,
+):
+    targets = [
+        date(2025, 1, 8),
+        date(2025, 1, 9),
+        date(2025, 1, 10),
+    ]
+    monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 0)
+    monkeypatch.setattr("services.rrg_prices.RRG_SNAPSHOT_RETENTION_RUNS", 2)
+
+    async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
+        return [{
+            "date": to_date,
+            "close": 100,
+            "adjusted_close": 100,
+        }]
+
+    monkeypatch.setattr(
+        "services.rrg_prices.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    results = [await refresh_rrg_price_history(targets[0])]
+    results.extend([
+        await refresh_rrg_price_history(target)
+        for target in targets[1:]
+    ])
+    row_counts = []
+    for result in results:
+        row_counts.append((await db_session.execute(
+            select(func.count(RRGPriceSnapshot.id)).where(
+                RRGPriceSnapshot.pipeline_run_id == result["run_id"]
+            )
+        )).scalar_one())
+
+    assert row_counts == [0, len(RRG_PRICE_TICKERS), len(RRG_PRICE_TICKERS)]
+    retained_publications = (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET
+        )
+    )).scalars().all()
+    assert {
+        publication.pipeline_run_id
+        for publication in retained_publications
+    } == {results[1]["run_id"], results[2]["run_id"]}
+
+
+@pytest.mark.asyncio
+async def test_rrg_refresh_repairs_incomplete_publication(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    stale_run = PipelineRun(
+        pipeline_name=f"{RRG_PRICE_HISTORY_DATASET}_backfill",
+        target_date=target,
+        status="published",
+    )
+    db_session.add(stale_run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset=RRG_PRICE_HISTORY_DATASET,
+        as_of_date=target,
+        pipeline_run_id=stale_run.id,
+    ))
+    await db_session.commit()
+    stale_run_id = stale_run.id
+    monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 0)
+
+    async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
+        return [{
+            "date": to_date,
+            "close": 100,
+            "adjusted_close": 100,
+        }]
+
+    monkeypatch.setattr(
+        "services.rrg_prices.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    result = await refresh_rrg_price_history(target)
+
+    assert result["status"] == "published"
+    assert result["run_id"] != stale_run_id
+    db_session.expire_all()
+    publication = (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET,
+            DataPublication.as_of_date == target,
+        )
+    )).scalar_one()
+    assert publication.pipeline_run_id == result["run_id"]
+    assert (await db_session.execute(
+        select(func.count(RRGPriceSnapshot.id)).where(
+            RRGPriceSnapshot.pipeline_run_id == stale_run_id
+        )
+    )).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_rrg_refresh_serializes_same_target(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    provider_calls = 0
+    monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 0)
+
+    async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        await asyncio.sleep(0.01)
+        return [{
+            "date": to_date,
+            "close": 100,
+            "adjusted_close": 100,
+        }]
+
+    monkeypatch.setattr(
+        "services.rrg_prices.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    results = await asyncio.gather(
+        refresh_rrg_price_history(target),
+        refresh_rrg_price_history(target),
+    )
+
+    assert {result["status"] for result in results} == {"published", "skipped"}
+    assert provider_calls == len(RRG_PRICE_TICKERS)
+    publications = (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET
+        )
+    )).scalars().all()
+    assert len(publications) == 1
+    assert (await db_session.execute(
+        select(func.count(RRGPriceSnapshot.id))
+    )).scalar_one() == len(RRG_PRICE_TICKERS)
+
+
+@pytest.mark.asyncio
+async def test_dedicated_history_backfill_preserves_global_publication(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    source_run = PipelineRun(
+        pipeline_name="full_market_history",
+        target_date=target,
+        status="published",
+    )
+    db_session.add(source_run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset="price_history",
+        as_of_date=target,
+        pipeline_run_id=source_run.id,
+    ))
+    await db_session.commit()
+
+    async def fake_prices(*args, **kwargs):
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for price_date in market_sessions_through(target, 6)
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    result = await backfill_price_history(
+        ["XLK.US"],
+        history_days=5,
+        target_date=target,
+        include_corporate_actions=False,
+        publication_dataset=RRG_PRICE_HISTORY_DATASET,
+        minimum_ticker_coverage=1.0,
+        include_target_session=True,
+    )
+
+    assert result["status"] == "published"
+    global_publication = (await db_session.execute(
+        select(DataPublication).where(DataPublication.dataset == "price_history")
+    )).scalar_one()
+    rrg_publication = (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET
+        )
+    )).scalar_one()
+    assert global_publication.pipeline_run_id == source_run.id
+    assert rrg_publication.pipeline_run_id != source_run.id
+
+
+@pytest.mark.asyncio
+async def test_dedicated_history_backfill_publishes_complete_cached_data(db_session):
+    target = date(2025, 1, 10)
+    db_session.add(Ticker(ticker="XLK.US"))
+    for price_date in market_sessions_through(target, 6):
+        db_session.add(DailyPrice(
+            ticker="XLK.US",
+            date=price_date,
+            close=10,
+            adjusted_close=10,
+        ))
+    await db_session.commit()
+
+    result = await backfill_price_history(
+        ["XLK.US"],
+        history_days=5,
+        target_date=target,
+        include_corporate_actions=False,
+        publication_dataset=RRG_PRICE_HISTORY_DATASET,
+        minimum_ticker_coverage=1.0,
+        publish_when_complete=True,
+        include_target_session=True,
+    )
+    repeated = await backfill_price_history(
+        ["XLK.US"],
+        history_days=5,
+        target_date=target,
+        include_corporate_actions=False,
+        publication_dataset=RRG_PRICE_HISTORY_DATASET,
+        minimum_ticker_coverage=1.0,
+        publish_when_complete=True,
+        include_target_session=True,
+    )
+
+    assert result["status"] == "published"
+    assert result["skipped"] == 1
+    assert repeated["status"] == "skipped"
+    assert repeated["reason"] == "already-published"
+    publication = (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET
+        )
+    )).scalar_one()
+    assert publication.as_of_date == target
+
+
+@pytest.mark.asyncio
+async def test_dedicated_history_backfill_requires_complete_universe(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    tickers = [f"ETF{index}.US" for index in range(12)]
+
+    async def mostly_complete_prices(ticker, *args, **kwargs):
+        if ticker == tickers[-1]:
+            return []
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for price_date in market_sessions_through(target, 6)
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        mostly_complete_prices,
+    )
+
+    with pytest.raises(RuntimeError, match="coverage below 100%"):
+        await backfill_price_history(
+            tickers,
+            history_days=5,
+            target_date=target,
+            include_corporate_actions=False,
+            publication_dataset=RRG_PRICE_HISTORY_DATASET,
+            minimum_ticker_coverage=1.0,
+            include_target_session=True,
+        )
+
+    assert (await db_session.execute(
+        select(DataPublication).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET
+        )
+    )).scalar_one_or_none() is None
+    failed_run = (await db_session.execute(
+        select(PipelineRun).where(
+            PipelineRun.pipeline_name == f"{RRG_PRICE_HISTORY_DATASET}_backfill"
+        )
+    )).scalar_one()
+    assert failed_run.status == "failed"
 
 
 @pytest.mark.asyncio
@@ -107,6 +574,7 @@ async def test_history_backfill_rejects_one_row_as_complete(db_session, monkeypa
             history_days=10,
             target_date=target,
             include_corporate_actions=False,
+            include_target_session=True,
         )
 
     assert (await db_session.execute(
@@ -143,7 +611,7 @@ async def test_history_backfill_fetches_when_cache_only_meets_quality_tolerance(
                 "close": 10,
                 "adjusted_close": 10,
             }
-            for price_date in preceding_market_sessions(target, 11)
+            for price_date in market_sessions_through(target, 11)
         ]
 
     monkeypatch.setattr(
@@ -155,6 +623,7 @@ async def test_history_backfill_fetches_when_cache_only_meets_quality_tolerance(
         history_days=10,
         target_date=target,
         include_corporate_actions=False,
+        include_target_session=True,
     )
 
     assert calls == ["AAA.US"]
@@ -179,15 +648,15 @@ async def test_history_backfill_fetches_when_latest_session_is_missing(
     await db_session.commit()
     calls = []
 
-    async def current_history(ticker, *args, **kwargs):
-        calls.append(ticker)
+    async def current_history(ticker, from_date=None, to_date=None, **kwargs):
+        calls.append((ticker, to_date))
         return [
             {
                 "date": price_date.isoformat(),
                 "close": 10,
                 "adjusted_close": 10,
             }
-            for price_date in preceding_market_sessions(target, 11)
+            for price_date in market_sessions_through(target, 11)
         ]
 
     monkeypatch.setattr(
@@ -199,11 +668,54 @@ async def test_history_backfill_fetches_when_latest_session_is_missing(
         history_days=10,
         target_date=target,
         include_corporate_actions=False,
+        include_target_session=True,
+    )
+
+    assert calls == [("AAA.US", target.isoformat())]
+    assert result["succeeded"] == 1
+    assert result["latest_acceptable_date"] == target.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_history_backfill_refetches_invalid_cached_prices(db_session, monkeypatch):
+    target = date(2025, 1, 10)
+    db_session.add(Ticker(ticker="AAA.US"))
+    for index, price_date in enumerate(market_sessions_through(target, 6)):
+        db_session.add(DailyPrice(
+            ticker="AAA.US",
+            date=price_date,
+            close=None if index % 2 else 0,
+            adjusted_close=None if index % 2 else 0,
+        ))
+    await db_session.commit()
+    calls = []
+
+    async def valid_history(ticker, *args, **kwargs):
+        calls.append(ticker)
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for price_date in market_sessions_through(target, 6)
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        valid_history,
+    )
+
+    result = await backfill_price_history(
+        ["AAA.US"],
+        history_days=5,
+        target_date=target,
+        include_corporate_actions=False,
+        include_target_session=True,
     )
 
     assert calls == ["AAA.US"]
     assert result["succeeded"] == 1
-    assert result["latest_acceptable_date"] == "2025-01-09"
 
 
 @pytest.mark.asyncio
@@ -213,7 +725,7 @@ async def test_history_backfill_fetches_when_an_internal_session_is_missing(
 ):
     target = date(2025, 1, 10)
     db_session.add(Ticker(ticker="AAA.US"))
-    cached_sessions = preceding_market_sessions(target, 12)
+    cached_sessions = market_sessions_through(target, 12)
     cached_sessions.pop(5)
     for price_date in cached_sessions:
         db_session.add(DailyPrice(
@@ -233,7 +745,7 @@ async def test_history_backfill_fetches_when_an_internal_session_is_missing(
                 "close": 10,
                 "adjusted_close": 10,
             }
-            for price_date in preceding_market_sessions(target, 11)
+            for price_date in market_sessions_through(target, 11)
         ]
 
     monkeypatch.setattr(
@@ -245,6 +757,7 @@ async def test_history_backfill_fetches_when_an_internal_session_is_missing(
         history_days=10,
         target_date=target,
         include_corporate_actions=False,
+        include_target_session=True,
     )
 
     assert calls == ["AAA.US"]
@@ -255,7 +768,7 @@ async def test_history_backfill_fetches_when_an_internal_session_is_missing(
 async def test_history_backfill_syncs_actions_when_prices_are_complete(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add(Ticker(ticker="AAA.US"))
-    for price_date in preceding_market_sessions(target, 11):
+    for price_date in market_sessions_through(target, 11):
         db_session.add(DailyPrice(
             ticker="AAA.US",
             date=price_date,
@@ -281,7 +794,11 @@ async def test_history_backfill_syncs_actions_when_prices_are_complete(db_sessio
     monkeypatch.setattr("services.history_backfill.eodhd_client.get_dividends", fake_dividends)
 
     result = await backfill_price_history(
-        ["AAA.US"], history_days=10, target_date=target, include_corporate_actions=True
+        ["AAA.US"],
+        history_days=10,
+        target_date=target,
+        include_corporate_actions=True,
+        include_target_session=True,
     )
 
     assert result["skipped"] == 1
@@ -571,6 +1088,7 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         price_history_tickers.update(tickers)
         assert kwargs["target_date"] == target
         assert kwargs["include_corporate_actions"] is False
+        assert kwargs["publish_dataset"] is False
         return {"status": "skipped", "reason": "fixture"}
 
     monkeypatch.setattr(
@@ -655,11 +1173,20 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
         captured["tickers"] = set(tickers)
         captured["target_date"] = kwargs["target_date"]
         captured["include_dividends"] = kwargs["include_dividends"]
+        captured["publish_dataset"] = kwargs["publish_dataset"]
         return {"status": "published"}
 
     async def fake_refresh(target):
         captured["refresh_date"] = target
         return 1
+
+    async def fake_rrg_refresh(target):
+        captured["rrg_refresh_date"] = target
+        return {"status": "published"}
+
+    async def fake_rrg_actions(target):
+        captured["rrg_actions_date"] = target
+        return {"status": "published"}
 
     async def fake_factor(db, target):
         captured["factor_date"] = target
@@ -669,14 +1196,24 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
     monkeypatch.setattr(cold_start_init, "idempotent_seed_base_tickers", no_op)
     monkeypatch.setattr(cold_start_init, "run_screener_pipeline", fake_screener)
     monkeypatch.setattr(cold_start_init, "backfill_price_history", fake_backfill)
+    monkeypatch.setattr(cold_start_init, "refresh_rrg_price_history", fake_rrg_refresh)
+    monkeypatch.setattr(
+        cold_start_init,
+        "refresh_rrg_corporate_actions",
+        fake_rrg_actions,
+    )
     monkeypatch.setattr(cold_start_init, "refresh_screener_technicals", fake_refresh)
     monkeypatch.setattr(cold_start_init, "compute_and_store_factors", fake_factor)
 
     await cold_start_init.cold_start()
-    assert {"AAA.US", *cold_start_init.BASE_TICKERS}.issubset(captured["tickers"])
+    assert {"AAA.US", "AAPL.US", "MSFT.US"}.issubset(captured["tickers"])
+    assert set(RRG_PRICE_TICKERS).isdisjoint(captured["tickers"])
     assert captured["target_date"] == snapshot_date
     assert captured["include_dividends"] is False
+    assert captured["publish_dataset"] is False
     assert captured["refresh_date"] == snapshot_date
+    assert captured["rrg_refresh_date"] == snapshot_date
+    assert captured["rrg_actions_date"] == snapshot_date
     assert captured["factor_date"] == snapshot_date
 
 

@@ -26,11 +26,16 @@ export default function RRGPage() {
         setError("");
         try {
             const response = await apiRequest<RRGResponse>(ENDPOINT, { signal }, 90_000);
+            if (response.data_complete === false) {
+                const missing = response.missing_tickers?.join(", ") || "unknown symbols";
+                throw new Error(`Sector rotation data is incomplete. Missing: ${missing}.`);
+            }
             setData(response);
             const firstSeries = Object.values(response.data)[0] || [];
             setCurrentDayIndex(Math.max(firstSeries.length - 1, 0));
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
+            setData(null);
             setError(caught instanceof Error ? caught.message : "Unable to load sector rotation data.");
         } finally {
             if (!signal?.aborted) setLoading(false);

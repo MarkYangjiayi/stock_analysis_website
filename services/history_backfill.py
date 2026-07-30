@@ -3,7 +3,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Iterable, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.sqlite import insert
 
 from core.config import settings
@@ -215,10 +215,29 @@ async def backfill_price_history(
     target_date: Optional[date] = None,
     include_corporate_actions: bool = True,
     include_dividends: bool = True,
+    publication_dataset: str = "price_history",
+    minimum_ticker_coverage: float = 0.90,
+    publish_when_complete: bool = False,
+    include_target_session: bool = False,
+    publish_dataset: bool = True,
 ) -> dict:
+    if not publication_dataset:
+        raise ValueError("publication_dataset cannot be empty")
+    if not 0 < minimum_ticker_coverage <= 1:
+        raise ValueError("minimum_ticker_coverage must be greater than 0 and at most 1")
+
     symbols = sorted({ticker.upper() for ticker in tickers})
     days = history_days or settings.COLD_START_HISTORY_DAYS
-    target = target_date or date.today()
+    reference_target = target_date or date.today()
+    target = (
+        reference_target
+        if (
+            include_target_session
+            and target_date is not None
+            and is_us_market_session(reference_target)
+        )
+        else latest_completed_us_session(reference_target)
+    )
     if symbols:
         async with async_session_maker() as security_db, security_db.begin():
             await security_db.execute(
@@ -230,7 +249,7 @@ async def backfill_price_history(
     dividend_start = target - timedelta(days=365 * 7)
     minimum_rows = max(1, int(days * 0.9))
     full_window_rows = days + 1
-    latest_acceptable_date = latest_completed_us_session(target)
+    latest_acceptable_date = target
     expected_sessions: set[date] = set()
     session_cursor = latest_acceptable_date
     while len(expected_sessions) < full_window_rows:
@@ -238,6 +257,10 @@ async def backfill_price_history(
             expected_sessions.add(session_cursor)
         session_cursor -= timedelta(days=1)
     complete_symbols: set[str] = set()
+    valid_price = or_(
+        DailyPrice.adjusted_close > 0,
+        and_(DailyPrice.adjusted_close.is_(None), DailyPrice.close > 0),
+    )
     async with async_session_maker() as coverage_db:
         for start in range(0, len(symbols), 500):
             chunk = symbols[start:start + 500]
@@ -245,6 +268,7 @@ async def backfill_price_history(
                 select(DailyPrice.ticker, DailyPrice.date).where(
                     DailyPrice.ticker.in_(chunk),
                     DailyPrice.date.in_(expected_sessions),
+                    valid_price,
                 )
             )
             dates_by_ticker: dict[str, set[date]] = {}
@@ -260,7 +284,7 @@ async def backfill_price_history(
         if include_corporate_actions
         else [ticker for ticker in symbols if ticker not in complete_symbols]
     )
-    if not symbols_to_process:
+    if not symbols_to_process and not publish_when_complete:
         return {
             "status": "skipped",
             "reason": "price-history-complete",
@@ -272,7 +296,22 @@ async def backfill_price_history(
             "corporate_actions": 0,
             "ticker_coverage": 1.0,
         }
-    run_id = await begin_pipeline_run("price_history_backfill", target)
+    if not symbols_to_process:
+        published = await latest_published_date(publication_dataset)
+        if published is not None and published >= target:
+            return {
+                "status": "skipped",
+                "reason": "already-published",
+                "as_of_date": published.isoformat(),
+                "requested": len(symbols),
+                "succeeded": 0,
+                "skipped": len(symbols),
+                "failed": 0,
+                "price_rows": 0,
+                "corporate_actions": 0,
+                "ticker_coverage": 1.0,
+            }
+    run_id = await begin_pipeline_run(f"{publication_dataset}_backfill", target)
     semaphore = asyncio.Semaphore(settings.HISTORY_BACKFILL_CONCURRENCY)
     progress_lock = asyncio.Lock()
     stats = {
@@ -385,6 +424,7 @@ async def backfill_price_history(
                         select(DailyPrice.date).where(
                             DailyPrice.ticker == ticker,
                             DailyPrice.date.in_(expected_sessions),
+                            valid_price,
                         )
                     )
                     final_sessions = set(final_coverage_result.scalars())
@@ -406,37 +446,58 @@ async def backfill_price_history(
 
     try:
         await update_pipeline_run(run_id, "backfilling", 0)
-        async with eodhd_client.create_http_client() as client:
-            for start in range(0, len(symbols_to_process), 250):
-                await asyncio.gather(
-                    *(
-                        process(ticker)
-                        for ticker in symbols_to_process[start:start + 250]
+        if symbols_to_process:
+            async with eodhd_client.create_http_client() as client:
+                for start in range(0, len(symbols_to_process), 250):
+                    await asyncio.gather(
+                        *(
+                            process(ticker)
+                            for ticker in symbols_to_process[start:start + 250]
+                        )
                     )
-                )
-                await update_pipeline_run(run_id, "backfilling", stats["succeeded"] + stats["skipped"])
+                    await update_pipeline_run(
+                        run_id,
+                        "backfilling",
+                        stats["succeeded"] + stats["skipped"],
+                    )
 
         coverage = (stats["succeeded"] + stats["skipped"]) / len(symbols) if symbols else 0.0
         quality = {
-            "passed": coverage >= 0.90,
+            "passed": coverage >= minimum_ticker_coverage,
             "metrics": {
                 **stats,
                 "ticker_coverage": coverage,
+                "minimum_ticker_coverage": minimum_ticker_coverage,
                 "minimum_rows_per_ticker": minimum_rows,
                 "full_window_rows": full_window_rows,
                 "latest_acceptable_date": latest_acceptable_date.isoformat(),
             },
         }
         if not quality["passed"]:
-            raise RuntimeError(f"History backfill coverage below 90%: {coverage:.2%}")
-        async with async_session_maker() as publication_db, publication_db.begin():
-            await publish_datasets_and_finish(
-                publication_db,
-                ["price_history"],
-                target,
+            raise RuntimeError(
+                "History backfill coverage below "
+                f"{minimum_ticker_coverage:.0%}: {coverage:.2%}"
+            )
+        if publish_dataset:
+            async with async_session_maker() as publication_db, publication_db.begin():
+                await publish_datasets_and_finish(
+                    publication_db,
+                    [publication_dataset],
+                    target,
+                    run_id,
+                    quality_report=quality,
+                    records_processed=stats["succeeded"] + stats["skipped"],
+                )
+        else:
+            await update_pipeline_run(
                 run_id,
+                "backfilled",
+                stats["succeeded"] + stats["skipped"],
+            )
+            await finish_pipeline_run(
+                run_id,
+                "published",
                 quality_report=quality,
-                records_processed=stats["succeeded"] + stats["skipped"],
             )
         return {"run_id": run_id, "status": "published", **quality["metrics"]}
     except asyncio.CancelledError:

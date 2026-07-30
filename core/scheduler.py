@@ -10,6 +10,7 @@ from services.quant.factor_engine import compute_factors_for_date
 from scripts.backup_sqlite import create_backup
 from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from services.pipeline_runs import latest_published_date
+from services.rrg_prices import refresh_rrg_price_history
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,11 @@ async def scheduled_factor_sync(reference_date: date = None):
     return await _sync_factors_for_target(target)
 
 
+async def scheduled_rrg_sync(reference_date: date = None):
+    target = latest_completed_us_session(reference_date or datetime.now(ny_tz).date())
+    return await refresh_rrg_price_history(target)
+
+
 async def scheduled_morning_briefing():
     if is_us_market_session(datetime.now(ny_tz).date()):
         return await generate_morning_briefing()
@@ -72,7 +78,17 @@ def start_scheduler():
     """Starts the global APScheduler instance and registers daily jobs."""
     logger.info("Starting APScheduler for Notifications and Data Sync...")
     
-    # 0. Daily Screener Sync: Tue-Sat 02:00 AM EST (Fetches data after market close from Mon-Fri)
+    # 0. RRG prices: refresh the small ETF universe before the heavier screener job.
+    scheduler.add_job(
+        scheduled_rrg_sync,
+        'cron',
+        day_of_week='tue-sat',
+        hour=1,
+        minute=30,
+        id="daily_rrg_price_sync",
+        replace_existing=True,
+    )
+    # 1. Daily Screener Sync: Tue-Sat 02:00 AM EST (Fetches data after market close from Mon-Fri)
     scheduler.add_job(
         scheduled_screener_sync,
         'cron',
@@ -100,7 +116,7 @@ def start_scheduler():
         id="weekly_sqlite_backup",
         replace_existing=True,
     )
-    # 1. Morning Briefing: Mon-Fri 09:35 EST
+    # 2. Morning Briefing: Mon-Fri 09:35 EST
     scheduler.add_job(
         scheduled_morning_briefing,
         'cron',
@@ -111,7 +127,7 @@ def start_scheduler():
         replace_existing=True
     )
     
-    # 2. Post Market Summary: Mon-Fri 16:05 EST
+    # 3. Post Market Summary: Mon-Fri 16:05 EST
     scheduler.add_job(
         scheduled_post_market_summary,
         'cron',

@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -296,7 +296,7 @@ async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
 async def get_rrg(
     tickers: str,
     benchmark: str = "SPY.US",
-    history_days: int = 252,
+    history_days: int = Query(default=252, ge=1, le=252),
     db: AsyncSession = Depends(get_db)
 ):
     """

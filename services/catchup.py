@@ -7,6 +7,7 @@ from services.pipeline_runs import latest_published_date
 from services.quant.factor_engine import compute_latest_factors
 from services.screener_sync import refresh_screener_technicals, run_screener_pipeline
 from services.history_backfill import backfill_latest_screener_dividends_once
+from services.rrg_prices import refresh_rrg_price_history
 
 
 logger = logging.getLogger(__name__)
@@ -19,13 +20,21 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
     today's universe. Only the latest completed session is captured.
     """
     target = latest_completed_us_session(reference_date or date.today())
-    latest_screener = await latest_published_date("screener")
     result = {
         "target_date": target.isoformat(),
         "screener": "current",
         "factors": "current",
         "dividend_history": "deferred",
+        "rrg_prices": "deferred",
     }
+    try:
+        rrg_result = await refresh_rrg_price_history(target)
+        result["rrg_prices"] = rrg_result["status"]
+    except Exception as exc:
+        result["rrg_prices"] = "failed"
+        logger.exception("RRG price catch-up failed for %s: %s", target, exc)
+
+    latest_screener = await latest_published_date("screener")
     if latest_screener is None or latest_screener < target:
         await run_screener_pipeline(target.isoformat(), observe_current_universe=True)
         result["screener"] = "published"
