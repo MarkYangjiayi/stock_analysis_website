@@ -86,72 +86,77 @@ async def _analyze_candidate(
         "quote_timestamp": candidate["quote_timestamp"].isoformat().replace("+00:00", "Z"),
         "price_change": round(candidate["price_change"], 2),
     }
+    sources: List[Dict[str, Any]] = []
 
-    async with semaphore:
-        sources: List[Dict[str, Any]] = []
-
-        async def generate_result() -> Dict[str, Any]:
-            nonlocal sources
-            news_items = await fetch_yahoo_news(
-                ticker,
-                lookback_hours=settings.ANOMALY_NEWS_LOOKBACK_HOURS,
-                client=news_client,
-            )
-            sources = news_items[:3]
-            if not sources:
-                return {
-                    **base_result,
-                    "ai_analysis": "缺乏明确新闻催化剂，可能为资金面或技术面行为。",
-                    "attribution_status": "no_news",
-                    "news": [],
-                    "top_news_links": [],
-                }
-
-            analysis = await generate_anomaly_attribution(
-                ticker=ticker,
-                price_change=base_result["price_change"],
-                news_list=[_news_summary(item) for item in sources],
-            )
+    async def generate_result() -> Dict[str, Any]:
+        nonlocal sources
+        news_items = await fetch_yahoo_news(
+            ticker,
+            lookback_hours=settings.ANOMALY_NEWS_LOOKBACK_HOURS,
+            client=news_client,
+        )
+        sources = news_items[:3]
+        if not sources:
             return {
                 **base_result,
-                "ai_analysis": analysis,
-                "attribution_status": "completed",
-                "news": sources,
-                "top_news_links": [item["link"] for item in sources],
-            }
-
-        try:
-            return await asyncio.wait_for(
-                generate_result(),
-                timeout=settings.ANOMALY_ATTRIBUTION_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Attribution timed out for %s", ticker)
-            return {
-                **base_result,
-                "ai_analysis": "归因服务超时，本次仅展示行情异动。",
-                "attribution_status": "timed_out",
-                "news": sources,
-                "top_news_links": [item["link"] for item in sources],
-            }
-        except NewsFetchError:
-            logger.warning("News unavailable while attributing %s", ticker)
-            return {
-                **base_result,
-                "ai_analysis": "新闻源暂时不可用，本次仅展示行情异动。",
-                "attribution_status": "news_unavailable",
+                "ai_analysis": "缺乏明确新闻催化剂，可能为资金面或技术面行为。",
+                "attribution_status": "no_news",
                 "news": [],
                 "top_news_links": [],
             }
-        except AttributionGenerationError:
-            logger.warning("AI attribution unavailable for %s", ticker)
-            return {
-                **base_result,
-                "ai_analysis": "AI 归因暂时不可用，请结合下方新闻来源判断。",
-                "attribution_status": "attribution_unavailable",
-                "news": sources,
-                "top_news_links": [item["link"] for item in sources],
-            }
+
+        analysis = await generate_anomaly_attribution(
+            ticker=ticker,
+            price_change=base_result["price_change"],
+            news_list=[_news_summary(item) for item in sources],
+        )
+        return {
+            **base_result,
+            "ai_analysis": analysis,
+            "attribution_status": "completed",
+            "news": sources,
+            "top_news_links": [item["link"] for item in sources],
+        }
+
+    async def run_with_slot() -> Dict[str, Any]:
+        async with semaphore:
+            return await generate_result()
+
+    try:
+        # Include time spent waiting for a concurrency slot in the per-candidate
+        # deadline so a large result limit cannot multiply the scan's total
+        # execution time by the number of semaphore waves.
+        return await asyncio.wait_for(
+            run_with_slot(),
+            timeout=settings.ANOMALY_ATTRIBUTION_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Attribution timed out for %s", ticker)
+        return {
+            **base_result,
+            "ai_analysis": "归因服务超时，本次仅展示行情异动。",
+            "attribution_status": "timed_out",
+            "news": sources,
+            "top_news_links": [item["link"] for item in sources],
+        }
+    except NewsFetchError:
+        logger.warning("News unavailable while attributing %s", ticker)
+        return {
+            **base_result,
+            "ai_analysis": "新闻源暂时不可用，本次仅展示行情异动。",
+            "attribution_status": "news_unavailable",
+            "news": [],
+            "top_news_links": [],
+        }
+    except AttributionGenerationError:
+        logger.warning("AI attribution unavailable for %s", ticker)
+        return {
+            **base_result,
+            "ai_analysis": "AI 归因暂时不可用，请结合下方新闻来源判断。",
+            "attribution_status": "attribution_unavailable",
+            "news": sources,
+            "top_news_links": [item["link"] for item in sources],
+        }
 
 
 async def scan_and_analyze_anomalies(
@@ -203,7 +208,7 @@ async def scan_and_analyze_anomalies(
         now_utc.astimezone(_NEW_YORK).date()
     )
     matching_quote_times: List[datetime] = []
-    candidates: List[Dict[str, Any]] = []
+    matching_quotes: List[Dict[str, Any]] = []
 
     for quote in all_realtime_data:
         code = _canonical_quote_code(quote.get("code"))
@@ -214,16 +219,11 @@ async def scan_and_analyze_anomalies(
         if quote_time is None or quote_time > now_utc + timedelta(minutes=5):
             continue
         matching_quote_times.append(quote_time)
-        if quote_time.astimezone(_NEW_YORK).date() < minimum_quote_date:
-            continue
-
         try:
             change_pct = float(quote.get("change_p"))
         except (TypeError, ValueError):
             continue
-        if abs(change_pct) < threshold:
-            continue
-        candidates.append({
+        matching_quotes.append({
             "ticker": code,
             "company_name": ticker_to_name[code],
             "price_change": change_pct,
@@ -233,8 +233,24 @@ async def scan_and_analyze_anomalies(
     if not matching_quote_times:
         raise AnomalyDataUnavailable("Real-time market data has no valid timestamps")
     quote_as_of = max(matching_quote_times)
-    if quote_as_of.astimezone(_NEW_YORK).date() < minimum_quote_date:
+    quote_session_date = quote_as_of.astimezone(_NEW_YORK).date()
+    if quote_session_date < minimum_quote_date:
         raise AnomalyDataUnavailable("Real-time market data is stale")
+
+    candidates: List[Dict[str, Any]] = []
+    for quote in matching_quotes:
+        # Bulk feeds can mix today's quotes with symbols whose last trade was in
+        # a prior session. Rank only symbols from the session represented by the
+        # freshest quote in the batch.
+        if (
+            quote["quote_timestamp"].astimezone(_NEW_YORK).date()
+            != quote_session_date
+        ):
+            continue
+        change_pct = quote["price_change"]
+        if abs(change_pct) < threshold:
+            continue
+        candidates.append(quote)
 
     candidates.sort(key=lambda item: abs(item["price_change"]), reverse=True)
     selected = candidates[:limit_count]

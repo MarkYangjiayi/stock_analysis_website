@@ -99,8 +99,23 @@ async def _expire_stale_scans(db: AsyncSession) -> None:
 
 async def recover_interrupted_anomaly_scans() -> None:
     async with async_session_maker() as db:
-        await _expire_stale_scans(db)
+        finished_at = utc_now()
+        result = await db.execute(
+            update(AnomalyScanRun)
+            .where(AnomalyScanRun.status.in_(ACTIVE_SCAN_STATUSES))
+            .values(
+                status="failed",
+                active_key=None,
+                error_message="Scan was interrupted before it completed",
+                finished_at=finished_at,
+            )
+        )
         await db.commit()
+        if result.rowcount:
+            logger.warning(
+                "Marked %s interrupted anomaly scan(s) as failed during startup",
+                result.rowcount,
+            )
 
 
 async def enqueue_manual_anomaly_scan(

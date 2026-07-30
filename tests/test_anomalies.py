@@ -4,7 +4,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -148,6 +148,50 @@ async def test_anomaly_scan_uses_quote_time_and_configured_threshold(
 
 
 @pytest.mark.asyncio
+async def test_anomaly_scan_excludes_prior_session_symbols_from_fresh_batch(
+    db_session,
+    monkeypatch,
+):
+    from services import anomaly_detector
+
+    await _seed_universe(db_session, ["FRESH.US", "STALE.US"])
+    fresh_time = datetime.now(timezone.utc).replace(microsecond=0)
+    stale_time = fresh_time - timedelta(days=1)
+
+    async def fake_quotes(*args, **kwargs):
+        return [
+            _quote("FRESH", 6.0, fresh_time),
+            _quote("STALE", 25.0, stale_time),
+        ]
+
+    async def fake_news(*args, **kwargs):
+        return [_news()]
+
+    async def fake_attribution(*args, **kwargs):
+        return "Source-backed explanation [1]"
+
+    monkeypatch.setattr(
+        anomaly_detector,
+        "latest_completed_us_session",
+        lambda reference_date: stale_time.astimezone(
+            anomaly_detector._NEW_YORK
+        ).date(),
+    )
+    monkeypatch.setattr(anomaly_detector, "get_bulk_realtime_prices", fake_quotes)
+    monkeypatch.setattr(anomaly_detector, "fetch_yahoo_news", fake_news)
+    monkeypatch.setattr(
+        anomaly_detector,
+        "generate_anomaly_attribution",
+        fake_attribution,
+    )
+
+    scan = await scan_and_analyze_anomalies(db_session, limit_count=1)
+
+    assert scan.quote_as_of == fresh_time
+    assert [item["ticker"] for item in scan.results] == ["FRESH.US"]
+
+
+@pytest.mark.asyncio
 async def test_anomaly_attribution_is_bounded_and_partial_failures_survive(
     db_session,
     monkeypatch,
@@ -202,6 +246,43 @@ async def test_anomaly_attribution_is_bounded_and_partial_failures_survive(
 
 
 @pytest.mark.asyncio
+async def test_anomaly_attribution_deadline_includes_semaphore_wait(
+    db_session,
+    monkeypatch,
+):
+    from services import anomaly_detector
+
+    await _seed_universe(db_session, ["AAA.US", "BBB.US"])
+    quote_time = datetime.now(timezone.utc)
+    entered_news_fetch = 0
+
+    async def fake_quotes(*args, **kwargs):
+        return [
+            _quote("AAA", 9.0, quote_time),
+            _quote("BBB", 8.0, quote_time),
+        ]
+
+    async def blocking_news(*args, **kwargs):
+        nonlocal entered_news_fetch
+        entered_news_fetch += 1
+        await asyncio.sleep(1)
+        return [_news()]
+
+    monkeypatch.setattr(settings, "ANOMALY_ATTRIBUTION_CONCURRENCY", 1)
+    monkeypatch.setattr(settings, "ANOMALY_ATTRIBUTION_TIMEOUT_SECONDS", 0.03)
+    monkeypatch.setattr(anomaly_detector, "get_bulk_realtime_prices", fake_quotes)
+    monkeypatch.setattr(anomaly_detector, "fetch_yahoo_news", blocking_news)
+
+    scan = await scan_and_analyze_anomalies(db_session, limit_count=2)
+
+    assert entered_news_fetch == 1
+    assert [item["attribution_status"] for item in scan.results] == [
+        "timed_out",
+        "timed_out",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_anomaly_scan_propagates_market_data_failure(
     db_session,
     monkeypatch,
@@ -217,6 +298,59 @@ async def test_anomaly_scan_propagates_market_data_failure(
 
     with pytest.raises(AnomalyDataUnavailable, match="market data"):
         await scan_and_analyze_anomalies(db_session)
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_fails_all_active_scans_immediately(
+    db_session,
+):
+    from services.anomaly_scans import recover_interrupted_anomaly_scans
+
+    active_runs = [
+        AnomalyScanRun(
+            trigger="manual",
+            status="queued",
+            active_key="market",
+            requested_limit=5,
+            threshold_pct=4.0,
+            results=[],
+        ),
+        AnomalyScanRun(
+            trigger="post_market_summary",
+            status="running",
+            active_key="scheduled",
+            requested_limit=10,
+            threshold_pct=4.0,
+            results=[],
+        ),
+    ]
+    completed = AnomalyScanRun(
+        trigger="manual",
+        status="completed",
+        requested_limit=5,
+        threshold_pct=4.0,
+        results=[],
+        finished_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db_session.add_all([*active_runs, completed])
+    await db_session.commit()
+
+    await recover_interrupted_anomaly_scans()
+    db_session.expire_all()
+    runs = (
+        await db_session.execute(
+            select(AnomalyScanRun).order_by(AnomalyScanRun.id)
+        )
+    ).scalars().all()
+
+    assert [run.status for run in runs] == ["failed", "failed", "completed"]
+    assert all(run.active_key is None for run in runs[:2])
+    assert all(run.finished_at is not None for run in runs[:2])
+    assert all(
+        run.error_message == "Scan was interrupted before it completed"
+        for run in runs[:2]
+    )
+    assert runs[2].error_message is None
 
 
 @pytest.mark.asyncio
