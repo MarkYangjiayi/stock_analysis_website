@@ -53,6 +53,22 @@ def upgrade() -> None:
         )
 
     inspector = sa.inspect(op.get_bind())
+    membership_uniques = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("universe_membership")
+    }
+    if "uix_universe_membership_period" in membership_uniques:
+        with op.batch_alter_table("universe_membership") as batch_op:
+            batch_op.drop_constraint(
+                "uix_universe_membership_period",
+                type_="unique",
+            )
+            batch_op.create_unique_constraint(
+                "uix_universe_membership_period_source",
+                ["universe", "ticker", "effective_from", "source"],
+            )
+
+    inspector = sa.inspect(op.get_bind())
     membership_indexes = {
         index["name"] for index in inspector.get_indexes("universe_membership")
     }
@@ -78,5 +94,29 @@ def downgrade() -> None:
                 "ix_universe_membership_universe_interval",
                 table_name="universe_membership",
             )
+        membership_uniques = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("universe_membership")
+        }
+        if "uix_universe_membership_period_source" in membership_uniques:
+            op.execute(
+                """
+                DELETE FROM universe_membership
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM universe_membership
+                    GROUP BY universe, ticker, effective_from
+                )
+                """
+            )
+            with op.batch_alter_table("universe_membership") as batch_op:
+                batch_op.drop_constraint(
+                    "uix_universe_membership_period_source",
+                    type_="unique",
+                )
+                batch_op.create_unique_constraint(
+                    "uix_universe_membership_period",
+                    ["universe", "ticker", "effective_from"],
+                )
     if inspector.has_table("market_breadth_snapshots"):
         op.drop_table("market_breadth_snapshots")

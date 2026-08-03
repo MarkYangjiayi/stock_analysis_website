@@ -378,7 +378,7 @@ async def record_universe_membership(
     if new_rows:
         await db.execute(
             insert(UniverseMembership).values(new_rows).on_conflict_do_nothing(
-                index_elements=["universe", "ticker", "effective_from"]
+                index_elements=["universe", "ticker", "effective_from", "source"]
             )
         )
 

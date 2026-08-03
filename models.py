@@ -361,7 +361,13 @@ class UniverseMembership(Base):
     source_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("pipeline_runs.id"), index=True)
 
     __table_args__ = (
-        UniqueConstraint("universe", "ticker", "effective_from", name="uix_universe_membership_period"),
+        UniqueConstraint(
+            "universe",
+            "ticker",
+            "effective_from",
+            "source",
+            name="uix_universe_membership_period_source",
+        ),
         Index(
             "ix_universe_membership_universe_interval",
             "universe",

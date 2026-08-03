@@ -11,7 +11,10 @@ from scripts.backup_sqlite import create_backup
 from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from services.pipeline_runs import latest_published_date
 from services.rrg_prices import refresh_rrg_price_history
-from services.market_breadth import refresh_market_breadth
+from services.market_breadth import (
+    backfill_market_breadth_price_history,
+    refresh_market_breadth,
+)
 from services.universe import refresh_historical_universe_memberships
 
 logger = logging.getLogger(__name__)
@@ -93,6 +96,7 @@ async def _sync_market_breadth_for_target(target: date):
                 "reason": "already-published",
                 "as_of_date": target.isoformat(),
             }
+        await backfill_market_breadth_price_history(target)
         return await refresh_market_breadth(target)
 
 

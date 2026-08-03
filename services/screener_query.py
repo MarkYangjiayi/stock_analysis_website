@@ -19,6 +19,7 @@ from services.screener_fields import (
     MODEL_FIELD_MAP,
     SUPPORTED_FINVIZ_FIELDS,
 )
+from services.universe import LIVE_UNIVERSE_SOURCE
 
 
 def _serialize(value: Any) -> Any:
@@ -100,6 +101,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                     coverage[definition.id] = 0.0
             membership_filter = (
                 UniverseMembership.universe.in_(("SP500", "RUSSELL2000")),
+                UniverseMembership.source == LIVE_UNIVERSE_SOURCE,
                 UniverseMembership.effective_from <= selected_date,
                 or_(
                     UniverseMembership.effective_to.is_(None),
@@ -255,6 +257,7 @@ def _index_condition(selected_date: date, operator: str, value: Any) -> Any:
         select(UniverseMembership.id).where(
             UniverseMembership.ticker == StockScreenerSnapshot.ticker,
             UniverseMembership.universe.in_(universes),
+            UniverseMembership.source == LIVE_UNIVERSE_SOURCE,
             UniverseMembership.effective_from <= selected_date,
             or_(
                 UniverseMembership.effective_to.is_(None),

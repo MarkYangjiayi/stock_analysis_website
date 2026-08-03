@@ -25,7 +25,11 @@ from services.history_backfill import (
     backfill_dividend_history_once,
     backfill_price_history,
 )
-from services.quant.backtest import BacktestConfig, run_and_store_backtest
+from services.quant.backtest import (
+    BacktestConfig,
+    _load_backtest_memberships,
+    run_and_store_backtest,
+)
 from services.quant.factor_engine import FACTOR_VERSION, compute_and_store_factors
 from services.rrg_prices import (
     RRG_PRICE_HISTORY_DATASET,
@@ -43,6 +47,54 @@ def market_sessions_through(target: date, count: int) -> list[date]:
             sessions.append(cursor)
         cursor -= timedelta(days=1)
     return sessions
+
+
+@pytest.mark.asyncio
+async def test_combined_backtest_membership_uses_historical_index_union(db_session):
+    from services.universe import HISTORICAL_UNIVERSE_SOURCE, LIVE_UNIVERSE_SOURCE
+
+    db_session.add_all([
+        UniverseMembership(
+            universe="SP500",
+            ticker="AAA.US",
+            effective_from=date(2020, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="RUSSELL2000",
+            ticker="AAA.US",
+            effective_from=date(2019, 1, 1),
+            effective_to=date(2020, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="RUSSELL2000",
+            ticker="BBB.US",
+            effective_from=date(2019, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="SP500_RUSSELL2000",
+            ticker="LIVE-ONLY.US",
+            effective_from=date(2025, 1, 1),
+            source=LIVE_UNIVERSE_SOURCE,
+        ),
+    ])
+    await db_session.commit()
+
+    memberships = await _load_backtest_memberships(
+        db_session,
+        "SP500_RUSSELL2000",
+        date(2019, 1, 1),
+        date(2025, 1, 31),
+    )
+
+    assert set(memberships["ticker"]) == {"AAA.US", "BBB.US"}
+    assert set(memberships["universe"]) == {"SP500_RUSSELL2000"}
+    aaa = memberships[memberships["ticker"] == "AAA.US"]
+    assert len(aaa) == 1
+    assert aaa.iloc[0]["effective_from"] == date(2019, 1, 1)
+    assert pd.isna(aaa.iloc[0]["effective_to"])
 
 
 @pytest.mark.asyncio

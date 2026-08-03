@@ -1758,6 +1758,10 @@ async def test_screener_keeps_factor_chain_when_market_breadth_attempt_fails(mon
         calls.append(("breadth", target))
         raise RuntimeError("coverage gate")
 
+    async def backfill_breadth_prices(target):
+        calls.append(("breadth-prices", target))
+        return {"status": "published"}
+
     async def publish_factors(target):
         publications["factors"] = target
         calls.append(("factors", target))
@@ -1765,6 +1769,11 @@ async def test_screener_keeps_factor_chain_when_market_breadth_attempt_fails(mon
 
     monkeypatch.setattr(scheduler, "latest_published_date", latest)
     monkeypatch.setattr(scheduler, "run_screener_pipeline", publish_screener)
+    monkeypatch.setattr(
+        scheduler,
+        "backfill_market_breadth_price_history",
+        backfill_breadth_prices,
+    )
     monkeypatch.setattr(scheduler, "refresh_market_breadth", fail_breadth)
     monkeypatch.setattr(scheduler, "compute_factors_for_date", publish_factors)
 
@@ -1774,9 +1783,42 @@ async def test_screener_keeps_factor_chain_when_market_breadth_attempt_fails(mon
     assert result["factors"]["status"] == "published"
     assert calls == [
         ("screener", date(2025, 7, 3)),
+        ("breadth-prices", date(2025, 7, 3)),
         ("breadth", date(2025, 7, 3)),
         ("factors", date(2025, 7, 3)),
     ]
+
+
+@pytest.mark.asyncio
+async def test_market_breadth_retry_backfills_corrected_historical_members(monkeypatch):
+    from core import scheduler
+
+    target = date(2025, 7, 3)
+    calls = []
+
+    async def latest(dataset):
+        return None
+
+    async def backfill(requested_target):
+        calls.append(("backfill", requested_target))
+        return {"status": "published"}
+
+    async def publish(requested_target):
+        calls.append(("publish", requested_target))
+        return {"status": "published", "as_of_date": requested_target.isoformat()}
+
+    monkeypatch.setattr(scheduler, "latest_published_date", latest)
+    monkeypatch.setattr(
+        scheduler,
+        "backfill_market_breadth_price_history",
+        backfill,
+    )
+    monkeypatch.setattr(scheduler, "refresh_market_breadth", publish)
+
+    result = await scheduler.scheduled_market_breadth_sync(date(2025, 7, 7))
+
+    assert result["status"] == "published"
+    assert calls == [("backfill", target), ("publish", target)]
 
 
 @pytest.mark.asyncio

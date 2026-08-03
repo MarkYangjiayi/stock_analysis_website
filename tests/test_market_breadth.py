@@ -41,7 +41,9 @@ from services.rrg_prices import (
 from services.universe import (
     HISTORICAL_UNIVERSE_DATASET,
     HISTORICAL_UNIVERSE_SOURCE,
+    LIVE_UNIVERSE_SOURCE,
     parse_historical_memberships,
+    replace_historical_memberships,
     refresh_historical_universe_memberships,
 )
 
@@ -83,6 +85,18 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
             row[1]
             for row in connection.execute("PRAGMA index_list(universe_membership)")
         }
+        membership_unique_columns = {
+            tuple(
+                column[2]
+                for column in connection.execute(
+                    f'PRAGMA index_info("{index_row[1]}")'
+                )
+            )
+            for index_row in connection.execute(
+                "PRAGMA index_list(universe_membership)"
+            )
+            if index_row[2]
+        }
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
 
     assert {
@@ -109,6 +123,12 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
     } == columns
     assert "ix_market_breadth_snapshots_run_universe_date" in snapshot_indexes
     assert "ix_universe_membership_universe_interval" in membership_indexes
+    assert (
+        "universe",
+        "ticker",
+        "effective_from",
+        "source",
+    ) in membership_unique_columns
     assert revision == "0007_market_breadth_snapshots"
 
 
@@ -247,6 +267,51 @@ async def test_historical_membership_publication_preserves_explicit_session_date
     assert len(memberships) == 4
     assert {membership.source for membership in memberships} == {
         HISTORICAL_UNIVERSE_SOURCE
+    }
+
+
+@pytest.mark.asyncio
+async def test_historical_and_live_memberships_can_share_a_start_date(db_session):
+    target = date(2025, 1, 10)
+    run = PipelineRun(
+        pipeline_name="historical_universe_sync",
+        target_date=target,
+        status="running",
+        stage="publishing_history",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(UniverseMembership(
+        universe="SP500",
+        ticker="AAA.US",
+        effective_from=target,
+        source=LIVE_UNIVERSE_SOURCE,
+    ))
+    await db_session.flush()
+
+    await replace_historical_memberships(
+        db_session,
+        "SP500",
+        [{
+            "universe": "SP500",
+            "ticker": "AAA.US",
+            "effective_from": target,
+            "effective_to": None,
+            "source": HISTORICAL_UNIVERSE_SOURCE,
+        }],
+        source_run_id=run.id,
+    )
+    await db_session.commit()
+
+    memberships = list((await db_session.execute(
+        select(UniverseMembership).where(
+            UniverseMembership.universe == "SP500",
+            UniverseMembership.ticker == "AAA.US",
+        )
+    )).scalars())
+    assert {membership.source for membership in memberships} == {
+        HISTORICAL_UNIVERSE_SOURCE,
+        LIVE_UNIVERSE_SOURCE,
     }
 
 
