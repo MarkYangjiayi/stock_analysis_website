@@ -12,6 +12,7 @@ from api.schemas import (
     BacktestRequest,
     FactorComputeRequest,
     FactorResearchRequest,
+    MarketOverviewResponse,
     StockDataResponse,
 )
 from database import database_ready, get_db
@@ -42,6 +43,10 @@ from services.quant.research import evaluate_factor
 from services.freshness import assess_ticker_freshness
 from services.screener_query import get_screener_metadata, query_screener
 from services.sync_coordinator import ticker_sync_lock
+from services.market_breadth import (
+    MarketOverviewUnavailable,
+    get_market_overview,
+)
 import pandas as pd
 
 router = APIRouter()
@@ -364,6 +369,22 @@ async def get_rrg(
         return data  # FastAPI会自动序列化为JSONResponse
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to calculate RRG data: {str(e)}")
+
+
+@router.get(
+    "/api/v1/market-overview",
+    response_model=MarketOverviewResponse,
+    tags=["Market Analysis Read"],
+)
+async def market_overview(
+    universe: Literal["SP500", "RUSSELL2000", "SP500_RUSSELL2000"] = "SP500",
+    period: Literal["3m", "6m", "1y"] = "1y",
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_market_overview(db, universe, period)
+    except MarketOverviewUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/health/live", tags=["Operations"])

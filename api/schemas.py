@@ -77,6 +77,54 @@ class StockDataResponse(BaseModel):
     valuation_metrics: Optional[ValuationMetricsModel] = None
 
 
+class MarketOverviewMeta(BaseModel):
+    universe: Literal["SP500", "RUSSELL2000", "SP500_RUSSELL2000"]
+    period: Literal["3m", "6m", "1y"]
+    as_of_date: date
+    expected_as_of_date: date
+    published_at: datetime
+    stale: bool
+    membership_mode: Literal["point_in_time"]
+    data_complete: bool
+    warnings: List[str] = Field(default_factory=list)
+
+
+class MarketBenchmarkSeries(BaseModel):
+    ticker: str
+    absolute_index: List[float]
+
+
+class MarketSectorTrend(BaseModel):
+    ticker: str
+    label: str
+    absolute_index: List[float]
+    relative_to_spy_index: List[float]
+
+
+class MarketBreadthSeries(BaseModel):
+    pct_above_ma20: List[Optional[float]]
+    pct_above_ma50: List[Optional[float]]
+    pct_above_ma200: List[Optional[float]]
+    net_advances_pct: List[Optional[float]]
+    new_high_low_pct: List[Optional[float]]
+    new_high_pct: List[Optional[float]]
+    new_low_pct: List[Optional[float]]
+    mcclellan: List[Optional[float]]
+    dispersion_1d: List[Optional[float]]
+    dispersion_20d: List[Optional[float]]
+    member_count: List[int]
+    price_coverage_pct: List[Optional[float]]
+
+
+class MarketOverviewResponse(BaseModel):
+    meta: MarketOverviewMeta
+    dates: List[date]
+    benchmark: MarketBenchmarkSeries
+    sector_trends: List[MarketSectorTrend]
+    rsp_spy_index: List[float]
+    breadth: MarketBreadthSeries
+
+
 class FactorComputeRequest(BaseModel):
     as_of_date: date
 

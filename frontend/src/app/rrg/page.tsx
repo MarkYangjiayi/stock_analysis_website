@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, Loader2, Pause, Play, RotateCcw, TriangleAlert } from "lucide-react";
 import RRGChart, { RRGResponse } from "@/components/RRGChart";
+import MarketTabs from "@/components/MarketTabs";
 import { apiRequest } from "@/lib/api";
 
 const ENDPOINT = "/api/v1/rrg?tickers=XLK.US,XLF.US,XLV.US,XLY.US,XLP.US,XLE.US,XLI.US,XLB.US,XLU.US,XLRE.US,XLC.US&benchmark=SPY.US&history_days=252";
@@ -81,6 +82,8 @@ export default function RRGPage() {
                         {data?.benchmark && <span className="rounded-full border px-2.5 py-1 text-xs font-semibold text-slate-500">Benchmark {data.benchmark}</span>}
                     </div>
                 </header>
+
+                <MarketTabs active="rotation" />
 
                 {stale && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200" role="status"><TriangleAlert className="mr-2 inline" size={16} />The underlying sector ETF series is {ageDays} days old. Interpret the rotation path as historical until the price history is refreshed.</div>}
                 {error && <div className="error-panel flex items-center justify-between gap-4" role="alert"><span>{error}</span><button type="button" className="secondary-button shrink-0" onClick={() => void loadData()}><RotateCcw size={15} /> Retry</button></div>}

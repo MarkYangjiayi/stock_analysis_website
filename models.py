@@ -13,6 +13,7 @@ from sqlalchemy import (
     Date,
     BigInteger,
     ForeignKey,
+    Index,
     UniqueConstraint,
     JSON,
     Text,
@@ -95,6 +96,46 @@ class RRGPriceSnapshot(Base):
             "ticker",
             "date",
             name="uix_rrg_snapshot_run_ticker_date",
+        ),
+    )
+
+
+class MarketBreadthSnapshot(Base):
+    """Immutable point-in-time market breadth for one published pipeline run."""
+
+    __tablename__ = "market_breadth_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
+    universe: Mapped[str] = mapped_column(String)
+    date: Mapped[dt_date] = mapped_column(Date)
+
+    member_count: Mapped[int] = mapped_column(Integer)
+    price_count: Mapped[int] = mapped_column(Integer)
+    return_count: Mapped[int] = mapped_column(Integer)
+    advances: Mapped[int] = mapped_column(Integer)
+    declines: Mapped[int] = mapped_column(Integer)
+    unchanged: Mapped[int] = mapped_column(Integer)
+
+    ma20_eligible: Mapped[int] = mapped_column(Integer)
+    above_ma20: Mapped[int] = mapped_column(Integer)
+    ma50_eligible: Mapped[int] = mapped_column(Integer)
+    above_ma50: Mapped[int] = mapped_column(Integer)
+    ma200_eligible: Mapped[int] = mapped_column(Integer)
+    above_ma200: Mapped[int] = mapped_column(Integer)
+
+    high_low_eligible: Mapped[int] = mapped_column(Integer)
+    new_high_count: Mapped[int] = mapped_column(Integer)
+    new_low_count: Mapped[int] = mapped_column(Integer)
+    dispersion_1d: Mapped[Optional[float]] = mapped_column(Float)
+
+    __table_args__ = (
+        Index(
+            "ix_market_breadth_snapshots_run_universe_date",
+            "pipeline_run_id",
+            "universe",
+            "date",
+            unique=True,
         ),
     )
 
@@ -320,7 +361,20 @@ class UniverseMembership(Base):
     source_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("pipeline_runs.id"), index=True)
 
     __table_args__ = (
-        UniqueConstraint("universe", "ticker", "effective_from", name="uix_universe_membership_period"),
+        UniqueConstraint(
+            "universe",
+            "ticker",
+            "effective_from",
+            "source",
+            name="uix_universe_membership_period_source",
+        ),
+        Index(
+            "ix_universe_membership_universe_interval",
+            "universe",
+            "effective_from",
+            "effective_to",
+            "ticker",
+        ),
     )
 
 

@@ -25,7 +25,11 @@ from services.history_backfill import (
     backfill_dividend_history_once,
     backfill_price_history,
 )
-from services.quant.backtest import BacktestConfig, run_and_store_backtest
+from services.quant.backtest import (
+    BacktestConfig,
+    _load_backtest_memberships,
+    run_and_store_backtest,
+)
 from services.quant.factor_engine import FACTOR_VERSION, compute_and_store_factors
 from services.rrg_prices import (
     RRG_PRICE_HISTORY_DATASET,
@@ -43,6 +47,54 @@ def market_sessions_through(target: date, count: int) -> list[date]:
             sessions.append(cursor)
         cursor -= timedelta(days=1)
     return sessions
+
+
+@pytest.mark.asyncio
+async def test_combined_backtest_membership_uses_historical_index_union(db_session):
+    from services.universe import HISTORICAL_UNIVERSE_SOURCE, LIVE_UNIVERSE_SOURCE
+
+    db_session.add_all([
+        UniverseMembership(
+            universe="SP500",
+            ticker="AAA.US",
+            effective_from=date(2020, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="RUSSELL2000",
+            ticker="AAA.US",
+            effective_from=date(2019, 1, 1),
+            effective_to=date(2020, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="RUSSELL2000",
+            ticker="BBB.US",
+            effective_from=date(2019, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="SP500_RUSSELL2000",
+            ticker="LIVE-ONLY.US",
+            effective_from=date(2025, 1, 1),
+            source=LIVE_UNIVERSE_SOURCE,
+        ),
+    ])
+    await db_session.commit()
+
+    memberships = await _load_backtest_memberships(
+        db_session,
+        "SP500_RUSSELL2000",
+        date(2019, 1, 1),
+        date(2025, 1, 31),
+    )
+
+    assert set(memberships["ticker"]) == {"AAA.US", "BBB.US"}
+    assert set(memberships["universe"]) == {"SP500_RUSSELL2000"}
+    aaa = memberships[memberships["ticker"] == "AAA.US"]
+    assert len(aaa) == 1
+    assert aaa.iloc[0]["effective_from"] == date(2019, 1, 1)
+    assert pd.isna(aaa.iloc[0]["effective_to"])
 
 
 @pytest.mark.asyncio
@@ -300,6 +352,57 @@ async def test_rrg_snapshot_retention_keeps_only_recent_runs(
         publication.pipeline_run_id
         for publication in retained_publications
     } == {results[1]["run_id"], results[2]["run_id"]}
+
+
+@pytest.mark.asyncio
+async def test_rrg_retention_preserves_snapshot_referenced_by_stale_market_overview(
+    db_session,
+    monkeypatch,
+):
+    targets = [date(2025, 1, 8), date(2025, 1, 9), date(2025, 1, 10)]
+    monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 0)
+    monkeypatch.setattr("services.rrg_prices.RRG_SNAPSHOT_RETENTION_RUNS", 2)
+
+    async def fake_prices(ticker, from_date=None, to_date=None, **kwargs):
+        return [{"date": to_date, "close": 100, "adjusted_close": 100}]
+
+    monkeypatch.setattr(
+        "services.rrg_prices.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+
+    first = await refresh_rrg_price_history(targets[0])
+    breadth_run = PipelineRun(
+        pipeline_name="market_breadth",
+        target_date=targets[0],
+        status="published",
+        stage="published",
+    )
+    db_session.add(breadth_run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset="market_breadth",
+        as_of_date=targets[0],
+        pipeline_run_id=breadth_run.id,
+        status="published",
+    ))
+    await db_session.commit()
+
+    await refresh_rrg_price_history(targets[1])
+    await refresh_rrg_price_history(targets[2])
+
+    db_session.expire_all()
+    retained_dates = set((await db_session.execute(
+        select(DataPublication.as_of_date).where(
+            DataPublication.dataset == RRG_PRICE_HISTORY_DATASET
+        )
+    )).scalars())
+    assert retained_dates == set(targets)
+    assert await db_session.scalar(
+        select(func.count(RRGPriceSnapshot.id)).where(
+            RRGPriceSnapshot.pipeline_run_id == first["run_id"]
+        )
+    ) == len(RRG_PRICE_TICKERS)
 
 
 @pytest.mark.asyncio
@@ -1169,11 +1272,16 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
     async def fake_screener(*args, **kwargs):
         return {"status": "published", "as_of_date": snapshot_date.isoformat()}
 
-    async def fake_backfill(tickers, **kwargs):
-        captured["tickers"] = set(tickers)
-        captured["target_date"] = kwargs["target_date"]
-        captured["include_dividends"] = kwargs["include_dividends"]
-        captured["publish_dataset"] = kwargs["publish_dataset"]
+    async def fake_universe_history(target):
+        captured["universe_history_date"] = target
+        return {"status": "published"}
+
+    async def fake_market_backfill(target):
+        captured["market_backfill_date"] = target
+        return {"status": "published"}
+
+    async def fake_market_breadth(target):
+        captured["market_breadth_date"] = target
         return {"status": "published"}
 
     async def fake_refresh(target):
@@ -1193,9 +1301,24 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
         return {"version": FACTOR_VERSION}
 
     monkeypatch.setattr(cold_start_init, "init_db", no_op)
+    monkeypatch.setattr(
+        cold_start_init,
+        "latest_completed_us_session",
+        lambda reference: snapshot_date,
+    )
     monkeypatch.setattr(cold_start_init, "idempotent_seed_base_tickers", no_op)
     monkeypatch.setattr(cold_start_init, "run_screener_pipeline", fake_screener)
-    monkeypatch.setattr(cold_start_init, "backfill_price_history", fake_backfill)
+    monkeypatch.setattr(
+        cold_start_init,
+        "refresh_historical_universe_memberships",
+        fake_universe_history,
+    )
+    monkeypatch.setattr(
+        cold_start_init,
+        "backfill_market_breadth_price_history",
+        fake_market_backfill,
+    )
+    monkeypatch.setattr(cold_start_init, "refresh_market_breadth", fake_market_breadth)
     monkeypatch.setattr(cold_start_init, "refresh_rrg_price_history", fake_rrg_refresh)
     monkeypatch.setattr(
         cold_start_init,
@@ -1206,15 +1329,84 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
     monkeypatch.setattr(cold_start_init, "compute_and_store_factors", fake_factor)
 
     await cold_start_init.cold_start()
-    assert {"AAA.US", "AAPL.US", "MSFT.US"}.issubset(captured["tickers"])
-    assert set(RRG_PRICE_TICKERS).isdisjoint(captured["tickers"])
-    assert captured["target_date"] == snapshot_date
-    assert captured["include_dividends"] is False
-    assert captured["publish_dataset"] is False
+    assert captured["universe_history_date"] == snapshot_date
+    assert captured["market_backfill_date"] == snapshot_date
+    assert captured["market_breadth_date"] == snapshot_date
     assert captured["refresh_date"] == snapshot_date
     assert captured["rrg_refresh_date"] == snapshot_date
     assert captured["rrg_actions_date"] == snapshot_date
     assert captured["factor_date"] == snapshot_date
+
+
+@pytest.mark.asyncio
+async def test_cold_start_continues_when_historical_membership_is_unavailable(
+    db_session,
+    monkeypatch,
+):
+    from scripts import cold_start_init
+
+    snapshot_date = date(2025, 1, 10)
+    calls = []
+
+    async def no_op(*args, **kwargs):
+        return None
+
+    async def failing_history(target):
+        calls.append(("history", target))
+        raise RuntimeError("history entitlement unavailable")
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("breadth-only work must be skipped")
+
+    async def fake_rrg(target):
+        calls.append(("rrg", target))
+        return {"status": "published"}
+
+    async def fake_screener(*args, **kwargs):
+        calls.append(("screener", kwargs.get("observe_current_universe")))
+        return {"status": "published", "as_of_date": snapshot_date.isoformat()}
+
+    async def fake_refresh(target):
+        calls.append(("technicals", target))
+        return 0
+
+    async def fake_factor(db, target):
+        calls.append(("factors", target))
+        return {"version": FACTOR_VERSION}
+
+    monkeypatch.setattr(cold_start_init, "init_db", no_op)
+    monkeypatch.setattr(
+        cold_start_init,
+        "latest_completed_us_session",
+        lambda reference: snapshot_date,
+    )
+    monkeypatch.setattr(cold_start_init, "idempotent_seed_base_tickers", no_op)
+    monkeypatch.setattr(
+        cold_start_init,
+        "refresh_historical_universe_memberships",
+        failing_history,
+    )
+    monkeypatch.setattr(
+        cold_start_init,
+        "backfill_market_breadth_price_history",
+        must_not_run,
+    )
+    monkeypatch.setattr(cold_start_init, "refresh_market_breadth", must_not_run)
+    monkeypatch.setattr(cold_start_init, "refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr(cold_start_init, "refresh_rrg_corporate_actions", no_op)
+    monkeypatch.setattr(cold_start_init, "run_screener_pipeline", fake_screener)
+    monkeypatch.setattr(cold_start_init, "refresh_screener_technicals", fake_refresh)
+    monkeypatch.setattr(cold_start_init, "compute_and_store_factors", fake_factor)
+
+    await cold_start_init.cold_start()
+
+    assert calls == [
+        ("history", snapshot_date),
+        ("rrg", snapshot_date),
+        ("screener", True),
+        ("technicals", snapshot_date),
+        ("factors", snapshot_date),
+    ]
 
 
 @pytest.mark.asyncio

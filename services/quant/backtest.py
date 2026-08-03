@@ -1,7 +1,7 @@
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -22,8 +22,93 @@ from models import (
 from services.quant.factor_engine import FACTOR_VERSION
 from services.quant.portfolio import construct_long_only_weights, portfolio_turnover
 from services.quant.risk import calculate_performance_metrics
+from services.universe import HISTORICAL_UNIVERSE_SOURCE, INDEX_UNIVERSES
 from core.trading_calendar import us_market_close_utc
 from core.time_utils import utc_now
+
+
+COMBINED_INDEX_UNIVERSE = "SP500_RUSSELL2000"
+
+
+def _merge_membership_intervals(
+    rows: List[UniverseMembership],
+    output_universe: str,
+) -> List[dict]:
+    """Build a ticker-level union without duplicating overlapping index rows."""
+    by_ticker: Dict[str, List[tuple[date, Optional[date]]]] = {}
+    for row in rows:
+        by_ticker.setdefault(row.ticker, []).append(
+            (row.effective_from, row.effective_to)
+        )
+
+    merged: List[dict] = []
+    for ticker, intervals in by_ticker.items():
+        current_start: Optional[date] = None
+        current_end: Optional[date] = None
+        for interval_start, interval_end in sorted(
+            intervals,
+            key=lambda interval: interval[0],
+        ):
+            if current_start is None:
+                current_start, current_end = interval_start, interval_end
+                continue
+            overlaps_or_touches = (
+                current_end is None
+                or interval_start <= current_end + timedelta(days=1)
+            )
+            if overlaps_or_touches:
+                current_end = (
+                    None
+                    if current_end is None or interval_end is None
+                    else max(current_end, interval_end)
+                )
+                continue
+            merged.append({
+                "universe": output_universe,
+                "ticker": ticker,
+                "effective_from": current_start,
+                "effective_to": current_end,
+            })
+            current_start, current_end = interval_start, interval_end
+        if current_start is not None:
+            merged.append({
+                "universe": output_universe,
+                "ticker": ticker,
+                "effective_from": current_start,
+                "effective_to": current_end,
+            })
+    return merged
+
+
+async def _load_backtest_memberships(
+    db: AsyncSession,
+    universe: str,
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    if universe == COMBINED_INDEX_UNIVERSE:
+        stored_universes = tuple(INDEX_UNIVERSES)
+        strict_history = True
+    else:
+        stored_universes = (universe,)
+        strict_history = universe in INDEX_UNIVERSES
+
+    filters = [
+        UniverseMembership.universe.in_(stored_universes),
+        UniverseMembership.effective_from <= end_date,
+        (
+            UniverseMembership.effective_to.is_(None)
+            | (UniverseMembership.effective_to >= start_date)
+        ),
+    ]
+    if strict_history:
+        filters.append(UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE)
+    result = await db.execute(select(UniverseMembership).where(*filters))
+    rows = list(result.scalars())
+    return pd.DataFrame(
+        _merge_membership_intervals(rows, universe),
+        columns=["universe", "ticker", "effective_from", "effective_to"],
+    )
 
 
 @dataclass(frozen=True)
@@ -446,22 +531,12 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
             for row in price_rows
         ])
         membership_start = previous_signal_date or config.start_date
-        membership_result = await db.execute(
-            select(UniverseMembership).where(
-                UniverseMembership.universe == config.universe,
-                UniverseMembership.effective_from <= config.end_date,
-                (UniverseMembership.effective_to.is_(None) | (UniverseMembership.effective_to >= membership_start)),
-            )
+        memberships = await _load_backtest_memberships(
+            db,
+            config.universe,
+            membership_start,
+            config.end_date,
         )
-        memberships = pd.DataFrame([
-            {
-                "universe": row.universe,
-                "ticker": row.ticker,
-                "effective_from": row.effective_from,
-                "effective_to": row.effective_to,
-            }
-            for row in membership_result.scalars().all()
-        ])
         result = run_backtest_from_frames(factors, prices, memberships, config)
         signal_dates = [date.fromisoformat(item["signal_date"]) for item in result["rebalances"]]
         if signal_dates:

@@ -11,6 +11,11 @@ from scripts.backup_sqlite import create_backup
 from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from services.pipeline_runs import latest_published_date
 from services.rrg_prices import refresh_rrg_price_history
+from services.market_breadth import (
+    backfill_market_breadth_price_history,
+    refresh_market_breadth,
+)
+from services.universe import refresh_historical_universe_memberships
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +27,7 @@ scheduler = AsyncIOScheduler(
     job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
 )
 _factor_sync_lock = asyncio.Lock()
+_market_breadth_sync_lock = asyncio.Lock()
 
 
 async def _sync_factors_for_target(target: date):
@@ -49,7 +55,20 @@ async def scheduled_screener_sync(reference_date: date = None):
         observe_current_universe=True,
     )
     if result.get("status") == "published":
-        result = {**result, "factors": await _sync_factors_for_target(target)}
+        try:
+            breadth_result = await _sync_market_breadth_for_target(target)
+        except Exception as exc:
+            logger.exception("Market breadth post-screener attempt failed for %s: %s", target, exc)
+            breadth_result = {
+                "status": "failed",
+                "as_of_date": target.isoformat(),
+                "reason": str(exc),
+            }
+        result = {
+            **result,
+            "market_breadth": breadth_result,
+            "factors": await _sync_factors_for_target(target),
+        }
     return result
 
 
@@ -61,6 +80,29 @@ async def scheduled_factor_sync(reference_date: date = None):
 async def scheduled_rrg_sync(reference_date: date = None):
     target = latest_completed_us_session(reference_date or datetime.now(ny_tz).date())
     return await refresh_rrg_price_history(target)
+
+
+async def scheduled_universe_history_sync(reference_date: date = None):
+    target = latest_completed_us_session(reference_date or datetime.now(ny_tz).date())
+    return await refresh_historical_universe_memberships(target)
+
+
+async def _sync_market_breadth_for_target(target: date):
+    async with _market_breadth_sync_lock:
+        published = await latest_published_date("market_breadth")
+        if published is not None and published >= target:
+            return {
+                "status": "skipped",
+                "reason": "already-published",
+                "as_of_date": target.isoformat(),
+            }
+        await backfill_market_breadth_price_history(target)
+        return await refresh_market_breadth(target)
+
+
+async def scheduled_market_breadth_sync(reference_date: date = None):
+    target = latest_completed_us_session(reference_date or datetime.now(ny_tz).date())
+    return await _sync_market_breadth_for_target(target)
 
 
 async def scheduled_morning_briefing():
@@ -88,6 +130,15 @@ def start_scheduler():
         id="daily_rrg_price_sync",
         replace_existing=True,
     )
+    scheduler.add_job(
+        scheduled_universe_history_sync,
+        'cron',
+        day_of_week='tue-sat',
+        hour=1,
+        minute=45,
+        id="daily_universe_history_sync",
+        replace_existing=True,
+    )
     # 1. Daily Screener Sync: Tue-Sat 02:00 AM EST (Fetches data after market close from Mon-Fri)
     scheduler.add_job(
         scheduled_screener_sync,
@@ -97,6 +148,15 @@ def start_scheduler():
         minute=0,
         id="daily_screener_sync",
         replace_existing=True
+    )
+    scheduler.add_job(
+        scheduled_market_breadth_sync,
+        'cron',
+        day_of_week='tue-sat',
+        hour=3,
+        minute=30,
+        id="daily_market_breadth_sync",
+        replace_existing=True,
     )
     scheduler.add_job(
         scheduled_factor_sync,
