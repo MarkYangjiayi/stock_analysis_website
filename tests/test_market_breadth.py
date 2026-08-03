@@ -64,6 +64,43 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         capture_output=True,
         text=True,
     )
+    with sqlite3.connect(database_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO universe_membership (
+                universe,
+                ticker,
+                effective_from,
+                effective_to,
+                observed_at,
+                source,
+                source_run_id
+            ) VALUES (?, ?, ?, NULL, ?, ?, NULL)
+            """,
+            [
+                (
+                    "SP500",
+                    "AAA.US",
+                    "2025-01-10",
+                    "2025-01-10 00:00:00",
+                    "EODHD",
+                ),
+                (
+                    "SP500",
+                    "AAA.US",
+                    "2025-01-10",
+                    "2025-01-10 00:00:00",
+                    LIVE_UNIVERSE_SOURCE,
+                ),
+                (
+                    "RUSSELL2000",
+                    "BBB.US",
+                    "2025-01-10",
+                    "2025-01-10 00:00:00",
+                    "EODHD",
+                ),
+            ],
+        )
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=project_root,
@@ -98,6 +135,13 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
             if index_row[2]
         }
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        migrated_live_rows = connection.execute(
+            """
+            SELECT universe, ticker, source
+            FROM universe_membership
+            ORDER BY universe, ticker, source
+            """
+        ).fetchall()
 
     assert {
         "id",
@@ -129,7 +173,11 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         "effective_from",
         "source",
     ) in membership_unique_columns
-    assert revision == "0007_market_breadth_snapshots"
+    assert migrated_live_rows == [
+        ("RUSSELL2000", "BBB.US", LIVE_UNIVERSE_SOURCE),
+        ("SP500", "AAA.US", LIVE_UNIVERSE_SOURCE),
+    ]
+    assert revision == "0008_backfill_live_universe_source"
 
 
 def test_historical_membership_parser_supports_duplicates_and_reentry():
