@@ -286,6 +286,48 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
 # 基本面估值服务 (Fundamental Valuation)
 # ------------------------------------------------------------------------
 
+def _contiguous_quarterly_records(
+    flow_records: list[FinancialStatement],
+) -> list[FinancialStatement]:
+    """Return four chronologically contiguous quarterly statements, newest first."""
+    if len(flow_records) != 4:
+        return []
+
+    if any(record.period != "Quarterly" or record.fiscal_date is None for record in flow_records):
+        logger.warning(
+            "TTM calculation skipped because all four flow records must be dated quarterly statements."
+        )
+        return []
+
+    ordered_records = sorted(
+        flow_records,
+        key=lambda record: record.fiscal_date,
+        reverse=True,
+    )
+    quarter_indexes = [
+        record.fiscal_date.year * 4 + (record.fiscal_date.month - 1) // 3
+        for record in ordered_records
+    ]
+    day_gaps = [
+        (newer.fiscal_date - older.fiscal_date).days
+        for newer, older in zip(ordered_records, ordered_records[1:])
+    ]
+
+    quarters_are_contiguous = all(
+        newer_index - older_index == 1
+        for newer_index, older_index in zip(quarter_indexes, quarter_indexes[1:])
+    )
+    dates_have_quarterly_cadence = all(60 <= gap <= 130 for gap in day_gaps)
+    if not quarters_are_contiguous or not dates_have_quarterly_cadence:
+        logger.warning(
+            "TTM calculation skipped because quarterly statements are not contiguous: %s",
+            [record.fiscal_date.isoformat() for record in ordered_records],
+        )
+        return []
+
+    return ordered_records
+
+
 def calculate_ttm(flow_records: list[FinancialStatement], latest_bs_record: Optional[FinancialStatement]) -> Dict[str, float]:
     """
     计算 TTM 核心指标。
@@ -303,9 +345,10 @@ def calculate_ttm(flow_records: list[FinancialStatement], latest_bs_record: Opti
     ttm_net_income = 0.0
     ttm_fcf = 0.0
     
-    # 严格判断必须有足够4个季度的流数据才进行累加
-    if flow_records and len(flow_records) == 4:
-        for rec in flow_records:
+    # 必须是连续的四个季度；仅有四条记录但中间缺季时不能构成 TTM。
+    contiguous_records = _contiguous_quarterly_records(flow_records)
+    if contiguous_records:
+        for rec in contiguous_records:
             inc_stmt = rec.income_statement or {}
             cf_stmt = rec.cash_flow or {}
             rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
