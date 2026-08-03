@@ -17,6 +17,9 @@ vi.mock("echarts-for-react", () => ({
         const xAxes = option.xAxis as unknown[];
         const yAxes = option.yAxis as Array<{ min?: number; max?: number }>;
         const axisPointer = option.axisPointer as { link?: Array<{ xAxisIndex?: string }> };
+        const tooltip = option.tooltip as {
+            formatter?: (params: Array<{ dataIndex: number }>) => string;
+        };
         return (
             <div
                 data-testid="echarts"
@@ -25,6 +28,7 @@ vi.mock("echarts-for-react", () => ({
                 data-x-axis-count={xAxes.length}
                 data-breadth-range={`${yAxes[1].min}-${yAxes[1].max}`}
                 data-linked={axisPointer.link?.[0]?.xAxisIndex}
+                data-tooltip={tooltip.formatter?.([{ dataIndex: 0 }]) || ""}
             />
         );
     },
@@ -70,5 +74,6 @@ describe("MarketOverviewChart", () => {
         expect(topSeries).toHaveLength(13);
         expect(topSeries).toContain("SPY");
         expect(topSeries).toContain("RSP/SPY");
+        expect(screen.getByTestId("echarts").getAttribute("data-tooltip")).toContain(">SPY<");
     });
 });

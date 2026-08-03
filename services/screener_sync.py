@@ -22,7 +22,7 @@ from services.pipeline_runs import (
 )
 from services.corporate_actions import upsert_corporate_actions
 from services.security_master import bulk_upsert_securities
-from services.universe import record_universe_membership
+from services.universe import LIVE_UNIVERSE_SOURCE, record_universe_membership
 from services.raw_store import persist_snapshot
 from services.data_sync import _upsert_financials
 from services.history_backfill import (
@@ -505,7 +505,13 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         if df_merged.empty:
             raise ValueError("Merged screener dataset is empty")
         target_universe = set(df_merged.attrs.get("target_tickers", df_merged["ticker"]))
+        sp500_universe = set(df_merged.attrs.get("sp500_tickers", []))
+        russell2000_universe = set(df_merged.attrs.get("russell2000_tickers", []))
         known_exits = set(df_merged.attrs.get("known_exits", []))
+        sp500_known_exits = set(df_merged.attrs.get("sp500_known_exits", []))
+        russell2000_known_exits = set(
+            df_merged.attrs.get("russell2000_known_exits", [])
+        )
         bulk_splits = list(df_merged.attrs.get("bulk_splits", []))
         bulk_dividends = list(df_merged.attrs.get("bulk_dividends", []))
         raw_bulk_eod = df_merged.attrs.get("raw_bulk_eod")
@@ -840,10 +846,32 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
                 known_exits=known_exits,
             )
-            # SP500 and RUSSELL2000 are owned exclusively by the strict
-            # HistoricalTickerComponents import. The live screener payload may
-            # observe the combined universe, but must never rewrite historical
-            # index intervals used by point-in-time filters and breadth.
+            # Preserve the provider's live index sets for Screener filters under
+            # a separate source. Market breadth and historical backtests select
+            # only HISTORICAL_UNIVERSE_SOURCE, so these observations can never
+            # become a point-in-time fallback.
+            if sp500_universe:
+                await record_universe_membership(
+                    db,
+                    universe="SP500",
+                    tickers=sp500_universe,
+                    effective_date=snapshot_date,
+                    source_run_id=run_id,
+                    minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                    known_exits=sp500_known_exits,
+                    source=LIVE_UNIVERSE_SOURCE,
+                )
+            if russell2000_universe:
+                await record_universe_membership(
+                    db,
+                    universe="RUSSELL2000",
+                    tickers=russell2000_universe,
+                    effective_date=snapshot_date,
+                    source_run_id=run_id,
+                    minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                    known_exits=russell2000_known_exits,
+                    source=LIVE_UNIVERSE_SOURCE,
+                )
             
             # 3. Final bulk Insert to StockScreenerSnapshot (Delete and Replace)
             logger.info("Starting Bulk Insert into StockScreenerSnapshot...")

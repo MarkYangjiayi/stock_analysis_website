@@ -68,11 +68,20 @@ async def cold_start():
     else:
         snapshot_date = expected_session
 
-    logger.info("Step 2: Importing strict point-in-time index membership history...")
-    await refresh_historical_universe_memberships(snapshot_date)
+    breadth_prerequisites_ready = False
+    try:
+        logger.info("Step 2: Importing strict point-in-time index membership history...")
+        await refresh_historical_universe_memberships(snapshot_date)
 
-    logger.info("Step 2.5: Backfilling the 504-session market breadth window...")
-    await backfill_market_breadth_price_history(snapshot_date)
+        logger.info("Step 2.5: Backfilling the 504-session market breadth window...")
+        await backfill_market_breadth_price_history(snapshot_date)
+        breadth_prerequisites_ready = True
+    except Exception as exc:
+        logger.warning(
+            "Market breadth prerequisites are unavailable; continuing cold start "
+            "without publishing Market Overview: %s",
+            exc,
+        )
 
     logger.info("Step 3: Ensuring the ETF and RSP universe has its warm-up window...")
     await refresh_rrg_price_history(snapshot_date)
@@ -92,8 +101,17 @@ async def cold_start():
         )
         snapshot_date = date.fromisoformat(screener_result["as_of_date"])
 
-    logger.info("Step 3.75: Publishing the first point-in-time market breadth panel...")
-    await refresh_market_breadth(snapshot_date)
+    if breadth_prerequisites_ready:
+        logger.info("Step 3.75: Publishing the first point-in-time market breadth panel...")
+        try:
+            await refresh_market_breadth(snapshot_date)
+        except Exception as exc:
+            logger.warning(
+                "Market Overview could not be published; continuing cold start: %s",
+                exc,
+            )
+    else:
+        logger.info("Step 3.75: Skipping Market Overview until PIT history is available.")
 
     logger.info("Step 4: Recomputing technical indicators after price warm-up...")
     updated = await refresh_screener_technicals(snapshot_date)

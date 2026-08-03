@@ -22,6 +22,7 @@ from models import (
 from services.quant.factor_engine import FACTOR_VERSION
 from services.quant.portfolio import construct_long_only_weights, portfolio_turnover
 from services.quant.risk import calculate_performance_metrics
+from services.universe import HISTORICAL_UNIVERSE_SOURCE, INDEX_UNIVERSES
 from core.trading_calendar import us_market_close_utc
 from core.time_utils import utc_now
 
@@ -446,12 +447,20 @@ async def run_and_store_backtest(db: AsyncSession, config: BacktestConfig, name:
             for row in price_rows
         ])
         membership_start = previous_signal_date or config.start_date
-        membership_result = await db.execute(
-            select(UniverseMembership).where(
-                UniverseMembership.universe == config.universe,
-                UniverseMembership.effective_from <= config.end_date,
-                (UniverseMembership.effective_to.is_(None) | (UniverseMembership.effective_to >= membership_start)),
+        membership_filters = [
+            UniverseMembership.universe == config.universe,
+            UniverseMembership.effective_from <= config.end_date,
+            (
+                UniverseMembership.effective_to.is_(None)
+                | (UniverseMembership.effective_to >= membership_start)
+            ),
+        ]
+        if config.universe in INDEX_UNIVERSES:
+            membership_filters.append(
+                UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE
             )
+        membership_result = await db.execute(
+            select(UniverseMembership).where(*membership_filters)
         )
         memberships = pd.DataFrame([
             {

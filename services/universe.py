@@ -24,6 +24,7 @@ from services.raw_store import persist_snapshot
 
 HISTORICAL_UNIVERSE_DATASET = "universe_history"
 HISTORICAL_UNIVERSE_SOURCE = "EODHD HistoricalTickerComponents"
+LIVE_UNIVERSE_SOURCE = "EODHD Live Index Components"
 HISTORICAL_UNIVERSE_REQUIRED_SESSIONS = 252
 INDEX_UNIVERSES = {
     "SP500": "GSPC.INDX",
@@ -170,7 +171,7 @@ async def replace_historical_memberships(
     await db.execute(
         delete(UniverseMembership).where(
             UniverseMembership.universe == universe,
-            UniverseMembership.source.like("EODHD%"),
+            UniverseMembership.source.in_(("EODHD", HISTORICAL_UNIVERSE_SOURCE)),
         )
     )
     values = [
@@ -304,6 +305,7 @@ async def record_universe_membership(
     source_run_id: Optional[int] = None,
     minimum_retained_fraction: Optional[float] = None,
     known_exits: Optional[Iterable[str]] = None,
+    source: str = "EODHD",
 ) -> None:
     current = {ticker.upper() for ticker in tickers}
     allowed_exits = (
@@ -314,6 +316,7 @@ async def record_universe_membership(
     result = await db.execute(
         select(UniverseMembership).where(
             UniverseMembership.universe == universe,
+            UniverseMembership.source == source,
             UniverseMembership.effective_to.is_(None),
         )
     )
@@ -345,6 +348,7 @@ async def record_universe_membership(
             await db.execute(
                 delete(UniverseMembership).where(
                     UniverseMembership.universe == universe,
+                    UniverseMembership.source == source,
                     UniverseMembership.ticker.in_(same_day_exits),
                     UniverseMembership.effective_from == effective_date,
                 )
@@ -355,6 +359,7 @@ async def record_universe_membership(
                 update(UniverseMembership)
                 .where(
                     UniverseMembership.universe == universe,
+                    UniverseMembership.source == source,
                     UniverseMembership.ticker.in_(earlier_exits),
                     UniverseMembership.effective_to.is_(None),
                 )
@@ -365,7 +370,7 @@ async def record_universe_membership(
             "universe": universe,
             "ticker": ticker,
             "effective_from": effective_date,
-            "source": "EODHD",
+            "source": source,
             "source_run_id": source_run_id,
         }
         for ticker in current - set(active)

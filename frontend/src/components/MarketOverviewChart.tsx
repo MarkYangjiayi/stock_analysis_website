@@ -180,10 +180,14 @@ export default function MarketOverviewChart({
                 const color = SECTOR_COLORS[sectorIndex % SECTOR_COLORS.length];
                 return `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${color}"></i>${sector.ticker}</span><b>${asDisplayNumber(value, 2)}</b></div>`;
             }).join("");
+            const benchmarkRow = trendMode === "absolute"
+                ? `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${dark ? "#f8fafc" : "#0f172a"}"></i>SPY</span><b>${asDisplayNumber(data.benchmark.absolute_index[index], 2)}</b></div>`
+                : "";
             const breadth = data.breadth;
             return `<div style="min-width:240px;color:${textColor}">
                 <div style="font-weight:800;margin-bottom:6px">${data.dates[index]}</div>
                 ${sectorRows}
+                ${benchmarkRow}
                 <div style="display:flex;justify-content:space-between;gap:18px;margin-top:4px"><span><i style="display:inline-block;width:12px;border-top:2px dashed #10b981;margin-right:6px;vertical-align:middle"></i>RSP/SPY</span><b>${asDisplayNumber(data.rsp_spy_index[index], 2)}</b></div>
                 <div style="border-top:1px solid ${splitColor};margin:7px 0"></div>
                 <div style="display:flex;justify-content:space-between"><span>Above MA20 / 50 / 200</span><b>${asDisplayNumber(breadth.pct_above_ma20[index])} / ${asDisplayNumber(breadth.pct_above_ma50[index])} / ${asDisplayNumber(breadth.pct_above_ma200[index])}%</b></div>

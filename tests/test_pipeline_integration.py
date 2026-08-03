@@ -1287,6 +1287,77 @@ async def test_cold_start_orchestration_includes_base_tickers(db_session, monkey
 
 
 @pytest.mark.asyncio
+async def test_cold_start_continues_when_historical_membership_is_unavailable(
+    db_session,
+    monkeypatch,
+):
+    from scripts import cold_start_init
+
+    snapshot_date = date(2025, 1, 10)
+    calls = []
+
+    async def no_op(*args, **kwargs):
+        return None
+
+    async def failing_history(target):
+        calls.append(("history", target))
+        raise RuntimeError("history entitlement unavailable")
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("breadth-only work must be skipped")
+
+    async def fake_rrg(target):
+        calls.append(("rrg", target))
+        return {"status": "published"}
+
+    async def fake_screener(*args, **kwargs):
+        calls.append(("screener", kwargs.get("observe_current_universe")))
+        return {"status": "published", "as_of_date": snapshot_date.isoformat()}
+
+    async def fake_refresh(target):
+        calls.append(("technicals", target))
+        return 0
+
+    async def fake_factor(db, target):
+        calls.append(("factors", target))
+        return {"version": FACTOR_VERSION}
+
+    monkeypatch.setattr(cold_start_init, "init_db", no_op)
+    monkeypatch.setattr(
+        cold_start_init,
+        "latest_completed_us_session",
+        lambda reference: snapshot_date,
+    )
+    monkeypatch.setattr(cold_start_init, "idempotent_seed_base_tickers", no_op)
+    monkeypatch.setattr(
+        cold_start_init,
+        "refresh_historical_universe_memberships",
+        failing_history,
+    )
+    monkeypatch.setattr(
+        cold_start_init,
+        "backfill_market_breadth_price_history",
+        must_not_run,
+    )
+    monkeypatch.setattr(cold_start_init, "refresh_market_breadth", must_not_run)
+    monkeypatch.setattr(cold_start_init, "refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr(cold_start_init, "refresh_rrg_corporate_actions", no_op)
+    monkeypatch.setattr(cold_start_init, "run_screener_pipeline", fake_screener)
+    monkeypatch.setattr(cold_start_init, "refresh_screener_technicals", fake_refresh)
+    monkeypatch.setattr(cold_start_init, "compute_and_store_factors", fake_factor)
+
+    await cold_start_init.cold_start()
+
+    assert calls == [
+        ("history", snapshot_date),
+        ("rrg", snapshot_date),
+        ("screener", True),
+        ("technicals", snapshot_date),
+        ("factors", snapshot_date),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_backtest_persists_immutable_strategy_and_signal_snapshots(db_session):
     signal_date = date(2025, 1, 2)
     tickers = ["AAA.US", "BBB.US", "SPY.US"]

@@ -79,7 +79,10 @@ def market_sessions_through(target: date, count: int) -> list[date]:
     return list(reversed(sessions))
 
 
-def build_price_feature_frame(price_rows: Iterable[dict]) -> pd.DataFrame:
+def build_price_feature_frame(
+    price_rows: Iterable[dict],
+    expected_dates: Optional[Iterable[date]] = None,
+) -> pd.DataFrame:
     frame = pd.DataFrame(price_rows)
     if frame.empty:
         return frame
@@ -90,6 +93,23 @@ def build_price_feature_frame(price_rows: Iterable[dict]) -> pd.DataFrame:
     frame = frame.drop_duplicates(["ticker", "date"], keep="last").reset_index(drop=True)
     grouped = frame.groupby("ticker", group_keys=False)["close"]
     frame["return_1d"] = grouped.pct_change(fill_method=None)
+    session_dates = sorted(
+        {
+            pd.Timestamp(value).normalize()
+            for value in (
+                expected_dates if expected_dates is not None else frame["date"].unique()
+            )
+        }
+    )
+    expected_previous = {
+        current: previous
+        for previous, current in zip(session_dates, session_dates[1:])
+    }
+    prior_observation_date = frame.groupby("ticker")["date"].shift(1)
+    immediately_previous = prior_observation_date.eq(
+        frame["date"].map(expected_previous)
+    )
+    frame.loc[~immediately_previous, "return_1d"] = np.nan
     for window in (20, 50, 200):
         frame[f"ma{window}"] = grouped.transform(
             lambda values, size=window: values.rolling(size, min_periods=size).mean()
@@ -399,7 +419,11 @@ async def refresh_market_breadth(target_date: date) -> dict:
     run_id = await begin_pipeline_run("market_breadth", target)
     try:
         await update_pipeline_run(run_id, "calculating_breadth")
-        price_frame = await asyncio.to_thread(build_price_feature_frame, price_rows)
+        price_frame = await asyncio.to_thread(
+            build_price_feature_frame,
+            price_rows,
+            full_dates,
+        )
         rows = await asyncio.to_thread(
             calculate_market_breadth_rows,
             price_frame,

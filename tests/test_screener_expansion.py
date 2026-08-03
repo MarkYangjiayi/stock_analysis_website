@@ -23,6 +23,7 @@ from services.screener_metrics import (
 )
 from services.screener_query import get_screener_metadata, query_screener
 from services.screener_sync import calculate_technicals_locally, refresh_screener_technicals
+from services.universe import LIVE_UNIVERSE_SOURCE
 
 
 def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
@@ -928,6 +929,48 @@ async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db
     assert index_field["available"] is False
     assert index_field["coverage"] == 0
     assert index_field["options"] == []
+
+
+@pytest.mark.asyncio
+async def test_index_metadata_accepts_live_memberships_without_pit_history(db_session):
+    as_of = date.today() - timedelta(days=1)
+    run = PipelineRun(
+        pipeline_name="daily_screener",
+        target_date=as_of,
+        status="published",
+        stage="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add_all([
+        DataPublication(
+            dataset="screener",
+            as_of_date=as_of,
+            pipeline_run_id=run.id,
+            status="published",
+        ),
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            name="Alpha",
+            date=as_of,
+            close=100,
+            volume=1_000,
+        ),
+        UniverseMembership(
+            universe="SP500",
+            ticker="AAA.US",
+            effective_from=as_of,
+            source=LIVE_UNIVERSE_SOURCE,
+            source_run_id=run.id,
+        ),
+    ])
+    await db_session.commit()
+
+    metadata = await get_screener_metadata(db_session)
+    index_field = next(field for field in metadata["fields"] if field["id"] == "index")
+    assert index_field["available"] is True
+    assert index_field["coverage"] == 1
+    assert index_field["options"] == [{"value": "SP500", "label": "S&P 500"}]
 
 
 @pytest.mark.asyncio

@@ -295,6 +295,25 @@ def test_fixed_prices_verify_breadth_new_extremes_and_population_dispersion():
     assert combined["member_count"] == 2  # BBB is present in both indexes and is deduplicated.
 
 
+def test_one_day_return_requires_the_immediately_previous_expected_session():
+    dates = [value.date() for value in pd.bdate_range("2025-01-02", periods=3)]
+    frame = build_price_feature_frame(
+        [
+            {"ticker": "AAA.US", "date": dates[0], "close": 100.0},
+            {"ticker": "AAA.US", "date": dates[2], "close": 110.0},
+            {"ticker": "BBB.US", "date": dates[0], "close": 100.0},
+            {"ticker": "BBB.US", "date": dates[1], "close": 101.0},
+            {"ticker": "BBB.US", "date": dates[2], "close": 102.0},
+        ],
+        expected_dates=dates,
+    ).set_index(["ticker", "date"])
+
+    assert np.isnan(frame.loc[("AAA.US", pd.Timestamp(dates[2])), "return_1d"])
+    assert frame.loc[("BBB.US", pd.Timestamp(dates[2])), "return_1d"] == pytest.approx(
+        102 / 101 - 1
+    )
+
+
 async def _seed_overview_publication(db_session, target: date) -> None:
     breadth_run = PipelineRun(
         pipeline_name="market_breadth",
@@ -382,8 +401,15 @@ async def _seed_overview_publication(db_session, target: date) -> None:
 
 
 @pytest.mark.asyncio
-async def test_market_overview_all_universes_periods_alignment_and_formulas(db_session):
+async def test_market_overview_all_universes_periods_alignment_and_formulas(
+    db_session,
+    monkeypatch,
+):
     target = date(2026, 7, 31)
+    monkeypatch.setattr(
+        "services.market_breadth.latest_completed_us_session",
+        lambda reference: date(2026, 8, 3),
+    )
     await _seed_overview_publication(db_session, target)
 
     expected_lengths = {"3m": 63, "6m": 126, "1y": 252}
