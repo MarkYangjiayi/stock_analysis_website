@@ -10,7 +10,7 @@ const NAV_LINKS = [
     { name: "Analysis", path: "/" },
     { name: "Screener", path: "/screener" },
     { name: "Anomalies", path: "/anomalies" },
-    { name: "Market Rotation", path: "/rrg" },
+    { name: "Market", path: "/market", aliases: ["/rrg"] },
     { name: "Factor Lab", path: "/research" },
 ];
 
@@ -32,7 +32,7 @@ export default function TopNavBar() {
     const navLinks = (mobile = false) => (
         <div className={mobile ? "grid gap-1" : "flex h-full items-center gap-1"}>
             {NAV_LINKS.map((link) => {
-                const active = pathname === link.path;
+                const active = pathname === link.path || link.aliases?.includes(pathname);
                 return (
                     <Link
                         key={link.path}

@@ -33,6 +33,8 @@
     无缝接入 Google **Gemini 2.5 Flash** 最新大模型。我们将数十项冷血的数据字典投喂至 LLM 提示词矩阵，瞬时生成包含“核心观点、估值诊断、因子解读、潜在风险”的专业 Markdown 财报。配备原生 Event-Stream 打印机效果。
 *   **📊 专业级沉浸交互图表**
     完美集成顶级图表库体系。使用 **TradingView Lightweight Charts** 高性能渲染带交互的蜡烛图、成交量潮，并支持动态挂载服务端实时算出的 `MACD`、`RSI`、`MA20/50` 指标。使用 **ECharts** 构建震撼的双 Y 轴（历史金额对比+毛利率走势）柱线复合财务趋势图。
+*   **🌐 Point-in-Time 市场总览**
+    `/market` 在同一条联动时间轴上展示 11 个美股板块相对 SPY 趋势、`RSP/SPY`、MA20/50/200 市场宽度、涨跌家数、新高新低、McClellan 与横截面离散度。S&P 500、Russell 2000 及合并股票池全部使用严格历史成分区间，不以当前成分回填历史。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
     内置暗黑悬浮侧边栏。支持自定义极客自选股，与前端 LocalStorage 永久绑定。对接后端独库并发 `Batch Factors` 评分接口，支持一键依照特定因子（如高成长、低估值）进行列表横向截面降序排名。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
@@ -154,7 +156,7 @@ python worker.py
 python scripts/cold_start_init.py
 ```
 
-该命令会回填 252 个交易日、拆股和分红，完成质量验证后才发布 Screener 与首个因子截面。
+该命令会先导入 GSPC/RUT 严格历史成分，再回填市场宽度所需的 504 个交易日，并准备板块 ETF、SPY 与 RSP 快照；Market Overview、Screener 与首个因子截面均仅在各自质量门通过后发布。EODHD 订阅若无 `HistoricalTickerComponents` 权限，Market Overview 会保持未发布状态，不使用近似历史成分。
 
 ### 4. 启动前端容器 (Next.js)
 

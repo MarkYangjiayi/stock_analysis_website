@@ -8,6 +8,11 @@ from services.quant.factor_engine import compute_latest_factors
 from services.screener_sync import refresh_screener_technicals, run_screener_pipeline
 from services.history_backfill import backfill_latest_screener_dividends_once
 from services.rrg_prices import refresh_rrg_price_history
+from services.market_breadth import (
+    backfill_market_breadth_price_history,
+    refresh_market_breadth,
+)
+from services.universe import refresh_historical_universe_memberships
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +31,23 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
         "factors": "current",
         "dividend_history": "deferred",
         "rrg_prices": "deferred",
+        "universe_history": "deferred",
+        "market_breadth": "deferred",
     }
+    try:
+        universe_result = await refresh_historical_universe_memberships(target)
+        result["universe_history"] = universe_result["status"]
+    except Exception as exc:
+        result["universe_history"] = "failed"
+        logger.exception("Historical universe catch-up failed for %s: %s", target, exc)
+
+    latest_breadth = await latest_published_date("market_breadth")
+    if latest_breadth is None or latest_breadth < target:
+        try:
+            await backfill_market_breadth_price_history(target)
+        except Exception as exc:
+            logger.exception("Initial market breadth price backfill failed: %s", exc)
+
     try:
         rrg_result = await refresh_rrg_price_history(target)
         result["rrg_prices"] = rrg_result["status"]
@@ -44,6 +65,12 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
         result["dividend_history"] = dividend_result["status"]
         if dividend_result["status"] == "published":
             await refresh_screener_technicals(latest_screener)
+    try:
+        breadth_result = await refresh_market_breadth(target)
+        result["market_breadth"] = breadth_result["status"]
+    except Exception as exc:
+        result["market_breadth"] = "failed"
+        logger.exception("Market breadth catch-up failed for %s: %s", target, exc)
     latest_factors = await latest_published_date("factors")
     if latest_factors is None or latest_factors < target:
         await compute_latest_factors()

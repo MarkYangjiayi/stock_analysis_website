@@ -42,10 +42,11 @@ RRG_SECTOR_NAMES = {
     "XLRE.US": "Real Estate",
     "XLC.US": "Comm. Svcs",
 }
+RRG_AUXILIARY_TICKERS = ("RSP.US",)
 RRG_HISTORY_DAYS = 252
 RRG_WARMUP_DAYS = 100
 RRG_PRICE_HISTORY_DAYS = RRG_HISTORY_DAYS + RRG_WARMUP_DAYS
-RRG_PRICE_TICKERS = (*RRG_SECTOR_NAMES, RRG_BENCHMARK)
+RRG_PRICE_TICKERS = (*RRG_SECTOR_NAMES, *RRG_AUXILIARY_TICKERS, RRG_BENCHMARK)
 RRG_PRICE_HISTORY_DATASET = "rrg_price_history"
 RRG_CORPORATE_ACTIONS_DATASET = "rrg_corporate_actions"
 RRG_SNAPSHOT_RETENTION_RUNS = 5
@@ -253,9 +254,21 @@ async def _refresh_rrg_price_history_locked(target_date: date) -> dict:
                 quality_report=quality,
                 records_processed=len(snapshot_rows),
             )
+            protected_breadth_dates = (
+                select(DataPublication.as_of_date)
+                .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+                .where(
+                    DataPublication.dataset == "market_breadth",
+                    DataPublication.status == "published",
+                    PipelineRun.status == "published",
+                )
+            )
             expired_publications_result = await db.execute(
                 select(DataPublication)
-                .where(DataPublication.dataset == RRG_PRICE_HISTORY_DATASET)
+                .where(
+                    DataPublication.dataset == RRG_PRICE_HISTORY_DATASET,
+                    DataPublication.as_of_date.not_in(protected_breadth_dates),
+                )
                 .order_by(desc(DataPublication.as_of_date))
                 .offset(RRG_SNAPSHOT_RETENTION_RUNS)
             )

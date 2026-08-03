@@ -1179,16 +1179,34 @@ async def test_worker_catchup_publishes_only_latest_completed_session(monkeypatc
         calls.append(("rrg", target))
         return {"status": "published"}
 
+    async def fake_universe(target):
+        calls.append(("universe", target))
+        return {"status": "published"}
+
+    async def fake_market_backfill(target):
+        calls.append(("market-backfill", target))
+        return {"status": "published"}
+
+    async def fake_breadth(target):
+        calls.append(("breadth", target))
+        return {"status": "published"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", no_publication)
     monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
     monkeypatch.setattr("services.catchup.compute_latest_factors", fake_factors)
     monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr("services.catchup.refresh_historical_universe_memberships", fake_universe)
+    monkeypatch.setattr("services.catchup.backfill_market_breadth_price_history", fake_market_backfill)
+    monkeypatch.setattr("services.catchup.refresh_market_breadth", fake_breadth)
     result = await catch_up_latest_publications(date(2025, 7, 7))
     assert result["target_date"] == "2025-07-03"
     assert result["rrg_prices"] == "published"
     assert calls == [
+        ("universe", date(2025, 7, 3)),
+        ("market-backfill", date(2025, 7, 3)),
         ("rrg", date(2025, 7, 3)),
         ("screener", "2025-07-03", True),
+        ("breadth", date(2025, 7, 3)),
         ("factors",),
     ]
 
@@ -1215,6 +1233,18 @@ async def test_worker_refreshes_stale_screener_before_old_universe_dividends(mon
         calls.append(("rrg", target))
         return {"status": "published"}
 
+    async def fake_universe(target):
+        calls.append(("universe", target))
+        return {"status": "published"}
+
+    async def fake_market_backfill(target):
+        calls.append(("market-backfill", target))
+        return {"status": "published"}
+
+    async def fake_breadth(target):
+        calls.append(("breadth", target))
+        return {"status": "published"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
     monkeypatch.setattr(
         "services.catchup.backfill_latest_screener_dividends_once",
@@ -1222,13 +1252,19 @@ async def test_worker_refreshes_stale_screener_before_old_universe_dividends(mon
     )
     monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
     monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr("services.catchup.refresh_historical_universe_memberships", fake_universe)
+    monkeypatch.setattr("services.catchup.backfill_market_breadth_price_history", fake_market_backfill)
+    monkeypatch.setattr("services.catchup.refresh_market_breadth", fake_breadth)
 
     result = await catch_up_latest_publications(date(2025, 7, 7))
 
     assert result["dividend_history"] == "published"
     assert calls == [
+        ("universe", date(2025, 7, 3)),
+        ("market-backfill", date(2025, 7, 3)),
         ("rrg", date(2025, 7, 3)),
         ("screener", "2025-07-03", True),
+        ("breadth", date(2025, 7, 3)),
     ]
 
 
@@ -1255,6 +1291,14 @@ async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
         calls.append(("rrg", requested_target))
         return {"status": "skipped"}
 
+    async def fake_universe(requested_target):
+        calls.append(("universe", requested_target))
+        return {"status": "skipped"}
+
+    async def fake_breadth(requested_target):
+        calls.append(("breadth", requested_target))
+        return {"status": "skipped"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", latest_publication)
     monkeypatch.setattr(
         "services.catchup.backfill_latest_screener_dividends_once",
@@ -1269,15 +1313,23 @@ async def test_worker_upgrades_dividends_when_screener_is_current(monkeypatch):
         fake_refresh,
     )
     monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr("services.catchup.refresh_historical_universe_memberships", fake_universe)
+    monkeypatch.setattr("services.catchup.refresh_market_breadth", fake_breadth)
 
     result = await catch_up_latest_publications(date(2025, 7, 7))
 
     assert result["dividend_history"] == "published"
-    assert calls == [("rrg", target), ("dividends", target), ("refresh", target)]
+    assert calls == [
+        ("universe", target),
+        ("rrg", target),
+        ("dividends", target),
+        ("refresh", target),
+        ("breadth", target),
+    ]
 
 
 @pytest.mark.asyncio
-async def test_worker_attempts_rrg_before_unrelated_catchup_failure(monkeypatch):
+async def test_worker_completes_market_prerequisites_before_screener_failure(monkeypatch):
     target = date(2025, 7, 3)
     calls = []
 
@@ -1292,14 +1344,29 @@ async def test_worker_attempts_rrg_before_unrelated_catchup_failure(monkeypatch)
         calls.append(("screener",))
         raise RuntimeError("screener unavailable")
 
+    async def fake_universe(requested_target):
+        calls.append(("universe", requested_target))
+        return {"status": "published"}
+
+    async def fake_market_backfill(requested_target):
+        calls.append(("market-backfill", requested_target))
+        return {"status": "published"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", no_publication)
     monkeypatch.setattr("services.catchup.refresh_rrg_price_history", fake_rrg)
+    monkeypatch.setattr("services.catchup.refresh_historical_universe_memberships", fake_universe)
+    monkeypatch.setattr("services.catchup.backfill_market_breadth_price_history", fake_market_backfill)
     monkeypatch.setattr("services.catchup.run_screener_pipeline", failing_screener)
 
     with pytest.raises(RuntimeError, match="screener unavailable"):
         await catch_up_latest_publications(date(2025, 7, 7))
 
-    assert calls == [("rrg", target), ("screener",)]
+    assert calls == [
+        ("universe", target),
+        ("market-backfill", target),
+        ("rrg", target),
+        ("screener",),
+    ]
 
 
 @pytest.mark.asyncio
@@ -1321,10 +1388,25 @@ async def test_worker_continues_other_catchups_after_rrg_failure(monkeypatch):
         calls.append(("factors",))
         return {"status": "published"}
 
+    async def fake_universe(target):
+        calls.append(("universe", target))
+        return {"status": "published"}
+
+    async def fake_market_backfill(target):
+        calls.append(("market-backfill", target))
+        return {"status": "published"}
+
+    async def fake_breadth(target):
+        calls.append(("breadth", target))
+        return {"status": "published"}
+
     monkeypatch.setattr("services.catchup.latest_published_date", no_publication)
     monkeypatch.setattr("services.catchup.refresh_rrg_price_history", failing_rrg)
     monkeypatch.setattr("services.catchup.run_screener_pipeline", fake_screener)
     monkeypatch.setattr("services.catchup.compute_latest_factors", fake_factors)
+    monkeypatch.setattr("services.catchup.refresh_historical_universe_memberships", fake_universe)
+    monkeypatch.setattr("services.catchup.backfill_market_breadth_price_history", fake_market_backfill)
+    monkeypatch.setattr("services.catchup.refresh_market_breadth", fake_breadth)
 
     result = await catch_up_latest_publications(date(2025, 7, 7))
 
@@ -1332,8 +1414,11 @@ async def test_worker_continues_other_catchups_after_rrg_failure(monkeypatch):
     assert result["screener"] == "published"
     assert result["factors"] == "published"
     assert calls == [
+        ("universe", date(2025, 7, 3)),
+        ("market-backfill", date(2025, 7, 3)),
         ("rrg", date(2025, 7, 3)),
         ("screener", "2025-07-03", True),
+        ("breadth", date(2025, 7, 3)),
         ("factors",),
     ]
 
@@ -1649,6 +1734,47 @@ async def test_screener_publication_chains_matching_factor_date(monkeypatch):
     assert result["factors"]["status"] == "published"
     assert calls == [
         ("screener", date(2025, 7, 3), True),
+        ("factors", date(2025, 7, 3)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_screener_keeps_factor_chain_when_market_breadth_attempt_fails(monkeypatch):
+    from core import scheduler
+
+    publications = {}
+    calls = []
+
+    async def latest(dataset):
+        return publications.get(dataset)
+
+    async def publish_screener(target_date, observe_current_universe=False):
+        target = date.fromisoformat(target_date)
+        publications["screener"] = target
+        calls.append(("screener", target))
+        return {"status": "published", "as_of_date": target_date}
+
+    async def fail_breadth(target):
+        calls.append(("breadth", target))
+        raise RuntimeError("coverage gate")
+
+    async def publish_factors(target):
+        publications["factors"] = target
+        calls.append(("factors", target))
+        return {"status": "published"}
+
+    monkeypatch.setattr(scheduler, "latest_published_date", latest)
+    monkeypatch.setattr(scheduler, "run_screener_pipeline", publish_screener)
+    monkeypatch.setattr(scheduler, "refresh_market_breadth", fail_breadth)
+    monkeypatch.setattr(scheduler, "compute_factors_for_date", publish_factors)
+
+    result = await scheduler.scheduled_screener_sync(date(2025, 7, 7))
+
+    assert result["market_breadth"]["status"] == "failed"
+    assert result["factors"]["status"] == "published"
+    assert calls == [
+        ("screener", date(2025, 7, 3)),
+        ("breadth", date(2025, 7, 3)),
         ("factors", date(2025, 7, 3)),
     ]
 

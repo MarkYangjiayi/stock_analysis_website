@@ -228,6 +228,31 @@ async def get_index_components(
     return components
 
 
+async def get_index_component_history(
+    index_ticker: str,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[list[Dict[str, Any]]]:
+    """Return strict join/leave intervals for every historical index member."""
+    logger.info("Fetching historical components for index %s...", index_ticker)
+    data = await _fetch_from_eodhd(
+        endpoint="fundamentals",
+        ticker=index_ticker,
+        params={"filter": "HistoricalTickerComponents"},
+        client=client,
+    )
+    if data is None:
+        return None
+    if isinstance(data, dict) and "HistoricalTickerComponents" in data:
+        data = data["HistoricalTickerComponents"]
+    if isinstance(data, dict):
+        rows = list(data.values())
+    elif isinstance(data, list):
+        rows = data
+    else:
+        return None
+    return [row for row in rows if isinstance(row, dict)]
+
+
 async def get_exchange_symbol_list(
     exchange: str = "US",
     *,

@@ -37,6 +37,7 @@ For larger offline panels, the raw files can later be converted to Parquet and q
 - `fundamental_versions`: period end, filing time, information `available_at`, fetch time and preserved revisions.
 - `raw_data_snapshots`: immutable source lineage.
 - `pipeline_runs`, `data_publications`: resumable job state, validation report and the dates API consumers may read.
+- `rrg_price_snapshots`, `market_breadth_snapshots`: immutable ETF prices and 252-session raw breadth counts for each successful market publication.
 - `factor_values`: named, versioned raw and normalized factor observations.
 - `strategy_definitions`, `signal_snapshots`, `backtest_runs`: reproducible research outputs.
 
@@ -44,7 +45,7 @@ Legacy `financial_statements` and `stock_screener_snapshot` remain for dashboard
 
 ## 4. Publication pipeline
 
-The daily pipeline performs these stages:
+The daily screener pipeline performs these stages:
 
 1. Resolve the observed S&P 500/Russell 2000 universe.
 2. Fetch EOD prices and fundamentals; store the immutable source batch.
@@ -57,17 +58,22 @@ The daily pipeline performs these stages:
 
 Failures are persisted and re-raised so APScheduler does not report false success. API reads prefer the latest `data_publications` row. Historical Screener reconstruction is refused unless an archived point-in-time source payload is explicitly imported; current fundamentals are never relabeled as historical.
 
+The market-overview pipeline separately imports EODHD `HistoricalTickerComponents` for GSPC and RUT, validates complete non-overlapping intervals, and transactionally replaces only provider-owned index history. It then calculates S&P 500, Russell 2000 and deduplicated combined breadth from each date's active members. A publication requires matching `price_history`, `universe_history`, and `rrg_price_history` dates; a failed quality gate leaves the prior complete market snapshot available as stale. RRG snapshots referenced by retained market publications are protected from independent RRG retention cleanup.
+
 ## 5. Cold start and catch-up
 
 `python scripts/cold_start_init.py`:
 
 1. Initializes/migrates tables and seeds benchmark/sector ETFs.
-2. Captures the latest market snapshot.
-3. Backfills 252 trading days of price history plus splits/dividends with bounded concurrency.
-4. Recomputes MA/RSI after the history is warm.
-5. Publishes the first factor cross-section.
+2. Imports strict S&P 500 and Russell 2000 historical membership intervals.
+3. Backfills 504 trading sessions for every member needed by the one-year breadth panel.
+4. Publishes immutable sector ETF, SPY and RSP price history.
+5. Captures the latest Screener snapshot and publishes the first 252-session market-breadth panel.
+6. Recomputes MA/RSI after the history is warm and publishes the first factor cross-section.
 
 Backfill is resumable: tickers with sufficient coverage are skipped and every run records progress. Worker startup catches up the latest completed XNYS session. It intentionally does not fabricate every missed date with today's universe.
+
+The public `GET /api/v1/market-overview` endpoint serves 3M/6M/1Y aligned arrays for sector trends, RSP/SPY, MA breadth, advances/declines, new highs/lows, McClellan and cross-sectional dispersion. `/market` renders those arrays in one linked ECharts timeline; `/rrg` remains the rotation view and keeps its existing URL.
 
 ## 6. Factor methodology (`lfq-v1`)
 

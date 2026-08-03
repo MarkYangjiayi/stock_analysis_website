@@ -149,6 +149,49 @@ export interface QuantCoverage {
     };
 }
 
+export type MarketUniverse = "SP500" | "RUSSELL2000" | "SP500_RUSSELL2000";
+export type MarketPeriod = "3m" | "6m" | "1y";
+
+export interface MarketOverviewResponse {
+    meta: {
+        universe: MarketUniverse;
+        period: MarketPeriod;
+        as_of_date: string;
+        expected_as_of_date: string;
+        published_at: string;
+        stale: boolean;
+        membership_mode: "point_in_time";
+        data_complete: boolean;
+        warnings: string[];
+    };
+    dates: string[];
+    benchmark: {
+        ticker: string;
+        absolute_index: number[];
+    };
+    sector_trends: Array<{
+        ticker: string;
+        label: string;
+        absolute_index: number[];
+        relative_to_spy_index: number[];
+    }>;
+    rsp_spy_index: number[];
+    breadth: {
+        pct_above_ma20: Array<number | null>;
+        pct_above_ma50: Array<number | null>;
+        pct_above_ma200: Array<number | null>;
+        net_advances_pct: Array<number | null>;
+        new_high_low_pct: Array<number | null>;
+        new_high_pct: Array<number | null>;
+        new_low_pct: Array<number | null>;
+        mcclellan: Array<number | null>;
+        dispersion_1d: Array<number | null>;
+        dispersion_20d: Array<number | null>;
+        member_count: number[];
+        price_coverage_pct: Array<number | null>;
+    };
+}
+
 export interface NewsItem {
     title: string;
     link: string;
@@ -282,6 +325,16 @@ export const fetchLatestTickerFactors = (ticker: string, signal?: AbortSignal) =
 
 export const fetchQuantCoverage = (signal?: AbortSignal) =>
     apiRequest<QuantCoverage>("/api/quant/coverage", { signal });
+
+export const fetchMarketOverview = (
+    universe: MarketUniverse,
+    period: MarketPeriod,
+    signal?: AbortSignal,
+) => apiRequest<MarketOverviewResponse>(
+    `/api/v1/market-overview?universe=${encodeURIComponent(universe)}&period=${encodeURIComponent(period)}`,
+    { signal },
+    90_000,
+);
 
 export const fetchStockNews = (ticker: string, signal?: AbortSignal) =>
     apiRequest<NewsItem[]>(`/api/stocks/${encodeURIComponent(ticker)}/news`, { signal });
