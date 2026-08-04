@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import date, datetime, timedelta
-from typing import Iterable, Optional
+from typing import Collection, Iterable, Mapping, Optional
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.sqlite import insert
@@ -220,6 +220,7 @@ async def backfill_price_history(
     publish_when_complete: bool = False,
     include_target_session: bool = False,
     publish_dataset: bool = True,
+    required_sessions_by_ticker: Optional[Mapping[str, Collection[date]]] = None,
 ) -> dict:
     if not publication_dataset:
         raise ValueError("publication_dataset cannot be empty")
@@ -256,6 +257,34 @@ async def backfill_price_history(
         if is_us_market_session(session_cursor):
             expected_sessions.add(session_cursor)
         session_cursor -= timedelta(days=1)
+    normalized_required_sessions: Optional[dict[str, frozenset[date]]] = None
+    if required_sessions_by_ticker is not None:
+        normalized_required_sessions = {
+            ticker.upper(): frozenset(required_sessions)
+            for ticker, required_sessions in required_sessions_by_ticker.items()
+        }
+        missing_requirements = set(symbols) - set(normalized_required_sessions)
+        if missing_requirements:
+            raise ValueError(
+                "required_sessions_by_ticker is missing symbols: "
+                + ", ".join(sorted(missing_requirements)[:10])
+            )
+        for ticker in symbols:
+            required_sessions = normalized_required_sessions[ticker]
+            if not required_sessions:
+                raise ValueError(f"{ticker} has no required price sessions")
+            outside_window = required_sessions - expected_sessions
+            if outside_window:
+                raise ValueError(
+                    f"{ticker} has required price sessions outside the "
+                    f"{full_window_rows}-session backfill window"
+                )
+
+    def required_sessions_for(ticker: str) -> Collection[date]:
+        if normalized_required_sessions is None:
+            return expected_sessions
+        return normalized_required_sessions[ticker]
+
     complete_symbols: set[str] = set()
     valid_price = or_(
         DailyPrice.adjusted_close > 0,
@@ -277,7 +306,7 @@ async def backfill_price_history(
             complete_symbols.update(
                 ticker
                 for ticker, price_dates in dates_by_ticker.items()
-                if expected_sessions.issubset(price_dates)
+                if set(required_sessions_for(ticker)).issubset(price_dates)
             )
     symbols_to_process = (
         symbols
@@ -428,11 +457,12 @@ async def backfill_price_history(
                         )
                     )
                     final_sessions = set(final_coverage_result.scalars())
-                missing_sessions = expected_sessions - final_sessions
+                required_sessions = set(required_sessions_for(ticker))
+                missing_sessions = required_sessions - final_sessions
                 if missing_sessions:
                     raise ValueError(
                         "price history coverage is incomplete: "
-                        f"missing {len(missing_sessions)} of {full_window_rows} "
+                        f"missing {len(missing_sessions)} of {len(required_sessions)} "
                         f"required market sessions through {latest_acceptable_date}"
                     )
                 async with progress_lock:
@@ -470,6 +500,11 @@ async def backfill_price_history(
                 "minimum_ticker_coverage": minimum_ticker_coverage,
                 "minimum_rows_per_ticker": minimum_rows,
                 "full_window_rows": full_window_rows,
+                "coverage_mode": (
+                    "ticker_required_sessions"
+                    if normalized_required_sessions is not None
+                    else "full_window"
+                ),
                 "latest_acceptable_date": latest_acceptable_date.isoformat(),
             },
         }
