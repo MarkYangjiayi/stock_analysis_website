@@ -26,6 +26,7 @@ from services.market_breadth import (
     MARKET_BREADTH_DATASET,
     MarketOverviewUnavailable,
     MarketOverviewUniverseUnavailable,
+    backfill_market_breadth_price_history,
     build_price_feature_frame,
     calculate_market_breadth_rows,
     effective_close,
@@ -428,6 +429,52 @@ def test_one_day_return_requires_the_immediately_previous_expected_session():
     assert frame.loc[("BBB.US", pd.Timestamp(dates[2])), "return_1d"] == pytest.approx(
         102 / 101 - 1
     )
+
+
+@pytest.mark.asyncio
+async def test_breadth_backfill_requires_only_sessions_when_ticker_is_a_member(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    monkeypatch.setattr("services.market_breadth.MARKET_BREADTH_PRICE_SESSIONS", 5)
+    monkeypatch.setattr("services.market_breadth.MARKET_BREADTH_DISPLAY_SESSIONS", 3)
+    full_dates = market_sessions_through(target, 5)
+    display_dates = full_dates[-3:]
+    db_session.add_all([
+        Ticker(ticker="OLD.US"),
+        Ticker(ticker="LIVE.US"),
+        UniverseMembership(
+            universe="SP500",
+            ticker="OLD.US",
+            effective_from=display_dates[0],
+            effective_to=display_dates[0],
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="SP500",
+            ticker="LIVE.US",
+            effective_from=display_dates[1],
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+    ])
+    await db_session.commit()
+    captured = {}
+
+    async def fake_backfill(tickers, **kwargs):
+        captured["tickers"] = set(tickers)
+        captured.update(kwargs)
+        return {"status": "published"}
+
+    monkeypatch.setattr("services.market_breadth.backfill_price_history", fake_backfill)
+
+    result = await backfill_market_breadth_price_history(target)
+
+    assert result["status"] == "published"
+    assert captured["tickers"] == {"OLD.US", "LIVE.US"}
+    required = captured["required_sessions_by_ticker"]
+    assert required["OLD.US"] == set(full_dates[:3])
+    assert required["LIVE.US"] == set(full_dates[1:])
 
 
 async def _seed_overview_publication(db_session, target: date) -> None:

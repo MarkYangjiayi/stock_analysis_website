@@ -41,7 +41,6 @@ from services.universe import (
     HISTORICAL_UNIVERSE_DATASET,
     HISTORICAL_UNIVERSE_SOURCE,
     MARKET_OVERVIEW_HISTORY_INDEXES,
-    historical_universe_tickers,
 )
 
 
@@ -308,27 +307,75 @@ async def _published_run_for_date(
 
 
 async def backfill_market_breadth_price_history(target_date: date) -> dict:
+    full_dates = market_sessions_through(
+        target_date,
+        MARKET_BREADTH_PRICE_SESSIONS,
+    )
     display_dates = market_sessions_through(
         target_date,
         MARKET_BREADTH_DISPLAY_SESSIONS,
     )
+    full_date_indexes = {
+        session_date: index
+        for index, session_date in enumerate(full_dates)
+    }
+    warmup_sessions = (
+        MARKET_BREADTH_PRICE_SESSIONS
+        - MARKET_BREADTH_DISPLAY_SESSIONS
+    )
+    required_sessions_by_ticker: dict[str, set[date]] = {}
     async with async_session_maker() as db:
-        tickers = await historical_universe_tickers(
-            db,
-            MARKET_INDEX_UNIVERSES,
-            display_dates[0],
-            target_date,
+        membership_result = await db.execute(
+            select(UniverseMembership).where(
+                UniverseMembership.universe.in_(MARKET_INDEX_UNIVERSES),
+                UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE,
+                UniverseMembership.effective_from <= target_date,
+                (
+                    UniverseMembership.effective_to.is_(None)
+                    | (UniverseMembership.effective_to >= display_dates[0])
+                ),
+            )
         )
-    if not tickers:
+        for membership in membership_result.scalars():
+            active_dates = [
+                session_date
+                for session_date in display_dates
+                if membership.effective_from <= session_date
+                and (
+                    membership.effective_to is None
+                    or membership.effective_to >= session_date
+                )
+            ]
+            if not active_dates:
+                continue
+            required_sessions = required_sessions_by_ticker.setdefault(
+                membership.ticker,
+                set(),
+            )
+            first_active_index = full_date_indexes[active_dates[0]]
+            last_active_index = full_date_indexes[active_dates[-1]]
+            # Fetch the full technical warm-up before the first date served for
+            # this interval, but never demand prices after a constituent exits.
+            # IPOs without a complete warm-up may fail this ticker-level gate;
+            # the 80% aggregate threshold and final per-date eligibility gate
+            # deliberately decide whether the publication remains valid.
+            required_sessions.update(
+                full_dates[
+                    max(0, first_active_index - warmup_sessions):
+                    last_active_index + 1
+                ]
+            )
+    if not required_sessions_by_ticker:
         raise ValueError("No point-in-time index members are available for breadth backfill")
     return await backfill_price_history(
-        tickers,
+        required_sessions_by_ticker,
         history_days=MARKET_BREADTH_PRICE_SESSIONS - 1,
         target_date=target_date,
         include_corporate_actions=False,
         minimum_ticker_coverage=settings.PIPELINE_MIN_PRICE_FACTOR_COVERAGE,
         include_target_session=True,
         publish_dataset=False,
+        required_sessions_by_ticker=required_sessions_by_ticker,
     )
 
 

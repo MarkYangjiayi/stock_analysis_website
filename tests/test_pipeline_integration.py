@@ -284,6 +284,50 @@ async def test_history_backfill_can_defer_publication_to_parent(
 
 
 @pytest.mark.asyncio
+async def test_history_backfill_can_validate_ticker_specific_required_sessions(
+    db_session,
+    monkeypatch,
+):
+    target = date(2025, 1, 10)
+    sessions = market_sessions_through(target, 6)
+    required = {
+        "AAA.US": set(sessions[-2:]),
+        "BBB.US": set(sessions[:2]),
+    }
+
+    async def partial_prices(ticker, *args, **kwargs):
+        return [
+            {
+                "date": price_date.isoformat(),
+                "close": 10,
+                "adjusted_close": 10,
+            }
+            for price_date in required[ticker]
+        ]
+
+    monkeypatch.setattr(
+        "services.history_backfill.eodhd_client.get_eod_historical_data",
+        partial_prices,
+    )
+
+    result = await backfill_price_history(
+        required,
+        history_days=5,
+        target_date=target,
+        include_corporate_actions=False,
+        include_target_session=True,
+        minimum_ticker_coverage=1.0,
+        publish_dataset=False,
+        required_sessions_by_ticker=required,
+    )
+
+    assert result["status"] == "published"
+    assert result["succeeded"] == 2
+    assert result["coverage_mode"] == "ticker_required_sessions"
+    assert await db_session.scalar(select(func.count(DailyPrice.id))) == 4
+
+
+@pytest.mark.asyncio
 async def test_rrg_price_publications_are_versioned_and_atomic(
     db_session,
     monkeypatch,
