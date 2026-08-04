@@ -30,6 +30,13 @@ INDEX_UNIVERSES = {
     "SP500": "GSPC.INDX",
     "RUSSELL2000": "RUT.INDX",
 }
+# EODHD currently returns strict HistoricalTickerComponents intervals for GSPC
+# but not for RUT. Keep the full mapping above for validation and an eventual
+# Russell re-enable, while publishing Market Overview only from histories that
+# are actually available. Current-component observations are never substituted.
+MARKET_OVERVIEW_HISTORY_INDEXES = {
+    "SP500": INDEX_UNIVERSES["SP500"],
+}
 
 
 def _parse_date(value: Any, field_name: str) -> date:
@@ -185,7 +192,7 @@ async def replace_historical_memberships(
 async def refresh_historical_universe_memberships(
     target_date: Optional[date] = None,
 ) -> dict:
-    """Atomically publish complete S&P 500 and Russell 2000 membership history."""
+    """Atomically publish every enabled strict Market Overview history."""
     reference = target_date or date.today()
     target = (
         reference
@@ -206,10 +213,10 @@ async def refresh_historical_universe_memberships(
             payloads = await asyncio.gather(
                 *(
                     eodhd_client.get_index_component_history(index_ticker, client=client)
-                    for index_ticker in INDEX_UNIVERSES.values()
+                    for index_ticker in MARKET_OVERVIEW_HISTORY_INDEXES.values()
                 )
             )
-        rows_by_universe = dict(zip(INDEX_UNIVERSES, payloads))
+        rows_by_universe = dict(zip(MARKET_OVERVIEW_HISTORY_INDEXES, payloads))
         normalized: dict[str, list[dict]] = {}
         quality_metrics: dict[str, dict] = {}
         required_from = historical_membership_required_from(target)
@@ -243,7 +250,7 @@ async def refresh_historical_universe_memberships(
                     as_of_date=target,
                     details={
                         "universe": universe,
-                        "index_ticker": INDEX_UNIVERSES[universe],
+                        "index_ticker": MARKET_OVERVIEW_HISTORY_INDEXES[universe],
                     },
                 )
                 await replace_historical_memberships(

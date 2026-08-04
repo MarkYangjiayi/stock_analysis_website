@@ -40,6 +40,7 @@ from services.rrg_prices import (
 from services.universe import (
     HISTORICAL_UNIVERSE_DATASET,
     HISTORICAL_UNIVERSE_SOURCE,
+    MARKET_OVERVIEW_HISTORY_INDEXES,
     historical_universe_tickers,
 )
 
@@ -48,12 +49,18 @@ MARKET_BREADTH_DATASET = "market_breadth"
 MARKET_BREADTH_DISPLAY_SESSIONS = 252
 MARKET_BREADTH_PRICE_SESSIONS = 504
 MARKET_BREADTH_RETENTION_RUNS = 5
-MARKET_UNIVERSES = ("SP500", "RUSSELL2000", "SP500_RUSSELL2000")
+MARKET_INDEX_UNIVERSES = tuple(MARKET_OVERVIEW_HISTORY_INDEXES)
+MARKET_UNIVERSES = ("SP500",)
+SUPPORTED_MARKET_UNIVERSES = ("SP500", "RUSSELL2000", "SP500_RUSSELL2000")
 RSP_TICKER = "RSP.US"
 PERIOD_SESSIONS = {"3m": 63, "6m": 126, "1y": 252}
 
 
 class MarketOverviewUnavailable(RuntimeError):
+    pass
+
+
+class MarketOverviewUniverseUnavailable(ValueError):
     pass
 
 
@@ -139,6 +146,7 @@ def calculate_market_breadth_rows(
     price_frame: pd.DataFrame,
     memberships: dict[str, list[dict]],
     display_dates: list[date],
+    universes: Iterable[str] = MARKET_UNIVERSES,
 ) -> list[dict]:
     """Calculate raw breadth counts without introducing current-member look-ahead."""
     if price_frame.empty:
@@ -162,7 +170,7 @@ def calculate_market_breadth_rows(
             "SP500_RUSSELL2000": sp500_members | russell_members,
         }
         day_frame = by_date.get(as_of_date)
-        for universe in MARKET_UNIVERSES:
+        for universe in universes:
             members = members_by_universe[universe]
             if day_frame is None:
                 selected = pd.DataFrame(columns=frame.columns)
@@ -307,7 +315,7 @@ async def backfill_market_breadth_price_history(target_date: date) -> dict:
     async with async_session_maker() as db:
         tickers = await historical_universe_tickers(
             db,
-            ("SP500", "RUSSELL2000"),
+            MARKET_INDEX_UNIVERSES,
             display_dates[0],
             target_date,
         )
@@ -372,7 +380,7 @@ async def refresh_market_breadth(target_date: date) -> dict:
     async with async_session_maker() as source_db:
         membership_result = await source_db.execute(
             select(UniverseMembership).where(
-                UniverseMembership.universe.in_(("SP500", "RUSSELL2000")),
+                UniverseMembership.universe.in_(MARKET_INDEX_UNIVERSES),
                 UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE,
                 UniverseMembership.effective_from <= target,
                 (
@@ -381,7 +389,9 @@ async def refresh_market_breadth(target_date: date) -> dict:
                 ),
             )
         )
-        memberships: dict[str, list[dict]] = {"SP500": [], "RUSSELL2000": []}
+        memberships: dict[str, list[dict]] = {
+            universe: [] for universe in MARKET_INDEX_UNIVERSES
+        }
         for membership in membership_result.scalars():
             memberships[membership.universe].append({
                 "ticker": membership.ticker,
@@ -515,6 +525,15 @@ async def get_market_overview(
     universe: str,
     period: str,
 ) -> dict:
+    if universe not in MARKET_UNIVERSES:
+        if universe in SUPPORTED_MARKET_UNIVERSES:
+            raise MarketOverviewUniverseUnavailable(
+                f"{universe} Market Overview is temporarily unavailable while "
+                "strict historical membership data is being sourced"
+            )
+        raise MarketOverviewUniverseUnavailable(
+            f"Unsupported Market Overview universe: {universe}"
+        )
     sessions = PERIOD_SESSIONS[period]
     publication_result = await db.execute(
         select(DataPublication)

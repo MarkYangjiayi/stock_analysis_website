@@ -23,10 +23,10 @@ import {
     type MarketUniverse,
 } from "@/lib/api";
 
-const UNIVERSES: Array<{ value: MarketUniverse; label: string }> = [
+const UNIVERSES: Array<{ value: MarketUniverse; label: string; disabled?: boolean }> = [
     { value: "SP500", label: "S&P 500" },
-    { value: "RUSSELL2000", label: "Russell 2000" },
-    { value: "SP500_RUSSELL2000", label: "Combined" },
+    { value: "RUSSELL2000", label: "Russell 2000", disabled: true },
+    { value: "SP500_RUSSELL2000", label: "Combined", disabled: true },
 ];
 
 const PERIODS: Array<{ value: MarketPeriod; label: string }> = [
@@ -49,7 +49,7 @@ function SegmentedControl<T extends string>({
 }: {
     label: string;
     value: T;
-    options: Array<{ value: T; label: string }>;
+    options: Array<{ value: T; label: string; disabled?: boolean }>;
     onChange: (value: T) => void;
 }) {
     return (
@@ -63,10 +63,14 @@ function SegmentedControl<T extends string>({
                         key={option.value}
                         type="button"
                         aria-pressed={value === option.value}
+                        disabled={option.disabled}
+                        title={option.disabled ? "Temporarily unavailable pending strict historical membership data" : undefined}
                         onClick={() => onChange(option.value)}
                         className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold transition-colors sm:text-sm ${
                             value === option.value
                                 ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-800 dark:text-emerald-300"
+                                : option.disabled
+                                    ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
                                 : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                         }`}
                     >
@@ -164,6 +168,9 @@ export default function MarketOverviewPage() {
                         </div>
                         <SegmentedControl label="Lower panel" value={lowerMetric} options={LOWER_METRICS} onChange={setLowerMetric} />
                     </div>
+                    <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                        Russell 2000 and Combined are temporarily unavailable until strict point-in-time membership history is available.
+                    </p>
                 </section>
 
                 {data?.meta.stale && (
@@ -222,7 +229,7 @@ export default function MarketOverviewPage() {
 
                 <footer className="grid gap-2 rounded-xl border px-4 py-3 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2">
                     <span><strong className="text-slate-700 dark:text-slate-200">Price basis:</strong> Adjusted close, with close used only when adjusted close is unavailable.</span>
-                    <span><strong className="text-slate-700 dark:text-slate-200">Membership:</strong> Historical S&P 500 / Russell 2000 intervals; the combined universe is a daily deduplicated union.</span>
+                    <span><strong className="text-slate-700 dark:text-slate-200">Membership:</strong> Strict historical S&P 500 intervals; Russell 2000 and Combined are temporarily disabled.</span>
                 </footer>
             </div>
         </div>
