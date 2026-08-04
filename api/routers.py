@@ -45,6 +45,7 @@ from services.screener_query import get_screener_metadata, query_screener
 from services.sync_coordinator import ticker_sync_lock
 from services.market_breadth import (
     MarketOverviewUnavailable,
+    MarketOverviewUniverseUnavailable,
     get_market_overview,
 )
 import pandas as pd
@@ -383,6 +384,8 @@ async def market_overview(
 ):
     try:
         return await get_market_overview(db, universe, period)
+    except MarketOverviewUniverseUnavailable as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except MarketOverviewUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

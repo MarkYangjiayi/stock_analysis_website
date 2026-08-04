@@ -25,6 +25,7 @@ from models import (
 from services.market_breadth import (
     MARKET_BREADTH_DATASET,
     MarketOverviewUnavailable,
+    MarketOverviewUniverseUnavailable,
     build_price_feature_frame,
     calculate_market_breadth_rows,
     effective_close,
@@ -255,17 +256,13 @@ async def test_invalid_provider_history_does_not_replace_existing_intervals(
         yield object()
 
     async def fake_history(index_ticker, client=None):
-        if index_ticker == "GSPC.INDX":
-            return [
-                {"Code": "AAA", "StartDate": "2020-01-01", "EndDate": None},
-                {"Code": "BBB", "StartDate": "2020-01-01", "EndDate": None},
-            ]
+        assert index_ticker == "GSPC.INDX"
         return None
 
     monkeypatch.setattr("services.universe.eodhd_client.create_http_client", fake_client)
     monkeypatch.setattr("services.universe.eodhd_client.get_index_component_history", fake_history)
 
-    with pytest.raises(ValueError, match="RUSSELL2000"):
+    with pytest.raises(ValueError, match="SP500"):
         await refresh_historical_universe_memberships(date(2025, 1, 10))
 
     db_session.expire_all()
@@ -288,10 +285,10 @@ async def test_historical_membership_publication_preserves_explicit_session_date
         yield object()
 
     async def fake_history(index_ticker, client=None):
-        prefix = "SP" if index_ticker == "GSPC.INDX" else "RU"
+        assert index_ticker == "GSPC.INDX"
         return [
-            {"Code": f"{prefix}A", "StartDate": "2020-01-01", "EndDate": None},
-            {"Code": f"{prefix}B", "StartDate": "2020-01-01", "EndDate": None},
+            {"Code": "SPA", "StartDate": "2020-01-01", "EndDate": None},
+            {"Code": "SPB", "StartDate": "2020-01-01", "EndDate": None},
         ]
 
     monkeypatch.setattr("services.universe.eodhd_client.create_http_client", fake_client)
@@ -312,7 +309,8 @@ async def test_historical_membership_publication_preserves_explicit_session_date
             UniverseMembership.ticker,
         )
     )).scalars())
-    assert len(memberships) == 4
+    assert len(memberships) == 2
+    assert {membership.universe for membership in memberships} == {"SP500"}
     assert {membership.source for membership in memberships} == {
         HISTORICAL_UNIVERSE_SOURCE
     }
@@ -390,7 +388,12 @@ def test_fixed_prices_verify_breadth_new_extremes_and_population_dispersion():
         ],
     }
 
-    calculated = calculate_market_breadth_rows(frame, memberships, [dates[-1]])
+    calculated = calculate_market_breadth_rows(
+        frame,
+        memberships,
+        [dates[-1]],
+        ("SP500", "RUSSELL2000", "SP500_RUSSELL2000"),
+    )
     sp500 = next(row for row in calculated if row["universe"] == "SP500")
     combined = next(row for row in calculated if row["universe"] == "SP500_RUSSELL2000")
 
@@ -458,11 +461,7 @@ async def _seed_overview_publication(db_session, target: date) -> None:
         ),
     ])
     sessions = market_sessions_through(target, 252)
-    for universe, members in (
-        ("SP500", 500),
-        ("RUSSELL2000", 2000),
-        ("SP500_RUSSELL2000", 2450),
-    ):
+    for universe, members in (("SP500", 500),):
         for index, session in enumerate(sessions):
             cycle = index % 3
             advances, declines, unchanged = (
@@ -514,7 +513,7 @@ async def _seed_overview_publication(db_session, target: date) -> None:
 
 
 @pytest.mark.asyncio
-async def test_market_overview_all_universes_periods_alignment_and_formulas(
+async def test_market_overview_sp500_periods_alignment_and_formulas(
     db_session,
     monkeypatch,
 ):
@@ -526,41 +525,51 @@ async def test_market_overview_all_universes_periods_alignment_and_formulas(
     await _seed_overview_publication(db_session, target)
 
     expected_lengths = {"3m": 63, "6m": 126, "1y": 252}
-    for universe in ("SP500", "RUSSELL2000", "SP500_RUSSELL2000"):
-        for period, expected_length in expected_lengths.items():
-            payload = await get_market_overview(db_session, universe, period)
-            validated = TypeAdapter(MarketOverviewResponse).validate_python(payload)
-            assert validated.meta.membership_mode == "point_in_time"
-            assert validated.meta.stale is True
-            assert validated.meta.warnings == ["fixture warning"]
-            assert len(validated.dates) == expected_length
-            assert len(validated.sector_trends) == 11
-            assert all(
-                len(series) == expected_length
-                for sector in validated.sector_trends
-                for series in (sector.absolute_index, sector.relative_to_spy_index)
-            )
-            assert len(validated.rsp_spy_index) == expected_length
-            for values in validated.breadth.model_dump().values():
-                assert len(values) == expected_length
+    for period, expected_length in expected_lengths.items():
+        payload = await get_market_overview(db_session, "SP500", period)
+        validated = TypeAdapter(MarketOverviewResponse).validate_python(payload)
+        assert validated.meta.membership_mode == "point_in_time"
+        assert validated.meta.stale is True
+        assert validated.meta.warnings == ["fixture warning"]
+        assert len(validated.dates) == expected_length
+        assert len(validated.sector_trends) == 11
+        assert all(
+            len(series) == expected_length
+            for sector in validated.sector_trends
+            for series in (sector.absolute_index, sector.relative_to_spy_index)
+        )
+        assert len(validated.rsp_spy_index) == expected_length
+        for values in validated.breadth.model_dump().values():
+            assert len(values) == expected_length
 
     from main import app
 
     with TestClient(app) as client:
-        for universe in ("SP500", "RUSSELL2000", "SP500_RUSSELL2000"):
-            for period, expected_length in expected_lengths.items():
-                response = client.get(
-                    "/api/v1/market-overview",
-                    params={"universe": universe, "period": period},
-                )
-                assert response.status_code == 200
-                body = response.json()
-                assert body["meta"]["membership_mode"] == "point_in_time"
-                assert len(body["dates"]) == expected_length
-                assert all(
-                    len(values) == expected_length
-                    for values in body["breadth"].values()
-                )
+        for period, expected_length in expected_lengths.items():
+            response = client.get(
+                "/api/v1/market-overview",
+                params={"universe": "SP500", "period": period},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["meta"]["membership_mode"] == "point_in_time"
+            assert len(body["dates"]) == expected_length
+            assert all(
+                len(values) == expected_length
+                for values in body["breadth"].values()
+            )
+
+        for universe in ("RUSSELL2000", "SP500_RUSSELL2000"):
+            response = client.get(
+                "/api/v1/market-overview",
+                params={"universe": universe, "period": "1y"},
+            )
+            assert response.status_code == 422
+            assert "temporarily unavailable" in response.json()["detail"]
+
+    for universe in ("RUSSELL2000", "SP500_RUSSELL2000"):
+        with pytest.raises(MarketOverviewUniverseUnavailable):
+            await get_market_overview(db_session, universe, "1y")
 
     payload = await get_market_overview(db_session, "SP500", "1y")
     final_index = 251
@@ -666,7 +675,7 @@ async def test_market_breadth_retains_only_five_complete_publications(db_session
                 "new_low_count": 0,
                 "dispersion_1d": 0.01,
             }
-            for universe in ("SP500", "RUSSELL2000", "SP500_RUSSELL2000")
+            for universe in ("SP500",)
             for session in display_dates
         ]
 
@@ -694,4 +703,4 @@ async def test_market_breadth_retains_only_five_complete_publications(db_session
         .order_by(DataPublication.as_of_date)
     )).scalars())
     assert [publication.as_of_date for publication in publications] == targets[-5:]
-    assert await db_session.scalar(select(func.count(MarketBreadthSnapshot.id))) == 5 * 3 * 2
+    assert await db_session.scalar(select(func.count(MarketBreadthSnapshot.id))) == 5 * 2

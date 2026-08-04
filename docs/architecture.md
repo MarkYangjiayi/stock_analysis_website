@@ -58,14 +58,14 @@ The daily screener pipeline performs these stages:
 
 Failures are persisted and re-raised so APScheduler does not report false success. API reads prefer the latest `data_publications` row. Historical Screener reconstruction is refused unless an archived point-in-time source payload is explicitly imported; current fundamentals are never relabeled as historical.
 
-The market-overview pipeline separately imports EODHD `HistoricalTickerComponents` for GSPC and RUT, validates complete non-overlapping intervals, and transactionally replaces only provider-owned index history. It then calculates S&P 500, Russell 2000 and deduplicated combined breadth from each date's active members. A publication requires matching `price_history`, `universe_history`, and `rrg_price_history` dates; a failed quality gate leaves the prior complete market snapshot available as stale. RRG snapshots referenced by retained market publications are protected from independent RRG retention cleanup.
+The market-overview pipeline currently imports EODHD `HistoricalTickerComponents` for GSPC, validates complete non-overlapping intervals, and transactionally replaces only provider-owned index history. It publishes S&P 500 breadth from each date's active members. Russell 2000 and the deduplicated combined universe remain explicitly disabled until a reliable strict historical membership source is available; live constituents are never substituted. A publication requires matching `price_history`, `universe_history`, and `rrg_price_history` dates; a failed quality gate leaves the prior complete market snapshot available as stale. RRG snapshots referenced by retained market publications are protected from independent RRG retention cleanup.
 
 ## 5. Cold start and catch-up
 
 `python scripts/cold_start_init.py`:
 
 1. Initializes/migrates tables and seeds benchmark/sector ETFs.
-2. Imports strict S&P 500 and Russell 2000 historical membership intervals.
+2. Imports strict S&P 500 historical membership intervals.
 3. Backfills 504 trading sessions for every member needed by the one-year breadth panel.
 4. Publishes immutable sector ETF, SPY and RSP price history.
 5. Captures the latest Screener snapshot and publishes the first 252-session market-breadth panel.
@@ -73,7 +73,9 @@ The market-overview pipeline separately imports EODHD `HistoricalTickerComponent
 
 Backfill is resumable: tickers with sufficient coverage are skipped and every run records progress. Worker startup catches up the latest completed XNYS session. It intentionally does not fabricate every missed date with today's universe.
 
-The public `GET /api/v1/market-overview` endpoint serves 3M/6M/1Y aligned arrays for sector trends, RSP/SPY, MA breadth, advances/declines, new highs/lows, McClellan and cross-sectional dispersion. `/market` renders those arrays in one linked ECharts timeline; `/rrg` remains the rotation view and keeps its existing URL.
+The public `GET /api/v1/market-overview` endpoint serves 3M/6M/1Y aligned S&P 500 arrays for sector trends, RSP/SPY, MA breadth, advances/declines, new highs/lows, McClellan and cross-sectional dispersion. Disabled Russell 2000 and combined requests return an explicit validation error. `/market` renders the arrays in one linked ECharts timeline; `/rrg` remains the rotation view and keeps its existing URL.
+
+Factor Lab backtests likewise default to S&P 500. A Russell 2000 or combined backtest is rejected unless strict historical rows continuously cover every US market session in the requested window for every required underlying index, preventing an incomplete S&P-only period from being mislabeled as a combined-universe result.
 
 ## 6. Factor methodology (`lfq-v1`)
 

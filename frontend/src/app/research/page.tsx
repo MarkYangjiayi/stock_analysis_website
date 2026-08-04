@@ -115,7 +115,7 @@ export default function ResearchPage() {
                 end_date: endDate,
                 factor_name: factorName,
                 factor_version: "lfq-v1",
-                universe: "SP500_RUSSELL2000",
+                universe: "SP500",
                 benchmark: "SPY.US",
                 rebalance_frequency: rebalance,
                 signal_lag_days: 1,

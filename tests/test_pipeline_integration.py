@@ -61,6 +61,12 @@ async def test_combined_backtest_membership_uses_historical_index_union(db_sessi
             source=HISTORICAL_UNIVERSE_SOURCE,
         ),
         UniverseMembership(
+            universe="SP500",
+            ticker="CCC.US",
+            effective_from=date(2019, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
             universe="RUSSELL2000",
             ticker="AAA.US",
             effective_from=date(2019, 1, 1),
@@ -89,12 +95,67 @@ async def test_combined_backtest_membership_uses_historical_index_union(db_sessi
         date(2025, 1, 31),
     )
 
-    assert set(memberships["ticker"]) == {"AAA.US", "BBB.US"}
+    assert set(memberships["ticker"]) == {"AAA.US", "BBB.US", "CCC.US"}
     assert set(memberships["universe"]) == {"SP500_RUSSELL2000"}
     aaa = memberships[memberships["ticker"] == "AAA.US"]
     assert len(aaa) == 1
     assert aaa.iloc[0]["effective_from"] == date(2019, 1, 1)
     assert pd.isna(aaa.iloc[0]["effective_to"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("universe", ["RUSSELL2000", "SP500_RUSSELL2000"])
+async def test_backtest_rejects_missing_required_strict_history(
+    db_session,
+    universe,
+):
+    from services.universe import HISTORICAL_UNIVERSE_SOURCE
+
+    db_session.add(UniverseMembership(
+        universe="SP500",
+        ticker="AAA.US",
+        effective_from=date(2020, 1, 1),
+        source=HISTORICAL_UNIVERSE_SOURCE,
+    ))
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="RUSSELL2000"):
+        await _load_backtest_memberships(
+            db_session,
+            universe,
+            date(2025, 1, 1),
+            date(2025, 1, 31),
+        )
+
+
+@pytest.mark.asyncio
+async def test_combined_backtest_rejects_history_that_ends_inside_window(db_session):
+    from services.universe import HISTORICAL_UNIVERSE_SOURCE
+
+    db_session.add_all([
+        UniverseMembership(
+            universe="SP500",
+            ticker="AAA.US",
+            effective_from=date(2020, 1, 1),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+        UniverseMembership(
+            universe="RUSSELL2000",
+            ticker="BBB.US",
+            effective_from=date(2020, 1, 1),
+            effective_to=date(2023, 12, 31),
+            source=HISTORICAL_UNIVERSE_SOURCE,
+        ),
+    ])
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match=r"RUSSELL2000 from 2024-01-02"):
+        await _load_backtest_memberships(
+            db_session,
+            "SP500_RUSSELL2000",
+            date(2020, 1, 1),
+            date(2025, 1, 31),
+        )
 
 
 @pytest.mark.asyncio

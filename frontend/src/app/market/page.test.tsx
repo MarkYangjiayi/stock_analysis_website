@@ -36,7 +36,7 @@ describe("MarketOverviewPage", () => {
         apiMocks.fetchMarketOverview.mockResolvedValue(makeMarketOverviewFixture());
     });
 
-    it("loads the default view and only refetches for universe or period", async () => {
+    it("loads the default S&P 500 view and keeps unavailable universes disabled", async () => {
         render(<MarketOverviewPage />);
 
         const chart = await screen.findByTestId("market-chart");
@@ -58,16 +58,17 @@ describe("MarketOverviewPage", () => {
         expect(screen.getByTestId("market-chart")).toHaveAttribute("data-lower-metric", "new_high_low");
         expect(apiMocks.fetchMarketOverview).toHaveBeenCalledTimes(1);
 
-        fireEvent.click(screen.getByRole("button", { name: "Russell 2000" }));
-        await waitFor(() => expect(apiMocks.fetchMarketOverview).toHaveBeenCalledWith(
-            "RUSSELL2000",
-            "1y",
-            expect.any(AbortSignal),
-        ));
+        const russellButton = screen.getByRole("button", { name: "Russell 2000" });
+        const combinedButton = screen.getByRole("button", { name: "Combined" });
+        expect(russellButton).toBeDisabled();
+        expect(combinedButton).toBeDisabled();
+        fireEvent.click(russellButton);
+        expect(apiMocks.fetchMarketOverview).toHaveBeenCalledTimes(1);
+        expect(screen.getByText(/temporarily unavailable until strict point-in-time membership history/)).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "3M" }));
         await waitFor(() => expect(apiMocks.fetchMarketOverview).toHaveBeenCalledWith(
-            "RUSSELL2000",
+            "SP500",
             "3m",
             expect.any(AbortSignal),
         ));

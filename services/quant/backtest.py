@@ -23,11 +23,50 @@ from services.quant.factor_engine import FACTOR_VERSION
 from services.quant.portfolio import construct_long_only_weights, portfolio_turnover
 from services.quant.risk import calculate_performance_metrics
 from services.universe import HISTORICAL_UNIVERSE_SOURCE, INDEX_UNIVERSES
-from core.trading_calendar import us_market_close_utc
+from core.trading_calendar import is_us_market_session, us_market_close_utc
 from core.time_utils import utc_now
 
 
 COMBINED_INDEX_UNIVERSE = "SP500_RUSSELL2000"
+
+
+def _first_uncovered_strict_session(
+    rows: List[UniverseMembership],
+    universe: str,
+    start_date: date,
+    end_date: date,
+) -> Optional[date]:
+    """Return the first market session not covered by any source interval."""
+    intervals = sorted(
+        (
+            row.effective_from,
+            row.effective_to or end_date,
+        )
+        for row in rows
+        if row.universe == universe
+        and row.effective_from <= end_date
+        and (row.effective_to is None or row.effective_to >= start_date)
+    )
+    interval_index = 0
+    covered_through: Optional[date] = None
+    cursor = start_date
+    while cursor <= end_date:
+        if is_us_market_session(cursor):
+            while (
+                interval_index < len(intervals)
+                and intervals[interval_index][0] <= cursor
+            ):
+                interval_end = intervals[interval_index][1]
+                covered_through = (
+                    interval_end
+                    if covered_through is None
+                    else max(covered_through, interval_end)
+                )
+                interval_index += 1
+            if covered_through is None or covered_through < cursor:
+                return cursor
+        cursor += timedelta(days=1)
+    return None
 
 
 def _merge_membership_intervals(
@@ -105,6 +144,28 @@ async def _load_backtest_memberships(
         filters.append(UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE)
     result = await db.execute(select(UniverseMembership).where(*filters))
     rows = list(result.scalars())
+    if strict_history:
+        coverage_gaps = [
+            (required, first_gap)
+            for required in stored_universes
+            if (
+                first_gap := _first_uncovered_strict_session(
+                    rows,
+                    required,
+                    start_date,
+                    end_date,
+                )
+            ) is not None
+        ]
+        if coverage_gaps:
+            raise ValueError(
+                "Missing strict point-in-time membership coverage for required "
+                "universe(s): "
+                + ", ".join(
+                    f"{required} from {first_gap.isoformat()}"
+                    for required, first_gap in coverage_gaps
+                )
+            )
     return pd.DataFrame(
         _merge_membership_intervals(rows, universe),
         columns=["universe", "ticker", "effective_from", "effective_to"],
@@ -117,7 +178,7 @@ class BacktestConfig:
     end_date: date
     factor_name: str = "composite"
     factor_version: str = FACTOR_VERSION
-    universe: str = "SP500_RUSSELL2000"
+    universe: str = "SP500"
     benchmark: str = "SPY.US"
     rebalance_frequency: str = "monthly"
     signal_lag_days: int = 1
