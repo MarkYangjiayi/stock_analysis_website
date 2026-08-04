@@ -75,6 +75,8 @@ Backfill is resumable: tickers with sufficient coverage are skipped and every ru
 
 The public `GET /api/v1/market-overview` endpoint serves 3M/6M/1Y aligned S&P 500 arrays for sector trends, RSP/SPY, MA breadth, advances/declines, new highs/lows, McClellan and cross-sectional dispersion. Disabled Russell 2000 and combined requests return an explicit validation error. `/market` renders the arrays in one linked ECharts timeline; `/rrg` remains the rotation view and keeps its existing URL.
 
+Factor Lab backtests likewise default to S&P 500. A Russell 2000 or combined backtest is rejected unless strict historical rows for every required underlying index are present, preventing an incomplete S&P-only run from being mislabeled as a combined-universe result.
+
 ## 6. Factor methodology (`lfq-v1`)
 
 - Value: earnings yield and book-to-price.

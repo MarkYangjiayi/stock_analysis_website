@@ -98,6 +98,31 @@ async def test_combined_backtest_membership_uses_historical_index_union(db_sessi
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("universe", ["RUSSELL2000", "SP500_RUSSELL2000"])
+async def test_backtest_rejects_missing_required_strict_history(
+    db_session,
+    universe,
+):
+    from services.universe import HISTORICAL_UNIVERSE_SOURCE
+
+    db_session.add(UniverseMembership(
+        universe="SP500",
+        ticker="AAA.US",
+        effective_from=date(2020, 1, 1),
+        source=HISTORICAL_UNIVERSE_SOURCE,
+    ))
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="RUSSELL2000"):
+        await _load_backtest_memberships(
+            db_session,
+            universe,
+            date(2025, 1, 1),
+            date(2025, 1, 31),
+        )
+
+
+@pytest.mark.asyncio
 async def test_resumable_history_backfill_with_mocked_provider(db_session, monkeypatch):
     target = date(2025, 1, 10)
     db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="BBB.US")])

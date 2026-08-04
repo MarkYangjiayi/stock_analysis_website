@@ -105,6 +105,18 @@ async def _load_backtest_memberships(
         filters.append(UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE)
     result = await db.execute(select(UniverseMembership).where(*filters))
     rows = list(result.scalars())
+    if strict_history:
+        available_universes = {row.universe for row in rows}
+        missing_universes = [
+            required
+            for required in stored_universes
+            if required not in available_universes
+        ]
+        if missing_universes:
+            raise ValueError(
+                "Missing strict point-in-time membership history for required "
+                "universe(s): " + ", ".join(missing_universes)
+            )
     return pd.DataFrame(
         _merge_membership_intervals(rows, universe),
         columns=["universe", "ticker", "effective_from", "effective_to"],
@@ -117,7 +129,7 @@ class BacktestConfig:
     end_date: date
     factor_name: str = "composite"
     factor_version: str = FACTOR_VERSION
-    universe: str = "SP500_RUSSELL2000"
+    universe: str = "SP500"
     benchmark: str = "SPY.US"
     rebalance_frequency: str = "monthly"
     signal_lag_days: int = 1

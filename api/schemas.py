@@ -144,7 +144,7 @@ class BacktestRequest(BaseModel):
     end_date: date
     factor_name: str = "composite"
     factor_version: str = "lfq-v1"
-    universe: str = "SP500_RUSSELL2000"
+    universe: str = "SP500"
     benchmark: str = "SPY.US"
     rebalance_frequency: Literal["weekly", "monthly", "all"] = "monthly"
     signal_lag_days: int = Field(1, ge=1, le=10)
