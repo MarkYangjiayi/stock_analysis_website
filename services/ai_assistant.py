@@ -31,6 +31,10 @@ SECTION_HEADING_RE = re.compile(
     r"(?:\*\*)?\s*:?\s*$"
 )
 CITATION_RE = re.compile(r"\[(E\d+)\]")
+CITATION_CLUSTER_JOIN_RE = re.compile(
+    r"^[\s,;/&]*(?:and\s*)?$",
+    re.IGNORECASE,
+)
 ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 NUMERIC_CLAIM_RE = re.compile(
     r"(?<![A-Za-z0-9])"
@@ -182,7 +186,14 @@ def _evidence_numeric_context(item: dict) -> tuple[list[float], list[float], set
                 except ValueError:
                     continue
         elif isinstance(value, dict):
-            for nested in value.values():
+            for key, nested in value.items():
+                normalized_key = str(key).lower()
+                if (
+                    normalized_key == "id"
+                    or normalized_key.endswith("_id")
+                    or normalized_key.endswith("_ids")
+                ):
+                    continue
                 visit(nested)
         elif isinstance(value, (list, tuple)):
             for nested in value:
@@ -212,6 +223,35 @@ def _claim_segments(content: str) -> list[str]:
             if part.strip()
         )
     return segments
+
+
+def _citation_clusters(segment: str) -> list[tuple[int, int, set[str]]]:
+    clusters: list[tuple[int, int, set[str]]] = []
+    for match in CITATION_RE.finditer(segment):
+        if clusters and CITATION_CLUSTER_JOIN_RE.fullmatch(
+            segment[clusters[-1][1]:match.start()]
+        ):
+            start, _, evidence_ids = clusters[-1]
+            clusters[-1] = (start, match.end(), evidence_ids | {match.group(1)})
+        else:
+            clusters.append((match.start(), match.end(), {match.group(1)}))
+    return clusters
+
+
+def _nearest_citation_ids(
+    start: int,
+    end: int,
+    clusters: list[tuple[int, int, set[str]]],
+) -> set[str]:
+    def rank(cluster: tuple[int, int, set[str]]) -> tuple[int, int, int]:
+        cluster_start, cluster_end, _ = cluster
+        if end <= cluster_start:
+            return cluster_start - end, 0, cluster_start
+        if cluster_end <= start:
+            return start - cluster_end, 1, cluster_start
+        return 0, 0, cluster_start
+
+    return min(clusters, key=rank)[2]
 
 
 def _explicit_claim_sign(match: re.Match[str]) -> str:
@@ -327,10 +367,17 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
 
     for segment in _claim_segments(content):
         citation_ids = set(CITATION_RE.findall(segment))
-        claim = CITATION_RE.sub("", segment)
-        dates = ISO_DATE_RE.findall(claim)
-        claim_without_dates = ISO_DATE_RE.sub("", claim)
-        numeric_claims = list(NUMERIC_CLAIM_RE.finditer(claim_without_dates))
+        citation_clusters = _citation_clusters(segment)
+        dates = list(ISO_DATE_RE.finditer(segment))
+        numeric_claims = [
+            numeric_match
+            for numeric_match in NUMERIC_CLAIM_RE.finditer(segment)
+            if not any(
+                numeric_match.start() < date_match.end()
+                and date_match.start() < numeric_match.end()
+                for date_match in dates
+            )
+        ]
         if not dates and not numeric_claims:
             continue
         if not citation_ids:
@@ -338,39 +385,53 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
                 "Every sentence containing a numeric value must cite supporting evidence."
             )
 
-        cited_contexts = [contexts[evidence_id] for evidence_id in citation_ids]
-        supported_numbers = [
-            number
-            for numeric_values, _, _ in cited_contexts
-            for number in numeric_values
-        ]
-        supported_string_numbers = [
-            number
-            for _, string_values, _ in cited_contexts
-            for number in string_values
-        ]
-        supported_strings = {
-            value
-            for _, _, strings in cited_contexts
-            for value in strings
-        }
+        def local_context(
+            claim_start: int,
+            claim_end: int,
+        ) -> tuple[set[str], list[float], list[float], set[str]]:
+            local_ids = _nearest_citation_ids(
+                claim_start,
+                claim_end,
+                citation_clusters,
+            )
+            unknown_ids = local_ids - contexts.keys()
+            if unknown_ids:
+                raise EvidenceCitationError(
+                    f"Unknown evidence citations: {', '.join(sorted(unknown_ids))}."
+                )
+            local_contexts = [contexts[evidence_id] for evidence_id in local_ids]
+            return (
+                local_ids,
+                [number for numeric_values, _, _ in local_contexts for number in numeric_values],
+                [number for _, string_values, _ in local_contexts for number in string_values],
+                {value for _, _, strings in local_contexts for value in strings},
+            )
 
-        for date_value in dates:
+        for date_match in dates:
+            local_ids, _, _, supported_strings = local_context(
+                date_match.start(),
+                date_match.end(),
+            )
+            date_value = date_match.group(0)
             if not any(date_value in value for value in supported_strings):
                 raise EvidenceCitationError(
                     f"Unsupported date claim {date_value!r} for citations "
-                    f"{', '.join(sorted(citation_ids))}."
+                    f"{', '.join(sorted(local_ids))}."
                 )
         for numeric_claim in numeric_claims:
+            local_ids, supported_numbers, supported_string_numbers, _ = local_context(
+                numeric_claim.start(),
+                numeric_claim.end(),
+            )
             if not _numeric_claim_supported(
                 numeric_claim,
                 supported_numbers,
                 supported_string_numbers,
-                claim_without_dates,
+                segment,
             ):
                 raise EvidenceCitationError(
                     f"Unsupported numeric claim {numeric_claim.group(0).strip()!r} "
-                    f"for citations {', '.join(sorted(citation_ids))}."
+                    f"for citations {', '.join(sorted(local_ids))}."
                 )
 
 

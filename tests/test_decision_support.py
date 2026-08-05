@@ -450,6 +450,17 @@ async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_ses
     assert "outside the latest published Screener universe" in " ".join(outside_result["summary"]["coverage"]["missing_data_reasons"])
     assert negative_result["valuation"]["available"] is False
     assert any(item["severity"] == "high" and item["id"] == "fcf_decline" for item in negative_result["risks"]["warnings"])
+    complete_evidence = {item["id"]: item for item in complete_result["evidence"]}
+    sparse_evidence = {item["id"]: item for item in sparse_result["evidence"]}
+    negative_evidence = {item["id"]: item for item in negative_result["evidence"]}
+    assert complete_evidence["E27"]["available"] is True
+    assert complete_evidence["E27"]["value"]["assessment"] == "not triggered on available data"
+    assert sparse_evidence["E27"]["available"] is False
+    assert sparse_evidence["E27"]["value"]["assessment"] == "unavailable"
+    assert sparse_evidence["E33"]["available"] is False
+    assert sparse_evidence["E32"]["available"] is True
+    assert negative_evidence["E30"]["available"] is True
+    assert negative_evidence["E30"]["value"]["severity"] == "high"
 
 
 def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
@@ -642,7 +653,7 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             "id": "E30",
             "label": "Negative cash-flow fixture",
             "source_date": "2026-06-30",
-            "value": -40_000_000,
+            "value": {"evidence_id": "E30", "current": -40_000_000},
         },
         {
             "id": "E31",
@@ -671,6 +682,11 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("Free cash flow was $-40MM [E30].", evidence)
     validate_evidence_numbers("Free cash flow was ($40M) [E30].", evidence)
     validate_evidence_numbers("The published spread is 300bps [E32].", evidence)
+    validate_evidence_numbers(
+        "The current price is $10 [E1], while revenue is $466.8 billion [E3].",
+        evidence,
+    )
+    validate_evidence_numbers("According to [E1], the current price is $10.", evidence)
 
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim '24%'"):
         validate_evidence_numbers(valid.replace("32.4%", "24%"), evidence)
@@ -696,6 +712,13 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("The current price is $30 [E1].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The published spread is 301bps [E32].", evidence)
+    with pytest.raises(EvidenceCitationError, match="citations E1"):
+        validate_evidence_numbers(
+            "The current price is $466.8 billion [E1], while revenue is $466.8 billion [E3].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Free cash flow was $30 [E30].", evidence)
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():

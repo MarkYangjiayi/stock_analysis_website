@@ -87,6 +87,17 @@ WARNING_EVIDENCE_IDS = {
     "cash_decline": "E34",
     "share_dilution": "E35",
 }
+WARNING_UNAVAILABLE_NOTE_CODES = {
+    "revenue_decline": {"revenue_comparison_unavailable"},
+    "gross_margin_compression": {"gross_margin_comparison_unavailable"},
+    "operating_margin_compression": {"operating_margin_comparison_unavailable"},
+    "fcf_decline": {"fcf_comparison_unavailable"},
+    "fcf_conversion": {"fcf_conversion_unavailable"},
+    "debt_level": {"debt_level_unavailable"},
+    "debt_increase": {"debt_trend_unavailable"},
+    "cash_decline": {"cash_comparison_unavailable"},
+    "share_dilution": {"shares_comparison_unavailable"},
+}
 
 
 def _safe_float(value: Any) -> float | None:
@@ -909,9 +920,39 @@ def _evidence_items(
     for metric in peers["metrics"]:
         items.append({"id": metric["evidence_id"], "kind": "peer_metric", "label": metric["label"], "value": {"metric_value": metric["value"], "direction": metric["direction"], "industry": metric["industry"], "sector": metric["sector"], "summary_scope": metric["summary_scope"], "summary_percentile": metric["summary_percentile"]}, "source_date": _iso(screener_date), "available": metric["summary_percentile"] is not None})
     by_rule = {item["id"]: item for item in risks["warnings"]}
+    notes_by_code = {
+        note["code"]: note
+        for note in risks["data_quality_notes"]
+    }
     for rule_id, evidence_id in WARNING_EVIDENCE_IDS.items():
         warning = by_rule.get(rule_id)
-        items.append({"id": evidence_id, "kind": "fundamental_warning", "label": rule_id.replace("_", " ").title(), "value": warning or {"triggered": False, "assessment": "not triggered on available data", "data_quality_notes": risks["data_quality_notes"]}, "source_date": _iso(financial["latest_statement_date"]), "available": financial["statement_count"] > 0})
+        unavailable_notes = [
+            notes_by_code[code]
+            for code in WARNING_UNAVAILABLE_NOTE_CODES[rule_id]
+            if code in notes_by_code
+        ]
+        available = warning is not None or not unavailable_notes
+        if warning is not None:
+            value = warning
+        elif available:
+            value = {
+                "triggered": False,
+                "assessment": "not triggered on available data",
+            }
+        else:
+            value = {
+                "triggered": None,
+                "assessment": "unavailable",
+                "data_quality_notes": unavailable_notes,
+            }
+        items.append({
+            "id": evidence_id,
+            "kind": "fundamental_warning",
+            "label": rule_id.replace("_", " ").title(),
+            "value": value,
+            "source_date": _iso(financial["latest_statement_date"]),
+            "available": available,
+        })
     items.append({"id": "E36", "kind": "published_factors", "label": "Published factors", "value": {"version": factors["version"], "factors": factors["factors"]}, "source_date": _iso(factors["as_of_date"]), "available": bool(factors["factors"])})
     return items
 
