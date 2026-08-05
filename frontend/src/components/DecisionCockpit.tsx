@@ -339,6 +339,13 @@ export default function DecisionCockpit({
                         <p className="rounded-xl border p-4 text-xs leading-5 text-slate-500">Five-year FCF forecast. Cash is added, debt is deducted, and terminal value uses <span className="font-mono">FCF₅ × (1 + g) / (WACC − g)</span>. Inputs: FCF {compact(valuation.inputs.fcf)}, cash {compact(valuation.inputs.cash)}, debt {compact(valuation.inputs.debt)}, shares {compact(valuation.inputs.shares)}.</p>
                     </div>}
 
+                    {activeTab === "valuation" && !valuation && <div className="space-y-3">
+                        {saveMessage && <p className="text-xs font-bold text-emerald-600">{saveMessage}</p>}
+                        <div className={valuationError ? "error-panel" : "rounded-xl border p-5 text-sm text-slate-500"} role={valuationError ? "alert" : "status"}>
+                            {valuationError || "Valuation is being refreshed with the default scenarios."}
+                        </div>
+                    </div>}
+
                     {activeTab === "peers" && <div className="space-y-4">
                         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h3 className="text-sm font-black">Published cross-sectional benchmarks</h3><p className="mt-1 text-xs text-slate-500">Midrank percentiles; invalid valuation multiples and negative debt/equity are excluded.</p></div><div className="flex rounded-lg border bg-slate-100 p-1 dark:bg-slate-900">{(["industry", "sector"] as const).map((scope) => <button key={scope} type="button" onClick={() => setPeerScope(scope)} className={`rounded-md px-3 py-1.5 text-xs font-bold capitalize ${peerScope === scope ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300" : "text-slate-500"}`}>{scope}</button>)}</div></div>
                         <p className="text-xs text-slate-500">{peerScope === "industry" ? decision.peer_comparison.industry || "Unknown industry" : decision.peer_comparison.sector || "Unknown sector"} · {selectedPeerAvailable}/20 metrics meet the {peerScope === "industry" ? "10" : "20"}-observation threshold.</p>

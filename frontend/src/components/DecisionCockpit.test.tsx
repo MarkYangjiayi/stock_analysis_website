@@ -193,6 +193,21 @@ describe("DecisionCockpit", () => {
         expect(componentProps.onRefresh).toHaveBeenCalled();
     });
 
+    it("shows a bounded error when reset succeeds but default recalculation fails", async () => {
+        const user = userEvent.setup();
+        apiMocks.calculateDecisionValuation.mockRejectedValueOnce(new Error("calculation timed out"));
+        const componentProps = { ...props(), adminKey: "secret" };
+        render(<DecisionCockpit {...componentProps} />);
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+        await user.click(screen.getByRole("button", { name: "Reset defaults" }));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+            "Scenarios were reset, but defaults could not be recalculated: calculation timed out",
+        );
+        expect(screen.getByText("Saved scenarios reset to defaults.")).toBeInTheDocument();
+        expect(componentProps.onRefresh).toHaveBeenCalled();
+    });
+
     it("keeps fractional and negative scenario drafts editable until calculation", async () => {
         const user = userEvent.setup();
         render(<DecisionCockpit {...props()} />);

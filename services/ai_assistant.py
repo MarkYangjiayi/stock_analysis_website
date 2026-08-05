@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v6"
+PROMPT_VERSION = "decision-evidence-v7"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -140,6 +140,26 @@ POSITIVE_DIRECTION_AFTER_RE = re.compile(
     r"^\s*(?:upside|above|higher|positive|increase|gain|premium)\b",
     re.IGNORECASE,
 )
+BARE_COMPACT_NAME_FOLLOW_RE = re.compile(
+    r"^\s*(?:['’]s\b|[,;:—-]?\s*(?P<word>[A-Za-z][A-Za-z'-]*))"
+)
+FINANCIAL_COMPACT_FOLLOW_WORDS = {
+    "assets",
+    "book",
+    "cash",
+    "debt",
+    "earnings",
+    "ebitda",
+    "equity",
+    "fcf",
+    "flow",
+    "multiple",
+    "revenue",
+    "sales",
+    "times",
+    "turnover",
+}
+CLAUSE_BREAK_RE = re.compile(r"(?:[;]|\b(?:while|whereas|but)\b)", re.IGNORECASE)
 MAX_REPORT_GENERATION_ATTEMPTS = 2
 
 
@@ -382,25 +402,28 @@ def _claim_segments(content: str) -> list[str]:
     return segments
 
 
-def _citation_clusters(segment: str) -> list[tuple[int, int, set[str]]]:
-    clusters: list[tuple[int, int, set[str]]] = []
+CitationCluster = tuple[int, int, tuple[str, ...]]
+
+
+def _citation_clusters(segment: str) -> list[CitationCluster]:
+    clusters: list[CitationCluster] = []
     for match in CITATION_RE.finditer(segment):
         if clusters and CITATION_CLUSTER_JOIN_RE.fullmatch(
             segment[clusters[-1][1]:match.start()]
         ):
             start, _, evidence_ids = clusters[-1]
-            clusters[-1] = (start, match.end(), evidence_ids | {match.group(1)})
+            clusters[-1] = (start, match.end(), (*evidence_ids, match.group(1)))
         else:
-            clusters.append((match.start(), match.end(), {match.group(1)}))
+            clusters.append((match.start(), match.end(), (match.group(1),)))
     return clusters
 
 
-def _nearest_citation_ids(
+def _nearest_citation_cluster(
     start: int,
     end: int,
-    clusters: list[tuple[int, int, set[str]]],
-) -> set[str]:
-    def rank(cluster: tuple[int, int, set[str]]) -> tuple[int, int, int]:
+    clusters: list[CitationCluster],
+) -> CitationCluster:
+    def rank(cluster: CitationCluster) -> tuple[int, int, int]:
         cluster_start, cluster_end, _ = cluster
         if end <= cluster_start:
             return cluster_start - end, 0, cluster_start
@@ -408,7 +431,75 @@ def _nearest_citation_ids(
             return start - cluster_end, 1, cluster_start
         return 0, 0, cluster_start
 
-    return min(clusters, key=rank)[2]
+    return min(clusters, key=rank)
+
+
+def _adjacent_citation_assignments(
+    segment: str,
+    clusters: list[CitationCluster],
+    claims: list[re.Match[str]],
+) -> dict[tuple[int, int], set[str]]:
+    """Bind ordered claims to ordered IDs instead of pooling adjacent citations."""
+    assignments: dict[tuple[int, int], set[str]] = {}
+    for cluster in clusters:
+        evidence_ids = cluster[2]
+        if len(evidence_ids) <= 1:
+            continue
+        local_claims = [
+            claim
+            for claim in claims
+            if _nearest_citation_cluster(claim.start(), claim.end(), clusters) == cluster
+        ]
+        if not local_claims:
+            continue
+
+        clause_groups: list[list[re.Match[str]]] = [[local_claims[0]]]
+        for claim in local_claims[1:]:
+            previous = clause_groups[-1][-1]
+            if CLAUSE_BREAK_RE.search(segment[previous.end():claim.start()]):
+                clause_groups.append([claim])
+            else:
+                clause_groups[-1].append(claim)
+
+        if len(clause_groups) == len(evidence_ids):
+            for evidence_id, group in zip(evidence_ids, clause_groups):
+                for claim in group:
+                    assignments[(claim.start(), claim.end())] = {evidence_id}
+        elif len(local_claims) == len(evidence_ids):
+            for evidence_id, claim in zip(evidence_ids, local_claims):
+                assignments[(claim.start(), claim.end())] = {evidence_id}
+    return assignments
+
+
+def _looks_like_bare_compact_name(match: re.Match[str], claim: str) -> bool:
+    """Ignore sentence-leading brand tokens such as 3M and 10x Genomics."""
+    if (
+        match.group("currency")
+        or match.group("sign_before_currency")
+        or match.group("sign_after_currency")
+        or not (match.group("compact_scale") or match.group("multiple"))
+        or claim[:match.start()].strip()
+    ):
+        return False
+    following = BARE_COMPACT_NAME_FOLLOW_RE.match(claim[match.end():])
+    if not following:
+        return False
+    word = following.group("word")
+    return word is None or word.lower() not in FINANCIAL_COMPACT_FOLLOW_WORDS
+
+
+def _match_is_inside_identity(
+    match: re.Match[str],
+    claim: str,
+    identity_strings: tuple[str, ...],
+) -> bool:
+    for identity in identity_strings:
+        if not identity:
+            continue
+        for identity_match in re.finditer(re.escape(identity), claim, re.IGNORECASE):
+            if identity_match.start() <= match.start() and match.end() <= identity_match.end():
+                return True
+    return False
 
 
 def _explicit_claim_sign(match: re.Match[str]) -> str:
@@ -428,26 +519,26 @@ def _explicit_claim_sign(match: re.Match[str]) -> str:
 
 def _claim_direction(match: re.Match[str], claim: str) -> str:
     explicit_sign = _explicit_claim_sign(match)
-    if explicit_sign:
-        return explicit_sign
-
     before = claim[max(0, match.start() - 48):match.start()]
     after = claim[match.end():match.end() + 32]
+    semantic_direction = ""
     if (
         match.group("currency")
         and before.endswith("(")
         and after.lstrip().startswith(")")
     ):
-        return "-"
-    if NEGATIVE_DIRECTION_AFTER_RE.search(after):
-        return "-"
-    if POSITIVE_DIRECTION_AFTER_RE.search(after):
-        return "+"
-    if NEGATIVE_DIRECTION_BEFORE_RE.search(before):
-        return "-"
-    if POSITIVE_DIRECTION_BEFORE_RE.search(before):
-        return "+"
-    return ""
+        semantic_direction = "-"
+    elif NEGATIVE_DIRECTION_AFTER_RE.search(after):
+        semantic_direction = "-"
+    elif POSITIVE_DIRECTION_AFTER_RE.search(after):
+        semantic_direction = "+"
+    elif NEGATIVE_DIRECTION_BEFORE_RE.search(before):
+        semantic_direction = "-"
+    elif POSITIVE_DIRECTION_BEFORE_RE.search(before):
+        semantic_direction = "+"
+    if explicit_sign and semantic_direction and explicit_sign != semantic_direction:
+        return "invalid"
+    return explicit_sign or semantic_direction
 
 
 def _rounded_match(candidate: float, supported: float, decimal_places: int, direction: str) -> bool:
@@ -472,6 +563,8 @@ def _numeric_claim_supported(
         return False
     candidate = float(f"{sign}{raw_number}")
     direction = _claim_direction(match, claim)
+    if direction == "invalid":
+        return False
     mantissa, _, exponent_text = raw_number.lower().partition("e")
     exponent = int(exponent_text) if exponent_text else 0
     decimal_places = max(0, len(mantissa.partition(".")[2]) - exponent)
@@ -531,7 +624,12 @@ def _numeric_claim_supported(
     )
 
 
-def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
+def validate_evidence_numbers(
+    content: str,
+    evidence: list[dict],
+    *,
+    identity_strings: tuple[str, ...] = (),
+) -> None:
     """Reject numeric prose that is not explicitly supported by its citations.
 
     Formatting a ratio as a percentage and scaling large values to thousands,
@@ -556,6 +654,12 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
                 and date_match.start() < numeric_match.end()
                 for date_match in dates
             )
+            and not _looks_like_bare_compact_name(numeric_match, segment)
+            and not _match_is_inside_identity(
+                numeric_match,
+                segment,
+                identity_strings,
+            )
         ]
         if not dates and not numeric_claims:
             continue
@@ -563,16 +667,30 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
             raise EvidenceCitationError(
                 "Every sentence containing a numeric value must cite supporting evidence."
             )
+        all_claims = sorted([*dates, *numeric_claims], key=lambda item: item.start())
+        citation_assignments = _adjacent_citation_assignments(
+            segment,
+            citation_clusters,
+            all_claims,
+        )
 
         def local_context(
             claim_start: int,
             claim_end: int,
         ) -> tuple[set[str], _EvidenceNumericContext]:
-            local_ids = _nearest_citation_ids(
+            nearest_cluster = _nearest_citation_cluster(
                 claim_start,
                 claim_end,
                 citation_clusters,
             )
+            local_ids = citation_assignments.get((claim_start, claim_end))
+            if local_ids is None:
+                if len(nearest_cluster[2]) > 1:
+                    raise EvidenceCitationError(
+                        "Adjacent citations are ambiguous for a numeric or date claim; "
+                        "place each evidence ID immediately after the claim it supports."
+                    )
+                local_ids = set(nearest_cluster[2])
             unknown_ids = local_ids - contexts.keys()
             if unknown_ids:
                 raise EvidenceCitationError(
@@ -675,8 +793,9 @@ Write concise English Markdown using exactly these four level-two headings:
 Every section must contain at least one inline citation in the exact form [E1],
 [E2], and so on. Cite only IDs in the evidence records. Explicitly call out
 unavailable evidence and data-quality limits. Every sentence containing a
-number must end with the evidence ID or IDs that explicitly contain that
-number. You may round evidence values, format ratios as percentages, and scale
+number must place the supporting evidence ID immediately after that claim.
+Do not pool adjacent evidence IDs for separate facts. You may round evidence
+values, format ratios as percentages, and scale
 currency values to thousands, millions, billions, or trillions. Do not perform
 new arithmetic or introduce a derived number; reuse the supplied values such as
 upside_downside directly. Directional words such as upside/downside and
@@ -761,13 +880,23 @@ async def generate_stock_report(
             for item in decision_support.get("evidence", [])
             if item.get("id")
         }
+        metadata = decision_support.get("metadata") or {}
+        identity_strings = tuple(
+            str(value)
+            for value in (metadata.get("company_name"), canonical_ticker)
+            if value
+        )
         prompt = base_prompt
         content = ""
         for attempt in range(MAX_REPORT_GENERATION_ATTEMPTS):
             content = await generate_deepseek_text(prompt)
             try:
                 validate_evidence_citations(content, evidence_ids)
-                validate_evidence_numbers(content, decision_support.get("evidence", []))
+                validate_evidence_numbers(
+                    content,
+                    decision_support.get("evidence", []),
+                    identity_strings=identity_strings,
+                )
                 break
             except EvidenceCitationError as exc:
                 if attempt + 1 >= MAX_REPORT_GENERATION_ATTEMPTS:
