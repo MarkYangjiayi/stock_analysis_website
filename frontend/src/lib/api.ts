@@ -111,6 +111,11 @@ export interface HistoricalFinancialPoint {
     revenue: number;
     net_income: number;
     gross_margin: number;
+    free_cash_flow?: number | null;
+    operating_margin?: number | null;
+    cash_and_short_term_investments?: number | null;
+    total_debt?: number | null;
+    shares_outstanding?: number | null;
     price?: number | null;
 }
 
@@ -119,6 +124,162 @@ export interface StockDataResponse {
     historical_data: HistoricalDataPoint[];
     historical_financials: HistoricalFinancialPoint[];
     valuation_metrics?: ValuationMetrics | null;
+}
+
+export type ValuationScenarioName = "bear" | "base" | "bull";
+
+export interface DecisionValuationScenarioInput {
+    scenario: ValuationScenarioName;
+    fcf_growth_rate: number;
+    wacc: number;
+    perpetual_growth: number;
+}
+
+export interface DecisionValuationScenarioResult {
+    scenario: ValuationScenarioName;
+    assumptions: DecisionValuationScenarioInput;
+    available: boolean;
+    reasons?: string[];
+    intrinsic_value_per_share?: number;
+    enterprise_value?: number;
+    equity_value?: number;
+    projected_fcf?: number[];
+    present_value_explicit_fcf?: number;
+    present_value_terminal?: number;
+    upside_downside?: number | null;
+}
+
+export interface DecisionValuation {
+    available: boolean;
+    unavailable_reasons: string[];
+    inputs: {
+        fcf: number | null;
+        cash: number | null;
+        debt: number | null;
+        shares: number | null;
+        financial_statement_date: string | null;
+    };
+    current_price: number | null;
+    scenario_source: "default" | "saved" | "request";
+    scenarios: DecisionValuationScenarioResult[];
+    position: { status: string; text: string };
+    sensitivity: {
+        growth_values: number[];
+        wacc_values: number[];
+        terminal_growth: number;
+        values: Array<Array<number | null>>;
+        cell_reasons: Array<Array<string | null>>;
+    };
+    formula: {
+        forecast_years: number;
+        cash_treatment: string;
+        debt_treatment: string;
+        terminal_value: string;
+    };
+}
+
+export interface PeerScopeResult {
+    scope: "industry" | "sector";
+    minimum_observations: number;
+    observation_count: number;
+    available: boolean;
+    raw_percentile: number | null;
+    desirability_percentile: number | null;
+    reason: string | null;
+}
+
+export interface PeerMetric {
+    key: string;
+    label: string;
+    direction: "higher_better" | "lower_better";
+    format: "percent" | "multiple" | "ratio";
+    evidence_id: string;
+    value: number | null;
+    industry: PeerScopeResult;
+    sector: PeerScopeResult;
+    summary_scope: "industry" | "sector" | null;
+    summary_percentile: number | null;
+}
+
+export interface DecisionWarning {
+    id: string;
+    severity: "warning" | "high";
+    title: string;
+    message: string;
+    metric: string;
+    current: number | null;
+    previous: number | null;
+    evidence_metric: "revenue" | "gross_margin" | "operating_margin" | "fcf" | "cash" | "debt" | "shares";
+    evidence_id: string;
+}
+
+export interface DecisionSummaryMetric {
+    key: string;
+    label: string;
+    value: number | null;
+    format: PeerMetric["format"];
+    direction: PeerMetric["direction"];
+    scope: "industry" | "sector";
+    desirability_percentile: number;
+    evidence_id: string;
+}
+
+export interface DecisionEvidenceItem {
+    id: string;
+    kind: string;
+    label: string;
+    value: unknown;
+    source_date: string | null;
+    available: boolean;
+}
+
+export interface DecisionSupportResponse {
+    metadata: {
+        ticker: string;
+        company_name: string | null;
+        industry: string | null;
+        sector: string | null;
+        price_date: string | null;
+        screener_date: string | null;
+        screener_published_at: string | null;
+        financial_statement_date: string | null;
+        factor_date: string | null;
+        factor_published_at: string | null;
+    };
+    summary: {
+        valuation_position: { status: string; text: string };
+        strongest_peer_metrics: DecisionSummaryMetric[];
+        weakest_peer_metrics: DecisionSummaryMetric[];
+        fundamental_warnings: DecisionWarning[];
+        coverage: {
+            quarterly_statements: number;
+            peer_metrics_available: number;
+            peer_metrics_total: number;
+            published_factor_count: number;
+            missing_data_reasons: string[];
+            data_quality_notes: Array<{ code: string; message: string }>;
+        };
+    };
+    valuation: DecisionValuation;
+    peer_comparison: {
+        ticker_in_screener: boolean;
+        industry: string | null;
+        sector: string | null;
+        industry_member_count: number;
+        sector_member_count: number;
+        metrics: PeerMetric[];
+        strongest: DecisionSummaryMetric[];
+        weakest: DecisionSummaryMetric[];
+        available_metric_count: number;
+        total_metric_count: number;
+    };
+    risks: {
+        warnings: DecisionWarning[];
+        data_quality_notes: Array<{ code: string; message: string }>;
+        high_count: number;
+        warning_count: number;
+    };
+    evidence: DecisionEvidenceItem[];
 }
 
 export interface PublishedFactorValue {
@@ -322,6 +483,85 @@ export const fetchStockData = (
 
 export const fetchLatestTickerFactors = (ticker: string, signal?: AbortSignal) =>
     apiRequest<PublishedFactorSnapshot>(`/api/quant/factors/${encodeURIComponent(ticker)}/latest`, { signal });
+
+const personalHeaders = (adminKey?: string, json = false) => {
+    const headers: Record<string, string> = {};
+    if (adminKey) headers["X-API-Key"] = adminKey;
+    if (json) headers["Content-Type"] = "application/json";
+    return headers;
+};
+
+export const fetchDecisionSupport = (
+    ticker: string,
+    adminKey?: string,
+    signal?: AbortSignal,
+) => apiRequest<DecisionSupportResponse>(
+    `/api/stocks/${encodeURIComponent(ticker)}/decision-support`,
+    { headers: personalHeaders(adminKey), signal },
+);
+
+export const calculateDecisionValuation = (
+    ticker: string,
+    scenarios: DecisionValuationScenarioInput[],
+    signal?: AbortSignal,
+) => apiRequest<DecisionValuation>(
+    `/api/stocks/${encodeURIComponent(ticker)}/valuation/calculate`,
+    {
+        method: "POST",
+        headers: personalHeaders(undefined, true),
+        body: JSON.stringify({ scenarios }),
+        signal,
+    },
+);
+
+export const fetchPersonalWatchlist = (adminKey: string, signal?: AbortSignal) =>
+    apiRequest<{ tickers: string[] }>("/api/personal/watchlist", {
+        headers: personalHeaders(adminKey),
+        signal,
+    });
+
+export const replacePersonalWatchlist = (
+    tickers: string[],
+    adminKey: string,
+    signal?: AbortSignal,
+) => apiRequest<{ tickers: string[] }>("/api/personal/watchlist", {
+    method: "PUT",
+    headers: personalHeaders(adminKey, true),
+    body: JSON.stringify({ tickers }),
+    signal,
+});
+
+export const importPersonalWatchlist = (
+    tickers: string[],
+    adminKey: string,
+    signal?: AbortSignal,
+) => apiRequest<{ tickers: string[]; imported: boolean }>("/api/personal/watchlist/import", {
+    method: "POST",
+    headers: personalHeaders(adminKey, true),
+    body: JSON.stringify({ tickers }),
+    signal,
+});
+
+export const savePersonalValuationScenarios = (
+    ticker: string,
+    scenarios: DecisionValuationScenarioInput[],
+    adminKey: string,
+) => apiRequest<{ ticker: string; is_saved: boolean; scenarios: DecisionValuationScenarioInput[] }>(
+    `/api/personal/stocks/${encodeURIComponent(ticker)}/valuation-scenarios`,
+    {
+        method: "PUT",
+        headers: personalHeaders(adminKey, true),
+        body: JSON.stringify({ scenarios }),
+    },
+);
+
+export const resetPersonalValuationScenarios = (
+    ticker: string,
+    adminKey: string,
+) => apiRequest<{ ticker: string; is_saved: boolean; scenarios: DecisionValuationScenarioInput[] }>(
+    `/api/personal/stocks/${encodeURIComponent(ticker)}/valuation-scenarios`,
+    { method: "DELETE", headers: personalHeaders(adminKey) },
+);
 
 export const fetchQuantCoverage = (signal?: AbortSignal) =>
     apiRequest<QuantCoverage>("/api/quant/coverage", { signal });

@@ -203,19 +203,70 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         except (ValueError, TypeError):
             return 0.0
 
+    def _optional_float(val) -> Optional[float]:
+        try:
+            result = float(val) if val is not None else None
+            return result if result is None or math.isfinite(result) else None
+        except (ValueError, TypeError):
+            return None
+
+    def _first_optional(mapping: dict, *keys: str) -> Optional[float]:
+        for key in keys:
+            value = _optional_float(mapping.get(key))
+            if value is not None:
+                return value
+        return None
+
     for rec in fs_records:
         inc_stmt = rec.income_statement or {}
+        balance_stmt = rec.balance_sheet or {}
+        cash_flow_stmt = rec.cash_flow or {}
         rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
         ni = _safe_float(inc_stmt.get('netIncome', rec.net_income))
         gp = _safe_float(inc_stmt.get('grossProfit', 0.0))
-        
+        operating_income = _optional_float(inc_stmt.get('operatingIncome'))
+        total_debt = _first_optional(
+            balance_stmt,
+            'shortLongTermDebtTotal',
+            'totalDebt',
+        )
+        if total_debt is None:
+            short_debt = _first_optional(
+                balance_stmt,
+                'shortTermDebt',
+                'shortTermDebtTotal',
+            )
+            long_debt = _first_optional(
+                balance_stmt,
+                'longTermDebt',
+                'longTermDebtTotal',
+            )
+            if short_debt is not None or long_debt is not None:
+                total_debt = (short_debt or 0.0) + (long_debt or 0.0)
+
         gross_margin = (gp / rev) if rev > 0 else 0.0
+        operating_margin = (
+            operating_income / rev
+            if operating_income is not None and rev > 0
+            else None
+        )
         
         historical_financials.append({
             "date": rec.fiscal_date.isoformat() if hasattr(rec.fiscal_date, 'isoformat') else str(rec.fiscal_date),
             "revenue": rev,
             "net_income": ni,
-            "gross_margin": gross_margin
+            "gross_margin": gross_margin,
+            "free_cash_flow": _optional_float(cash_flow_stmt.get('freeCashFlow')),
+            "operating_margin": operating_margin,
+            "cash_and_short_term_investments": _optional_float(
+                balance_stmt.get('cashAndShortTermInvestments')
+            ),
+            "total_debt": total_debt,
+            "shares_outstanding": _first_optional(
+                balance_stmt,
+                'commonStockSharesOutstanding',
+                'sharesOutstanding',
+            ),
         })
 
     # 4.5 利用 Pandas merge_asof 将财务报表日期与最近交易日的收盘价匹配

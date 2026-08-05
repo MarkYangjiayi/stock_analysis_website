@@ -1,326 +1,243 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
-import ReactECharts from 'echarts-for-react';
-import { HistoricalFinancialPoint, ValuationMetrics } from '@/lib/api';
-import { useTheme } from 'next-themes';
+import { useMemo, useState } from "react";
+import ReactECharts from "echarts-for-react";
+import { useTheme } from "next-themes";
+import { HistoricalFinancialPoint, ValuationMetrics } from "@/lib/api";
+
+export type FinancialEvidenceMetric =
+    | "overview"
+    | "revenue"
+    | "net_income"
+    | "free_cash_flow"
+    | "gross_margin"
+    | "operating_margin"
+    | "cash_and_short_term_investments"
+    | "total_debt"
+    | "shares_outstanding";
 
 interface FinancialTrendChartProps {
     data?: HistoricalFinancialPoint[];
-    ttmData?: ValuationMetrics['ttm'];
+    ttmData?: ValuationMetrics["ttm"];
     currentPrice?: number;
-    timePeriod: 'annual' | 'ttm' | 'quarterly';
-    onTimePeriodChange: (period: 'annual' | 'ttm' | 'quarterly') => void;
+    timePeriod: "annual" | "ttm" | "quarterly";
+    onTimePeriodChange: (period: "annual" | "ttm" | "quarterly") => void;
+    selectedMetric?: FinancialEvidenceMetric;
+    onMetricChange?: (metric: FinancialEvidenceMetric) => void;
 }
 
-const formatCompact = (num: number) => {
-    if (num >= 1e9) {
-        return (num / 1e9).toFixed(2) + ' B';
-    }
-    if (num >= 1e6) {
-        return (num / 1e6).toFixed(2) + ' M';
-    }
-    return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+const METRICS: Array<{
+    key: FinancialEvidenceMetric;
+    label: string;
+    unit: "currency" | "percent" | "count";
+    color: string;
+}> = [
+    { key: "overview", label: "Financial overview", unit: "currency", color: "#10b981" },
+    { key: "revenue", label: "Revenue", unit: "currency", color: "#60a5fa" },
+    { key: "net_income", label: "Net income", unit: "currency", color: "#1e3a8a" },
+    { key: "free_cash_flow", label: "Free cash flow", unit: "currency", color: "#10b981" },
+    { key: "gross_margin", label: "Gross margin", unit: "percent", color: "#f97316" },
+    { key: "operating_margin", label: "Operating margin", unit: "percent", color: "#a855f7" },
+    { key: "cash_and_short_term_investments", label: "Cash + short-term investments", unit: "currency", color: "#14b8a6" },
+    { key: "total_debt", label: "Total debt", unit: "currency", color: "#ef4444" },
+    { key: "shares_outstanding", label: "Shares outstanding", unit: "count", color: "#64748b" },
+];
+
+const compact = (value: number) => {
+    const absolute = Math.abs(value);
+    if (absolute >= 1e12) return `${(value / 1e12).toFixed(1)}T`;
+    if (absolute >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
+    if (absolute >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+    return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 };
 
-type OverlayMode = 'all' | 'revenue_price' | 'net_income_price' | 'margin_price';
+const valueForMetric = (point: HistoricalFinancialPoint, metric: FinancialEvidenceMetric) => {
+    if (metric === "overview") return null;
+    const value = point[metric];
+    if (value == null) return null;
+    return metric === "gross_margin" || metric === "operating_margin" ? value * 100 : value;
+};
 
-interface TooltipSeriesParam {
+interface TooltipParam {
     axisValue: string;
-    value: number | string | null | undefined;
-    seriesName: string;
     marker: string;
+    seriesName: string;
+    value: number | null;
 }
 
-const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({ data, ttmData, currentPrice, timePeriod, onTimePeriodChange }) => {
+export default function FinancialTrendChart({
+    data,
+    ttmData,
+    currentPrice,
+    timePeriod,
+    onTimePeriodChange,
+    selectedMetric,
+    onMetricChange,
+}: FinancialTrendChartProps) {
     const { resolvedTheme } = useTheme();
-    const [overlayMode, setOverlayMode] = useState<OverlayMode>('all');
+    const [internalMetric, setInternalMetric] = useState<FinancialEvidenceMetric>("overview");
+    const metric = selectedMetric ?? internalMetric;
+
+    const changeMetric = (next: FinancialEvidenceMetric) => {
+        setInternalMetric(next);
+        onMetricChange?.(next);
+    };
 
     const options = useMemo(() => {
-        if (!data || data.length === 0) return {};
-
-        const dates = data.map(item => item.date);
-        const revenues = data.map(item => item.revenue);
-        const netIncomes = data.map(item => item.net_income);
-        const grossMargins = data.map(item => (item.gross_margin * 100).toFixed(2));
-        const prices: (number | null | undefined)[] = data.map(item => item.price);
-
-        // Inject TTM Data if active mode is 'ttm'
-        if (timePeriod === 'ttm' && ttmData) {
-            dates.push('TTM (Current)');
-            revenues.push(ttmData.revenue);
-            netIncomes.push(ttmData.net_income);
-            const ttmGrossMargin = ttmData.revenue > 0 ? (ttmData.gross_profit / ttmData.revenue) : 0;
-            grossMargins.push((ttmGrossMargin * 100).toFixed(2));
-            prices.push(currentPrice ?? null); // Render current price or break line
+        if (!data?.length) return {};
+        const points: HistoricalFinancialPoint[] = data.map((point) => ({ ...point }));
+        if (timePeriod === "ttm" && ttmData) {
+            points.push({
+                date: "TTM (Current)",
+                revenue: ttmData.revenue,
+                net_income: ttmData.net_income,
+                gross_margin: ttmData.revenue > 0 ? ttmData.gross_profit / ttmData.revenue : 0,
+                free_cash_flow: ttmData.free_cash_flow,
+                price: currentPrice ?? null,
+            });
         }
 
-        const isDark = resolvedTheme === 'dark';
-        const textColor = isDark ? '#9ca3af' : '#475569';
-        const gridColor = isDark ? '#374151' : '#e2e8f0';
-        const tooltipBg = isDark ? 'rgba(21, 25, 34, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-        const tooltipBorder = isDark ? '#374151' : '#e2e8f0';
-        const tooltipText = isDark ? '#e5e7eb' : '#0f172a';
-
-        // Base Y-Axis Configurations
-        const yAxisAmount = {
-            type: 'value',
-            name: 'Amount ($)',
-            nameTextStyle: { color: textColor, padding: [0, 0, 0, 30] },
-            axisLabel: {
-                color: textColor,
-                fontWeight: '500',
-                formatter: (value: number) => {
-                    if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
-                    if (value >= 1e6) return (value / 1e6).toFixed(2) + ' M';
-                    return value;
-                }
-            },
-            splitLine: { lineStyle: { color: [gridColor], type: 'dashed' } },
+        const isDark = resolvedTheme === "dark";
+        const textColor = isDark ? "#9ca3af" : "#475569";
+        const gridColor = isDark ? "#374151" : "#e2e8f0";
+        const dates = points.map((point) => point.date);
+        const amountAxis = {
+            type: "value",
+            name: "Amount",
+            axisLabel: { color: textColor, formatter: (value: number) => `$${compact(value)}` },
+            nameTextStyle: { color: textColor },
+            splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
         };
-
-        const yAxisMargin = {
-            type: 'value',
-            name: 'Gross Margin (%)',
-            nameTextStyle: { color: textColor, padding: [0, 30, 0, 0] },
-            position: 'right',
-            min: 0,
-            axisLabel: {
-                color: textColor,
-                fontWeight: '500',
-                formatter: '{value} %'
-            },
+        const percentAxis = {
+            type: "value",
+            name: "Margin (%)",
+            position: "right",
+            axisLabel: { color: textColor, formatter: "{value}%" },
+            nameTextStyle: { color: textColor },
             splitLine: { show: false },
         };
-
-        const yAxisPrice = {
-            type: 'value',
-            name: 'Price ($)',
-            nameTextStyle: { color: textColor, padding: [0, 30, 0, 0] },
-            position: 'right',
-            offset: overlayMode === 'all' ? 80 : 0, // No offset if it's the only right axis
-            axisLine: { show: true, lineStyle: { color: gridColor } },
-            axisLabel: {
-                color: textColor,
-                fontWeight: '500',
-                formatter: (value: number) => `$${value.toFixed(2)}`
-            },
+        const priceAxis = {
+            type: "value",
+            name: "Matched price",
+            position: "right",
+            axisLabel: { color: textColor, formatter: (value: number) => `$${value.toFixed(0)}` },
+            nameTextStyle: { color: textColor },
             splitLine: { show: false },
         };
+        const priceSeries = (axisIndex: number) => ({
+            name: "Matched stock price",
+            type: "line",
+            yAxisIndex: axisIndex,
+            data: points.map((point) => point.price ?? null),
+            itemStyle: { color: "#22c55e" },
+            lineStyle: { width: 2, type: "dotted" },
+            symbol: "diamond",
+            connectNulls: true,
+        });
 
-        // Base Series Configurations
-        const seriesRevenue = {
-            name: 'Revenue',
-            type: 'bar',
-            yAxisIndex: 0,
-            itemStyle: {
-                color: '#60a5fa',
-                borderRadius: [4, 4, 0, 0]
-            },
-            data: revenues,
-            barMaxWidth: 32,
-            barGap: '20%'
-        };
-
-        const seriesNetIncome = {
-            name: 'Net Income',
-            type: 'bar',
-            yAxisIndex: 0, // Shares standard Amount axis
-            itemStyle: {
-                color: '#1e3a8a',
-                borderRadius: [4, 4, 0, 0]
-            },
-            data: netIncomes,
-            barMaxWidth: 32,
-        };
-
-        const seriesMargin = {
-            name: 'Gross Margin',
-            type: 'line',
-            yAxisIndex: 1, // Uses right side Margin axis
-            itemStyle: { color: '#ef4444' }, // Red/orange
-            lineStyle: { width: 3, shadowColor: 'rgba(239, 68, 68, 0.5)', shadowBlur: 10 },
-            symbol: 'circle',
-            symbolSize: 8,
-            data: grossMargins
-        };
-
-        const seriesPrice = {
-            name: 'Stock Price',
-            type: 'line',
-            yAxisIndex: overlayMode === 'all' ? 2 : 1, // Becomes axis 1 when margin is hidden
-            itemStyle: { color: '#10b981' }, // Emerald
-            lineStyle: { width: 3, type: 'dotted', shadowColor: 'rgba(16, 185, 129, 0.5)', shadowBlur: 8 },
-            symbol: 'diamond',
-            symbolSize: 10,
-            data: prices,
-            connectNulls: true
-        };
-
-        let activeLegend: string[] = [];
-        let yAxisConfig: Array<Record<string, unknown>> = [];
-        let seriesConfig: Array<Record<string, unknown>> = [];
-
-        switch (overlayMode) {
-            case 'revenue_price':
-                activeLegend = ['Revenue', 'Stock Price'];
-                yAxisConfig = [yAxisAmount, yAxisPrice];
-                seriesConfig = [seriesRevenue, seriesPrice];
-                break;
-            case 'net_income_price':
-                activeLegend = ['Net Income', 'Stock Price'];
-                yAxisConfig = [yAxisAmount, yAxisPrice];
-                seriesConfig = [seriesNetIncome, seriesPrice];
-                break;
-            case 'margin_price':
-                activeLegend = ['Gross Margin', 'Stock Price'];
-                // Reset margin Y-axis index to 0 for left side in this specific dual-view, price to 1
-                const modifiedYAxisMargin = { ...yAxisMargin, position: 'left' };
-                const modifiedSeriesMargin = { ...seriesMargin, yAxisIndex: 0 };
-                yAxisConfig = [modifiedYAxisMargin, yAxisPrice];
-                seriesConfig = [modifiedSeriesMargin, seriesPrice];
-                break;
-            case 'all':
-            default:
-                activeLegend = ['Revenue', 'Net Income', 'Gross Margin', 'Stock Price'];
-                yAxisConfig = [yAxisAmount, yAxisMargin, yAxisPrice];
-                seriesConfig = [seriesRevenue, seriesNetIncome, seriesMargin, seriesPrice];
-                break;
+        let yAxis: Array<Record<string, unknown>>;
+        let series: Array<Record<string, unknown>>;
+        if (metric === "overview") {
+            yAxis = [amountAxis, percentAxis, { ...priceAxis, offset: 72 }];
+            series = [
+                { name: "Revenue", type: "bar", yAxisIndex: 0, data: points.map((point) => point.revenue), itemStyle: { color: "#60a5fa", borderRadius: [4, 4, 0, 0] }, barMaxWidth: 28 },
+                { name: "Net income", type: "bar", yAxisIndex: 0, data: points.map((point) => point.net_income), itemStyle: { color: "#1e3a8a", borderRadius: [4, 4, 0, 0] }, barMaxWidth: 28 },
+                { name: "Free cash flow", type: "bar", yAxisIndex: 0, data: points.map((point) => point.free_cash_flow ?? null), itemStyle: { color: "#10b981", borderRadius: [4, 4, 0, 0] }, barMaxWidth: 28 },
+                { name: "Gross margin", type: "line", yAxisIndex: 1, data: points.map((point) => point.gross_margin * 100), itemStyle: { color: "#f97316" }, lineStyle: { width: 2.5 }, symbolSize: 7 },
+                { name: "Operating margin", type: "line", yAxisIndex: 1, data: points.map((point) => point.operating_margin == null ? null : point.operating_margin * 100), itemStyle: { color: "#a855f7" }, lineStyle: { width: 2.5 }, symbolSize: 7 },
+                priceSeries(2),
+            ];
+        } else {
+            const config = METRICS.find((item) => item.key === metric)!;
+            const primaryAxis = config.unit === "percent"
+                ? { ...percentAxis, position: "left", name: config.label }
+                : {
+                    ...amountAxis,
+                    name: config.unit === "count" ? "Shares" : config.label,
+                    axisLabel: {
+                        color: textColor,
+                        formatter: (value: number) => config.unit === "count" ? compact(value) : `$${compact(value)}`,
+                    },
+                };
+            yAxis = [primaryAxis, priceAxis];
+            series = [
+                {
+                    name: config.label,
+                    type: config.unit === "percent" ? "line" : "bar",
+                    yAxisIndex: 0,
+                    data: points.map((point) => valueForMetric(point, metric)),
+                    itemStyle: { color: config.color, borderRadius: [4, 4, 0, 0] },
+                    lineStyle: { width: 3 },
+                    symbolSize: 8,
+                    barMaxWidth: 38,
+                },
+                priceSeries(1),
+            ];
         }
 
         return {
-            aria: { enabled: true, description: 'Historical revenue, net income, gross margin, and matched share price' },
+            aria: { enabled: true, description: `Historical financial evidence focused on ${metric.replaceAll("_", " ")}` },
+            animationDuration: 300,
             tooltip: {
-                trigger: 'axis',
-                backgroundColor: tooltipBg,
-                borderColor: tooltipBorder,
-                textStyle: { color: tooltipText },
-                axisPointer: { type: 'cross', crossStyle: { color: '#6b7280' } },
-                formatter: (params: TooltipSeriesParam[]) => {
-                    if (!params.length) return '';
-                    let tooltipHtml = `<div class="font-bold mb-1 border-b border-gray-200 dark:border-gray-700 pb-1">${params[0].axisValue}</div>`;
-                    params.forEach((param) => {
-                        // Skip undefined prices
-                        if (param.value === undefined || param.value === null) return;
-
-                        const valueStr = param.seriesName === 'Gross Margin'
-                            ? `${param.value}%`
-                            : param.seriesName === 'Stock Price'
-                                ? `$${Number(param.value).toFixed(2)}`
-                                : `$${formatCompact(Number(param.value))}`;
-                        const marker = param.marker;
-                        tooltipHtml += `<div class="flex justify-between gap-6 text-sm mt-2">
-                            <span class="flex items-center">${marker} ${param.seriesName}</span>
-                            <span class="font-bold font-mono pl-4">${valueStr}</span>
-                        </div>`;
-                    });
-                    return tooltipHtml;
-                }
-            },
-            legend: {
-                data: activeLegend,
-                textStyle: { color: textColor, fontWeight: 'bold' },
-                top: 0
-            },
-            grid: {
-                left: '3%',
-                right: '4%', // Could adjust right padding if only 1 right axis is present, but ECharts containLabel handles it well
-                bottom: '12%',
-                containLabel: true
-            },
-            dataZoom: [
-                {
-                    type: 'inside',
-                    startValue: Math.max(0, dates.length - 20),
-                    endValue: dates.length - 1
+                trigger: "axis",
+                backgroundColor: isDark ? "rgba(21,25,34,.96)" : "rgba(255,255,255,.96)",
+                borderColor: gridColor,
+                textStyle: { color: isDark ? "#e5e7eb" : "#0f172a" },
+                formatter: (params: TooltipParam[]) => {
+                    if (!params.length) return "";
+                    const rows = params.filter((param) => param.value != null).map((param) => {
+                        const isPercent = param.seriesName.toLowerCase().includes("margin");
+                        const isPrice = param.seriesName === "Matched stock price";
+                        const isShares = param.seriesName === "Shares outstanding";
+                        const shown = isPercent
+                            ? `${Number(param.value).toFixed(2)}%`
+                            : isShares
+                                ? compact(Number(param.value))
+                                : isPrice
+                                    ? `$${Number(param.value).toFixed(2)}`
+                                    : `$${compact(Number(param.value))}`;
+                        return `<div style="display:flex;justify-content:space-between;gap:24px;margin-top:6px"><span>${param.marker}${param.seriesName}</span><strong>${shown}</strong></div>`;
+                    }).join("");
+                    return `<strong>${params[0].axisValue}</strong>${rows}`;
                 },
-                {
-                    type: 'slider',
-                    bottom: 0,
-                    startValue: Math.max(0, dates.length - 20),
-                    endValue: dates.length - 1,
-                    textStyle: { color: textColor },
-                    borderColor: gridColor,
-                    fillerColor: 'rgba(16, 185, 129, 0.2)', // emerald-500
-                    handleStyle: {
-                        color: '#10b981',
-                        borderColor: '#059669'
-                    },
-                    dataBackground: {
-                        lineStyle: { color: gridColor },
-                        areaStyle: { color: isDark ? '#374151' : '#cbd5e1' }
-                    },
-                    selectedDataBackground: {
-                        lineStyle: { color: '#10b981' },
-                        areaStyle: { color: '#059669' }
-                    }
-                }
+            },
+            legend: { top: 0, textStyle: { color: textColor, fontWeight: "bold" } },
+            grid: { left: "3%", right: "5%", bottom: 52, top: 54, containLabel: true },
+            dataZoom: [
+                { type: "inside", startValue: Math.max(0, dates.length - 20), endValue: dates.length - 1 },
+                { type: "slider", bottom: 4, height: 24, startValue: Math.max(0, dates.length - 20), endValue: dates.length - 1, borderColor: gridColor, textStyle: { color: textColor }, fillerColor: "rgba(16,185,129,.16)" },
             ],
-            xAxis: [
-                {
-                    type: 'category',
-                    data: dates,
-                    axisPointer: { type: 'shadow' },
-                    axisLine: { lineStyle: { color: gridColor } },
-                    axisLabel: { color: textColor, fontWeight: '500' }
-                }
-            ],
-            yAxis: yAxisConfig,
-            series: seriesConfig
+            xAxis: { type: "category", data: dates, axisLabel: { color: textColor }, axisLine: { lineStyle: { color: gridColor } } },
+            yAxis,
+            series,
         };
-    }, [data, ttmData, currentPrice, timePeriod, resolvedTheme, overlayMode]);
+    }, [currentPrice, data, metric, resolvedTheme, timePeriod, ttmData]);
 
-    if (!data || data.length === 0) {
-        return null;
-    }
+    if (!data?.length) return null;
 
     return (
-        <div className="surface-panel flex h-full w-full flex-col overflow-hidden">
-            <div className="surface-subtle flex flex-col justify-between gap-4 border-b p-4 sm:flex-row sm:items-center sm:px-5">
+        <section className="surface-panel overflow-hidden" aria-labelledby="financial-trends-title">
+            <header className="surface-subtle flex flex-col justify-between gap-4 border-b p-4 sm:flex-row sm:items-center sm:px-5">
                 <div>
                     <p className="eyebrow">Fundamental history</p>
-                    <h2 className="mt-1 font-black text-slate-900 dark:text-white">Financial trends</h2>
+                    <h2 id="financial-trends-title" className="mt-1 font-black">Financial evidence</h2>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <div className="flex items-center rounded-lg border bg-slate-100 p-1 dark:bg-slate-900">
-                        {(['annual', 'ttm', 'quarterly'] as const).map(period => (
-                            <button
-                                key={period}
-                                type="button"
-                                onClick={() => onTimePeriodChange(period)}
-                                aria-pressed={timePeriod === period}
-                                className={`min-h-8 flex-1 rounded-md px-2.5 py-1 text-xs font-bold transition-colors ${timePeriod === period
-                                        ? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300'
-                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                                    }`}
-                            >
-                                {period === 'annual' ? 'Annual' : period === 'ttm' ? 'Annual + TTM' : 'Quarterly'}
+                        {(["annual", "ttm", "quarterly"] as const).map((period) => (
+                            <button key={period} type="button" onClick={() => onTimePeriodChange(period)} aria-pressed={timePeriod === period} className={`min-h-8 flex-1 rounded-md px-2.5 py-1 text-xs font-bold ${timePeriod === period ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300" : "text-slate-500"}`}>
+                                {period === "annual" ? "Annual" : period === "ttm" ? "Annual + TTM" : "Quarterly"}
                             </button>
                         ))}
                     </div>
-                    <select
-                        value={overlayMode}
-                        onChange={(e) => setOverlayMode(e.target.value as OverlayMode)}
-                        aria-label="Chart comparison"
-                        className="control-field py-2 text-xs font-semibold sm:w-auto"
-                    >
-                        <option value="all">Default (All Financials)</option>
-                        <option value="revenue_price">Revenue vs Price</option>
-                        <option value="net_income_price">Net Income vs Price</option>
-                        <option value="margin_price">Gross Margin vs Price</option>
+                    <select value={metric} onChange={(event) => changeMetric(event.target.value as FinancialEvidenceMetric)} aria-label="Financial evidence metric" className="control-field py-2 text-xs font-semibold sm:w-64">
+                        {METRICS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
                     </select>
                 </div>
+            </header>
+            <div className="h-[420px] p-2 sm:h-[470px] sm:p-4">
+                <ReactECharts option={options} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
             </div>
-            <div className="h-[420px] p-2 sm:h-[460px] sm:p-4">
-                <ReactECharts
-                    option={options}
-                    style={{ height: '100%', width: '100%' }}
-                    notMerge={true}
-                    lazyUpdate={true}
-                />
-            </div>
-        </div>
+        </section>
     );
-};
-
-export default FinancialTrendChart;
+}
