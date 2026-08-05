@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v13"
+PROMPT_VERSION = "decision-evidence-v14"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -313,6 +313,21 @@ SEMANTIC_COORDINATION_RE = re.compile(
     r"\b(?:rather\s+than|instead\s+of|versus|vs\.?|and|or)\b",
     re.IGNORECASE,
 )
+PERCENTILE_CONTEXT_RE = re.compile(
+    r"\b(?:percentile|rank|ranks|ranked|ranking)\b",
+    re.IGNORECASE,
+)
+COVERAGE_CONTEXT_RE = re.compile(
+    r"\b(?:coverage|observations?|valid\s+(?:peers?|companies|values))\b",
+    re.IGNORECASE,
+)
+CHANGE_CONTEXT_RE = re.compile(
+    r"\b(?:change[ds]?|declin(?:e|ed|ing)|decreas(?:e|ed|ing)|"
+    r"drop(?:ped|ping)?|compress(?:ion|ed|ing)?|increas(?:e|ed|ing)|"
+    r"rose|risen|fell|fallen|grew|grown|dilut(?:ion|ed|ing)|"
+    r"year[- ]over[- ]year|yoy)\b",
+    re.IGNORECASE,
+)
 AMBIGUOUS_SEMANTIC_KEY = "__ambiguous__"
 MAX_REPORT_GENERATION_ATTEMPTS = 2
 
@@ -598,17 +613,21 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                 peer_semantic = SEMANTIC_VALUE_KEYS.get(
                     str(value.get("metric_key"))
                 )
-                if normalized_key in {
-                    "metric_value",
+                if normalized_key == "metric_value" and peer_semantic:
+                    nested_semantic = peer_semantic
+                elif normalized_key in {
                     "summary_percentile",
                     "raw_percentile",
                     "desirability_percentile",
-                    "industry",
-                    "sector",
                 } and peer_semantic:
-                    nested_semantic = peer_semantic
+                    nested_semantic = f"percentile:{peer_semantic}"
+                elif normalized_key in {
+                    "observation_count",
+                    "minimum_observations",
+                } and peer_semantic:
+                    nested_semantic = f"coverage:{peer_semantic}"
                 if normalized_key == "message" and warning_semantic:
-                    nested_semantic = warning_semantic
+                    nested_semantic = f"change:{warning_semantic}"
                 if (
                     nested_semantic is None
                     and normalized_key in {"current", "previous"}
@@ -927,8 +946,14 @@ def _claim_semantic_key(match: re.Match[str], claim: str) -> Optional[str]:
             return AMBIGUOUS_SEMANTIC_KEY
 
     _, _, _, semantic_key, _, _ = min(candidates)
+    local_text = claim[region_start:region_end]
+    if PERCENTILE_CONTEXT_RE.search(local_text):
+        return f"percentile:{semantic_key}"
+    if COVERAGE_CONTEXT_RE.search(local_text):
+        return f"coverage:{semantic_key}"
+    if CHANGE_CONTEXT_RE.search(local_text) and "growth" not in semantic_key:
+        return f"change:{semantic_key}"
     if semantic_key in PERIOD_SCOPED_SEMANTICS:
-        local_text = claim[region_start:region_end]
         current_scope = bool(CURRENT_PERIOD_RE.search(local_text))
         previous_scope = bool(PREVIOUS_PERIOD_RE.search(local_text))
         if current_scope and previous_scope:

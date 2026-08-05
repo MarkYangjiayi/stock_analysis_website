@@ -918,7 +918,7 @@ def _evidence_items(
     for evidence_id, scenario in zip(("E4", "E5", "E6"), valuation["scenarios"]):
         items.append({"id": evidence_id, "kind": "valuation", "label": f"{scenario['scenario'].title()} DCF", "value": scenario, "source_date": _iso(financial["latest_statement_date"]), "available": scenario["available"]})
     for metric in peers["metrics"]:
-        items.append({"id": metric["evidence_id"], "kind": "peer_metric", "label": metric["label"], "value": {"metric_key": metric["key"], "metric_value": metric["value"], "format": metric["format"], "direction": metric["direction"], "industry": metric["industry"], "sector": metric["sector"], "summary_scope": metric["summary_scope"], "summary_percentile": metric["summary_percentile"]}, "source_date": _iso(screener_date), "available": metric["summary_percentile"] is not None})
+        items.append({"id": metric["evidence_id"], "kind": "peer_metric", "label": metric["label"], "value": {"metric_key": metric["key"], "metric_value": metric["value"], "format": metric["format"], "direction": metric["direction"], "industry": {"metric_key": metric["key"], **metric["industry"]}, "sector": {"metric_key": metric["key"], **metric["sector"]}, "summary_scope": metric["summary_scope"], "summary_percentile": metric["summary_percentile"]}, "source_date": _iso(screener_date), "available": metric["summary_percentile"] is not None})
     by_rule = {item["id"]: item for item in risks["warnings"]}
     notes_by_code = {
         note["code"]: note

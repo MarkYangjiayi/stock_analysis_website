@@ -983,6 +983,10 @@ def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
     validate_evidence_numbers("Gross margin compressed by 3.0 percentage points [E28].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Free cash flow declined 31.0% [E30].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Gross margin is 90 points [E13].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Gross margin was 3.0 percentage points [E28].", evidence)
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
