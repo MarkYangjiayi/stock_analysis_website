@@ -989,6 +989,169 @@ def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
         validate_evidence_numbers("Gross margin was 3.0 percentage points [E28].", evidence)
 
 
+def test_semantic_peer_facets_preserve_percentile_type_scope_and_coverage_role():
+    evidence = [{
+        "id": "E7",
+        "kind": "peer_metric",
+        "source_date": "2026-06-30",
+        "value": {
+            "metric_key": "pe_ratio",
+            "metric_value": 20.0,
+            "format": "multiple",
+            "industry": {
+                "metric_key": "pe_ratio",
+                "observation_count": 7,
+                "minimum_observations": 10,
+                "raw_percentile": 90.0,
+                "desirability_percentile": 10.0,
+            },
+            "sector": {
+                "metric_key": "pe_ratio",
+                "observation_count": 23,
+                "minimum_observations": 20,
+                "raw_percentile": 80.0,
+                "desirability_percentile": 20.0,
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 10.0,
+        },
+    }]
+    validate_evidence_numbers(
+        "P/E has an industry raw percentile of 90 [E7].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "P/E has an industry desirability percentile of 10 [E7].",
+        evidence,
+    )
+    validate_evidence_numbers("P/E ranks in the 10th percentile [E7].", evidence)
+    validate_evidence_numbers(
+        "Industry P/E coverage has 7 observations [E7].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Industry P/E coverage requires 10 observations [E7].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Sector P/E coverage has 23 observations [E7].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Sector P/E coverage requires 20 observations [E7].",
+        evidence,
+    )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "P/E has an industry desirability percentile of 90 [E7].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "Industry P/E coverage has 23 observations [E7].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "Industry P/E coverage requires 7 observations [E7].",
+            evidence,
+        )
+
+
+def test_semantic_peer_facets_bind_only_the_numeric_phrase_they_modify():
+    evidence = [{
+        "id": "E13",
+        "kind": "peer_metric",
+        "source_date": "2026-06-30",
+        "value": {
+            "metric_key": "gross_margin",
+            "metric_value": 0.487,
+            "format": "percent",
+            "industry": {
+                "metric_key": "gross_margin",
+                "observation_count": 12,
+                "minimum_observations": 10,
+                "raw_percentile": 90.0,
+                "desirability_percentile": 90.0,
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 90.0,
+        },
+    }]
+    validate_evidence_numbers(
+        "Gross margin is 48.7%, ranking in the 90th percentile [E13].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Across 12 valid industry peers, gross margin is 48.7% [E13].",
+        evidence,
+    )
+
+
+def test_semantic_warning_transition_levels_remain_period_scoped():
+    evidence = [{
+        "id": "E30",
+        "kind": "fundamental_warning",
+        "source_date": "2026-06-30",
+        "value": {
+            "metric": "fcf_change",
+            "evidence_metric": "fcf",
+            "current": 70_000_000,
+            "previous": 100_000_000,
+            "message": "TTM free cash flow declined 30.0% year over year.",
+        },
+    }]
+    validate_evidence_numbers(
+        "Free cash flow declined to $70 million [E30].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Free cash flow declined from $100 million to $70 million [E30].",
+        evidence,
+    )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "Free cash flow declined to $100 million [E30].",
+            evidence,
+        )
+
+
+def test_semantic_projected_fcf_preserves_forecast_position():
+    evidence = [{
+        "id": "E4",
+        "kind": "valuation",
+        "source_date": "2026-06-30",
+        "value": {"projected_fcf": [800_000_000, 900_000_000]},
+    }]
+    validate_evidence_numbers(
+        "Initial projected FCF is $800 million [E4].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Final projected FCF is $900 million [E4].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "Year 1 projected FCF is $800M and year 2 projected FCF is $900M [E4].",
+        evidence,
+    )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "Initial projected FCF is $900 million [E4].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "Final projected FCF is $800 million [E4].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "Year 1 projected FCF is $900M [E4].",
+            evidence,
+        )
+
+
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
     decision = _decision_for_ai()
     baseline = build_evidence_hash(decision, "model-a")

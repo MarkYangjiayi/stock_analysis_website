@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v14"
+PROMPT_VERSION = "decision-evidence-v15"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -313,14 +313,6 @@ SEMANTIC_COORDINATION_RE = re.compile(
     r"\b(?:rather\s+than|instead\s+of|versus|vs\.?|and|or)\b",
     re.IGNORECASE,
 )
-PERCENTILE_CONTEXT_RE = re.compile(
-    r"\b(?:percentile|rank|ranks|ranked|ranking)\b",
-    re.IGNORECASE,
-)
-COVERAGE_CONTEXT_RE = re.compile(
-    r"\b(?:coverage|observations?|valid\s+(?:peers?|companies|values))\b",
-    re.IGNORECASE,
-)
 CHANGE_CONTEXT_RE = re.compile(
     r"\b(?:change[ds]?|declin(?:e|ed|ing)|decreas(?:e|ed|ing)|"
     r"drop(?:ped|ping)?|compress(?:ion|ed|ing)?|increas(?:e|ed|ing)|"
@@ -330,6 +322,43 @@ CHANGE_CONTEXT_RE = re.compile(
 )
 AMBIGUOUS_SEMANTIC_KEY = "__ambiguous__"
 MAX_REPORT_GENERATION_ATTEMPTS = 2
+
+PEER_SCOPE_RE = re.compile(r"\b(industry|sector)\b", re.IGNORECASE)
+PERCENTILE_TYPE_RE = re.compile(
+    r"\b(raw|desirability|summary)\s+percentile\b",
+    re.IGNORECASE,
+)
+COVERAGE_MINIMUM_RE = re.compile(
+    r"\b(?:minimum|requires?|required|threshold|at\s+least)\b",
+    re.IGNORECASE,
+)
+COVERAGE_OBSERVATION_AFTER_RE = re.compile(
+    r"^\s*(?:valid\s+)?(?:(?:industry|sector)\s+)?"
+    r"(?:observations?|peers?|companies|values)\b",
+    re.IGNORECASE,
+)
+PERCENTILE_AFTER_RE = re.compile(r"^\s*percentile\b", re.IGNORECASE)
+PERCENTILE_BEFORE_RE = re.compile(
+    r"\b(?:percentile|rank(?:s|ed|ing)?)"
+    r"(?:\s+(?:is|was|of|at|in))?(?:\s+the)?\s*$",
+    re.IGNORECASE,
+)
+CHANGE_AMOUNT_BEFORE_RE = re.compile(
+    r"\b(?:change[ds]?|declin(?:e|ed|ing)|decreas(?:e|ed|ing)|"
+    r"drop(?:ped|ping)?|compress(?:ion|ed|ing)?|increas(?:e|ed|ing)|"
+    r"rose|risen|fell|fallen|grew|grown|dilut(?:ion|ed|ing))"
+    r"(?:\s+(?:was|is|by|of))?\s*$",
+    re.IGNORECASE,
+)
+PROJECTION_YEAR_RE = re.compile(r"\byear\s+(\d+)\b", re.IGNORECASE)
+PROJECTION_INITIAL_RE = re.compile(
+    r"\b(?:initial|first(?:-year)?|year\s+one)\b",
+    re.IGNORECASE,
+)
+PROJECTION_FINAL_RE = re.compile(
+    r"\b(?:final|last|fifth(?:-year)?|year\s+five)\b",
+    re.IGNORECASE,
+)
 
 
 class EvidenceCitationError(ValueError):
@@ -468,11 +497,14 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         semantic_hint: Optional[str],
         number: float,
         period_scope: Optional[str] = None,
+        semantic_aliases: tuple[str, ...] = (),
     ) -> None:
-        if semantic_hint:
-            target.setdefault(semantic_hint, []).append(number)
+        for hint in dict.fromkeys((semantic_hint, *semantic_aliases)):
+            if not hint:
+                continue
+            target.setdefault(hint, []).append(number)
             if period_scope:
-                target.setdefault(f"{period_scope}:{semantic_hint}", []).append(number)
+                target.setdefault(f"{period_scope}:{hint}", []).append(number)
 
     def visit(
         value: object,
@@ -482,6 +514,9 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         currency_hint: bool = False,
         semantic_hint: Optional[str] = None,
         period_scope: Optional[str] = None,
+        semantic_aliases: tuple[str, ...] = (),
+        peer_scope: Optional[str] = None,
+        peer_summary_scope: Optional[str] = None,
     ) -> None:
         if isinstance(value, bool):
             return
@@ -494,6 +529,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     semantic_hint,
                     number,
                     period_scope,
+                    semantic_aliases,
                 )
                 if ratio_hint:
                     ratio_values.append(number)
@@ -502,6 +538,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                         semantic_hint,
                         number,
                         period_scope,
+                        semantic_aliases,
                     )
                 if multiple_hint:
                     multiple_values.append(number)
@@ -510,6 +547,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                         semantic_hint,
                         number,
                         period_scope,
+                        semantic_aliases,
                     )
                 if currency_hint:
                     currency_values.append(number)
@@ -518,6 +556,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                         semantic_hint,
                         number,
                         period_scope,
+                        semantic_aliases,
                     )
         elif isinstance(value, str):
             strings.add(value)
@@ -543,6 +582,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     semantic_hint,
                     string_value,
                     period_scope,
+                    semantic_aliases,
                 )
             for match in PERCENT_STRING_NUMBER_RE.finditer(numeric_text):
                 raw_token = match.group(1)
@@ -565,10 +605,17 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     semantic_hint,
                     percent_value,
                     period_scope,
+                    semantic_aliases,
                 )
         elif isinstance(value, dict):
             format_is_percent = value.get("format") == "percent"
             format_is_multiple = value.get("format") in {"multiple", "ratio"}
+            summary_scope_value = value.get("summary_scope")
+            dict_summary_scope = (
+                str(summary_scope_value).lower()
+                if summary_scope_value in {"industry", "sector"}
+                else peer_summary_scope
+            )
             warning_metric = value.get("metric")
             warning_semantic = SEMANTIC_VALUE_KEYS.get(str(warning_metric))
             if warning_semantic is None:
@@ -613,19 +660,48 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                 peer_semantic = SEMANTIC_VALUE_KEYS.get(
                     str(value.get("metric_key"))
                 )
+                nested_aliases: tuple[str, ...] = ()
+                nested_peer_scope = peer_scope
+                if normalized_key in {"industry", "sector"}:
+                    nested_peer_scope = normalized_key
                 if normalized_key == "metric_value" and peer_semantic:
                     nested_semantic = peer_semantic
+                elif normalized_key == "summary_percentile" and peer_semantic:
+                    nested_semantic = f"percentile:summary:{peer_semantic}"
+                    if dict_summary_scope:
+                        nested_aliases = (
+                            f"percentile:{dict_summary_scope}:summary:"
+                            f"{peer_semantic}",
+                        )
                 elif normalized_key in {
-                    "summary_percentile",
                     "raw_percentile",
                     "desirability_percentile",
-                } and peer_semantic:
-                    nested_semantic = f"percentile:{peer_semantic}"
+                } and peer_semantic and peer_scope:
+                    percentile_type = normalized_key.removesuffix("_percentile")
+                    nested_semantic = (
+                        f"percentile:{peer_scope}:{percentile_type}:"
+                        f"{peer_semantic}"
+                    )
+                    if peer_scope == dict_summary_scope:
+                        nested_aliases = (
+                            f"percentile:{percentile_type}:{peer_semantic}",
+                        )
                 elif normalized_key in {
                     "observation_count",
                     "minimum_observations",
-                } and peer_semantic:
-                    nested_semantic = f"coverage:{peer_semantic}"
+                } and peer_semantic and peer_scope:
+                    coverage_role = (
+                        "observation"
+                        if normalized_key == "observation_count"
+                        else "minimum"
+                    )
+                    nested_semantic = (
+                        f"coverage:{peer_scope}:{coverage_role}:{peer_semantic}"
+                    )
+                    if peer_scope == dict_summary_scope:
+                        nested_aliases = (
+                            f"coverage:summary:{coverage_role}:{peer_semantic}",
+                        )
                 if normalized_key == "message" and warning_semantic:
                     nested_semantic = f"change:{warning_semantic}"
                 if (
@@ -650,9 +726,31 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     currency_hint=nested_is_currency,
                     semantic_hint=nested_semantic or semantic_hint,
                     period_scope=nested_period_scope,
+                    semantic_aliases=(
+                        nested_aliases if nested_semantic else semantic_aliases
+                    ),
+                    peer_scope=nested_peer_scope,
+                    peer_summary_scope=dict_summary_scope,
                 )
         elif isinstance(value, (list, tuple)):
-            for nested in value:
+            for index, nested in enumerate(value, start=1):
+                nested_aliases = semantic_aliases
+                if semantic_hint == "projected_fcf":
+                    projection_aliases = [
+                        f"projection:{index}:projected_fcf",
+                    ]
+                    if index == 1:
+                        projection_aliases.append("initial:projected_fcf")
+                    if index == len(value):
+                        projection_aliases.append("final:projected_fcf")
+                    nested_aliases = tuple(
+                        dict.fromkeys((*semantic_aliases, *projection_aliases))
+                    )
+                    append_semantic(
+                        semantic_numeric_values,
+                        "projection_year",
+                        float(index),
+                    )
                 visit(
                     nested,
                     ratio_hint=ratio_hint,
@@ -660,6 +758,9 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     currency_hint=currency_hint,
                     semantic_hint=semantic_hint,
                     period_scope=period_scope,
+                    semantic_aliases=nested_aliases,
+                    peer_scope=peer_scope,
+                    peer_summary_scope=peer_summary_scope,
                 )
 
     # The stable ID is intentionally excluded: citing E24 must not make 24 a
@@ -875,6 +976,88 @@ def _rounded_match(candidate: float, supported: float, decimal_places: int, dire
     return abs(candidate_value - supported_value) <= tolerance
 
 
+def _numeric_phrase_has_percentile_context(
+    match: re.Match[str],
+    claim: str,
+    region_start: int,
+    region_end: int,
+) -> bool:
+    before = claim[region_start:match.start()]
+    after = claim[match.end():region_end]
+    return bool(
+        match.group("ordinal")
+        or PERCENTILE_BEFORE_RE.search(before)
+        or PERCENTILE_AFTER_RE.search(after)
+    )
+
+
+def _numeric_phrase_has_coverage_context(
+    match: re.Match[str],
+    claim: str,
+    region_start: int,
+    region_end: int,
+) -> bool:
+    before = claim[region_start:match.start()]
+    after = claim[match.end():region_end]
+    coverage_before = re.search(
+        r"\b(?:coverage|observations?|valid\s+(?:peers?|companies|values))"
+        r"(?:\s+(?:is|was|has|had|totals?|requires?|required))?\s*$",
+        before,
+        re.IGNORECASE,
+    )
+    return bool(
+        coverage_before
+        or COVERAGE_OBSERVATION_AFTER_RE.search(after)
+    )
+
+
+def _numeric_phrase_has_change_context(
+    match: re.Match[str],
+    claim: str,
+    region_start: int,
+    region_end: int,
+) -> bool:
+    before = claim[region_start:match.start()]
+    if re.search(r"\b(?:to|from|at)\s*$", before, re.IGNORECASE):
+        return False
+    after = claim[match.end():region_end]
+    if CHANGE_AMOUNT_BEFORE_RE.search(before):
+        return True
+    return bool(
+        re.match(r"^\s*percentage\s+points?\b", after, re.IGNORECASE)
+        and CHANGE_CONTEXT_RE.search(before)
+    )
+
+
+def _single_peer_scope(local_text: str, claim: str) -> Optional[str]:
+    local_scopes = {
+        match.group(1).lower()
+        for match in PEER_SCOPE_RE.finditer(local_text)
+    }
+    if len(local_scopes) == 1:
+        return next(iter(local_scopes))
+    claim_scopes = {match.group(1).lower() for match in PEER_SCOPE_RE.finditer(claim)}
+    if len(claim_scopes) == 1:
+        return next(iter(claim_scopes))
+    return None
+
+
+def _single_percentile_type(local_text: str, claim: str) -> Optional[str]:
+    local_types = {
+        match.group(1).lower()
+        for match in PERCENTILE_TYPE_RE.finditer(local_text)
+    }
+    if len(local_types) == 1:
+        return next(iter(local_types))
+    claim_types = {
+        match.group(1).lower()
+        for match in PERCENTILE_TYPE_RE.finditer(claim)
+    }
+    if len(claim_types) == 1:
+        return next(iter(claim_types))
+    return None
+
+
 def _claim_semantic_key(match: re.Match[str], claim: str) -> Optional[str]:
     dates = list(ISO_DATE_RE.finditer(claim))
     other_numbers = [
@@ -923,7 +1106,39 @@ def _claim_semantic_key(match: re.Match[str], claim: str) -> Optional[str]:
                     semantic_match.end(),
                 ))
     if not candidates:
-        return None
+        fallback_candidates: list[tuple[int, int, int, str, int, int]] = []
+        for semantic_key, pattern in SEMANTIC_CLAIM_PATTERNS.items():
+            for semantic_match in pattern.finditer(claim):
+                if semantic_match.end() <= match.start():
+                    distance = match.start() - semantic_match.end()
+                    side = 0
+                elif match.end() <= semantic_match.start():
+                    distance = semantic_match.start() - match.end()
+                    side = 1
+                else:
+                    distance = 0
+                    side = 0
+                fallback_candidates.append((
+                    distance,
+                    side,
+                    -len(semantic_match.group(0)),
+                    semantic_key,
+                    semantic_match.start(),
+                    semantic_match.end(),
+                ))
+        fallback_candidates = [
+            candidate
+            for candidate in fallback_candidates
+            if not any(
+                other[4] <= candidate[4]
+                and candidate[5] <= other[5]
+                and (other[5] - other[4]) > (candidate[5] - candidate[4])
+                for other in fallback_candidates
+            )
+        ]
+        if len({candidate[3] for candidate in fallback_candidates}) != 1:
+            return None
+        candidates = fallback_candidates
     candidates = [
         candidate
         for candidate in candidates
@@ -947,13 +1162,59 @@ def _claim_semantic_key(match: re.Match[str], claim: str) -> Optional[str]:
 
     _, _, _, semantic_key, _, _ = min(candidates)
     local_text = claim[region_start:region_end]
-    if PERCENTILE_CONTEXT_RE.search(local_text):
-        return f"percentile:{semantic_key}"
-    if COVERAGE_CONTEXT_RE.search(local_text):
-        return f"coverage:{semantic_key}"
-    if CHANGE_CONTEXT_RE.search(local_text) and "growth" not in semantic_key:
+    before = claim[region_start:match.start()]
+    if semantic_key == "projected_fcf":
+        if re.search(r"\byear\s*$", before, re.IGNORECASE):
+            return "projection_year"
+        projection_years = list(PROJECTION_YEAR_RE.finditer(claim[:match.start()]))
+        projection_year = projection_years[-1] if projection_years else None
+        if projection_year and match.start() - projection_year.end() <= 64:
+            return f"projection:{int(projection_year.group(1))}:projected_fcf"
+        if PROJECTION_INITIAL_RE.search(local_text):
+            return "initial:projected_fcf"
+        if PROJECTION_FINAL_RE.search(local_text):
+            return "final:projected_fcf"
+    if _numeric_phrase_has_percentile_context(
+        match,
+        claim,
+        region_start,
+        region_end,
+    ):
+        percentile_type = _single_percentile_type(local_text, claim) or "summary"
+        peer_scope = _single_peer_scope(local_text, claim)
+        if percentile_type == "summary" and not peer_scope:
+            return f"percentile:summary:{semantic_key}"
+        if not peer_scope:
+            return f"percentile:{percentile_type}:{semantic_key}"
+        return f"percentile:{peer_scope}:{percentile_type}:{semantic_key}"
+    if _numeric_phrase_has_coverage_context(
+        match,
+        claim,
+        region_start,
+        region_end,
+    ):
+        peer_scope = _single_peer_scope(local_text, claim) or "summary"
+        coverage_role = (
+            "minimum"
+            if COVERAGE_MINIMUM_RE.search(local_text)
+            else "observation"
+        )
+        return f"coverage:{peer_scope}:{coverage_role}:{semantic_key}"
+    if (
+        _numeric_phrase_has_change_context(
+            match,
+            claim,
+            region_start,
+            region_end,
+        )
+        and "growth" not in semantic_key
+    ):
         return f"change:{semantic_key}"
     if semantic_key in PERIOD_SCOPED_SEMANTICS:
+        if re.search(r"\bto\s*$", before, re.IGNORECASE):
+            return f"current:{semantic_key}"
+        if re.search(r"\bfrom\s*$", before, re.IGNORECASE):
+            return f"previous:{semantic_key}"
         current_scope = bool(CURRENT_PERIOD_RE.search(local_text))
         previous_scope = bool(PREVIOUS_PERIOD_RE.search(local_text))
         if current_scope and previous_scope:
