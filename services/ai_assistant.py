@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v9"
+PROMPT_VERSION = "decision-evidence-v10"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -161,10 +161,15 @@ IDENTITY_VALUE_PREDICATE_RE = re.compile(
     re.IGNORECASE,
 )
 IDENTITY_SUBJECT_FOLLOW_RE = re.compile(
-    r"^\s*(?:['’]s\b|[,;:]|(?:shares?|stock)\b|"
-    r"(?:is|was|has|had|does|did|reports?|reported|"
+    r"^\s*(?:['’]s\b|[,;:]|(?:is|was|has|had|does|did|reports?|reported|"
     r"shows?|showed|faces?|faced|remains?|remained|trades?|traded|covers?|"
     r"covered)\b)",
+    re.IGNORECASE,
+)
+IDENTITY_SECURITY_FOLLOW_RE = re.compile(
+    r"^\s+(?:shares?\s+(?:trades?|traded|are\s+(?:trading|priced)|"
+    r"closed|opened|rose|fell)|stock\s+(?:trades?|traded|price|closed|"
+    r"opened|rose|fell))\b",
     re.IGNORECASE,
 )
 LEGAL_COMPANY_SUFFIX_RE = re.compile(
@@ -534,7 +539,10 @@ def _match_is_identity_mention(
             after = claim[identity_match.end():]
             if IDENTITY_VALUE_PREDICATE_RE.match(after):
                 return False
-            if not IDENTITY_SUBJECT_FOLLOW_RE.match(after):
+            if not (
+                IDENTITY_SUBJECT_FOLLOW_RE.match(after)
+                or IDENTITY_SECURITY_FOLLOW_RE.match(after)
+            ):
                 return False
             if not before.strip() or IDENTITY_PREFIX_RE.search(before):
                 return True
@@ -575,14 +583,14 @@ def _claim_direction(match: re.Match[str], claim: str) -> str:
     if POSITIVE_DIRECTION_AFTER_RE.search(after):
         semantic_directions.add("+")
     if (
-        NEGATIVE_DIRECTION_BEFORE_RE.search(word_before)
-        and not NEGATED_NEGATIVE_BEFORE_RE.search(word_before)
+        NEGATED_NEGATIVE_BEFORE_RE.search(word_before)
     ):
+        semantic_directions.add("+")
+    elif NEGATIVE_DIRECTION_BEFORE_RE.search(word_before):
         semantic_directions.add("-")
-    if (
-        POSITIVE_DIRECTION_BEFORE_RE.search(word_before)
-        and not NEGATED_POSITIVE_BEFORE_RE.search(word_before)
-    ):
+    if NEGATED_POSITIVE_BEFORE_RE.search(word_before):
+        semantic_directions.add("-")
+    elif POSITIVE_DIRECTION_BEFORE_RE.search(word_before):
         semantic_directions.add("+")
     if len(semantic_directions) > 1:
         return "invalid"
@@ -788,7 +796,20 @@ def validate_evidence_numbers(
             )
 
         for date_match in dates:
-            if numeric_claims and date_match.end() <= numeric_claims[0].start():
+            leading_sentence_date = (
+                numeric_claims
+                and date_match.end() <= numeric_claims[0].start()
+            )
+            trailing_sentence_date = (
+                numeric_claims
+                and date_match.start() >= numeric_claims[-1].end()
+                and re.search(
+                    r"\bas\s+of\s*$",
+                    segment[:date_match.start()],
+                    re.IGNORECASE,
+                )
+            )
+            if leading_sentence_date or trailing_sentence_date:
                 local_ids = set()
                 for numeric_claim in numeric_claims:
                     local_ids.update(
