@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v8"
+PROMPT_VERSION = "decision-evidence-v9"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -141,6 +141,18 @@ POSITIVE_DIRECTION_AFTER_RE = re.compile(
     r"^\s*(?:upside|above|higher|positive|increase|gain|premium)\b",
     re.IGNORECASE,
 )
+NEGATED_NEGATIVE_BEFORE_RE = re.compile(
+    r"\b(?:not(?:\s+[A-Za-z-]+){0,3}|never(?:\s+[A-Za-z-]+){0,3}|"
+    r"no\s+longer(?:\s+[A-Za-z-]+){0,3})\s+negative"
+    r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
+    re.IGNORECASE,
+)
+NEGATED_POSITIVE_BEFORE_RE = re.compile(
+    r"\b(?:not(?:\s+[A-Za-z-]+){0,3}|never(?:\s+[A-Za-z-]+){0,3}|"
+    r"no\s+longer(?:\s+[A-Za-z-]+){0,3})\s+positive"
+    r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
+    re.IGNORECASE,
+)
 IDENTITY_VALUE_PREDICATE_RE = re.compile(
     r"^\s+(?:is|was|were|equals?|equaled|represented|reached|totaled)\s+"
     r"(?:the\s+)?(?:published\s+)?(?:current\s+)?"
@@ -149,9 +161,15 @@ IDENTITY_VALUE_PREDICATE_RE = re.compile(
     re.IGNORECASE,
 )
 IDENTITY_SUBJECT_FOLLOW_RE = re.compile(
-    r"^\s*(?:['’]s\b|[,;:]|(?:is|was|has|had|does|did|reports?|reported|"
+    r"^\s*(?:['’]s\b|[,;:]|(?:shares?|stock)\b|"
+    r"(?:is|was|has|had|does|did|reports?|reported|"
     r"shows?|showed|faces?|faced|remains?|remained|trades?|traded|covers?|"
     r"covered)\b)",
+    re.IGNORECASE,
+)
+LEGAL_COMPANY_SUFFIX_RE = re.compile(
+    r"(?:,\s*|\s+)(?:incorporated|inc\.?|corporation|corp\.?|company|co\.?|"
+    r"limited|ltd\.?|llc|plc|n\.?v\.?|s\.?a\.?|a\.?g\.?|s\.?e\.?)\.?$",
     re.IGNORECASE,
 )
 IDENTITY_PREFIX_RE = re.compile(
@@ -214,6 +232,27 @@ def build_evidence_hash(decision_support: dict, model: str) -> str:
         default=str,
     )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _company_identity_strings(company_name: str, ticker: str) -> tuple[str, ...]:
+    aliases = [value for value in (company_name.strip(), ticker.strip()) if value]
+    stripped = company_name.strip()
+    while stripped:
+        without_suffix = LEGAL_COMPANY_SUFFIX_RE.sub("", stripped).strip()
+        if without_suffix == stripped:
+            break
+        stripped = without_suffix
+        aliases.append(stripped)
+    if stripped.lower().startswith("the "):
+        aliases.append(stripped[4:].strip())
+    for value in tuple(aliases):
+        numeric_name_prefix = re.match(
+            r"^[+\-−–—]?\d+(?:\.\d+)?(?:[A-Za-z×]+)?",
+            value,
+        )
+        if numeric_name_prefix:
+            aliases.append(numeric_name_prefix.group(0))
+    return tuple(dict.fromkeys(aliases))
 
 
 def validate_evidence_citations(content: str, evidence_ids: set[str]) -> None:
@@ -521,21 +560,33 @@ def _claim_direction(match: re.Match[str], claim: str) -> str:
     explicit_sign = _explicit_claim_sign(match)
     before = claim[max(0, match.start() - 48):match.start()]
     after = claim[match.end():match.end() + 32]
-    semantic_direction = ""
+    word_before = before.rstrip()
+    if word_before.endswith("("):
+        word_before = word_before[:-1].rstrip()
+    semantic_directions: set[str] = set()
     if (
         match.group("currency")
         and before.endswith("(")
         and after.lstrip().startswith(")")
     ):
-        semantic_direction = "-"
-    elif NEGATIVE_DIRECTION_AFTER_RE.search(after):
-        semantic_direction = "-"
-    elif POSITIVE_DIRECTION_AFTER_RE.search(after):
-        semantic_direction = "+"
-    elif NEGATIVE_DIRECTION_BEFORE_RE.search(before):
-        semantic_direction = "-"
-    elif POSITIVE_DIRECTION_BEFORE_RE.search(before):
-        semantic_direction = "+"
+        semantic_directions.add("-")
+    if NEGATIVE_DIRECTION_AFTER_RE.search(after):
+        semantic_directions.add("-")
+    if POSITIVE_DIRECTION_AFTER_RE.search(after):
+        semantic_directions.add("+")
+    if (
+        NEGATIVE_DIRECTION_BEFORE_RE.search(word_before)
+        and not NEGATED_NEGATIVE_BEFORE_RE.search(word_before)
+    ):
+        semantic_directions.add("-")
+    if (
+        POSITIVE_DIRECTION_BEFORE_RE.search(word_before)
+        and not NEGATED_POSITIVE_BEFORE_RE.search(word_before)
+    ):
+        semantic_directions.add("+")
+    if len(semantic_directions) > 1:
+        return "invalid"
+    semantic_direction = next(iter(semantic_directions), "")
     if explicit_sign and semantic_direction and explicit_sign != semantic_direction:
         return "invalid"
     return explicit_sign or semantic_direction
@@ -675,8 +726,6 @@ def validate_evidence_numbers(
         def local_context(
             claim_start: int,
             claim_end: int,
-            *,
-            allow_adjacent_dates: bool = False,
         ) -> tuple[set[str], _EvidenceNumericContext]:
             nearest_cluster = _nearest_citation_cluster(
                 claim_start,
@@ -685,7 +734,7 @@ def validate_evidence_numbers(
             )
             local_ids = citation_assignments.get((claim_start, claim_end))
             if local_ids is None:
-                if len(nearest_cluster[2]) > 1 and not allow_adjacent_dates:
+                if len(nearest_cluster[2]) > 1:
                     raise EvidenceCitationError(
                         "Adjacent citations are ambiguous for a numeric claim; "
                         "place each evidence ID immediately after the claim it supports."
@@ -739,16 +788,43 @@ def validate_evidence_numbers(
             )
 
         for date_match in dates:
-            local_ids, context = local_context(
-                date_match.start(),
-                date_match.end(),
-                allow_adjacent_dates=True,
-            )
+            if numeric_claims and date_match.end() <= numeric_claims[0].start():
+                local_ids = set()
+                for numeric_claim in numeric_claims:
+                    local_ids.update(
+                        citation_assignments.get(
+                            (numeric_claim.start(), numeric_claim.end()),
+                            set(_nearest_citation_cluster(
+                                numeric_claim.start(),
+                                numeric_claim.end(),
+                                citation_clusters,
+                            )[2]),
+                        )
+                    )
+            else:
+                local_ids = set(_nearest_citation_cluster(
+                    date_match.start(),
+                    date_match.end(),
+                    citation_clusters,
+                )[2])
+            unknown_ids = local_ids - contexts.keys()
+            if unknown_ids:
+                raise EvidenceCitationError(
+                    f"Unknown evidence citations: {', '.join(sorted(unknown_ids))}."
+                )
             date_value = date_match.group(0)
-            if not any(date_value in value for value in context.strings):
+            unsupported_ids = [
+                evidence_id
+                for evidence_id in sorted(local_ids)
+                if not any(
+                    date_value in value
+                    for value in contexts[evidence_id].strings
+                )
+            ]
+            if unsupported_ids:
                 raise EvidenceCitationError(
                     f"Unsupported date claim {date_value!r} for citations "
-                    f"{', '.join(sorted(local_ids))}."
+                    f"{', '.join(unsupported_ids)}."
                 )
         for numeric_claim in numeric_claims:
             local_ids, context = local_context(
@@ -882,19 +958,10 @@ async def generate_stock_report(
             if item.get("id")
         }
         metadata = decision_support.get("metadata") or {}
-        identity_values = [
-            str(value)
-            for value in (metadata.get("company_name"), canonical_ticker)
-            if value
-        ]
-        company_name = str(metadata.get("company_name") or "")
-        numeric_name_prefix = re.match(
-            r"^[+\-−–—]?\d+(?:\.\d+)?(?:[A-Za-z×]+)?",
-            company_name,
+        identity_strings = _company_identity_strings(
+            str(metadata.get("company_name") or ""),
+            canonical_ticker,
         )
-        if numeric_name_prefix:
-            identity_values.append(numeric_name_prefix.group(0))
-        identity_strings = tuple(dict.fromkeys(identity_values))
         prompt = base_prompt
         content = ""
         for attempt in range(MAX_REPORT_GENERATION_ATTEMPTS):

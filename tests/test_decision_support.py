@@ -23,6 +23,7 @@ from models import (
 )
 from services.ai_assistant import (
     EvidenceCitationError,
+    _company_identity_strings,
     build_evidence_hash,
     generate_stock_report,
     validate_evidence_citations,
@@ -733,11 +734,18 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         evidence,
         identity_strings=("3M",),
     )
+    validate_evidence_numbers(
+        "3M shares trade at $10 [E1].",
+        evidence,
+        identity_strings=("3M",),
+    )
     validate_evidence_numbers("Free cash flow was -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was −$40M [E30].", evidence)
     validate_evidence_numbers("Free cash flow was $-40MM [E30].", evidence)
     validate_evidence_numbers("Free cash flow was ($40M) [E30].", evidence)
     validate_evidence_numbers("Negative free cash flow of $40 million was recorded [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was not yet positive at -$40 million [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was not yet negative at +$40 million [E31].", evidence)
     validate_evidence_numbers("Enterprise value is $12.3 billion [E33].", evidence)
     validate_evidence_numbers("Projected FCF reaches $900 million [E33].", evidence)
     validate_evidence_numbers("The published spread is 300bps [E32].", evidence)
@@ -747,6 +755,11 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     )
     validate_evidence_numbers(
         "The current price is $10 while revenue is $466.8 billion [E1], [E3].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "As of 2026-06-30, the current price is $10 while revenue is "
+        "$466.8 billion [E1], [E3].",
         evidence,
     )
     validate_evidence_numbers("According to [E1], the current price is $10.", evidence)
@@ -765,6 +778,8 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("The base case has +32.4% downside [E6].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Positive free cash flow of -$40 million [E30].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Positive free cash flow of ($40 million) [E30].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The base case differs by 32.4% [E5].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
@@ -812,6 +827,31 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         )
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Free cash flow was $30 [E30].", evidence)
+
+
+def test_company_identity_aliases_strip_legal_suffixes():
+    aliases = _company_identity_strings("10x Genomics, Inc.", "TXG.US")
+    assert "10x Genomics" in aliases
+    assert "10x" in aliases
+    assert "TXG.US" in aliases
+    validate_evidence_numbers(
+        "10x Genomics is covered by the current price record [E1].",
+        [{"id": "E1", "kind": "price", "source_date": "2026-06-30", "value": 10}],
+        identity_strings=aliases,
+    )
+
+
+def test_sentence_level_date_must_match_each_numeric_claim_citation():
+    evidence = [
+        {"id": "E1", "kind": "price", "source_date": "2026-06-29", "value": 10},
+        {"id": "E3", "source_date": "2026-06-30", "value": {"revenue": 466_800_000_000}},
+    ]
+    with pytest.raises(EvidenceCitationError, match="Unsupported date claim"):
+        validate_evidence_numbers(
+            "As of 2026-06-30, the current price is $10 while revenue is "
+            "$466.8 billion [E1], [E3].",
+            evidence,
+        )
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
