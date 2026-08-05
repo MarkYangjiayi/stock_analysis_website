@@ -10,7 +10,7 @@
 
 > **v2:** The system now separates API and worker lifecycles, preserves point-in-time fundamentals/universe history and corporate actions, quality-gates every publication, and includes a versioned factor lab plus cost-aware backtesting. See [the current architecture](docs/architecture.md).
 
-**QuantDashboard** 是一款专为个人投资者与极客打造的全栈式股票量化分析与投研平台。基于现代前后端分离架构搭建，它深度融合了数据同步抓取、基本面多因子量化评估、实时技术指标测算以及由最新 Google Gemini 大模型驱动的 AI 智能研报引擎。
+**QuantDashboard** 是一款专为个人投资者与极客打造的全栈式股票量化分析与投研平台。基于现代前后端分离架构搭建，它深度融合了数据同步抓取、基本面多因子量化评估、实时技术指标测算以及由 DeepSeek 大模型驱动的 AI 智能研报引擎。
 
 平台致力于将枯燥的财务数字与 K 线走势，转化为直观、惊艳的交互式图表与极具洞察力的量化读数。
 
@@ -30,7 +30,7 @@
 *   **🧠 硬核多因子估值引擎 (Screener)**
     自研基本面财务分析引擎。内置经典的 DCF (现金流折现模型) 测算股票绝对内在价值 (`Intrinsic Value`) 与安全边际 (`Margin of Safety`)。创新的五维多因子雷达：覆盖 `Value (价值)`、`Quality (质量)`、`Growth (成长)`、`Health (健康)` 与 `Momentum (动量)` 维度，让优质公司显像化。
 *   **🤖 Streaming AI 流式智能研报**
-    无缝接入 Google **Gemini 2.5 Flash** 最新大模型。我们将数十项冷血的数据字典投喂至 LLM 提示词矩阵，瞬时生成包含“核心观点、估值诊断、因子解读、潜在风险”的专业 Markdown 财报。配备原生 Event-Stream 打印机效果。
+    无缝接入 DeepSeek **V4 Flash** 大模型。我们将数十项冷血的数据字典投喂至 LLM 提示词矩阵，瞬时生成包含“核心观点、估值诊断、因子解读、潜在风险”的专业 Markdown 财报。配备原生 Event-Stream 打印机效果。
 *   **📊 专业级沉浸交互图表**
     完美集成顶级图表库体系。使用 **TradingView Lightweight Charts** 高性能渲染带交互的蜡烛图、成交量潮，并支持动态挂载服务端实时算出的 `MACD`、`RSI`、`MA20/50` 指标。使用 **ECharts** 构建震撼的双 Y 轴（历史金额对比+毛利率走势）柱线复合财务趋势图。
 *   **🌐 Point-in-Time 市场总览**
@@ -51,7 +51,7 @@
 *   **ORM / DB Driver**: SQLAlchemy 2.0 (Async Engine), `aiosqlite`
 *   **Database**: SQLite (WAL 模式并发优化)
 *   **Quant & Analytics**: `pandas`, `pandas-ta-classic` (技术指标换算)
-*   **AI SDK**: `google-genai` (Gemini API 官方套件)
+*   **AI SDK**: `openai` (DeepSeek OpenAI-compatible API)
 
 ### Frontend (UI & Visualization)
 *   **Framework**: Next.js (App Router 模式), React 18
@@ -77,7 +77,7 @@ stock_analysis_website/
 ├── services/     # 💎 后台三大核心服务层：
 │   ├── analyzer.py       # 量化分析引擎 (Pandas清洗, DCF模型, 因子提取)
 │   ├── data_sync.py      # EODHD 外部接口异步抓取与落库同步网络
-│   └── ai_assistant.py   # Google LLM API Prompt 构建与 Generator 分发
+│   └── ai_assistant.py   # DeepSeek LLM Prompt 构建与 Generator 分发
 │
 └── frontend/     # Next.js 客户端应用群落
     ├── src/app/          # 全局页面入口, globals.css, Route Layout
@@ -118,8 +118,11 @@ DATABASE_URL="sqlite+aiosqlite:///./quantify_local.db"
 # EODHD API Key (Financial Data Provider)
 EODHD_API_KEY=your_eodhd_api_key
 
-# Google Gemini API Key (AI Reporting)
-GEMINI_API_KEY=your_gemini_api_key
+# DeepSeek API (AI Reporting)
+DEEPSEEK_API_KEY=your_deepseek_api_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_THINKING_ENABLED=false
 ```
 
 ### 3. 启动后端服务 (FastAPI)

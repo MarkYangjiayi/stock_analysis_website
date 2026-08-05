@@ -18,7 +18,12 @@ class Settings(BaseSettings):
     # EODHD API 配置
     EODHD_API_KEY: str = "demo"
     EODHD_BASE_URL: str = "https://eodhd.com/api"
-    GEMINI_API_KEY: str = "demo"
+
+    # DeepSeek API 配置
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    DEEPSEEK_THINKING_ENABLED: bool = False
     
     # Notifications
     FEISHU_WEBHOOK_URL: str = ""

@@ -1,8 +1,11 @@
-import os
-from google import genai
 import logging
+from collections.abc import AsyncIterator
 
 from core.config import settings
+from services.deepseek_client import (
+    generate_deepseek_text,
+    stream_deepseek_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -11,21 +14,21 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
+async def generate_stock_report(
+    ticker: str,
+    analysis_data: dict,
+) -> AsyncIterator[str]:
     """
     Generates a concise markdown investment report from the current published snapshot.
     Initializes the client PER REQUEST to ensure concurrency safety and config isolation.
     """
-    api_key = settings.GEMINI_API_KEY
+    api_key = settings.DEEPSEEK_API_KEY
     if not api_key:
-        logger.error("GEMINI_API_KEY environment variable is missing.")
+        logger.error("DEEPSEEK_API_KEY environment variable is missing.")
         yield "Error: LLM API key not configured. Cannot generate report."
         return
 
     try:
-        # 每次调用时独立初始化 Client
-        client = genai.Client(api_key=api_key)
-        
         profile = analysis_data.get('profile', {})
         valuation = analysis_data.get('valuation_metrics') or {}
         factor_snapshot = analysis_data.get('published_factor_snapshot') or {}
@@ -75,32 +78,29 @@ async def generate_stock_report(ticker: str, analysis_data: dict) -> str:
         4. 语气专业、客观，避免强烈的买卖推荐。
         """
 
-        response_stream = await client.aio.models.generate_content_stream(
-            model='gemini-2.5-flash',
-            contents=prompt,
-        )
-        
-        async for chunk in response_stream:
-            if chunk.text:
-                yield chunk.text
+        async for chunk in stream_deepseek_text(prompt):
+            yield chunk
         
     except Exception as e:
         logger.error(f"Error generating report for {ticker}: {e}")
         yield f"Error generating report: {str(e)}"
 
-async def generate_anomaly_attribution(ticker: str, price_change: float, news_list: list) -> str:
+
+async def generate_anomaly_attribution(
+    ticker: str,
+    price_change: float,
+    news_list: list,
+) -> str:
     """
     Generates a concise attribution report for a stock price anomaly.
     Initializes the client PER REQUEST to ensure concurrency safety.
     """
-    api_key = settings.GEMINI_API_KEY
+    api_key = settings.DEEPSEEK_API_KEY
     if not api_key:
-        logger.error("GEMINI_API_KEY environment variable is missing.")
+        logger.error("DEEPSEEK_API_KEY environment variable is missing.")
         raise AttributionGenerationError("Attribution service is not configured")
 
     try:
-        # 每次调用时独立初始化 Client
-        client = genai.Client(api_key=api_key)
         numbered_news = "\n\n".join(
             f"[{index}] {summary}"
             for index, summary in enumerate(news_list, start=1)
@@ -116,12 +116,8 @@ async def generate_anomaly_attribution(ticker: str, price_change: float, news_li
         不得补充输入中不存在的数字、评级或事件。
         """
 
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-        )
-        
-        return response.text or "无法生成归因分析"
+        response = await generate_deepseek_text(prompt)
+        return response or "无法生成归因分析"
         
     except Exception as exc:
         logger.exception("Error generating anomaly attribution for %s", ticker)
