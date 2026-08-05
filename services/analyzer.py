@@ -243,6 +243,19 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             )
             if short_debt is not None or long_debt is not None:
                 total_debt = (short_debt or 0.0) + (long_debt or 0.0)
+        stockholder_equity = _first_optional(
+            balance_stmt,
+            'totalStockholderEquity',
+            'totalShareholderEquity',
+        )
+        debt_to_equity = (
+            total_debt / stockholder_equity
+            if total_debt is not None
+            and total_debt >= 0
+            and stockholder_equity is not None
+            and stockholder_equity > 0
+            else None
+        )
 
         gross_margin = (gp / rev) if rev > 0 else 0.0
         operating_margin = (
@@ -262,6 +275,8 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
                 balance_stmt.get('cashAndShortTermInvestments')
             ),
             "total_debt": total_debt,
+            "stockholder_equity": stockholder_equity,
+            "debt_to_equity": debt_to_equity,
             "shares_outstanding": _first_optional(
                 balance_stmt,
                 'commonStockSharesOutstanding',

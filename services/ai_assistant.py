@@ -4,6 +4,7 @@ import logging
 import math
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import select
@@ -23,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v5"
+PROMPT_VERSION = "decision-evidence-v6"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -50,7 +51,10 @@ NUMERIC_CLAIM_RE = re.compile(
     r"(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
-STRING_NUMBER_RE = re.compile(r"(?<!\d)[+-]?\d+(?:\.\d+)?")
+STRING_NUMBER_RE = re.compile(r"(?<!\d)[+\-−–—]?\d+(?:\.\d+)?")
+PERCENT_STRING_NUMBER_RE = re.compile(
+    r"(?<!\d)([+\-−–—]?\d+(?:\.\d+)?)\s*%"
+)
 SCALE_DIVISORS = {
     "thousand": 1_000.0,
     "million": 1_000_000.0,
@@ -66,6 +70,51 @@ COMPACT_SCALE_DIVISORS = {
     "bn": 1_000_000_000.0,
     "t": 1_000_000_000_000.0,
 }
+RATIO_VALUE_KEYS = {
+    "fcf_growth_rate",
+    "wacc",
+    "perpetual_growth",
+    "upside_downside",
+    "gross_margin",
+    "operating_margin",
+    "net_profit_margin",
+    "roe",
+    "roa",
+    "roic",
+    "sales_growth_ttm",
+    "sales_growth_3yr",
+    "sales_growth_5yr",
+    "eps_growth_ttm",
+    "eps_growth_3yr",
+    "eps_growth_5yr",
+    "fcf_net_income_conversion",
+}
+RATIO_WARNING_METRICS = {"fcf_net_income_conversion", "margin_compression"}
+CURRENCY_VALUE_KEYS = {
+    "price",
+    "current_price",
+    "intrinsic_value_per_share",
+    "revenue",
+    "gross_profit",
+    "operating_income",
+    "net_income",
+    "fcf",
+    "free_cash_flow",
+    "cash",
+    "cash_and_short_term_investments",
+    "debt",
+    "total_debt",
+    "equity",
+    "stockholder_equity",
+}
+MULTIPLE_VALUE_KEYS = {"debt_to_equity"}
+CURRENCY_WARNING_METRICS = {
+    "revenue_change",
+    "fcf",
+    "fcf_change",
+    "cash_change",
+}
+MULTIPLE_WARNING_METRICS = {"debt_to_equity", "debt_to_equity_change"}
 NEGATIVE_DIRECTION_BEFORE_RE = re.compile(
     r"\b(?:downside|decline|decrease|drop|loss)(?:\s+(?:of|is|was|by))?\s*$"
     r"|\b(?:fell|declined|decreased|dropped|lost|down)(?:\s+by)?\s*$",
@@ -89,6 +138,17 @@ MAX_REPORT_GENERATION_ATTEMPTS = 2
 
 class EvidenceCitationError(ValueError):
     """Raised when a generated brief is not bound to supplied evidence."""
+
+
+@dataclass
+class _EvidenceNumericContext:
+    numeric_values: list[float]
+    ratio_values: list[float]
+    multiple_values: list[float]
+    currency_values: list[float]
+    string_values: list[float]
+    percent_string_values: list[float]
+    strings: set[str]
 
 
 def build_evidence_hash(decision_support: dict, model: str) -> str:
@@ -164,28 +224,74 @@ def validate_evidence_citations(content: str, evidence_ids: set[str]) -> None:
             )
 
 
-def _evidence_numeric_context(item: dict) -> tuple[list[float], list[float], set[str]]:
+def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
     """Collect explicit evidence numbers without treating an evidence ID as a fact."""
     numeric_values: list[float] = []
+    ratio_values: list[float] = []
+    multiple_values: list[float] = []
+    currency_values: list[float] = []
     string_values: list[float] = []
+    percent_string_values: list[float] = []
     strings: set[str] = set()
 
-    def visit(value: object) -> None:
+    def visit(
+        value: object,
+        *,
+        ratio_hint: bool = False,
+        multiple_hint: bool = False,
+        currency_hint: bool = False,
+    ) -> None:
         if isinstance(value, bool):
             return
         elif isinstance(value, (int, float)):
             number = float(value)
             if math.isfinite(number):
                 numeric_values.append(number)
+                if ratio_hint:
+                    ratio_values.append(number)
+                if multiple_hint:
+                    multiple_values.append(number)
+                if currency_hint:
+                    currency_values.append(number)
         elif isinstance(value, str):
             strings.add(value)
             numeric_text = ISO_DATE_RE.sub("", value)
             for match in STRING_NUMBER_RE.finditer(numeric_text):
+                raw_token = match.group(0)
+                raw_value = raw_token.replace("−", "-").replace("–", "-").replace("—", "-")
                 try:
-                    string_values.append(float(match.group(0)))
+                    string_value = float(raw_value)
                 except ValueError:
                     continue
+                if raw_token[0] not in "+-−–—":
+                    before = numeric_text[max(0, match.start() - 48):match.start()]
+                    after = numeric_text[match.end():match.end() + 32]
+                    if (
+                        NEGATIVE_DIRECTION_BEFORE_RE.search(before)
+                        or NEGATIVE_DIRECTION_AFTER_RE.search(after)
+                    ):
+                        string_value = -abs(string_value)
+                string_values.append(string_value)
+            for match in PERCENT_STRING_NUMBER_RE.finditer(numeric_text):
+                raw_token = match.group(1)
+                raw_value = raw_token.replace("−", "-").replace("–", "-").replace("—", "-")
+                try:
+                    percent_value = float(raw_value)
+                except ValueError:
+                    continue
+                if raw_token[0] not in "+-−–—":
+                    before = numeric_text[max(0, match.start() - 48):match.start()]
+                    after = numeric_text[match.end():match.end() + 32]
+                    if (
+                        NEGATIVE_DIRECTION_BEFORE_RE.search(before)
+                        or NEGATIVE_DIRECTION_AFTER_RE.search(after)
+                    ):
+                        percent_value = -abs(percent_value)
+                percent_string_values.append(percent_value)
         elif isinstance(value, dict):
+            format_is_percent = value.get("format") == "percent"
+            format_is_multiple = value.get("format") in {"multiple", "ratio"}
+            warning_metric = value.get("metric")
             for key, nested in value.items():
                 normalized_key = str(key).lower()
                 if (
@@ -194,10 +300,46 @@ def _evidence_numeric_context(item: dict) -> tuple[list[float], list[float], set
                     or normalized_key.endswith("_ids")
                 ):
                     continue
-                visit(nested)
+                nested_is_ratio = (
+                    ratio_hint
+                    or normalized_key in RATIO_VALUE_KEYS
+                    or (normalized_key == "metric_value" and format_is_percent)
+                    or (
+                        normalized_key in {"current", "previous"}
+                        and warning_metric in RATIO_WARNING_METRICS
+                    )
+                )
+                nested_is_multiple = (
+                    multiple_hint
+                    or normalized_key in MULTIPLE_VALUE_KEYS
+                    or (normalized_key == "metric_value" and format_is_multiple)
+                    or (
+                        normalized_key in {"current", "previous"}
+                        and warning_metric in MULTIPLE_WARNING_METRICS
+                    )
+                )
+                nested_is_currency = (
+                    currency_hint
+                    or normalized_key in CURRENCY_VALUE_KEYS
+                    or (
+                        normalized_key in {"current", "previous"}
+                        and warning_metric in CURRENCY_WARNING_METRICS
+                    )
+                )
+                visit(
+                    nested,
+                    ratio_hint=nested_is_ratio,
+                    multiple_hint=nested_is_multiple,
+                    currency_hint=nested_is_currency,
+                )
         elif isinstance(value, (list, tuple)):
             for nested in value:
-                visit(nested)
+                visit(
+                    nested,
+                    ratio_hint=ratio_hint,
+                    multiple_hint=multiple_hint,
+                    currency_hint=currency_hint,
+                )
 
     # The stable ID is intentionally excluded: citing E24 must not make 24 a
     # supported analytical value. Labels and source dates support exact textual
@@ -206,8 +348,16 @@ def _evidence_numeric_context(item: dict) -> tuple[list[float], list[float], set
         value = item.get(key)
         if value is not None:
             strings.add(str(value))
-    visit(item.get("value"))
-    return numeric_values, string_values, strings
+    visit(item.get("value"), currency_hint=item.get("kind") == "price")
+    return _EvidenceNumericContext(
+        numeric_values=numeric_values,
+        ratio_values=ratio_values,
+        multiple_values=multiple_values,
+        currency_values=currency_values,
+        string_values=string_values,
+        percent_string_values=percent_string_values,
+        strings=strings,
+    )
 
 
 def _claim_segments(content: str) -> list[str]:
@@ -306,8 +456,7 @@ def _rounded_match(candidate: float, supported: float, decimal_places: int, dire
 
 def _numeric_claim_supported(
     match: re.Match[str],
-    numeric_values: list[float],
-    string_values: list[float],
+    context: _EvidenceNumericContext,
     claim: str,
 ) -> bool:
     raw_number = match.group("number").replace(",", "")
@@ -332,19 +481,42 @@ def _numeric_claim_supported(
     ))
     if unit_count > 1:
         return False
+    if match.group("currency") and (
+        match.group("percent")
+        or basis_points
+        or match.group("multiple")
+    ):
+        return False
 
     if match.group("percent"):
-        supported_values = [value * 100.0 for value in numeric_values]
+        supported_values = [
+            *[value * 100.0 for value in context.ratio_values],
+            *context.percent_string_values,
+        ]
     elif basis_points:
-        supported_values = [value * 10_000.0 for value in numeric_values]
+        supported_values = [value * 10_000.0 for value in context.ratio_values]
     elif scale:
         divisor = SCALE_DIVISORS[scale]
-        supported_values = [value / divisor for value in numeric_values]
+        source_values = (
+            context.currency_values
+            if match.group("currency")
+            else context.numeric_values
+        )
+        supported_values = [value / divisor for value in source_values]
     elif compact_scale:
         divisor = COMPACT_SCALE_DIVISORS[compact_scale]
-        supported_values = [value / divisor for value in numeric_values]
+        source_values = (
+            context.currency_values
+            if match.group("currency")
+            else context.numeric_values
+        )
+        supported_values = [value / divisor for value in source_values]
+    elif match.group("multiple"):
+        supported_values = context.multiple_values
+    elif match.group("currency"):
+        supported_values = context.currency_values
     else:
-        supported_values = [*numeric_values, *string_values]
+        supported_values = [*context.numeric_values, *context.string_values]
 
     return any(
         _rounded_match(candidate, supported, decimal_places, direction)
@@ -388,7 +560,7 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
         def local_context(
             claim_start: int,
             claim_end: int,
-        ) -> tuple[set[str], list[float], list[float], set[str]]:
+        ) -> tuple[set[str], _EvidenceNumericContext]:
             local_ids = _nearest_citation_ids(
                 claim_start,
                 claim_end,
@@ -402,31 +574,64 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
             local_contexts = [contexts[evidence_id] for evidence_id in local_ids]
             return (
                 local_ids,
-                [number for numeric_values, _, _ in local_contexts for number in numeric_values],
-                [number for _, string_values, _ in local_contexts for number in string_values],
-                {value for _, _, strings in local_contexts for value in strings},
+                _EvidenceNumericContext(
+                    numeric_values=[
+                        number
+                        for context in local_contexts
+                        for number in context.numeric_values
+                    ],
+                    ratio_values=[
+                        number
+                        for context in local_contexts
+                        for number in context.ratio_values
+                    ],
+                    multiple_values=[
+                        number
+                        for context in local_contexts
+                        for number in context.multiple_values
+                    ],
+                    currency_values=[
+                        number
+                        for context in local_contexts
+                        for number in context.currency_values
+                    ],
+                    string_values=[
+                        number
+                        for context in local_contexts
+                        for number in context.string_values
+                    ],
+                    percent_string_values=[
+                        number
+                        for context in local_contexts
+                        for number in context.percent_string_values
+                    ],
+                    strings={
+                        value
+                        for context in local_contexts
+                        for value in context.strings
+                    },
+                ),
             )
 
         for date_match in dates:
-            local_ids, _, _, supported_strings = local_context(
+            local_ids, context = local_context(
                 date_match.start(),
                 date_match.end(),
             )
             date_value = date_match.group(0)
-            if not any(date_value in value for value in supported_strings):
+            if not any(date_value in value for value in context.strings):
                 raise EvidenceCitationError(
                     f"Unsupported date claim {date_value!r} for citations "
                     f"{', '.join(sorted(local_ids))}."
                 )
         for numeric_claim in numeric_claims:
-            local_ids, supported_numbers, supported_string_numbers, _ = local_context(
+            local_ids, context = local_context(
                 numeric_claim.start(),
                 numeric_claim.end(),
             )
             if not _numeric_claim_supported(
                 numeric_claim,
-                supported_numbers,
-                supported_string_numbers,
+                context,
                 segment,
             ):
                 raise EvidenceCitationError(

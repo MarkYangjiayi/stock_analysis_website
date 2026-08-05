@@ -115,6 +115,8 @@ export interface HistoricalFinancialPoint {
     operating_margin?: number | null;
     cash_and_short_term_investments?: number | null;
     total_debt?: number | null;
+    stockholder_equity?: number | null;
+    debt_to_equity?: number | null;
     shares_outstanding?: number | null;
     price?: number | null;
 }
@@ -209,7 +211,7 @@ export interface DecisionWarning {
     metric: string;
     current: number | null;
     previous: number | null;
-    evidence_metric: "revenue" | "gross_margin" | "operating_margin" | "fcf" | "cash" | "debt" | "shares";
+    evidence_metric: "revenue" | "gross_margin" | "operating_margin" | "fcf" | "cash" | "debt" | "debt_to_equity" | "shares";
     evidence_id: string;
 }
 

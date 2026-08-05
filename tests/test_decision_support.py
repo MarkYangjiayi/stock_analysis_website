@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sqlite3
 import subprocess
@@ -385,6 +386,7 @@ async def test_financial_history_exposes_optional_warning_evidence_fields(db_ses
         balance_sheet={
             "cashAndShortTermInvestments": 40,
             "totalDebt": 10,
+            "totalStockholderEquity": 5,
             "commonStockSharesOutstanding": 5,
         },
     ))
@@ -395,6 +397,8 @@ async def test_financial_history_exposes_optional_warning_evidence_fields(db_ses
     assert point["operating_margin"] == pytest.approx(0.25)
     assert point["cash_and_short_term_investments"] == pytest.approx(40)
     assert point["total_debt"] == pytest.approx(10)
+    assert point["stockholder_equity"] == pytest.approx(5)
+    assert point["debt_to_equity"] == pytest.approx(2)
     assert point["shares_outstanding"] == pytest.approx(5)
 
 
@@ -514,6 +518,27 @@ def test_intentionally_empty_server_watchlist_blocks_later_browser_imports():
         assert attempted_import.json() == {"tickers": [], "imported": False}
 
 
+@pytest.mark.asyncio
+async def test_concurrent_first_watchlist_imports_choose_one_authoritative_list():
+    from database import async_session_maker
+    from services.personal_workspace import get_watchlist, import_watchlist_if_empty
+
+    async def run_import(tickers):
+        async with async_session_maker() as session:
+            return await import_watchlist_if_empty(session, tickers)
+
+    results = await asyncio.gather(
+        run_import(["AAPL"]),
+        run_import(["NVDA"]),
+    )
+    async with async_session_maker() as session:
+        authoritative = await get_watchlist(session)
+
+    assert sum(imported for _, imported in results) == 1
+    assert authoritative in (["AAPL.US"], ["NVDA.US"])
+    assert all(tickers == authoritative for tickers, _ in results)
+
+
 def test_personal_valuation_endpoints_save_and_reset_scenarios():
     from main import app
 
@@ -617,6 +642,7 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     evidence = [
         {
             "id": "E1",
+            "kind": "price",
             "label": "Current price",
             "source_date": "2026-06-30",
             "value": 10,
@@ -647,25 +673,27 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             "id": "E13",
             "label": "Valuation multiple fixture",
             "source_date": "2026-06-30",
-            "value": 32.4,
+            "value": {"format": "multiple", "metric_value": 32.4},
         },
         {
             "id": "E30",
+            "kind": "fundamental_warning",
             "label": "Negative cash-flow fixture",
             "source_date": "2026-06-30",
-            "value": {"evidence_id": "E30", "current": -40_000_000},
+            "value": {"evidence_id": "E30", "metric": "fcf", "current": -40_000_000},
         },
         {
             "id": "E31",
+            "kind": "fundamental_warning",
             "label": "Positive cash-flow fixture",
             "source_date": "2026-06-30",
-            "value": 40_000_000,
+            "value": {"metric": "fcf", "current": 40_000_000},
         },
         {
             "id": "E32",
             "label": "Rate fixture",
             "source_date": "2026-06-30",
-            "value": 0.03,
+            "value": {"wacc": 0.03},
         },
     ]
     valid = (
@@ -710,6 +738,12 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("Free cash flow was $41M [E30].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The current price is $30 [E1].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The current price increased 1000% [E1].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The current-price multiple is 10x [E1].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The statement count is $8 [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The published spread is 301bps [E32].", evidence)
     with pytest.raises(EvidenceCitationError, match="citations E1"):

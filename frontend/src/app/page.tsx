@@ -207,6 +207,7 @@ function AnalysisPage() {
             fcf: "free_cash_flow",
             cash: "cash_and_short_term_investments",
             debt: "total_debt",
+            debt_to_equity: "debt_to_equity",
             shares: "shares_outstanding",
         };
         setFinancialMetric(metricMap[metric]);

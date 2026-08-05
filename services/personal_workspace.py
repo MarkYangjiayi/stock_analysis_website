@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
@@ -12,6 +15,7 @@ from models import (
     TickerValuationScenario,
 )
 from services.security_master import canonicalize_ticker
+from core.time_utils import utc_now
 
 
 SCENARIO_NAMES = ("bear", "base", "bull")
@@ -40,36 +44,53 @@ async def get_watchlist(db: AsyncSession) -> list[str]:
     return [row.ticker for row in result.scalars().all()]
 
 
-async def _lock_watchlist_state(db: AsyncSession) -> PersonalWorkspaceState:
-    result = await db.execute(
-        select(PersonalWorkspaceState)
-        .where(PersonalWorkspaceState.id == 1)
-        .with_for_update()
-    )
-    state = result.scalar_one_or_none()
-    if state is not None:
-        return state
-
-    # Alembic seeds this row in production. This fallback keeps metadata-created
-    # development/test databases compatible and preserves any pre-existing list.
-    state = PersonalWorkspaceState(
-        id=1,
-        watchlist_initialized=bool(await get_watchlist(db)),
-    )
-    db.add(state)
-    await db.flush()
-    return state
+async def _ensure_watchlist_state(db: AsyncSession) -> None:
+    """Idempotently seed the singleton for metadata-created databases."""
+    has_items = bool(await get_watchlist(db))
+    values = {
+        "id": 1,
+        "watchlist_initialized": has_items,
+        "updated_at": utc_now(),
+    }
+    dialect = db.get_bind().dialect.name
+    if dialect == "sqlite":
+        statement = sqlite_insert(PersonalWorkspaceState).values(**values)
+        statement = statement.on_conflict_do_nothing(index_elements=["id"])
+        await db.execute(statement)
+    elif dialect == "postgresql":
+        statement = postgresql_insert(PersonalWorkspaceState).values(**values)
+        statement = statement.on_conflict_do_nothing(index_elements=["id"])
+        await db.execute(statement)
+    else:  # pragma: no cover - supported deployments use SQLite or PostgreSQL
+        existing = await db.get(PersonalWorkspaceState, 1)
+        if existing is None:
+            db.add(PersonalWorkspaceState(**values))
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+    if has_items:
+        await db.execute(
+            update(PersonalWorkspaceState)
+            .where(PersonalWorkspaceState.id == 1)
+            .values(watchlist_initialized=True, updated_at=utc_now())
+        )
+    await db.commit()
 
 
 async def replace_watchlist(db: AsyncSession, tickers: Iterable[str]) -> list[str]:
     normalized = normalize_watchlist(tickers)
-    state = await _lock_watchlist_state(db)
+    await _ensure_watchlist_state(db)
+    await db.execute(
+        update(PersonalWorkspaceState)
+        .where(PersonalWorkspaceState.id == 1)
+        .values(watchlist_initialized=True, updated_at=utc_now())
+    )
     await db.execute(delete(PersonalWatchlistItem))
     db.add_all(
         PersonalWatchlistItem(ticker=ticker, sort_order=index)
         for index, ticker in enumerate(normalized)
     )
-    state.watchlist_initialized = True
     await db.commit()
     return normalized
 
@@ -80,14 +101,22 @@ async def import_watchlist_if_empty(
 ) -> tuple[list[str], bool]:
     """Import the legacy browser watchlist once; existing server data always wins."""
     normalized = normalize_watchlist(tickers)
-    state = await _lock_watchlist_state(db)
+    await _ensure_watchlist_state(db)
+    claim = await db.execute(
+        update(PersonalWorkspaceState)
+        .where(
+            PersonalWorkspaceState.id == 1,
+            PersonalWorkspaceState.watchlist_initialized.is_(False),
+        )
+        .values(watchlist_initialized=True, updated_at=utc_now())
+    )
+    claimed = claim.rowcount == 1
     current = await get_watchlist(db)
-    if state.watchlist_initialized:
+    if not claimed:
         await db.commit()
         return current, False
 
     if current:
-        state.watchlist_initialized = True
         await db.commit()
         return current, False
 
@@ -95,7 +124,6 @@ async def import_watchlist_if_empty(
         PersonalWatchlistItem(ticker=ticker, sort_order=index)
         for index, ticker in enumerate(normalized)
     )
-    state.watchlist_initialized = True
     await db.commit()
     return normalized, True
 

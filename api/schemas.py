@@ -35,6 +35,8 @@ class HistoricalFinancialPointModel(BaseModel):
     operating_margin: Optional[float] = None
     cash_and_short_term_investments: Optional[float] = None
     total_debt: Optional[float] = None
+    stockholder_equity: Optional[float] = None
+    debt_to_equity: Optional[float] = None
     shares_outstanding: Optional[float] = None
     price: Optional[float] = None
 

@@ -14,6 +14,7 @@ export type FinancialEvidenceMetric =
     | "operating_margin"
     | "cash_and_short_term_investments"
     | "total_debt"
+    | "debt_to_equity"
     | "shares_outstanding";
 
 interface FinancialTrendChartProps {
@@ -29,7 +30,7 @@ interface FinancialTrendChartProps {
 const METRICS: Array<{
     key: FinancialEvidenceMetric;
     label: string;
-    unit: "currency" | "percent" | "count";
+    unit: "currency" | "percent" | "count" | "ratio";
     color: string;
 }> = [
     { key: "overview", label: "Financial overview", unit: "currency", color: "#10b981" },
@@ -40,6 +41,7 @@ const METRICS: Array<{
     { key: "operating_margin", label: "Operating margin", unit: "percent", color: "#a855f7" },
     { key: "cash_and_short_term_investments", label: "Cash + short-term investments", unit: "currency", color: "#14b8a6" },
     { key: "total_debt", label: "Total debt", unit: "currency", color: "#ef4444" },
+    { key: "debt_to_equity", label: "Debt / equity", unit: "ratio", color: "#e11d48" },
     { key: "shares_outstanding", label: "Shares outstanding", unit: "count", color: "#64748b" },
 ];
 
@@ -124,6 +126,13 @@ export default function FinancialTrendChart({
             nameTextStyle: { color: textColor },
             splitLine: { show: false },
         };
+        const ratioAxis = {
+            type: "value",
+            name: "Debt / equity (x)",
+            axisLabel: { color: textColor, formatter: (value: number) => `${value.toFixed(2)}x` },
+            nameTextStyle: { color: textColor },
+            splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+        };
         const priceSeries = (axisIndex: number) => ({
             name: "Matched stock price",
             type: "line",
@@ -151,6 +160,8 @@ export default function FinancialTrendChart({
             const config = METRICS.find((item) => item.key === metric)!;
             const primaryAxis = config.unit === "percent"
                 ? { ...percentAxis, position: "left", name: config.label }
+                : config.unit === "ratio"
+                    ? ratioAxis
                 : {
                     ...amountAxis,
                     name: config.unit === "count" ? "Shares" : config.label,
@@ -163,7 +174,7 @@ export default function FinancialTrendChart({
             series = [
                 {
                     name: config.label,
-                    type: config.unit === "percent" ? "line" : "bar",
+                    type: config.unit === "percent" || config.unit === "ratio" ? "line" : "bar",
                     yAxisIndex: 0,
                     data: points.map((point) => valueForMetric(point, metric)),
                     itemStyle: { color: config.color, borderRadius: [4, 4, 0, 0] },
@@ -189,8 +200,11 @@ export default function FinancialTrendChart({
                         const isPercent = param.seriesName.toLowerCase().includes("margin");
                         const isPrice = param.seriesName === "Matched stock price";
                         const isShares = param.seriesName === "Shares outstanding";
+                        const isRatio = param.seriesName === "Debt / equity";
                         const shown = isPercent
                             ? `${Number(param.value).toFixed(2)}%`
+                            : isRatio
+                                ? `${Number(param.value).toFixed(2)}x`
                             : isShares
                                 ? compact(Number(param.value))
                                 : isPrice

@@ -803,13 +803,13 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
     previous_de = prior.get("debt_to_equity")
     if current_de is not None and current_de > 1.5:
         severity = "high" if current_de > 3.0 else "warning"
-        warnings.append(_risk("debt_level", severity, "Elevated debt / equity", f"Debt / equity is {current_de:.2f}x.", "debt_to_equity", current_de, previous_de, "debt"))
+        warnings.append(_risk("debt_level", severity, "Elevated debt / equity", f"Debt / equity is {current_de:.2f}x.", "debt_to_equity", current_de, previous_de, "debt_to_equity"))
     elif current_de is None:
         notes.append({"code": "debt_level_unavailable", "message": "Debt / equity could not be assessed because debt or positive equity is unavailable."})
 
     debt_increase = _increase(current_de, previous_de)
     if current_de is not None and current_de > 0.5 and debt_increase is not None and debt_increase > 0.50:
-        warnings.append(_risk("debt_increase", "warning", "Debt / equity rising quickly", f"Debt / equity rose {debt_increase:.1%} year over year to {current_de:.2f}x.", "debt_to_equity_change", current_de, previous_de, "debt"))
+        warnings.append(_risk("debt_increase", "warning", "Debt / equity rising quickly", f"Debt / equity rose {debt_increase:.1%} year over year to {current_de:.2f}x.", "debt_to_equity_change", current_de, previous_de, "debt_to_equity"))
     elif current_de is None or previous_de is None or previous_de <= 0:
         notes.append({"code": "debt_trend_unavailable", "message": "The YoY debt / equity trend could not be assessed from two positive observations."})
 
@@ -918,7 +918,7 @@ def _evidence_items(
     for evidence_id, scenario in zip(("E4", "E5", "E6"), valuation["scenarios"]):
         items.append({"id": evidence_id, "kind": "valuation", "label": f"{scenario['scenario'].title()} DCF", "value": scenario, "source_date": _iso(financial["latest_statement_date"]), "available": scenario["available"]})
     for metric in peers["metrics"]:
-        items.append({"id": metric["evidence_id"], "kind": "peer_metric", "label": metric["label"], "value": {"metric_value": metric["value"], "direction": metric["direction"], "industry": metric["industry"], "sector": metric["sector"], "summary_scope": metric["summary_scope"], "summary_percentile": metric["summary_percentile"]}, "source_date": _iso(screener_date), "available": metric["summary_percentile"] is not None})
+        items.append({"id": metric["evidence_id"], "kind": "peer_metric", "label": metric["label"], "value": {"metric_value": metric["value"], "format": metric["format"], "direction": metric["direction"], "industry": metric["industry"], "sector": metric["sector"], "summary_scope": metric["summary_scope"], "summary_percentile": metric["summary_percentile"]}, "source_date": _iso(screener_date), "available": metric["summary_percentile"] is not None})
     by_rule = {item["id"]: item for item in risks["warnings"]}
     notes_by_code = {
         note["code"]: note
