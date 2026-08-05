@@ -29,7 +29,7 @@ export const readLegacyWatchlist = (): string[] => {
                     .filter((value): value is string => typeof value === "string")
                     .map(canonicalizeForDisplay)
                     .filter(Boolean);
-                if (values.length) return [...new Set(values)].slice(0, 100);
+                return [...new Set(values)].slice(0, 100);
             }
         } catch { /* Fall through to the defaults. */ }
     }

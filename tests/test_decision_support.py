@@ -532,7 +532,11 @@ The deterministic risk record is cited [E27]."""
 
 def _decision_for_ai():
     return {
-        "metadata": {"ticker": "AAA.US", "price_date": "2025-01-01"},
+        "metadata": {
+            "ticker": "AAA.US",
+            "company_name": "AAA Corporation",
+            "price_date": "2025-01-01",
+        },
         "valuation": {"scenarios": [{"assumptions": DEFAULT_SCENARIOS[0]}]},
         "evidence": [
             {"id": "E1", "available": True, "source_date": "2025-01-01", "value": 10},
@@ -586,6 +590,10 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("Revenue was $466.8 billion.", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The base case has +32.4% upside [E5].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The base case has 32.4% upside [E5].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The base case differs by 32.4% [E5].", evidence)
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
@@ -597,13 +605,16 @@ def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
     changed_date["metadata"]["price_date"] = "2025-01-02"
     changed_assumption = deepcopy(decision)
     changed_assumption["valuation"]["scenarios"][0]["assumptions"]["wacc"] = 0.2
+    changed_identity = deepcopy(decision)
+    changed_identity["metadata"]["company_name"] = "AAA Holdings"
     assert len({
         baseline,
         build_evidence_hash(changed_value, "model-a"),
         build_evidence_hash(changed_date, "model-a"),
         build_evidence_hash(changed_assumption, "model-a"),
+        build_evidence_hash(changed_identity, "model-a"),
         build_evidence_hash(decision, "model-b"),
-    }) == 5
+    }) == 6
 
 
 @pytest.mark.asyncio

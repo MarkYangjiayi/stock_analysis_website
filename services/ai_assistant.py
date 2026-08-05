@@ -23,7 +23,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v2"
+PROMPT_VERSION = "decision-evidence-v3"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -50,6 +50,24 @@ SCALE_DIVISORS = {
     "billion": 1_000_000_000.0,
     "trillion": 1_000_000_000_000.0,
 }
+NEGATIVE_DIRECTION_BEFORE_RE = re.compile(
+    r"\b(?:downside|decline|decrease|drop|loss)(?:\s+(?:of|is|was|by))?\s*$"
+    r"|\b(?:fell|declined|decreased|dropped|lost|down)(?:\s+by)?\s*$",
+    re.IGNORECASE,
+)
+POSITIVE_DIRECTION_BEFORE_RE = re.compile(
+    r"\b(?:upside|increase|gain|premium)(?:\s+(?:of|is|was|by))?\s*$"
+    r"|\b(?:rose|increased|grew|gained|up)(?:\s+by)?\s*$",
+    re.IGNORECASE,
+)
+NEGATIVE_DIRECTION_AFTER_RE = re.compile(
+    r"^\s*(?:downside|below|lower|negative|decline|decrease|drop|loss)\b",
+    re.IGNORECASE,
+)
+POSITIVE_DIRECTION_AFTER_RE = re.compile(
+    r"^\s*(?:upside|above|higher|positive|increase|gain|premium)\b",
+    re.IGNORECASE,
+)
 MAX_REPORT_GENERATION_ATTEMPTS = 2
 
 
@@ -58,12 +76,17 @@ class EvidenceCitationError(ValueError):
 
 
 def build_evidence_hash(decision_support: dict, model: str) -> str:
+    metadata = decision_support.get("metadata") or {}
     payload = {
         "prompt_version": PROMPT_VERSION,
         "model": model,
+        "prompt_identity": {
+            "ticker": metadata.get("ticker"),
+            "company_name": metadata.get("company_name"),
+        },
         "source_dates": {
             key: value
-            for key, value in (decision_support.get("metadata") or {}).items()
+            for key, value in metadata.items()
             if key.endswith("_date") or key.endswith("_at")
         },
         "valuation_assumptions": [
@@ -176,13 +199,31 @@ def _claim_segments(content: str) -> list[str]:
     return segments
 
 
-def _rounded_match(candidate: float, supported: float, decimal_places: int, explicit_sign: str) -> bool:
-    if explicit_sign == "+" and supported < 0:
+def _claim_direction(match: re.Match[str], claim: str) -> str:
+    explicit_sign = match.group("sign") or ""
+    if explicit_sign:
+        return explicit_sign
+
+    before = claim[max(0, match.start() - 48):match.start()]
+    after = claim[match.end():match.end() + 32]
+    if NEGATIVE_DIRECTION_AFTER_RE.search(after):
+        return "-"
+    if POSITIVE_DIRECTION_AFTER_RE.search(after):
+        return "+"
+    if NEGATIVE_DIRECTION_BEFORE_RE.search(before):
+        return "-"
+    if POSITIVE_DIRECTION_BEFORE_RE.search(before):
+        return "+"
+    return ""
+
+
+def _rounded_match(candidate: float, supported: float, decimal_places: int, direction: str) -> bool:
+    if direction == "+" and supported < 0:
         return False
-    if explicit_sign == "-" and supported > 0:
+    if direction == "-" and supported > 0:
         return False
-    candidate_value = candidate if explicit_sign else abs(candidate)
-    supported_value = supported if explicit_sign else abs(supported)
+    candidate_value = abs(candidate) if direction else candidate
+    supported_value = abs(supported) if direction else supported
     tolerance = (0.5 * (10 ** -decimal_places)) + 1e-9
     return abs(candidate_value - supported_value) <= tolerance
 
@@ -191,10 +232,12 @@ def _numeric_claim_supported(
     match: re.Match[str],
     numeric_values: list[float],
     string_values: list[float],
+    claim: str,
 ) -> bool:
     raw_number = match.group("number").replace(",", "")
     sign = match.group("sign") or ""
     candidate = float(f"{sign}{raw_number}")
+    direction = _claim_direction(match, claim)
     decimal_places = len(raw_number.partition(".")[2])
     scale = (match.group("scale") or "").lower()
 
@@ -207,7 +250,7 @@ def _numeric_claim_supported(
         supported_values = [*numeric_values, *string_values]
 
     return any(
-        _rounded_match(candidate, supported, decimal_places, sign)
+        _rounded_match(candidate, supported, decimal_places, direction)
         for supported in supported_values
     )
 
@@ -266,6 +309,7 @@ def validate_evidence_numbers(content: str, evidence: list[dict]) -> None:
                 numeric_claim,
                 supported_numbers,
                 supported_string_numbers,
+                claim_without_dates,
             ):
                 raise EvidenceCitationError(
                     f"Unsupported numeric claim {numeric_claim.group(0).strip()!r} "
@@ -305,7 +349,9 @@ number must end with the evidence ID or IDs that explicitly contain that
 number. You may round evidence values, format ratios as percentages, and scale
 currency values to thousands, millions, billions, or trillions. Do not perform
 new arithmetic or introduce a derived number; reuse the supplied values such as
-upside_downside directly. Keep the brief below 650 words, avoid an aggregate
+upside_downside directly. Directional words such as upside/downside and
+above/below must agree with the sign of the cited evidence. Keep the brief
+below 650 words, avoid an aggregate
 score or confidence number, and avoid direct buy/sell advice.
 """.strip()
 

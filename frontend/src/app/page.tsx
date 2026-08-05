@@ -34,6 +34,7 @@ function AnalysisPage() {
     const [loading, setLoading] = useState(false);
     const [factorLoading, setFactorLoading] = useState(false);
     const [decisionLoading, setDecisionLoading] = useState(false);
+    const [decisionRefreshVersion, setDecisionRefreshVersion] = useState(0);
     const [chartLoading, setChartLoading] = useState(false);
     const [error, setError] = useState("");
     const [factorError, setFactorError] = useState("");
@@ -63,10 +64,15 @@ function AnalysisPage() {
         setError("");
         try {
             const data = await fetchStockData(symbol, interval, period === "quarterly" ? "Quarterly" : "Yearly", controller.signal);
-            if (!controller.signal.aborted) setStockData(data);
+            if (!controller.signal.aborted) {
+                setStockData(data);
+                return true;
+            }
+            return false;
         } catch (caught) {
-            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (caught instanceof DOMException && caught.name === "AbortError") return false;
             if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Unable to load this security.");
+            return false;
         } finally {
             if (!controller.signal.aborted) {
                 setLoading(false);
@@ -135,7 +141,11 @@ function AnalysisPage() {
         setChartInterval("1d");
         setFinancialPeriod("annual");
         setFinancialMetric("overview");
-        void loadStock(requestedTicker, "1d", "annual", true);
+        void loadStock(requestedTicker, "1d", "annual", true).then((loaded) => {
+            // The stock endpoint can populate a cold local snapshot. Refresh the
+            // cockpit after that read-through completes so it sees the new data.
+            if (loaded) setDecisionRefreshVersion((version) => version + 1);
+        });
         void loadFactors(requestedTicker);
         return () => {
             stockRequestRef.current?.abort();
@@ -151,7 +161,7 @@ function AnalysisPage() {
         }
         void loadDecision(requestedTicker, personal.adminKey);
         return () => decisionRequestRef.current?.abort();
-    }, [loadDecision, personal.adminKey, requestedTicker]);
+    }, [decisionRefreshVersion, loadDecision, personal.adminKey, requestedTicker]);
 
     const selectTicker = (symbol: string) => router.push(`/?ticker=${encodeURIComponent(symbol.toUpperCase())}`);
 

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
-import { LEGACY_WATCHLIST_KEY, PERSONAL_SESSION_KEY, WATCHLIST_MIGRATION_KEY, usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
+import { LEGACY_WATCHLIST_KEY, PERSONAL_SESSION_KEY, WATCHLIST_MIGRATION_KEY, readLegacyWatchlist, usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
 
 const apiMocks = vi.hoisted(() => ({
     fetchPersonalWatchlist: vi.fn(),
@@ -50,6 +50,13 @@ describe("usePersonalWorkspace", () => {
         expect(result.current.isUnlocked).toBe(true);
         expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBe("session-secret");
         expect(window.localStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
+    });
+
+    it("preserves an intentionally empty legacy watchlist", () => {
+        window.localStorage.setItem(LEGACY_WATCHLIST_KEY, "[]");
+
+        expect(readLegacyWatchlist()).toEqual([]);
+        expect(window.localStorage.getItem(LEGACY_WATCHLIST_KEY)).toBe("[]");
     });
 
     it("uses the server as authority after unlock and clears the key on a 401", async () => {

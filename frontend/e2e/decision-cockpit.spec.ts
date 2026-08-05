@@ -149,7 +149,17 @@ function decisionFixture(ticker: string, kind: "complete" | "sparse" | "outside"
     };
 }
 
-async function mockTicker(page: Page, ticker: string, kind: "complete" | "sparse" | "outside" | "negative") {
+type MockLifecycle = {
+    onDecisionRequest?: () => void;
+    beforeStockResponse?: () => Promise<void> | void;
+};
+
+async function mockTicker(
+    page: Page,
+    ticker: string,
+    kind: "complete" | "sparse" | "outside" | "negative",
+    lifecycle: MockLifecycle = {},
+) {
     await page.route("**/api/quant/factors/**/latest", async (route) => route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -158,6 +168,7 @@ async function mockTicker(page: Page, ticker: string, kind: "complete" | "sparse
     await page.route("**/api/stocks/**", async (route) => {
         const url = new URL(route.request().url());
         if (url.pathname.endsWith("/decision-support")) {
+            lifecycle.onDecisionRequest?.();
             await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(decisionFixture(ticker, kind)) });
             return;
         }
@@ -165,6 +176,7 @@ async function mockTicker(page: Page, ticker: string, kind: "complete" | "sparse
             await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
             return;
         }
+        await lifecycle.beforeStockResponse?.();
         await route.fulfill({
             status: 200,
             contentType: "application/json",
@@ -185,6 +197,22 @@ async function mockTicker(page: Page, ticker: string, kind: "complete" | "sparse
         });
     });
 }
+
+test("refreshes decision support after a cold stock read-through completes", async ({ page }) => {
+    let stockResponseReady = false;
+    const decisionPhases: string[] = [];
+    await mockTicker(page, "COLD.US", "complete", {
+        onDecisionRequest: () => decisionPhases.push(stockResponseReady ? "after" : "before"),
+        beforeStockResponse: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            stockResponseReady = true;
+        },
+    });
+
+    await page.goto("/?ticker=COLD.US");
+    await expect.poll(() => decisionPhases).toContain("before");
+    await expect.poll(() => decisionPhases).toContain("after");
+});
 
 for (const fixture of [
     { ticker: "COMPLETE.US", kind: "complete" as const },
