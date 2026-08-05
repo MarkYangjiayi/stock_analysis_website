@@ -1,28 +1,27 @@
 import logging
-from google import genai
+
 from core.config import settings
+from services.deepseek_client import generate_deepseek_text
 from services.notifications import NotificationManager
 from services.anomaly_scans import run_persisted_anomaly_scan
 
 logger = logging.getLogger(__name__)
 
-async def _invoke_gemini(prompt: str) -> str:
-    """Helper to invoke Gemini explicitly for business reporting."""
-    api_key = settings.GEMINI_API_KEY
+
+async def _invoke_deepseek(prompt: str) -> str:
+    """Invoke DeepSeek for a business report."""
+    api_key = settings.DEEPSEEK_API_KEY
     if not api_key:
-        logger.error("GEMINI_API_KEY missing, cannot generate report.")
+        logger.error("DEEPSEEK_API_KEY missing, cannot generate report.")
         return "无法生成: LLM API Key未配置。"
         
     try:
-        client = genai.Client(api_key=api_key)
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-        )
-        return response.text or "生成报告内容为空"
+        response = await generate_deepseek_text(prompt)
+        return response or "生成报告内容为空"
     except Exception as e:
         logger.error(f"Failed to generate AI report: {e}")
         return f"AI 摘要失败: {str(e)}"
+
 
 async def generate_morning_briefing():
     """Generates the morning briefing using intraday anomaly data and broadcasts it."""
@@ -55,7 +54,7 @@ async def generate_morning_briefing():
         要求语言专业、精炼，直接指出核心驱动因素，使用 Markdown 格式渲染重点。
         """
         
-        ai_report = await _invoke_gemini(prompt)
+        ai_report = await _invoke_deepseek(prompt)
         
         await NotificationManager.broadcast(
             title="🌅 Quantify 美股开盘速递",
@@ -64,6 +63,7 @@ async def generate_morning_briefing():
             
     except Exception as e:
         logger.error(f"Error executing Morning Briefing: {e}")
+
 
 async def generate_post_market_summary():
     """Generates the post market summary and broadcasts it."""
@@ -96,7 +96,7 @@ async def generate_post_market_summary():
         要求深入浅出，判断今日市场情绪走向，并用 Markdown 格式渲染重点标的。
         """
         
-        ai_report = await _invoke_gemini(prompt)
+        ai_report = await _invoke_deepseek(prompt)
         
         await NotificationManager.broadcast(
             title="🌃 Quantify 美股盘后总结",

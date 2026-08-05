@@ -21,7 +21,7 @@
 
 ### 2.3 AI 归因引擎 (LLM Attribution)
 * **扩展服务**：在现有的 `services/ai_assistant.py` 中新增 `generate_anomaly_attribution(ticker, price_change, news_list)` 函数。
-* **架构红线 (Strict Rule)**：无论使用 Gemini 还是其他大模型，AI 客户端 (Client) 必须在单个请求/调用函数内部进行初始化。绝对禁止在文件顶部全局初始化 client，以防止并发冲突和环境变量读取失效。
+* **架构红线 (Strict Rule)**：无论使用 DeepSeek 还是其他大模型，AI 客户端 (Client) 必须在单个请求/调用函数内部进行初始化。绝对禁止在文件顶部全局初始化 client，以防止并发冲突和环境变量读取失效。
 * **Prompt 策略**：输入股票代码、涨跌幅、以及刚刚抓取到的新闻摘要。要求模型严格基于传入的新闻进行归因；若新闻无关联，必须明确输出“缺乏明确新闻催化剂”。
 
 ### 2.4 API 路由扩展 (Routers)
