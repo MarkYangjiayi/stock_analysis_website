@@ -750,6 +750,7 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("Free cash flow was not only negative at -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not only deeply negative at -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not merely positive at +$40 million [E31].", evidence)
+    validate_evidence_numbers("Free cash flow was not only no longer negative at +$40 million [E31].", evidence)
     validate_evidence_numbers("Enterprise value is $12.3 billion [E33].", evidence)
     validate_evidence_numbers("Projected FCF reaches $900 million [E33].", evidence)
     validate_evidence_numbers("The published spread is 300bps [E32].", evidence)
@@ -896,10 +897,13 @@ def test_semantic_evidence_preserves_period_scope():
     }]
     validate_evidence_numbers("Current revenue was $100 billion [E3].", evidence)
     validate_evidence_numbers("Prior-year revenue was $80 billion [E3].", evidence)
+    validate_evidence_numbers("Revenue was previously $80 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Current revenue was $80 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Prior-year revenue was $100 billion [E3].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Revenue was previously $100 billion [E3].", evidence)
 
 
 def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
@@ -924,6 +928,7 @@ def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
                 "metric_key": "gross_margin",
                 "metric_value": 0.487,
                 "format": "percent",
+                "summary_percentile": 90.0,
             },
         },
         {
@@ -936,10 +941,46 @@ def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
                 "format": "multiple",
             },
         },
+        {
+            "id": "E8",
+            "kind": "peer_metric",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric_key": "sales_growth_3yr",
+                "metric_value": 0.123,
+                "format": "percent",
+            },
+        },
+        {
+            "id": "E16",
+            "kind": "peer_metric",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric_key": "ps_ratio",
+                "metric_value": 3.2,
+                "format": "multiple",
+            },
+        },
+        {
+            "id": "E28",
+            "kind": "fundamental_warning",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric": "margin_compression",
+                "evidence_metric": "gross_margin",
+                "current": 0.40,
+                "previous": 0.43,
+                "message": "Gross margin compression was 3.0 percentage points year over year.",
+            },
+        },
     ]
     validate_evidence_numbers("Free cash flow declined 30.0% [E30].", evidence)
     validate_evidence_numbers("Gross margin is 48.7% [E13].", evidence)
+    validate_evidence_numbers("Gross margin ranks in the 90th percentile [E13].", evidence)
     validate_evidence_numbers("Debt to equity is 1.25x [E25].", evidence)
+    validate_evidence_numbers("Sales growth (3Y) is 12.3% [E8].", evidence)
+    validate_evidence_numbers("Price / sales is 3.2x [E16].", evidence)
+    validate_evidence_numbers("Gross margin compressed by 3.0 percentage points [E28].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Free cash flow declined 31.0% [E30].", evidence)
 

@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v12"
+PROMPT_VERSION = "decision-evidence-v13"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -155,13 +155,13 @@ NEGATED_POSITIVE_BEFORE_RE = re.compile(
 )
 AFFIRMING_NEGATIVE_BEFORE_RE = re.compile(
     r"\bnot\s+(?:only|merely|just|simply)"
-    r"(?:\s+[A-Za-z-]+){0,3}\s+negative"
+    r"(?:\s+(?!no\b|not\b|never\b)[A-Za-z-]+){0,3}\s+negative"
     r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
 AFFIRMING_POSITIVE_BEFORE_RE = re.compile(
     r"\bnot\s+(?:only|merely|just|simply)"
-    r"(?:\s+[A-Za-z-]+){0,3}\s+positive"
+    r"(?:\s+(?!no\b|not\b|never\b)[A-Za-z-]+){0,3}\s+positive"
     r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
@@ -243,9 +243,13 @@ SEMANTIC_VALUE_KEYS = {
     "forward_pe": "forward_pe",
     "peg_ratio": "peg_ratio",
     "price_to_sales": "price_to_sales",
+    "ps_ratio": "price_to_sales",
     "price_to_book": "price_to_book",
+    "pb_ratio": "price_to_book",
     "price_to_fcf": "price_to_fcf",
+    "price_fcf": "price_to_fcf",
     "ev_to_ebitda": "ev_to_ebitda",
+    "ev_ebitda": "ev_to_ebitda",
 }
 SEMANTIC_CLAIM_PATTERNS = {
     "fcf": re.compile(r"\b(?:free\s+cash\s+flow|fcf)\b", re.IGNORECASE),
@@ -265,8 +269,8 @@ SEMANTIC_CLAIM_PATTERNS = {
     "gross_margin": re.compile(r"\bgross\s+margin\b", re.IGNORECASE),
     "operating_margin": re.compile(r"\boperating\s+margin\b", re.IGNORECASE),
     "net_profit_margin": re.compile(r"\bnet(?:\s+profit)?\s+margin\b", re.IGNORECASE),
-    "fcf_net_income_conversion": re.compile(r"\b(?:fcf|free\s+cash\s+flow)(?:-to-|\s+to\s+|/)net\s+income\s+conversion\b", re.IGNORECASE),
-    "debt_to_equity": re.compile(r"\bdebt(?:-to-|\s+to\s+|/)equity\b", re.IGNORECASE),
+    "fcf_net_income_conversion": re.compile(r"\b(?:fcf|free\s+cash\s+flow)(?:-to-|\s+to\s+|\s*/\s*)net\s+income\s+conversion\b", re.IGNORECASE),
+    "debt_to_equity": re.compile(r"\bdebt(?:-to-|\s+to\s+|\s*/\s*)equity\b", re.IGNORECASE),
     "cash": re.compile(r"\bcash(?:\s+and\s+short-term\s+investments)?\b", re.IGNORECASE),
     "debt": re.compile(r"\b(?:total\s+)?debt\b", re.IGNORECASE),
     "shares": re.compile(r"\b(?:share\s+count|shares?\s+outstanding|dilution)\b", re.IGNORECASE),
@@ -275,22 +279,22 @@ SEMANTIC_CLAIM_PATTERNS = {
     "fcf_growth_rate": re.compile(r"\b(?:fcf|free\s+cash\s+flow)\s+growth\b", re.IGNORECASE),
     "wacc": re.compile(r"\bwacc\b", re.IGNORECASE),
     "perpetual_growth": re.compile(r"\b(?:perpetual|terminal)\s+growth\b", re.IGNORECASE),
-    "sales_growth_ttm": re.compile(r"\b(?:ttm\s+)?sales\s+growth(?:\s+ttm)?\b", re.IGNORECASE),
-    "sales_growth_3yr": re.compile(r"\b(?:3[- ]year|3y)\s+sales\s+growth\b", re.IGNORECASE),
-    "sales_growth_5yr": re.compile(r"\b(?:5[- ]year|5y)\s+sales\s+growth\b", re.IGNORECASE),
-    "eps_growth_ttm": re.compile(r"\b(?:ttm\s+)?eps\s+growth(?:\s+ttm)?\b", re.IGNORECASE),
-    "eps_growth_3yr": re.compile(r"\b(?:3[- ]year|3y)\s+eps\s+growth\b", re.IGNORECASE),
-    "eps_growth_5yr": re.compile(r"\b(?:5[- ]year|5y)\s+eps\s+growth\b", re.IGNORECASE),
+    "sales_growth_ttm": re.compile(r"\b(?:ttm\s+sales\s+growth|sales\s+growth\s*\(?ttm\)?)\b", re.IGNORECASE),
+    "sales_growth_3yr": re.compile(r"\b(?:(?:3[- ]year|3y)\s+sales\s+growth|sales\s+growth\s*\(?(?:3y|3[- ]year)\)?)\b", re.IGNORECASE),
+    "sales_growth_5yr": re.compile(r"\b(?:(?:5[- ]year|5y)\s+sales\s+growth|sales\s+growth\s*\(?(?:5y|5[- ]year)\)?)\b", re.IGNORECASE),
+    "eps_growth_ttm": re.compile(r"\b(?:ttm\s+eps\s+growth|eps\s+growth\s*\(?ttm\)?)\b", re.IGNORECASE),
+    "eps_growth_3yr": re.compile(r"\b(?:(?:3[- ]year|3y)\s+eps\s+growth|eps\s+growth\s*\(?(?:3y|3[- ]year)\)?)\b", re.IGNORECASE),
+    "eps_growth_5yr": re.compile(r"\b(?:(?:5[- ]year|5y)\s+eps\s+growth|eps\s+growth\s*\(?(?:5y|5[- ]year)\)?)\b", re.IGNORECASE),
     "roe": re.compile(r"\b(?:roe|return\s+on\s+equity)\b", re.IGNORECASE),
     "roa": re.compile(r"\b(?:roa|return\s+on\s+assets)\b", re.IGNORECASE),
     "roic": re.compile(r"\b(?:roic|return\s+on\s+invested\s+capital)\b", re.IGNORECASE),
     "pe_ratio": re.compile(r"\b(?:p/e|price[- ]to[- ]earnings)\b", re.IGNORECASE),
     "forward_pe": re.compile(r"\bforward\s+(?:p/e|pe)\b", re.IGNORECASE),
     "peg_ratio": re.compile(r"\b(?:peg|price/earnings[- ]to[- ]growth)\b", re.IGNORECASE),
-    "price_to_sales": re.compile(r"\b(?:p/s|price[- ]to[- ]sales)\b", re.IGNORECASE),
-    "price_to_book": re.compile(r"\b(?:p/b|price[- ]to[- ]book)\b", re.IGNORECASE),
-    "price_to_fcf": re.compile(r"\b(?:price[- ]to[- ]fcf|price/free\s+cash\s+flow)\b", re.IGNORECASE),
-    "ev_to_ebitda": re.compile(r"\b(?:ev/ebitda|enterprise[- ]value[- ]to[- ]ebitda)\b", re.IGNORECASE),
+    "price_to_sales": re.compile(r"\b(?:p\s*/\s*s|price[- ]to[- ]sales|price\s*/\s*sales)\b", re.IGNORECASE),
+    "price_to_book": re.compile(r"\b(?:p\s*/\s*b|price[- ]to[- ]book|price\s*/\s*book)\b", re.IGNORECASE),
+    "price_to_fcf": re.compile(r"\b(?:price[- ]to[- ]fcf|price\s*/\s*(?:fcf|free\s+cash\s+flow))\b", re.IGNORECASE),
+    "ev_to_ebitda": re.compile(r"\b(?:ev\s*/\s*ebitda|enterprise[- ]value[- ]to[- ]ebitda)\b", re.IGNORECASE),
 }
 PERIOD_SCOPED_SEMANTICS = {
     "revenue", "gross_profit", "operating_income", "net_income", "fcf",
@@ -302,7 +306,7 @@ CURRENT_PERIOD_RE = re.compile(
     re.IGNORECASE,
 )
 PREVIOUS_PERIOD_RE = re.compile(
-    r"\b(?:previous(?:\s+ttm)?|prior(?:[- ]year|\s+ttm)?|year[- ]ago|last\s+year)\b",
+    r"\b(?:previous(?:ly|\s+ttm)?|prior(?:[- ]year|\s+ttm)?|year[- ]ago|last\s+year)\b",
     re.IGNORECASE,
 )
 SEMANTIC_COORDINATION_RE = re.compile(
@@ -331,6 +335,7 @@ class _EvidenceNumericContext:
     semantic_multiple_values: dict[str, list[float]]
     semantic_currency_values: dict[str, list[float]]
     semantic_percent_string_values: dict[str, list[float]]
+    semantic_string_values: dict[str, list[float]]
 
 
 def build_evidence_hash(decision_support: dict, model: str) -> str:
@@ -441,6 +446,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
     semantic_multiple_values: dict[str, list[float]] = {}
     semantic_currency_values: dict[str, list[float]] = {}
     semantic_percent_string_values: dict[str, list[float]] = {}
+    semantic_string_values: dict[str, list[float]] = {}
 
     def append_semantic(
         target: dict[str, list[float]],
@@ -517,6 +523,12 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     ):
                         string_value = -abs(string_value)
                 string_values.append(string_value)
+                append_semantic(
+                    semantic_string_values,
+                    semantic_hint,
+                    string_value,
+                    period_scope,
+                )
             for match in PERCENT_STRING_NUMBER_RE.finditer(numeric_text):
                 raw_token = match.group(1)
                 raw_value = raw_token.replace("−", "-").replace("–", "-").replace("—", "-")
@@ -586,7 +598,14 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                 peer_semantic = SEMANTIC_VALUE_KEYS.get(
                     str(value.get("metric_key"))
                 )
-                if normalized_key == "metric_value" and peer_semantic:
+                if normalized_key in {
+                    "metric_value",
+                    "summary_percentile",
+                    "raw_percentile",
+                    "desirability_percentile",
+                    "industry",
+                    "sector",
+                } and peer_semantic:
                     nested_semantic = peer_semantic
                 if normalized_key == "message" and warning_semantic:
                     nested_semantic = warning_semantic
@@ -649,6 +668,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         semantic_multiple_values=semantic_multiple_values,
         semantic_currency_values=semantic_currency_values,
         semantic_percent_string_values=semantic_percent_string_values,
+        semantic_string_values=semantic_string_values,
     )
 
 
@@ -1034,7 +1054,11 @@ def _numeric_claim_supported(
                 context.semantic_numeric_values,
                 context.numeric_values,
             ),
-            *([] if semantic_key else context.string_values),
+            *(
+                context.semantic_string_values.get(semantic_key, [])
+                if semantic_key
+                else context.string_values
+            ),
         ]
 
     return any(
@@ -1176,6 +1200,9 @@ def validate_evidence_numbers(
                     ),
                     semantic_percent_string_values=merge_semantic_values(
                         "semantic_percent_string_values"
+                    ),
+                    semantic_string_values=merge_semantic_values(
+                        "semantic_string_values"
                     ),
                 ),
             )
