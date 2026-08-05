@@ -160,6 +160,29 @@ describe("DecisionCockpit", () => {
         expect(apiMocks.resetPersonalValuationScenarios).toHaveBeenCalledWith("AAA.US", "secret");
     });
 
+    it("keeps fractional and negative scenario drafts editable until calculation", async () => {
+        const user = userEvent.setup();
+        render(<DecisionCockpit {...props()} />);
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+
+        const growth = screen.getByRole("spinbutton", { name: "bear FCF growth" });
+        const wacc = screen.getByRole("spinbutton", { name: "bear WACC" });
+        await user.clear(growth);
+        await user.type(growth, "-5");
+        await user.clear(wacc);
+        await user.type(wacc, "10.5");
+
+        expect(growth).toHaveValue(-5);
+        expect(wacc).toHaveValue(10.5);
+        await user.click(screen.getByRole("button", { name: "Calculate" }));
+        expect(apiMocks.calculateDecisionValuation).toHaveBeenCalledWith(
+            "AAA.US",
+            expect.arrayContaining([
+                expect.objectContaining({ scenario: "bear", fcf_growth_rate: -0.05, wacc: 0.105 }),
+            ]),
+        );
+    });
+
     it("switches peer scope and sends risk evidence to the financial chart", async () => {
         const user = userEvent.setup();
         const componentProps = props();

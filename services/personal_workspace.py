@@ -6,7 +6,11 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import PersonalWatchlistItem, TickerValuationScenario
+from models import (
+    PersonalWatchlistItem,
+    PersonalWorkspaceState,
+    TickerValuationScenario,
+)
 from services.security_master import canonicalize_ticker
 
 
@@ -36,13 +40,36 @@ async def get_watchlist(db: AsyncSession) -> list[str]:
     return [row.ticker for row in result.scalars().all()]
 
 
+async def _lock_watchlist_state(db: AsyncSession) -> PersonalWorkspaceState:
+    result = await db.execute(
+        select(PersonalWorkspaceState)
+        .where(PersonalWorkspaceState.id == 1)
+        .with_for_update()
+    )
+    state = result.scalar_one_or_none()
+    if state is not None:
+        return state
+
+    # Alembic seeds this row in production. This fallback keeps metadata-created
+    # development/test databases compatible and preserves any pre-existing list.
+    state = PersonalWorkspaceState(
+        id=1,
+        watchlist_initialized=bool(await get_watchlist(db)),
+    )
+    db.add(state)
+    await db.flush()
+    return state
+
+
 async def replace_watchlist(db: AsyncSession, tickers: Iterable[str]) -> list[str]:
     normalized = normalize_watchlist(tickers)
+    state = await _lock_watchlist_state(db)
     await db.execute(delete(PersonalWatchlistItem))
     db.add_all(
         PersonalWatchlistItem(ticker=ticker, sort_order=index)
         for index, ticker in enumerate(normalized)
     )
+    state.watchlist_initialized = True
     await db.commit()
     return normalized
 
@@ -53,14 +80,22 @@ async def import_watchlist_if_empty(
 ) -> tuple[list[str], bool]:
     """Import the legacy browser watchlist once; existing server data always wins."""
     normalized = normalize_watchlist(tickers)
+    state = await _lock_watchlist_state(db)
     current = await get_watchlist(db)
+    if state.watchlist_initialized:
+        await db.commit()
+        return current, False
+
     if current:
+        state.watchlist_initialized = True
+        await db.commit()
         return current, False
 
     db.add_all(
         PersonalWatchlistItem(ticker=ticker, sort_order=index)
         for index, ticker in enumerate(normalized)
     )
+    state.watchlist_initialized = True
     await db.commit()
     return normalized, True
 

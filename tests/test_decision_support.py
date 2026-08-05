@@ -457,6 +457,26 @@ def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
         assert replaced.json() == {"tickers": ["MSFT.US", "AAPL.US"]}
 
 
+def test_intentionally_empty_server_watchlist_blocks_later_browser_imports():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        replaced = client.put(
+            "/api/personal/watchlist",
+            headers=headers,
+            json={"tickers": []},
+        )
+        assert replaced.json() == {"tickers": []}
+
+        attempted_import = client.post(
+            "/api/personal/watchlist/import",
+            headers=headers,
+            json={"tickers": ["AAPL", "NVDA"]},
+        )
+        assert attempted_import.json() == {"tickers": [], "imported": False}
+
+
 def test_personal_valuation_endpoints_save_and_reset_scenarios():
     from main import app
 
@@ -574,6 +594,18 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             "source_date": "2026-06-30",
             "value": {"intrinsic_value_per_share": 209.067, "upside_downside": -0.3242386},
         },
+        {
+            "id": "E6",
+            "label": "Positive comparison fixture",
+            "source_date": "2026-06-30",
+            "value": {"upside_downside": 0.3242386},
+        },
+        {
+            "id": "E13",
+            "label": "Valuation multiple fixture",
+            "source_date": "2026-06-30",
+            "value": 32.4,
+        },
     ]
     valid = (
         "As of 2026-06-30, 8 statements show revenue of $466.8 billion "
@@ -581,6 +613,9 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         "The base case is $209.07 per share, or 32.4% below the current price [E5]."
     )
     validate_evidence_numbers(valid, evidence)
+    validate_evidence_numbers("The base case is −32.4% vs current price [E5].", evidence)
+    validate_evidence_numbers("The published multiple is 32.4x [E13].", evidence)
+    validate_evidence_numbers("The published multiple is 32.4× [E13].", evidence)
 
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim '24%'"):
         validate_evidence_numbers(valid.replace("32.4%", "24%"), evidence)
@@ -594,6 +629,10 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("The base case has 32.4% upside [E5].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The base case differs by 32.4% [E5].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The base case is −32.4% vs current price [E6].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim '40x'"):
+        validate_evidence_numbers("The published multiple is 40x [E13].", evidence)
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
@@ -776,7 +815,12 @@ def test_personal_decision_support_migration_up_and_down(tmp_path):
         capture_output=True,
         text=True,
     )
-    expected = {"personal_watchlist_items", "ticker_valuation_scenarios", "decision_brief_cache"}
+    expected = {
+        "personal_watchlist_items",
+        "personal_workspace_state",
+        "ticker_valuation_scenarios",
+        "decision_brief_cache",
+    }
     with sqlite3.connect(database_path) as connection:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert expected <= tables

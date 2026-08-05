@@ -52,6 +52,21 @@ const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
     { scenario: "bull", fcf_growth_rate: 0.15, wacc: 0.08, perpetual_growth: 0.03 },
 ];
 
+type ScenarioRateField = "fcf_growth_rate" | "wacc" | "perpetual_growth";
+type ScenarioDraft = {
+    scenario: DecisionValuationScenarioInput["scenario"];
+    fcf_growth_rate: string;
+    wacc: string;
+    perpetual_growth: string;
+};
+
+const toScenarioDrafts = (inputs: DecisionValuationScenarioInput[]): ScenarioDraft[] => inputs.map((item) => ({
+    scenario: item.scenario,
+    fcf_growth_rate: (item.fcf_growth_rate * 100).toString(),
+    wacc: (item.wacc * 100).toString(),
+    perpetual_growth: (item.perpetual_growth * 100).toString(),
+}));
+
 const tabs: Array<{ key: CockpitTab; label: string; icon: typeof Calculator }> = [
     { key: "overview", label: "Overview", icon: BarChart3 },
     { key: "valuation", label: "Valuation", icon: Calculator },
@@ -117,7 +132,7 @@ export default function DecisionCockpit({
 }: DecisionCockpitProps) {
     const [activeTab, setActiveTab] = useState<CockpitTab>("overview");
     const [peerScope, setPeerScope] = useState<"industry" | "sector">("industry");
-    const [scenarios, setScenarios] = useState<DecisionValuationScenarioInput[]>(DEFAULT_SCENARIOS);
+    const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDraft[]>(() => toScenarioDrafts(DEFAULT_SCENARIOS));
     const [workingValuation, setWorkingValuation] = useState<DecisionValuation | null>(null);
     const [valuationBusy, setValuationBusy] = useState(false);
     const [valuationError, setValuationError] = useState("");
@@ -132,7 +147,7 @@ export default function DecisionCockpit({
     useEffect(() => {
         if (!decision) return;
         setWorkingValuation(decision.valuation);
-        setScenarios(decision.valuation.scenarios.map((item) => ({ ...item.assumptions })));
+        setScenarioDrafts(toScenarioDrafts(decision.valuation.scenarios.map((item) => ({ ...item.assumptions }))));
     }, [decision]);
 
     const valuation = workingValuation || decision?.valuation || null;
@@ -140,24 +155,56 @@ export default function DecisionCockpit({
         () => decision?.peer_comparison.metrics.filter((metric) => metric[peerScope].available).length ?? 0,
         [decision, peerScope],
     );
+    const briefEvidenceKey = useMemo(() => JSON.stringify({
+        metadata: decision?.metadata ?? null,
+        valuationAssumptions: decision?.valuation.scenarios.map((item) => item.assumptions) ?? [],
+        evidence: decision?.evidence ?? [],
+    }), [decision]);
 
-    const editScenario = (index: number, key: "fcf_growth_rate" | "wacc" | "perpetual_growth", percentValue: string) => {
-        const parsed = Number(percentValue);
-        setScenarios((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: Number.isFinite(parsed) ? parsed / 100 : 0 } : item));
+    const editScenario = (index: number, key: ScenarioRateField, percentValue: string) => {
+        setScenarioDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: percentValue } : item));
         setSaveMessage("");
     };
 
-    const calculate = async (inputs = scenarios) => {
+    const parseScenarioDrafts = () => {
+        const labels: Record<ScenarioRateField, string> = {
+            fcf_growth_rate: "FCF growth",
+            wacc: "WACC",
+            perpetual_growth: "terminal growth",
+        };
+        return scenarioDrafts.map((draft) => {
+            const parsed = {} as Record<ScenarioRateField, number>;
+            for (const key of Object.keys(labels) as ScenarioRateField[]) {
+                const value = Number(draft[key]);
+                if (!draft[key].trim() || !Number.isFinite(value)) {
+                    throw new Error(`Enter a valid ${labels[key]} percentage for ${draft.scenario}.`);
+                }
+                parsed[key] = value / 100;
+            }
+            return { scenario: draft.scenario, ...parsed };
+        });
+    };
+
+    const calculate = async (inputs?: DecisionValuationScenarioInput[]): Promise<DecisionValuationScenarioInput[] | null> => {
+        let calculationInputs = inputs;
+        if (!calculationInputs) {
+            try {
+                calculationInputs = parseScenarioDrafts();
+            } catch (caught) {
+                setValuationError(caught instanceof Error ? caught.message : "Enter valid scenario percentages.");
+                return null;
+            }
+        }
         setValuationBusy(true);
         setValuationError("");
         setSaveMessage("");
         try {
-            const result = await calculateDecisionValuation(ticker, inputs);
+            const result = await calculateDecisionValuation(ticker, calculationInputs);
             setWorkingValuation(result);
-            return true;
+            return calculationInputs;
         } catch (caught) {
             setValuationError(caught instanceof Error ? caught.message : "Unable to calculate these scenarios.");
-            return false;
+            return null;
         } finally {
             setValuationBusy(false);
         }
@@ -168,10 +215,11 @@ export default function DecisionCockpit({
             onUnlock();
             return;
         }
-        if (!await calculate()) return;
+        const calculatedInputs = await calculate();
+        if (!calculatedInputs) return;
         setValuationBusy(true);
         try {
-            await savePersonalValuationScenarios(ticker, scenarios, adminKey);
+            await savePersonalValuationScenarios(ticker, calculatedInputs, adminKey);
             setSaveMessage("Saved for this ticker.");
             await onRefresh();
         } catch (caught) {
@@ -185,15 +233,15 @@ export default function DecisionCockpit({
     const reset = async () => {
         setValuationError("");
         setSaveMessage("");
+        const defaults = DEFAULT_SCENARIOS.map((item) => ({ ...item }));
+        setScenarioDrafts(toScenarioDrafts(defaults));
         if (!adminKey) {
-            setScenarios(DEFAULT_SCENARIOS.map((item) => ({ ...item })));
-            await calculate(DEFAULT_SCENARIOS);
+            await calculate(defaults);
             return;
         }
         setValuationBusy(true);
         try {
             await resetPersonalValuationScenarios(ticker, adminKey);
-            setScenarios(DEFAULT_SCENARIOS.map((item) => ({ ...item })));
             setSaveMessage("Saved scenarios reset to defaults.");
             await onRefresh();
         } catch (caught) {
@@ -269,9 +317,9 @@ export default function DecisionCockpit({
 
                     {activeTab === "valuation" && valuation && <div className="space-y-6">
                         <div className="grid gap-4 lg:grid-cols-3">
-                            {scenarios.map((scenario, index) => {
+                            {scenarioDrafts.map((scenario, index) => {
                                 const result = valuation.scenarios.find((item) => item.scenario === scenario.scenario);
-                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? money(result.intrinsic_value_per_share) : "Unavailable"}</span></div><div className="mt-4 grid grid-cols-3 gap-2">{([['fcf_growth_rate', 'FCF growth', -20, 50], ['wacc', 'WACC', 3, 25], ['perpetual_growth', 'Terminal', -2, 6]] as const).map(([key, label, min, max]) => <label key={key} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><input type="number" min={min} max={max} step="0.1" value={(scenario[key] * 100).toString()} onChange={(event) => editScenario(index, key, event.target.value)} className="control-field py-2 pr-6 font-mono text-xs" aria-label={`${scenario.scenario} ${label}`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>)}</div>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
+                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? money(result.intrinsic_value_per_share) : "Unavailable"}</span></div><div className="mt-4 grid grid-cols-3 gap-2">{([['fcf_growth_rate', 'FCF growth', -20, 50], ['wacc', 'WACC', 3, 25], ['perpetual_growth', 'Terminal', -2, 6]] as const).map(([key, label, min, max]) => <label key={key} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><input type="number" min={min} max={max} step="0.1" value={scenario[key]} onChange={(event) => editScenario(index, key, event.target.value)} className="control-field py-2 pr-6 font-mono text-xs" aria-label={`${scenario.scenario} ${label}`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>)}</div>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
                             })}
                         </div>
                         <div className="flex flex-wrap items-center gap-2"><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void calculate()}><Calculator size={15} /> Calculate</button><button type="button" className="primary-button" disabled={valuationBusy} onClick={() => void save()}><Save size={15} /> {adminKey ? "Save scenarios" : "Unlock to save"}</button><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void reset()}><RotateCcw size={15} /> Reset defaults</button>{valuationBusy && <LoaderCircle className="animate-spin text-emerald-500" size={18} />}{saveMessage && <span className="text-xs font-bold text-emerald-600">{saveMessage}</span>}</div>
@@ -292,7 +340,7 @@ export default function DecisionCockpit({
                         <section className="rounded-xl border p-4"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500"><Database size={14} /> Data-quality notes</h3>{decision.risks.data_quality_notes.length ? <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">{decision.risks.data_quality_notes.map((note) => <li key={`${note.code}-${note.message}`} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50"><span className="font-mono text-[10px] text-slate-400">{note.code}</span><p className="mt-1">{note.message}</p></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No data-quality limitation was recorded for these checks.</p>}</section>
                     </div>}
 
-                    {activeTab === "brief" && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded /><aside className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-slate-500">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900/50"><span className={`font-mono font-black ${item.available ? "text-emerald-600" : "text-slate-400"}`}>{item.id}</span><div><p className="font-bold">{item.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div>}
+                    {activeTab === "brief" && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded /><aside className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-slate-500">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900/50"><span className={`font-mono font-black ${item.available ? "text-emerald-600" : "text-slate-400"}`}>{item.id}</span><div><p className="font-bold">{item.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div>}
                 </div>
             )}
         </section>

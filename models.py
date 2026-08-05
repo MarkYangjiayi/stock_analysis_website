@@ -511,6 +511,20 @@ class PersonalWatchlistItem(Base):
     )
 
 
+class PersonalWorkspaceState(Base):
+    """Singleton state that distinguishes uninitialized from intentionally empty data."""
+
+    __tablename__ = "personal_workspace_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    watchlist_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
 class TickerValuationScenario(Base):
     """Saved transparent DCF inputs for one ticker and named scenario."""
 

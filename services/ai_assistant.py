@@ -23,7 +23,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v3"
+PROMPT_VERSION = "decision-evidence-v4"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -35,11 +35,12 @@ ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 NUMERIC_CLAIM_RE = re.compile(
     r"(?<![A-Za-z0-9])"
     r"(?P<currency>[$€£])?\s*"
-    r"(?P<sign>[+-])?"
+    r"(?P<sign>[+\-−–—])?"
     r"(?P<number>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
     r"(?P<ordinal>st|nd|rd|th)?"
     r"(?P<percent>%)?"
     r"(?:\s*(?P<scale>thousand|million|billion|trillion))?"
+    r"(?P<multiple>[x×])?"
     r"(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
@@ -201,6 +202,8 @@ def _claim_segments(content: str) -> list[str]:
 
 def _claim_direction(match: re.Match[str], claim: str) -> str:
     explicit_sign = match.group("sign") or ""
+    if explicit_sign in {"−", "–", "—"}:
+        explicit_sign = "-"
     if explicit_sign:
         return explicit_sign
 
@@ -235,7 +238,8 @@ def _numeric_claim_supported(
     claim: str,
 ) -> bool:
     raw_number = match.group("number").replace(",", "")
-    sign = match.group("sign") or ""
+    raw_sign = match.group("sign") or ""
+    sign = "-" if raw_sign in {"−", "–", "—"} else raw_sign
     candidate = float(f"{sign}{raw_number}")
     direction = _claim_direction(match, claim)
     decimal_places = len(raw_number.partition(".")[2])

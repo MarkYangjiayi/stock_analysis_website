@@ -8,12 +8,13 @@ import { API_BASE_URL } from "@/lib/api";
 
 interface AIReportProps {
     ticker: string;
+    evidenceKey: string;
     adminKey?: string | null;
     onUnauthorized?: () => void;
     embedded?: boolean;
 }
 
-export default function AIReport({ ticker, adminKey, onUnauthorized, embedded = false }: AIReportProps) {
+export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized, embedded = false }: AIReportProps) {
     const [report, setReport] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -25,7 +26,7 @@ export default function AIReport({ ticker, adminKey, onUnauthorized, embedded = 
         setError("");
         setLoading(false);
         return () => abortRef.current?.abort();
-    }, [ticker, adminKey]);
+    }, [ticker, evidenceKey, adminKey]);
 
     const loadReport = async () => {
         abortRef.current?.abort();
