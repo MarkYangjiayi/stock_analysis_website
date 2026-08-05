@@ -748,6 +748,7 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("Free cash flow was not yet positive at -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not yet negative at +$40 million [E31].", evidence)
     validate_evidence_numbers("Free cash flow was not only negative at -$40 million [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was not only deeply negative at -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not merely positive at +$40 million [E31].", evidence)
     validate_evidence_numbers("Enterprise value is $12.3 billion [E33].", evidence)
     validate_evidence_numbers("Projected FCF reaches $900 million [E33].", evidence)
@@ -791,6 +792,8 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("Free cash flow was $466.8 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Revenue was $5 billion [E3].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Revenue rather than FCF was $5 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The base case differs by 32.4% [E5].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
@@ -880,6 +883,65 @@ def test_sentence_level_date_must_match_each_numeric_claim_citation():
             "[E3] as of 2026-06-30.",
             evidence,
         )
+
+
+def test_semantic_evidence_preserves_period_scope():
+    evidence = [{
+        "id": "E3",
+        "source_date": "2026-06-30",
+        "value": {
+            "current_ttm": {"revenue": 100_000_000_000},
+            "previous_ttm": {"revenue": 80_000_000_000},
+        },
+    }]
+    validate_evidence_numbers("Current revenue was $100 billion [E3].", evidence)
+    validate_evidence_numbers("Prior-year revenue was $80 billion [E3].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Current revenue was $80 billion [E3].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Prior-year revenue was $100 billion [E3].", evidence)
+
+
+def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
+    evidence = [
+        {
+            "id": "E30",
+            "kind": "fundamental_warning",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric": "fcf_change",
+                "evidence_metric": "fcf",
+                "current": 70_000_000,
+                "previous": 100_000_000,
+                "message": "TTM free cash flow declined 30.0% year over year.",
+            },
+        },
+        {
+            "id": "E13",
+            "kind": "peer_metric",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric_key": "gross_margin",
+                "metric_value": 0.487,
+                "format": "percent",
+            },
+        },
+        {
+            "id": "E25",
+            "kind": "peer_metric",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric_key": "debt_to_equity",
+                "metric_value": 1.25,
+                "format": "multiple",
+            },
+        },
+    ]
+    validate_evidence_numbers("Free cash flow declined 30.0% [E30].", evidence)
+    validate_evidence_numbers("Gross margin is 48.7% [E13].", evidence)
+    validate_evidence_numbers("Debt to equity is 1.25x [E25].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Free cash flow declined 31.0% [E30].", evidence)
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():

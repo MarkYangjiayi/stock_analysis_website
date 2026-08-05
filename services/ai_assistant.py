@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v11"
+PROMPT_VERSION = "decision-evidence-v12"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -154,12 +154,14 @@ NEGATED_POSITIVE_BEFORE_RE = re.compile(
     re.IGNORECASE,
 )
 AFFIRMING_NEGATIVE_BEFORE_RE = re.compile(
-    r"\bnot\s+(?:only|merely|just|simply)\s+negative"
+    r"\bnot\s+(?:only|merely|just|simply)"
+    r"(?:\s+[A-Za-z-]+){0,3}\s+negative"
     r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
 AFFIRMING_POSITIVE_BEFORE_RE = re.compile(
-    r"\bnot\s+(?:only|merely|just|simply)\s+positive"
+    r"\bnot\s+(?:only|merely|just|simply)"
+    r"(?:\s+[A-Za-z-]+){0,3}\s+positive"
     r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
@@ -228,6 +230,22 @@ SEMANTIC_VALUE_KEYS = {
     "wacc": "wacc",
     "perpetual_growth": "perpetual_growth",
     "upside_downside": "upside_downside",
+    "sales_growth_ttm": "sales_growth_ttm",
+    "sales_growth_3yr": "sales_growth_3yr",
+    "sales_growth_5yr": "sales_growth_5yr",
+    "eps_growth_ttm": "eps_growth_ttm",
+    "eps_growth_3yr": "eps_growth_3yr",
+    "eps_growth_5yr": "eps_growth_5yr",
+    "roe": "roe",
+    "roa": "roa",
+    "roic": "roic",
+    "pe_ratio": "pe_ratio",
+    "forward_pe": "forward_pe",
+    "peg_ratio": "peg_ratio",
+    "price_to_sales": "price_to_sales",
+    "price_to_book": "price_to_book",
+    "price_to_fcf": "price_to_fcf",
+    "ev_to_ebitda": "ev_to_ebitda",
 }
 SEMANTIC_CLAIM_PATTERNS = {
     "fcf": re.compile(r"\b(?:free\s+cash\s+flow|fcf)\b", re.IGNORECASE),
@@ -257,7 +275,41 @@ SEMANTIC_CLAIM_PATTERNS = {
     "fcf_growth_rate": re.compile(r"\b(?:fcf|free\s+cash\s+flow)\s+growth\b", re.IGNORECASE),
     "wacc": re.compile(r"\bwacc\b", re.IGNORECASE),
     "perpetual_growth": re.compile(r"\b(?:perpetual|terminal)\s+growth\b", re.IGNORECASE),
+    "sales_growth_ttm": re.compile(r"\b(?:ttm\s+)?sales\s+growth(?:\s+ttm)?\b", re.IGNORECASE),
+    "sales_growth_3yr": re.compile(r"\b(?:3[- ]year|3y)\s+sales\s+growth\b", re.IGNORECASE),
+    "sales_growth_5yr": re.compile(r"\b(?:5[- ]year|5y)\s+sales\s+growth\b", re.IGNORECASE),
+    "eps_growth_ttm": re.compile(r"\b(?:ttm\s+)?eps\s+growth(?:\s+ttm)?\b", re.IGNORECASE),
+    "eps_growth_3yr": re.compile(r"\b(?:3[- ]year|3y)\s+eps\s+growth\b", re.IGNORECASE),
+    "eps_growth_5yr": re.compile(r"\b(?:5[- ]year|5y)\s+eps\s+growth\b", re.IGNORECASE),
+    "roe": re.compile(r"\b(?:roe|return\s+on\s+equity)\b", re.IGNORECASE),
+    "roa": re.compile(r"\b(?:roa|return\s+on\s+assets)\b", re.IGNORECASE),
+    "roic": re.compile(r"\b(?:roic|return\s+on\s+invested\s+capital)\b", re.IGNORECASE),
+    "pe_ratio": re.compile(r"\b(?:p/e|price[- ]to[- ]earnings)\b", re.IGNORECASE),
+    "forward_pe": re.compile(r"\bforward\s+(?:p/e|pe)\b", re.IGNORECASE),
+    "peg_ratio": re.compile(r"\b(?:peg|price/earnings[- ]to[- ]growth)\b", re.IGNORECASE),
+    "price_to_sales": re.compile(r"\b(?:p/s|price[- ]to[- ]sales)\b", re.IGNORECASE),
+    "price_to_book": re.compile(r"\b(?:p/b|price[- ]to[- ]book)\b", re.IGNORECASE),
+    "price_to_fcf": re.compile(r"\b(?:price[- ]to[- ]fcf|price/free\s+cash\s+flow)\b", re.IGNORECASE),
+    "ev_to_ebitda": re.compile(r"\b(?:ev/ebitda|enterprise[- ]value[- ]to[- ]ebitda)\b", re.IGNORECASE),
 }
+PERIOD_SCOPED_SEMANTICS = {
+    "revenue", "gross_profit", "operating_income", "net_income", "fcf",
+    "gross_margin", "operating_margin", "net_profit_margin", "cash", "debt",
+    "shares", "stockholder_equity", "debt_to_equity",
+}
+CURRENT_PERIOD_RE = re.compile(
+    r"\b(?:current(?:\s+ttm)?|latest(?:\s+ttm)?|this\s+period)\b",
+    re.IGNORECASE,
+)
+PREVIOUS_PERIOD_RE = re.compile(
+    r"\b(?:previous(?:\s+ttm)?|prior(?:[- ]year|\s+ttm)?|year[- ]ago|last\s+year)\b",
+    re.IGNORECASE,
+)
+SEMANTIC_COORDINATION_RE = re.compile(
+    r"\b(?:rather\s+than|instead\s+of|versus|vs\.?|and|or)\b",
+    re.IGNORECASE,
+)
+AMBIGUOUS_SEMANTIC_KEY = "__ambiguous__"
 MAX_REPORT_GENERATION_ATTEMPTS = 2
 
 
@@ -278,6 +330,7 @@ class _EvidenceNumericContext:
     semantic_ratio_values: dict[str, list[float]]
     semantic_multiple_values: dict[str, list[float]]
     semantic_currency_values: dict[str, list[float]]
+    semantic_percent_string_values: dict[str, list[float]]
 
 
 def build_evidence_hash(decision_support: dict, model: str) -> str:
@@ -387,14 +440,18 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
     semantic_ratio_values: dict[str, list[float]] = {}
     semantic_multiple_values: dict[str, list[float]] = {}
     semantic_currency_values: dict[str, list[float]] = {}
+    semantic_percent_string_values: dict[str, list[float]] = {}
 
     def append_semantic(
         target: dict[str, list[float]],
         semantic_hint: Optional[str],
         number: float,
+        period_scope: Optional[str] = None,
     ) -> None:
         if semantic_hint:
             target.setdefault(semantic_hint, []).append(number)
+            if period_scope:
+                target.setdefault(f"{period_scope}:{semantic_hint}", []).append(number)
 
     def visit(
         value: object,
@@ -403,6 +460,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         multiple_hint: bool = False,
         currency_hint: bool = False,
         semantic_hint: Optional[str] = None,
+        period_scope: Optional[str] = None,
     ) -> None:
         if isinstance(value, bool):
             return
@@ -410,16 +468,36 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
             number = float(value)
             if math.isfinite(number):
                 numeric_values.append(number)
-                append_semantic(semantic_numeric_values, semantic_hint, number)
+                append_semantic(
+                    semantic_numeric_values,
+                    semantic_hint,
+                    number,
+                    period_scope,
+                )
                 if ratio_hint:
                     ratio_values.append(number)
-                    append_semantic(semantic_ratio_values, semantic_hint, number)
+                    append_semantic(
+                        semantic_ratio_values,
+                        semantic_hint,
+                        number,
+                        period_scope,
+                    )
                 if multiple_hint:
                     multiple_values.append(number)
-                    append_semantic(semantic_multiple_values, semantic_hint, number)
+                    append_semantic(
+                        semantic_multiple_values,
+                        semantic_hint,
+                        number,
+                        period_scope,
+                    )
                 if currency_hint:
                     currency_values.append(number)
-                    append_semantic(semantic_currency_values, semantic_hint, number)
+                    append_semantic(
+                        semantic_currency_values,
+                        semantic_hint,
+                        number,
+                        period_scope,
+                    )
         elif isinstance(value, str):
             strings.add(value)
             numeric_text = ISO_DATE_RE.sub("", value)
@@ -455,6 +533,12 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     ):
                         percent_value = -abs(percent_value)
                 percent_string_values.append(percent_value)
+                append_semantic(
+                    semantic_percent_string_values,
+                    semantic_hint,
+                    percent_value,
+                    period_scope,
+                )
         elif isinstance(value, dict):
             format_is_percent = value.get("format") == "percent"
             format_is_multiple = value.get("format") in {"multiple", "ratio"}
@@ -499,18 +583,35 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     )
                 )
                 nested_semantic = SEMANTIC_VALUE_KEYS.get(normalized_key)
+                peer_semantic = SEMANTIC_VALUE_KEYS.get(
+                    str(value.get("metric_key"))
+                )
+                if normalized_key == "metric_value" and peer_semantic:
+                    nested_semantic = peer_semantic
+                if normalized_key == "message" and warning_semantic:
+                    nested_semantic = warning_semantic
                 if (
                     nested_semantic is None
                     and normalized_key in {"current", "previous"}
                     and warning_semantic
                 ):
                     nested_semantic = warning_semantic
+                nested_period_scope = period_scope
+                if normalized_key in {"current_ttm", "latest_balance", "current"}:
+                    nested_period_scope = "current"
+                elif normalized_key in {
+                    "previous_ttm",
+                    "prior_year_balance",
+                    "previous",
+                }:
+                    nested_period_scope = "previous"
                 visit(
                     nested,
                     ratio_hint=nested_is_ratio,
                     multiple_hint=nested_is_multiple,
                     currency_hint=nested_is_currency,
                     semantic_hint=nested_semantic or semantic_hint,
+                    period_scope=nested_period_scope,
                 )
         elif isinstance(value, (list, tuple)):
             for nested in value:
@@ -520,6 +621,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     multiple_hint=multiple_hint,
                     currency_hint=currency_hint,
                     semantic_hint=semantic_hint,
+                    period_scope=period_scope,
                 )
 
     # The stable ID is intentionally excluded: citing E24 must not make 24 a
@@ -546,6 +648,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         semantic_ratio_values=semantic_ratio_values,
         semantic_multiple_values=semantic_multiple_values,
         semantic_currency_values=semantic_currency_values,
+        semantic_percent_string_values=semantic_percent_string_values,
     )
 
 
@@ -734,18 +837,87 @@ def _rounded_match(candidate: float, supported: float, decimal_places: int, dire
 
 
 def _claim_semantic_key(match: re.Match[str], claim: str) -> Optional[str]:
-    candidates: list[tuple[int, int, str]] = []
+    dates = list(ISO_DATE_RE.finditer(claim))
+    other_numbers = [
+        numeric_match
+        for numeric_match in NUMERIC_CLAIM_RE.finditer(claim)
+        if (numeric_match.start(), numeric_match.end())
+        != (match.start(), match.end())
+        and not any(
+            numeric_match.start() < date_match.end()
+            and date_match.start() < numeric_match.end()
+            for date_match in dates
+        )
+    ]
+    region_start = max(
+        (numeric_match.end() for numeric_match in other_numbers if numeric_match.end() <= match.start()),
+        default=0,
+    )
+    region_end = min(
+        (numeric_match.start() for numeric_match in other_numbers if match.end() <= numeric_match.start()),
+        default=len(claim),
+    )
+    candidates: list[tuple[int, int, int, str, int, int]] = []
     for semantic_key, pattern in SEMANTIC_CLAIM_PATTERNS.items():
         for semantic_match in pattern.finditer(claim):
+            if not (
+                region_start <= semantic_match.start()
+                and semantic_match.end() <= region_end
+            ):
+                continue
             if semantic_match.end() <= match.start():
                 distance = match.start() - semantic_match.end()
+                side = 0
             elif match.end() <= semantic_match.start():
                 distance = semantic_match.start() - match.end()
+                side = 1
             else:
                 distance = 0
+                side = 0
             if distance <= 64:
-                candidates.append((distance, -len(semantic_match.group(0)), semantic_key))
-    return min(candidates)[2] if candidates else None
+                candidates.append((
+                    distance,
+                    side,
+                    -len(semantic_match.group(0)),
+                    semantic_key,
+                    semantic_match.start(),
+                    semantic_match.end(),
+                ))
+    if not candidates:
+        return None
+    candidates = [
+        candidate
+        for candidate in candidates
+        if not any(
+            other[4] <= candidate[4]
+            and candidate[5] <= other[5]
+            and (other[5] - other[4]) > (candidate[5] - candidate[4])
+            for other in candidates
+        )
+    ]
+
+    for side in (0, 1):
+        same_side = [candidate for candidate in candidates if candidate[1] == side]
+        semantic_keys = {candidate[3] for candidate in same_side}
+        if len(semantic_keys) <= 1:
+            continue
+        start = min(candidate[4] for candidate in same_side)
+        end = max(candidate[5] for candidate in same_side)
+        if SEMANTIC_COORDINATION_RE.search(claim[start:end]):
+            return AMBIGUOUS_SEMANTIC_KEY
+
+    _, _, _, semantic_key, _, _ = min(candidates)
+    if semantic_key in PERIOD_SCOPED_SEMANTICS:
+        local_text = claim[region_start:region_end]
+        current_scope = bool(CURRENT_PERIOD_RE.search(local_text))
+        previous_scope = bool(PREVIOUS_PERIOD_RE.search(local_text))
+        if current_scope and previous_scope:
+            return AMBIGUOUS_SEMANTIC_KEY
+        if current_scope:
+            return f"current:{semantic_key}"
+        if previous_scope:
+            return f"previous:{semantic_key}"
+    return semantic_key
 
 
 def _numeric_claim_supported(
@@ -768,6 +940,8 @@ def _numeric_claim_supported(
     compact_scale = (match.group("compact_scale") or "").lower()
     basis_points = bool(match.group("basis_points"))
     semantic_key = _claim_semantic_key(match, claim)
+    if semantic_key == AMBIGUOUS_SEMANTIC_KEY:
+        return False
 
     def semantic_or_default(
         semantic_values: dict[str, list[float]],
@@ -802,7 +976,11 @@ def _numeric_claim_supported(
                     context.ratio_values,
                 )
             ],
-            *([] if semantic_key else context.percent_string_values),
+            *(
+                context.semantic_percent_string_values.get(semantic_key, [])
+                if semantic_key
+                else context.percent_string_values
+            ),
         ]
     elif basis_points:
         supported_values = [
@@ -995,6 +1173,9 @@ def validate_evidence_numbers(
                     ),
                     semantic_currency_values=merge_semantic_values(
                         "semantic_currency_values"
+                    ),
+                    semantic_percent_string_values=merge_semantic_values(
+                        "semantic_percent_string_values"
                     ),
                 ),
             )
