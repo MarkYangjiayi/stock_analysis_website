@@ -554,6 +554,20 @@ def _window_is_contiguous(points: Sequence[dict[str, Any]]) -> bool:
     )
 
 
+def _is_prior_year_balance_point(
+    latest: dict[str, Any],
+    candidate: dict[str, Any],
+) -> bool:
+    latest_date = latest.get("date")
+    candidate_date = candidate.get("date")
+    if not isinstance(latest_date, date) or not isinstance(candidate_date, date):
+        return False
+    return (
+        _quarter_index(latest_date) - _quarter_index(candidate_date) == 4
+        and 330 <= (latest_date - candidate_date).days <= 400
+    )
+
+
 def _sum_complete(points: Sequence[dict[str, Any]], key: str) -> float | None:
     values = [_safe_float(point.get(key)) for point in points]
     return sum(values) if values and all(value is not None for value in values) else None
@@ -624,10 +638,23 @@ def build_financial_context(
         }
         return result
 
+    latest = points[0] if points else {}
+    prior_year_candidate = points[4] if len(points) >= 5 else {}
+    prior_year_is_comparable = _is_prior_year_balance_point(
+        latest,
+        prior_year_candidate,
+    )
+    if prior_year_candidate and not prior_year_is_comparable:
+        data_quality_notes.append(
+            {
+                "code": "non_comparable_prior_year_balance",
+                "message": "The fifth statement is not the same fiscal quarter one year before the latest statement, so balance-sheet YoY checks are unavailable.",
+            }
+        )
+
     current = window(current_points, current_contiguous)
     previous = window(previous_points, comparison_windows_are_adjacent)
-    latest = points[0] if points else {}
-    prior_year = points[4] if len(points) >= 5 else {}
+    prior_year = prior_year_candidate if prior_year_is_comparable else {}
     current_de = (
         latest["debt"] / latest["equity"]
         if latest.get("debt") is not None

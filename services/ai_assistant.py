@@ -23,7 +23,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v4"
+PROMPT_VERSION = "decision-evidence-v5"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -34,12 +34,14 @@ CITATION_RE = re.compile(r"\[(E\d+)\]")
 ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 NUMERIC_CLAIM_RE = re.compile(
     r"(?<![A-Za-z0-9])"
+    r"(?P<sign_before_currency>[+\-−–—])?\s*"
     r"(?P<currency>[$€£])?\s*"
-    r"(?P<sign>[+\-−–—])?"
-    r"(?P<number>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
+    r"(?P<sign_after_currency>[+\-−–—])?"
+    r"(?P<number>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+\-]?\d+)?)"
     r"(?P<ordinal>st|nd|rd|th)?"
     r"(?P<percent>%)?"
-    r"(?:\s*(?P<scale>thousand|million|billion|trillion))?"
+    r"(?:\s*(?P<scale>thousand|million|billion|trillion)|(?P<compact_scale>mm|mn|bn|[kmbt]))?"
+    r"(?:\s*(?P<basis_points>bps?|basis\s+points?))?"
     r"(?P<multiple>[x×])?"
     r"(?![A-Za-z0-9])",
     re.IGNORECASE,
@@ -50,6 +52,15 @@ SCALE_DIVISORS = {
     "million": 1_000_000.0,
     "billion": 1_000_000_000.0,
     "trillion": 1_000_000_000_000.0,
+}
+COMPACT_SCALE_DIVISORS = {
+    "k": 1_000.0,
+    "m": 1_000_000.0,
+    "mm": 1_000_000.0,
+    "mn": 1_000_000.0,
+    "b": 1_000_000_000.0,
+    "bn": 1_000_000_000.0,
+    "t": 1_000_000_000_000.0,
 }
 NEGATIVE_DIRECTION_BEFORE_RE = re.compile(
     r"\b(?:downside|decline|decrease|drop|loss)(?:\s+(?:of|is|was|by))?\s*$"
@@ -157,14 +168,15 @@ def _evidence_numeric_context(item: dict) -> tuple[list[float], list[float], set
 
     def visit(value: object) -> None:
         if isinstance(value, bool):
-            numeric_values.append(float(value))
+            return
         elif isinstance(value, (int, float)):
             number = float(value)
             if math.isfinite(number):
                 numeric_values.append(number)
         elif isinstance(value, str):
             strings.add(value)
-            for match in STRING_NUMBER_RE.finditer(value):
+            numeric_text = ISO_DATE_RE.sub("", value)
+            for match in STRING_NUMBER_RE.finditer(numeric_text):
                 try:
                     string_values.append(float(match.group(0)))
                 except ValueError:
@@ -173,15 +185,17 @@ def _evidence_numeric_context(item: dict) -> tuple[list[float], list[float], set
             for nested in value.values():
                 visit(nested)
         elif isinstance(value, (list, tuple)):
-            numeric_values.append(float(len(value)))
             for nested in value:
                 visit(nested)
 
     # The stable ID is intentionally excluded: citing E24 must not make 24 a
-    # supported analytical value. Labels and source dates are included because
-    # they carry facts such as "5Y" and the publication date.
-    for key in ("label", "source_date", "value"):
-        visit(item.get(key))
+    # supported analytical value. Labels and source dates support exact textual
+    # and date claims only; their numeric fragments are not evidence values.
+    for key in ("label", "source_date"):
+        value = item.get(key)
+        if value is not None:
+            strings.add(str(value))
+    visit(item.get("value"))
     return numeric_values, string_values, strings
 
 
@@ -200,15 +214,34 @@ def _claim_segments(content: str) -> list[str]:
     return segments
 
 
+def _explicit_claim_sign(match: re.Match[str]) -> str:
+    signs = [
+        value
+        for value in (
+            match.group("sign_before_currency"),
+            match.group("sign_after_currency"),
+        )
+        if value
+    ]
+    normalized = ["-" if value in {"−", "–", "—"} else value for value in signs]
+    if len(set(normalized)) > 1:
+        return "invalid"
+    return normalized[0] if normalized else ""
+
+
 def _claim_direction(match: re.Match[str], claim: str) -> str:
-    explicit_sign = match.group("sign") or ""
-    if explicit_sign in {"−", "–", "—"}:
-        explicit_sign = "-"
+    explicit_sign = _explicit_claim_sign(match)
     if explicit_sign:
         return explicit_sign
 
     before = claim[max(0, match.start() - 48):match.start()]
     after = claim[match.end():match.end() + 32]
+    if (
+        match.group("currency")
+        and before.endswith("(")
+        and after.lstrip().startswith(")")
+    ):
+        return "-"
     if NEGATIVE_DIRECTION_AFTER_RE.search(after):
         return "-"
     if POSITIVE_DIRECTION_AFTER_RE.search(after):
@@ -238,17 +271,37 @@ def _numeric_claim_supported(
     claim: str,
 ) -> bool:
     raw_number = match.group("number").replace(",", "")
-    raw_sign = match.group("sign") or ""
-    sign = "-" if raw_sign in {"−", "–", "—"} else raw_sign
+    sign = _explicit_claim_sign(match)
+    if sign == "invalid":
+        return False
     candidate = float(f"{sign}{raw_number}")
     direction = _claim_direction(match, claim)
-    decimal_places = len(raw_number.partition(".")[2])
+    mantissa, _, exponent_text = raw_number.lower().partition("e")
+    exponent = int(exponent_text) if exponent_text else 0
+    decimal_places = max(0, len(mantissa.partition(".")[2]) - exponent)
     scale = (match.group("scale") or "").lower()
+    compact_scale = (match.group("compact_scale") or "").lower()
+    basis_points = bool(match.group("basis_points"))
+
+    unit_count = sum(bool(value) for value in (
+        match.group("percent"),
+        scale,
+        compact_scale,
+        basis_points,
+        match.group("multiple"),
+    ))
+    if unit_count > 1:
+        return False
 
     if match.group("percent"):
         supported_values = [value * 100.0 for value in numeric_values]
+    elif basis_points:
+        supported_values = [value * 10_000.0 for value in numeric_values]
     elif scale:
         divisor = SCALE_DIVISORS[scale]
+        supported_values = [value / divisor for value in numeric_values]
+    elif compact_scale:
+        divisor = COMPACT_SCALE_DIVISORS[compact_scale]
         supported_values = [value / divisor for value in numeric_values]
     else:
         supported_values = [*numeric_values, *string_values]

@@ -342,7 +342,33 @@ def test_prior_ttm_must_immediately_precede_current_ttm():
     context = build_financial_context(records)
     assert context["current_ttm"]["revenue"] == pytest.approx(400)
     assert context["previous_ttm"]["revenue"] is None
+    assert context["prior_year_balance"]["cash_and_short_term_investments"] is None
     assert any(note["code"] == "non_contiguous_previous_ttm" for note in context["data_quality_notes"])
+    assert any(note["code"] == "non_comparable_prior_year_balance" for note in context["data_quality_notes"])
+
+
+def test_balance_warnings_require_the_same_fiscal_quarter_one_year_earlier():
+    current = [
+        _quarterly_statement("AAA.US", value)
+        for value in (
+            date(2025, 12, 31),
+            date(2025, 9, 30),
+            date(2025, 6, 30),
+            date(2025, 3, 31),
+        )
+    ]
+    stale = _quarterly_statement("AAA.US", date(2023, 12, 31), scale=4)
+    context = build_financial_context([*current, stale])
+    result = evaluate_fundamental_warnings(context)
+
+    assert context["prior_year_balance"]["cash_and_short_term_investments"] is None
+    assert not {"cash_decline", "debt_increase", "share_dilution"} & {
+        warning["id"] for warning in result["warnings"]
+    }
+    assert any(
+        note["code"] == "non_comparable_prior_year_balance"
+        for note in result["data_quality_notes"]
+    )
 
 
 @pytest.mark.asyncio
@@ -579,6 +605,12 @@ def test_ai_citation_validation_rejects_missing_and_unknown_ids():
 def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence():
     evidence = [
         {
+            "id": "E1",
+            "label": "Current price",
+            "source_date": "2026-06-30",
+            "value": 10,
+        },
+        {
             "id": "E3",
             "label": "Quarterly financial coverage",
             "source_date": "2026-06-30",
@@ -606,6 +638,24 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             "source_date": "2026-06-30",
             "value": 32.4,
         },
+        {
+            "id": "E30",
+            "label": "Negative cash-flow fixture",
+            "source_date": "2026-06-30",
+            "value": -40_000_000,
+        },
+        {
+            "id": "E31",
+            "label": "Positive cash-flow fixture",
+            "source_date": "2026-06-30",
+            "value": 40_000_000,
+        },
+        {
+            "id": "E32",
+            "label": "Rate fixture",
+            "source_date": "2026-06-30",
+            "value": 0.03,
+        },
     ]
     valid = (
         "As of 2026-06-30, 8 statements show revenue of $466.8 billion "
@@ -616,6 +666,11 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("The base case is −32.4% vs current price [E5].", evidence)
     validate_evidence_numbers("The published multiple is 32.4x [E13].", evidence)
     validate_evidence_numbers("The published multiple is 32.4× [E13].", evidence)
+    validate_evidence_numbers("Free cash flow was -$40 million [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was −$40M [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was $-40MM [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was ($40M) [E30].", evidence)
+    validate_evidence_numbers("The published spread is 300bps [E32].", evidence)
 
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim '24%'"):
         validate_evidence_numbers(valid.replace("32.4%", "24%"), evidence)
@@ -633,6 +688,14 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("The base case is −32.4% vs current price [E6].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim '40x'"):
         validate_evidence_numbers("The published multiple is 40x [E13].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Free cash flow was -$40M [E31].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Free cash flow was $41M [E30].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The current price is $30 [E1].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("The published spread is 301bps [E32].", evidence)
 
 
 def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
