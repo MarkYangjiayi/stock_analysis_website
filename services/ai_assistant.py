@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v7"
+PROMPT_VERSION = "decision-evidence-v8"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -129,7 +129,8 @@ NEGATIVE_DIRECTION_BEFORE_RE = re.compile(
 )
 POSITIVE_DIRECTION_BEFORE_RE = re.compile(
     r"\b(?:upside|increase|gain|premium)(?:\s+(?:of|is|was|by))?\s*$"
-    r"|\b(?:rose|increased|grew|gained|up)(?:\s+by)?\s*$",
+    r"|\b(?:rose|increased|grew|gained|up)(?:\s+by)?\s*$"
+    r"|(?<!not )(?<!non-)\bpositive(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
 NEGATIVE_DIRECTION_AFTER_RE = re.compile(
@@ -140,25 +141,24 @@ POSITIVE_DIRECTION_AFTER_RE = re.compile(
     r"^\s*(?:upside|above|higher|positive|increase|gain|premium)\b",
     re.IGNORECASE,
 )
-BARE_COMPACT_NAME_FOLLOW_RE = re.compile(
-    r"^\s*(?:['’]s\b|[,;:—-]?\s*(?P<word>[A-Za-z][A-Za-z'-]*))"
+IDENTITY_VALUE_PREDICATE_RE = re.compile(
+    r"^\s+(?:is|was|were|equals?|equaled|represented|reached|totaled)\s+"
+    r"(?:the\s+)?(?:published\s+)?(?:current\s+)?"
+    r"(?:assets|book|cash|debt|earnings|ebitda|enterprise\s+value|equity|"
+    r"fcf|free\s+cash\s+flow|multiple|price|revenue|sales|shares?|turnover)\b",
+    re.IGNORECASE,
 )
-FINANCIAL_COMPACT_FOLLOW_WORDS = {
-    "assets",
-    "book",
-    "cash",
-    "debt",
-    "earnings",
-    "ebitda",
-    "equity",
-    "fcf",
-    "flow",
-    "multiple",
-    "revenue",
-    "sales",
-    "times",
-    "turnover",
-}
+IDENTITY_SUBJECT_FOLLOW_RE = re.compile(
+    r"^\s*(?:['’]s\b|[,;:]|(?:is|was|has|had|does|did|reports?|reported|"
+    r"shows?|showed|faces?|faced|remains?|remained|trades?|traded|covers?|"
+    r"covered)\b)",
+    re.IGNORECASE,
+)
+IDENTITY_PREFIX_RE = re.compile(
+    r"(?:^|\b(?:at|for|from|by|about|with|within|inside|regarding|company|"
+    r"issuer|business|peer)\s+)$",
+    re.IGNORECASE,
+)
 CLAUSE_BREAK_RE = re.compile(r"(?:[;]|\b(?:while|whereas|but)\b)", re.IGNORECASE)
 MAX_REPORT_GENERATION_ATTEMPTS = 2
 
@@ -471,24 +471,7 @@ def _adjacent_citation_assignments(
     return assignments
 
 
-def _looks_like_bare_compact_name(match: re.Match[str], claim: str) -> bool:
-    """Ignore sentence-leading brand tokens such as 3M and 10x Genomics."""
-    if (
-        match.group("currency")
-        or match.group("sign_before_currency")
-        or match.group("sign_after_currency")
-        or not (match.group("compact_scale") or match.group("multiple"))
-        or claim[:match.start()].strip()
-    ):
-        return False
-    following = BARE_COMPACT_NAME_FOLLOW_RE.match(claim[match.end():])
-    if not following:
-        return False
-    word = following.group("word")
-    return word is None or word.lower() not in FINANCIAL_COMPACT_FOLLOW_WORDS
-
-
-def _match_is_inside_identity(
+def _match_is_identity_mention(
     match: re.Match[str],
     claim: str,
     identity_strings: tuple[str, ...],
@@ -497,7 +480,24 @@ def _match_is_inside_identity(
         if not identity:
             continue
         for identity_match in re.finditer(re.escape(identity), claim, re.IGNORECASE):
-            if identity_match.start() <= match.start() and match.end() <= identity_match.end():
+            if not (
+                identity_match.start() <= match.start()
+                and match.end() <= identity_match.end()
+            ):
+                continue
+            # A longer identity phrase (for example, "10x Genomics") is
+            # unambiguously a name. A compact identity by itself ("3M") is
+            # ignored only where it is grammatically used as the subject/name,
+            # never in a value position such as "share count was 3M".
+            if identity_match.group(0).casefold() != match.group(0).casefold():
+                return True
+            before = claim[:identity_match.start()]
+            after = claim[identity_match.end():]
+            if IDENTITY_VALUE_PREDICATE_RE.match(after):
+                return False
+            if not IDENTITY_SUBJECT_FOLLOW_RE.match(after):
+                return False
+            if not before.strip() or IDENTITY_PREFIX_RE.search(before):
                 return True
     return False
 
@@ -654,8 +654,7 @@ def validate_evidence_numbers(
                 and date_match.start() < numeric_match.end()
                 for date_match in dates
             )
-            and not _looks_like_bare_compact_name(numeric_match, segment)
-            and not _match_is_inside_identity(
+            and not _match_is_identity_mention(
                 numeric_match,
                 segment,
                 identity_strings,
@@ -667,16 +666,17 @@ def validate_evidence_numbers(
             raise EvidenceCitationError(
                 "Every sentence containing a numeric value must cite supporting evidence."
             )
-        all_claims = sorted([*dates, *numeric_claims], key=lambda item: item.start())
         citation_assignments = _adjacent_citation_assignments(
             segment,
             citation_clusters,
-            all_claims,
+            numeric_claims,
         )
 
         def local_context(
             claim_start: int,
             claim_end: int,
+            *,
+            allow_adjacent_dates: bool = False,
         ) -> tuple[set[str], _EvidenceNumericContext]:
             nearest_cluster = _nearest_citation_cluster(
                 claim_start,
@@ -685,9 +685,9 @@ def validate_evidence_numbers(
             )
             local_ids = citation_assignments.get((claim_start, claim_end))
             if local_ids is None:
-                if len(nearest_cluster[2]) > 1:
+                if len(nearest_cluster[2]) > 1 and not allow_adjacent_dates:
                     raise EvidenceCitationError(
-                        "Adjacent citations are ambiguous for a numeric or date claim; "
+                        "Adjacent citations are ambiguous for a numeric claim; "
                         "place each evidence ID immediately after the claim it supports."
                     )
                 local_ids = set(nearest_cluster[2])
@@ -742,6 +742,7 @@ def validate_evidence_numbers(
             local_ids, context = local_context(
                 date_match.start(),
                 date_match.end(),
+                allow_adjacent_dates=True,
             )
             date_value = date_match.group(0)
             if not any(date_value in value for value in context.strings):
@@ -881,11 +882,19 @@ async def generate_stock_report(
             if item.get("id")
         }
         metadata = decision_support.get("metadata") or {}
-        identity_strings = tuple(
+        identity_values = [
             str(value)
             for value in (metadata.get("company_name"), canonical_ticker)
             if value
+        ]
+        company_name = str(metadata.get("company_name") or "")
+        numeric_name_prefix = re.match(
+            r"^[+\-−–—]?\d+(?:\.\d+)?(?:[A-Za-z×]+)?",
+            company_name,
         )
+        if numeric_name_prefix:
+            identity_values.append(numeric_name_prefix.group(0))
+        identity_strings = tuple(dict.fromkeys(identity_values))
         prompt = base_prompt
         content = ""
         for attempt in range(MAX_REPORT_GENERATION_ATTEMPTS):
