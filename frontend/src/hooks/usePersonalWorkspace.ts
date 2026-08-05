@@ -44,13 +44,22 @@ export function usePersonalWorkspace() {
     const [unlocking, setUnlocking] = useState(false);
     const [error, setError] = useState("");
     const legacyRef = useRef<string[]>([]);
+    const confirmedWatchlistRef = useRef<string[]>([]);
+    const watchlistMutationVersionRef = useRef(0);
+    const watchlistRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+    const applyWatchlist = useCallback((next: string[]) => {
+        setWatchlist(next);
+    }, []);
 
     const lock = useCallback((message = "") => {
+        watchlistMutationVersionRef.current += 1;
         window.sessionStorage.removeItem(PERSONAL_SESSION_KEY);
         setAdminKey(null);
-        setWatchlist(legacyRef.current);
+        confirmedWatchlistRef.current = legacyRef.current;
+        applyWatchlist(legacyRef.current);
         setError(message);
-    }, []);
+    }, [applyWatchlist]);
 
     const handleUnauthorized = useCallback(() => {
         lock("The personal workspace was locked because the Admin Key was rejected.");
@@ -73,7 +82,8 @@ export function usePersonalWorkspace() {
             window.sessionStorage.setItem(PERSONAL_SESSION_KEY, normalizedKey);
             window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
             setAdminKey(normalizedKey);
-            setWatchlist(authoritative.tickers);
+            confirmedWatchlistRef.current = authoritative.tickers;
+            applyWatchlist(authoritative.tickers);
             return true;
         } catch (caught) {
             window.sessionStorage.removeItem(PERSONAL_SESSION_KEY);
@@ -89,18 +99,19 @@ export function usePersonalWorkspace() {
         } finally {
             if (!restoringSession) setUnlocking(false);
         }
-    }, []);
+    }, [applyWatchlist]);
 
     useEffect(() => {
         legacyRef.current = readLegacyWatchlist();
-        setWatchlist(legacyRef.current);
+        confirmedWatchlistRef.current = legacyRef.current;
+        applyWatchlist(legacyRef.current);
         const savedKey = window.sessionStorage.getItem(PERSONAL_SESSION_KEY);
         if (!savedKey) {
             setRestoring(false);
             return;
         }
         void authenticate(savedKey, true).finally(() => setRestoring(false));
-    }, [authenticate]);
+    }, [applyWatchlist, authenticate]);
 
     const replaceWatchlist = useCallback(async (next: string[]) => {
         if (!adminKey) {
@@ -108,23 +119,31 @@ export function usePersonalWorkspace() {
             return false;
         }
         const normalized = [...new Set(next.map(canonicalizeForDisplay).filter(Boolean))].slice(0, 100);
-        const previous = watchlist;
-        setWatchlist(normalized);
+        const mutationVersion = watchlistMutationVersionRef.current + 1;
+        watchlistMutationVersionRef.current = mutationVersion;
+        applyWatchlist(normalized);
         setError("");
-        try {
-            const result = await replacePersonalWatchlist(normalized, adminKey);
-            setWatchlist(result.tickers);
-            return true;
-        } catch (caught) {
-            setWatchlist(previous);
-            if (caught instanceof ApiError && caught.status === 401) {
-                handleUnauthorized();
-            } else {
-                setError(caught instanceof Error ? caught.message : "Unable to update the watchlist.");
+        const request = watchlistRequestQueueRef.current.then(async () => {
+            try {
+                const result = await replacePersonalWatchlist(normalized, adminKey);
+                confirmedWatchlistRef.current = result.tickers;
+                if (mutationVersion === watchlistMutationVersionRef.current) {
+                    applyWatchlist(result.tickers);
+                }
+                return true;
+            } catch (caught) {
+                if (caught instanceof ApiError && caught.status === 401) {
+                    handleUnauthorized();
+                } else if (mutationVersion === watchlistMutationVersionRef.current) {
+                    applyWatchlist(confirmedWatchlistRef.current);
+                    setError(caught instanceof Error ? caught.message : "Unable to update the watchlist.");
+                }
+                return false;
             }
-            return false;
-        }
-    }, [adminKey, handleUnauthorized, watchlist]);
+        });
+        watchlistRequestQueueRef.current = request.then(() => undefined);
+        return request;
+    }, [adminKey, applyWatchlist, handleUnauthorized]);
 
     return {
         adminKey,

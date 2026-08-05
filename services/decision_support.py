@@ -5,7 +5,7 @@ from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
@@ -1066,17 +1066,42 @@ async def get_decision_support(
 
     screener_publication = await _latest_publication(db, "screener")
     snapshot_rows: list[StockScreenerSnapshot] = []
+    target_snapshot: StockScreenerSnapshot | None = None
     if screener_publication is not None:
-        snapshots_result = await db.execute(
+        target_result = await db.execute(
             select(StockScreenerSnapshot).where(
-                StockScreenerSnapshot.date == screener_publication.as_of_date
+                StockScreenerSnapshot.date == screener_publication.as_of_date,
+                StockScreenerSnapshot.ticker == canonical_ticker,
             )
         )
-        snapshot_rows = list(snapshots_result.scalars().all())
-    target_snapshot = next(
-        (row for row in snapshot_rows if row.ticker == canonical_ticker),
-        None,
-    )
+        target_snapshot = target_result.scalar_one_or_none()
+        if target_snapshot is not None:
+            target_industry = target_snapshot.industry or (
+                profile.industry if profile else None
+            )
+            target_sector = target_snapshot.sector or (
+                profile.sector if profile else None
+            )
+            cohort_filters = []
+            if target_industry:
+                cohort_filters.append(
+                    StockScreenerSnapshot.industry == target_industry
+                )
+            if target_sector:
+                cohort_filters.append(
+                    StockScreenerSnapshot.sector == target_sector
+                )
+            if cohort_filters:
+                snapshots_result = await db.execute(
+                    select(StockScreenerSnapshot).where(
+                        StockScreenerSnapshot.date
+                        == screener_publication.as_of_date,
+                        or_(*cohort_filters),
+                    )
+                )
+                snapshot_rows = list(snapshots_result.scalars().all())
+            else:
+                snapshot_rows = [target_snapshot]
     peers = build_peer_comparison(
         target_snapshot,
         snapshot_rows,

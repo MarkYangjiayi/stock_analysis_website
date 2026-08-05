@@ -1,10 +1,13 @@
+import asyncio
 import hashlib
 import json
 import logging
 import math
 import re
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from threading import Lock
 from typing import Optional
 
 from sqlalchemy import select
@@ -24,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v15"
+PROMPT_VERSION = "decision-evidence-v16"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -322,6 +325,9 @@ CHANGE_CONTEXT_RE = re.compile(
 )
 AMBIGUOUS_SEMANTIC_KEY = "__ambiguous__"
 MAX_REPORT_GENERATION_ATTEMPTS = 2
+_REPORT_GENERATION_LOCKS_GUARD = Lock()
+_REPORT_GENERATION_LOCKS: dict[tuple[str, str, str], asyncio.Lock] = {}
+_REPORT_GENERATION_LOCK_USERS: dict[tuple[str, str, str], int] = {}
 
 PEER_SCOPE_RE = re.compile(r"\b(industry|sector)\b", re.IGNORECASE)
 PERCENTILE_TYPE_RE = re.compile(
@@ -474,6 +480,12 @@ def validate_evidence_citations(content: str, evidence_ids: set[str]) -> None:
             raise EvidenceCitationError(
                 f"The {name} section contains an absent evidence ID."
             )
+        for sentence in _claim_segments(sections[name]):
+            if not CITATION_RE.search(sentence):
+                raise EvidenceCitationError(
+                    f"Every analytical sentence in the {name} section must "
+                    "contain a local evidence citation."
+                )
 
 
 def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
@@ -1586,10 +1598,11 @@ Write concise English Markdown using exactly these four level-two headings:
 ## Peer Context
 ## Risks
 
-Every section must contain at least one inline citation in the exact form [E1],
-[E2], and so on. Cite only IDs in the evidence records. Explicitly call out
-unavailable evidence and data-quality limits. Every sentence containing a
-number must place the supporting evidence ID immediately after that claim.
+Every analytical sentence must contain at least one inline citation in the
+exact form [E1], [E2], and so on. Cite only IDs in the evidence records.
+Explicitly call out unavailable evidence and data-quality limits. Every
+sentence containing a number must place the supporting evidence ID immediately
+after that claim.
 Do not pool adjacent evidence IDs for separate facts. You may round evidence
 values, format ratios as percentages, and scale
 currency values to thousands, millions, billions, or trillions. Do not perform
@@ -1625,6 +1638,36 @@ def _report_cache_identity(ticker: str, decision_support: dict) -> tuple[str, st
     evidence_hash = build_evidence_hash(decision_support, model)
     canonical_ticker = (decision_support.get("metadata") or {}).get("ticker") or ticker
     return canonical_ticker, model, evidence_hash
+
+
+@asynccontextmanager
+async def _singleflight_report_generation(
+    identity: tuple[str, str, str],
+) -> AsyncIterator[None]:
+    """Serialize identical cache misses within this application process."""
+    with _REPORT_GENERATION_LOCKS_GUARD:
+        generation_lock = _REPORT_GENERATION_LOCKS.setdefault(
+            identity,
+            asyncio.Lock(),
+        )
+        _REPORT_GENERATION_LOCK_USERS[identity] = (
+            _REPORT_GENERATION_LOCK_USERS.get(identity, 0) + 1
+        )
+    acquired = False
+    try:
+        await generation_lock.acquire()
+        acquired = True
+        yield
+    finally:
+        if acquired:
+            generation_lock.release()
+        with _REPORT_GENERATION_LOCKS_GUARD:
+            remaining_users = _REPORT_GENERATION_LOCK_USERS[identity] - 1
+            if remaining_users == 0:
+                _REPORT_GENERATION_LOCK_USERS.pop(identity, None)
+                _REPORT_GENERATION_LOCKS.pop(identity, None)
+            else:
+                _REPORT_GENERATION_LOCK_USERS[identity] = remaining_users
 
 
 async def get_cached_stock_report(
@@ -1669,60 +1712,91 @@ async def generate_stock_report(
         yield cached
         return
 
-    try:
-        base_prompt = _evidence_prompt(canonical_ticker, decision_support)
-        evidence_ids = {
-            str(item["id"])
-            for item in decision_support.get("evidence", [])
-            if item.get("id")
-        }
-        metadata = decision_support.get("metadata") or {}
-        identity_strings = _company_identity_strings(
-            str(metadata.get("company_name") or ""),
-            canonical_ticker,
-        )
-        prompt = base_prompt
-        content = ""
-        for attempt in range(MAX_REPORT_GENERATION_ATTEMPTS):
-            content = await generate_deepseek_text(prompt)
+    content = ""
+    async with _singleflight_report_generation(
+        (canonical_ticker, model, evidence_hash)
+    ):
+        # A request that waited for the same identity must reuse the winner
+        # instead of spending another provider call.
+        cached = await get_cached_stock_report(ticker, decision_support, db)
+        if cached is not None:
+            content = cached
+        else:
             try:
-                validate_evidence_citations(content, evidence_ids)
-                validate_evidence_numbers(
-                    content,
-                    decision_support.get("evidence", []),
-                    identity_strings=identity_strings,
+                base_prompt = _evidence_prompt(canonical_ticker, decision_support)
+                evidence_ids = {
+                    str(item["id"])
+                    for item in decision_support.get("evidence", [])
+                    if item.get("id")
+                }
+                metadata = decision_support.get("metadata") or {}
+                identity_strings = _company_identity_strings(
+                    str(metadata.get("company_name") or ""),
+                    canonical_ticker,
                 )
-                break
+                prompt = base_prompt
+                for attempt in range(MAX_REPORT_GENERATION_ATTEMPTS):
+                    content = await generate_deepseek_text(prompt)
+                    try:
+                        validate_evidence_citations(content, evidence_ids)
+                        validate_evidence_numbers(
+                            content,
+                            decision_support.get("evidence", []),
+                            identity_strings=identity_strings,
+                        )
+                        break
+                    except EvidenceCitationError as exc:
+                        if attempt + 1 >= MAX_REPORT_GENERATION_ATTEMPTS:
+                            raise
+                        logger.info(
+                            "Retrying evidence brief for %s after validation "
+                            "failure: %s",
+                            canonical_ticker,
+                            exc,
+                        )
+                        prompt = _repair_prompt(base_prompt, content, exc)
+                db.add(
+                    DecisionBriefCache(
+                        ticker=canonical_ticker,
+                        evidence_hash=evidence_hash,
+                        model=model,
+                        content=content,
+                        evidence_ids=sorted(evidence_ids),
+                    )
+                )
+                try:
+                    await db.commit()
+                except IntegrityError:
+                    # Another process may still win the database uniqueness
+                    # race even though requests in this process are serialized.
+                    await db.rollback()
+                    winning_content = await get_cached_stock_report(
+                        ticker,
+                        decision_support,
+                        db,
+                    )
+                    if winning_content is not None:
+                        content = winning_content
             except EvidenceCitationError as exc:
-                if attempt + 1 >= MAX_REPORT_GENERATION_ATTEMPTS:
-                    raise
-                logger.info(
-                    "Retrying evidence brief for %s after validation failure: %s",
+                logger.warning(
+                    "Rejected invalid evidence brief for %s: %s",
                     canonical_ticker,
                     exc,
                 )
-                prompt = _repair_prompt(base_prompt, content, exc)
-        db.add(
-            DecisionBriefCache(
-                ticker=canonical_ticker,
-                evidence_hash=evidence_hash,
-                model=model,
-                content=content,
-                evidence_ids=sorted(evidence_ids),
-            )
-        )
-        try:
-            await db.commit()
-        except IntegrityError:
-            # A concurrent request may have populated the same immutable cache key.
-            await db.rollback()
-        yield content
-    except EvidenceCitationError as exc:
-        logger.warning("Rejected invalid evidence brief for %s: %s", canonical_ticker, exc)
-        yield "Error: The generated brief failed evidence validation. Deterministic cockpit data remains available."
-    except Exception:
-        logger.exception("Error generating evidence brief for %s", canonical_ticker)
-        yield "Error: The evidence brief is temporarily unavailable. Deterministic cockpit data remains available."
+                content = (
+                    "Error: The generated brief failed evidence validation. "
+                    "Deterministic cockpit data remains available."
+                )
+            except Exception:
+                logger.exception(
+                    "Error generating evidence brief for %s",
+                    canonical_ticker,
+                )
+                content = (
+                    "Error: The evidence brief is temporarily unavailable. "
+                    "Deterministic cockpit data remains available."
+                )
+    yield content
 
 
 async def generate_anomaly_attribution(

@@ -149,6 +149,33 @@ describe("DecisionCockpit", () => {
         expect(apiMocks.savePersonalValuationScenarios).not.toHaveBeenCalled();
     });
 
+    it("pauses the evidence brief while calculated scenarios are unsaved", async () => {
+        const user = userEvent.setup();
+        apiMocks.calculateDecisionValuation.mockImplementationOnce(
+            async (_ticker: string, inputs: typeof scenarios) => ({
+                ...valuation,
+                scenario_source: "request",
+                scenarios: valuation.scenarios.map((item, index) => ({
+                    ...item,
+                    assumptions: inputs[index],
+                })),
+            }),
+        );
+        render(<DecisionCockpit {...props()} />);
+
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+        const growth = screen.getByRole("spinbutton", { name: "bear FCF growth" });
+        await user.clear(growth);
+        await user.type(growth, "6");
+        await user.click(screen.getByRole("button", { name: "Calculate" }));
+        await waitFor(() => expect(apiMocks.calculateDecisionValuation).toHaveBeenCalled());
+
+        await user.click(screen.getByRole("button", { name: "Evidence Brief" }));
+        expect(screen.getByRole("status")).toHaveTextContent("Brief paused");
+        expect(screen.getByText(/working assumptions that are not in the server evidence/)).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Generate brief" })).not.toBeInTheDocument();
+    });
+
     it("saves and resets scenarios when the workspace is unlocked", async () => {
         const user = userEvent.setup();
         const componentProps = { ...props(), adminKey: "secret" };

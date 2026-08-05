@@ -74,6 +74,52 @@ describe("usePersonalWorkspace", () => {
         expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
     });
 
+    it("serializes overlapping replacements and ignores stale responses", async () => {
+        const { result } = renderHook(() => usePersonalWorkspace());
+        await waitFor(() => expect(result.current.restoring).toBe(false));
+        await act(async () => { await result.current.unlock("session-secret"); });
+
+        let resolveFirst!: (value: { tickers: string[] }) => void;
+        let resolveSecond!: (value: { tickers: string[] }) => void;
+        apiMocks.replacePersonalWatchlist
+            .mockImplementationOnce(() => new Promise((resolve) => {
+                resolveFirst = resolve;
+            }))
+            .mockImplementationOnce(() => new Promise((resolve) => {
+                resolveSecond = resolve;
+            }));
+
+        let firstRequest!: Promise<boolean>;
+        let secondRequest!: Promise<boolean>;
+        act(() => {
+            firstRequest = result.current.replaceWatchlist(["AAPL"]);
+            secondRequest = result.current.replaceWatchlist(["MSFT"]);
+        });
+        expect(result.current.watchlist).toEqual(["MSFT.US"]);
+        await waitFor(() => {
+            expect(apiMocks.replacePersonalWatchlist).toHaveBeenCalledTimes(1);
+        });
+
+        await act(async () => {
+            resolveFirst({ tickers: ["AAPL.US"] });
+            await firstRequest;
+        });
+        expect(result.current.watchlist).toEqual(["MSFT.US"]);
+        await waitFor(() => {
+            expect(apiMocks.replacePersonalWatchlist).toHaveBeenCalledTimes(2);
+        });
+
+        await act(async () => {
+            resolveSecond({ tickers: ["MSFT.US"] });
+            await secondRequest;
+        });
+        expect(result.current.watchlist).toEqual(["MSFT.US"]);
+        expect(apiMocks.replacePersonalWatchlist.mock.calls).toEqual([
+            [["AAPL.US"], "session-secret"],
+            [["MSFT.US"], "session-secret"],
+        ]);
+    });
+
     it("does not re-import legacy data after the one-time migration was attempted", async () => {
         window.localStorage.setItem(LEGACY_WATCHLIST_KEY, JSON.stringify(["AAPL.US"]));
         window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");

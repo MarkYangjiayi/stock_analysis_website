@@ -67,6 +67,21 @@ const toScenarioDrafts = (inputs: DecisionValuationScenarioInput[]): ScenarioDra
     perpetual_growth: (item.perpetual_growth * 100).toString(),
 }));
 
+const valuationEvidenceFingerprint = (valuation: DecisionValuation | null | undefined) => JSON.stringify(
+    valuation
+        ? {
+            available: valuation.available,
+            unavailable_reasons: valuation.unavailable_reasons,
+            inputs: valuation.inputs,
+            current_price: valuation.current_price,
+            scenarios: valuation.scenarios,
+            position: valuation.position,
+            sensitivity: valuation.sensitivity,
+            formula: valuation.formula,
+        }
+        : null,
+);
+
 const tabs: Array<{ key: CockpitTab; label: string; icon: typeof Calculator }> = [
     { key: "overview", label: "Overview", icon: BarChart3 },
     { key: "valuation", label: "Valuation", icon: Calculator },
@@ -155,11 +170,27 @@ export default function DecisionCockpit({
         () => decision?.peer_comparison.metrics.filter((metric) => metric[peerScope].available).length ?? 0,
         [decision, peerScope],
     );
+    const decisionValuationEvidence = useMemo(
+        () => valuationEvidenceFingerprint(decision?.valuation),
+        [decision],
+    );
+    const workingValuationEvidence = useMemo(
+        () => valuationEvidenceFingerprint(workingValuation),
+        [workingValuation],
+    );
+    const briefIsOutOfSync = Boolean(
+        decision
+        && (
+            !workingValuation
+            || workingValuationEvidence !== decisionValuationEvidence
+        ),
+    );
     const briefEvidenceKey = useMemo(() => JSON.stringify({
         metadata: decision?.metadata ?? null,
         valuationAssumptions: decision?.valuation.scenarios.map((item) => item.assumptions) ?? [],
         evidence: decision?.evidence ?? [],
-    }), [decision]);
+        workingValuationEvidence,
+    }), [decision, workingValuationEvidence]);
 
     const editScenario = (index: number, key: ScenarioRateField, percentValue: string) => {
         setScenarioDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: percentValue } : item));
@@ -358,7 +389,7 @@ export default function DecisionCockpit({
                         <section className="rounded-xl border p-4"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500"><Database size={14} /> Data-quality notes</h3>{decision.risks.data_quality_notes.length ? <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">{decision.risks.data_quality_notes.map((note) => <li key={`${note.code}-${note.message}`} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50"><span className="font-mono text-[10px] text-slate-400">{note.code}</span><p className="mt-1">{note.message}</p></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No data-quality limitation was recorded for these checks.</p>}</section>
                     </div>}
 
-                    {activeTab === "brief" && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded /><aside className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-slate-500">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900/50"><span className={`font-mono font-black ${item.available ? "text-emerald-600" : "text-slate-400"}`}>{item.id}</span><div><p className="font-bold">{item.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div>}
+                    {activeTab === "brief" && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded disabledReason={briefIsOutOfSync ? "The displayed valuation uses working assumptions that are not in the server evidence yet. Save the scenarios, or reset them to the server-backed values, before generating a brief." : undefined} /><aside className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-slate-500">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900/50"><span className={`font-mono font-black ${item.available ? "text-emerald-600" : "text-slate-400"}`}>{item.id}</span><div><p className="font-bold">{item.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div>}
                 </div>
             )}
         </section>

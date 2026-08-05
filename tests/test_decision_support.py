@@ -468,6 +468,68 @@ async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_ses
     assert negative_evidence["E30"]["value"]["severity"] == "high"
 
 
+@pytest.mark.asyncio
+async def test_decision_support_loads_only_target_peer_cohorts(db_session):
+    from sqlalchemy import event
+
+    from database import engine
+
+    db_session.add(
+        Ticker(
+            ticker="TARGET.US",
+            name="Target",
+            sector="Technology",
+            industry="Software",
+        )
+    )
+    run = PipelineRun(
+        pipeline_name="screener",
+        target_date=date(2025, 12, 31),
+        status="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset="screener",
+        as_of_date=date(2025, 12, 31),
+        pipeline_run_id=run.id,
+        status="published",
+    ))
+    target = _peer_row(1)
+    target.ticker = "TARGET.US"
+    same_industry = _peer_row(2, industry="Software", sector="Industrials")
+    same_sector = _peer_row(3, industry="Hardware", sector="Technology")
+    unrelated = _peer_row(4, industry="Biotechnology", sector="Healthcare")
+    for row in (target, same_industry, same_sector, unrelated):
+        row.date = date(2025, 12, 31)
+    db_session.add_all([target, same_industry, same_sector, unrelated])
+    await db_session.commit()
+
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _many):
+        if "stock_screener_snapshot" in statement.lower():
+            statements.append(statement.lower())
+
+    event.listen(engine.sync_engine, "before_cursor_execute", capture_statement)
+    try:
+        result = await get_decision_support("TARGET.US", db_session)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", capture_statement)
+
+    select_statements = [
+        statement
+        for statement in statements
+        if statement.lstrip().startswith("select")
+    ]
+    assert len(select_statements) == 2
+    assert "ticker" in select_statements[0]
+    assert "industry" in select_statements[1]
+    assert "sector" in select_statements[1]
+    assert result["peer_comparison"]["industry_member_count"] == 2
+    assert result["peer_comparison"]["sector_member_count"] == 2
+
+
 def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
     from main import app
 
@@ -637,6 +699,14 @@ def test_ai_citation_validation_rejects_missing_and_unknown_ids():
         validate_evidence_citations(_valid_brief().replace("[E27]", "[E999]"), allowed)
     with pytest.raises(EvidenceCitationError, match="Risks section"):
         validate_evidence_citations(_valid_brief().replace(" [E27]", ""), allowed)
+    with pytest.raises(EvidenceCitationError, match="Every analytical sentence"):
+        validate_evidence_citations(
+            _valid_brief().replace(
+                "The snapshot is available [E1].",
+                "The snapshot is available [E1]. Revenue is collapsing.",
+            ),
+            allowed,
+        )
 
 
 def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence():
@@ -1191,6 +1261,54 @@ async def test_ai_validated_response_is_cached_and_cache_hits_skip_generation(db
     count = (await db_session.execute(select(func.count(DecisionBriefCache.id)))).scalar_one()
     assert first == _valid_brief()
     assert second == first
+    assert calls == 1
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_ai_cache_misses_share_one_provider_generation(monkeypatch):
+    from database import async_session_maker
+
+    decision = _decision_for_ai()
+    monkeypatch.setattr("services.ai_assistant.settings.DEEPSEEK_API_KEY", "configured")
+    monkeypatch.setattr("services.ai_assistant.settings.DEEPSEEK_MODEL", "test-model")
+    generation_started = asyncio.Event()
+    release_generation = asyncio.Event()
+    calls = 0
+
+    async def generate(_prompt):
+        nonlocal calls
+        calls += 1
+        generation_started.set()
+        await release_generation.wait()
+        return _valid_brief()
+
+    async def request_report():
+        async with async_session_maker() as session:
+            return "".join([
+                chunk
+                async for chunk in generate_stock_report(
+                    "AAA.US",
+                    decision,
+                    session,
+                )
+            ])
+
+    monkeypatch.setattr("services.ai_assistant.generate_deepseek_text", generate)
+    first = asyncio.create_task(request_report())
+    await generation_started.wait()
+    second = asyncio.create_task(request_report())
+    await asyncio.sleep(0.05)
+    assert calls == 1
+
+    release_generation.set()
+    first_result, second_result = await asyncio.gather(first, second)
+    async with async_session_maker() as session:
+        count = (
+            await session.execute(select(func.count(DecisionBriefCache.id)))
+        ).scalar_one()
+    assert first_result == _valid_brief()
+    assert second_result == first_result
     assert calls == 1
     assert count == 1
 

@@ -12,9 +12,10 @@ interface AIReportProps {
     adminKey?: string | null;
     onUnauthorized?: () => void;
     embedded?: boolean;
+    disabledReason?: string;
 }
 
-export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized, embedded = false }: AIReportProps) {
+export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized, embedded = false, disabledReason }: AIReportProps) {
     const [report, setReport] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -26,9 +27,10 @@ export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized
         setError("");
         setLoading(false);
         return () => abortRef.current?.abort();
-    }, [ticker, evidenceKey, adminKey]);
+    }, [ticker, evidenceKey, adminKey, disabledReason]);
 
     const loadReport = async () => {
+        if (disabledReason) return;
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
@@ -89,7 +91,13 @@ export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized
             </header>
 
             <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pt-4">
-                {loading && !report ? (
+                {disabledReason ? (
+                    <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50/70 p-5 text-center text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200" role="status">
+                        <TriangleAlert size={28} />
+                        <h3 className="mt-4 font-bold">Brief paused</h3>
+                        <p className="mt-2 max-w-md text-sm leading-6">{disabledReason}</p>
+                    </div>
+                ) : loading && !report ? (
                     <div className="flex h-full min-h-[240px] flex-col items-center justify-center text-center">
                         <RefreshCw className="animate-spin text-indigo-500" size={28} />
                         <p className="mt-4 text-sm font-semibold">Generating a synthesis from the current snapshot…</p>
