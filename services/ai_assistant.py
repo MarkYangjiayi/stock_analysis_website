@@ -24,7 +24,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v10"
+PROMPT_VERSION = "decision-evidence-v11"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -153,6 +153,16 @@ NEGATED_POSITIVE_BEFORE_RE = re.compile(
     r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
+AFFIRMING_NEGATIVE_BEFORE_RE = re.compile(
+    r"\bnot\s+(?:only|merely|just|simply)\s+negative"
+    r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
+    re.IGNORECASE,
+)
+AFFIRMING_POSITIVE_BEFORE_RE = re.compile(
+    r"\bnot\s+(?:only|merely|just|simply)\s+positive"
+    r"(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
+    re.IGNORECASE,
+)
 IDENTITY_VALUE_PREDICATE_RE = re.compile(
     r"^\s+(?:is|was|were|equals?|equaled|represented|reached|totaled)\s+"
     r"(?:the\s+)?(?:published\s+)?(?:current\s+)?"
@@ -168,8 +178,8 @@ IDENTITY_SUBJECT_FOLLOW_RE = re.compile(
 )
 IDENTITY_SECURITY_FOLLOW_RE = re.compile(
     r"^\s+(?:shares?\s+(?:trades?|traded|are\s+(?:trading|priced)|"
-    r"closed|opened|rose|fell)|stock\s+(?:trades?|traded|price|closed|"
-    r"opened|rose|fell))\b",
+    r"closed|opened|rose|fell)|stock\s+(?:trades?|traded|is\s+(?:trading|"
+    r"priced)|price|closed|opened|rose|fell))\b",
     re.IGNORECASE,
 )
 LEGAL_COMPANY_SUFFIX_RE = re.compile(
@@ -183,6 +193,71 @@ IDENTITY_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 CLAUSE_BREAK_RE = re.compile(r"(?:[;]|\b(?:while|whereas|but)\b)", re.IGNORECASE)
+SEMANTIC_VALUE_KEYS = {
+    "revenue": "revenue",
+    "sales": "revenue",
+    "gross_profit": "gross_profit",
+    "operating_income": "operating_income",
+    "net_income": "net_income",
+    "fcf": "fcf",
+    "free_cash_flow": "fcf",
+    "cash": "cash",
+    "cash_and_short_term_investments": "cash",
+    "debt": "debt",
+    "total_debt": "debt",
+    "shares": "shares",
+    "shares_outstanding": "shares",
+    "stockholder_equity": "stockholder_equity",
+    "equity": "stockholder_equity",
+    "gross_margin": "gross_margin",
+    "operating_margin": "operating_margin",
+    "net_profit_margin": "net_profit_margin",
+    "fcf_net_income_conversion": "fcf_net_income_conversion",
+    "debt_to_equity": "debt_to_equity",
+    "price": "current_price",
+    "current_price": "current_price",
+    "intrinsic_value_per_share": "intrinsic_value_per_share",
+    "enterprise_value": "enterprise_value",
+    "equity_value": "equity_value",
+    "projected_fcf": "projected_fcf",
+    "present_value_explicit_fcf": "present_value_explicit_fcf",
+    "present_value_terminal": "present_value_terminal",
+    "terminal_value": "terminal_value",
+    "statement_count": "statement_count",
+    "fcf_growth_rate": "fcf_growth_rate",
+    "wacc": "wacc",
+    "perpetual_growth": "perpetual_growth",
+    "upside_downside": "upside_downside",
+}
+SEMANTIC_CLAIM_PATTERNS = {
+    "fcf": re.compile(r"\b(?:free\s+cash\s+flow|fcf)\b", re.IGNORECASE),
+    "projected_fcf": re.compile(r"\bprojected\s+(?:free\s+cash\s+flow|fcf)\b", re.IGNORECASE),
+    "present_value_explicit_fcf": re.compile(r"\b(?:present\s+value\s+of\s+)?explicit(?:-period)?\s+(?:fcf|cash\s+flow)\b", re.IGNORECASE),
+    "present_value_terminal": re.compile(r"\bpresent\s+value\s+of\s+(?:the\s+)?terminal(?:\s+value)?\b", re.IGNORECASE),
+    "terminal_value": re.compile(r"\bterminal\s+value\b", re.IGNORECASE),
+    "enterprise_value": re.compile(r"\benterprise\s+value\b", re.IGNORECASE),
+    "equity_value": re.compile(r"\bequity\s+value\b", re.IGNORECASE),
+    "intrinsic_value_per_share": re.compile(r"\b(?:intrinsic\s+value(?:\s+per\s+share)?|(?:bear|base|bull)(?:-case)?\s+value|(?:bear|base|bull)\s+case)\b", re.IGNORECASE),
+    "upside_downside": re.compile(r"\b(?:upside|downside)\b|\b(?:above|below)\s+(?:the\s+)?current\s+price\b|\bvs\.?\s+(?:the\s+)?current\s+price\b", re.IGNORECASE),
+    "current_price": re.compile(r"\b(?:current|share|stock)\s+price\b", re.IGNORECASE),
+    "revenue": re.compile(r"\b(?:revenue|sales)\b", re.IGNORECASE),
+    "gross_profit": re.compile(r"\bgross\s+profit\b", re.IGNORECASE),
+    "operating_income": re.compile(r"\boperating\s+income\b", re.IGNORECASE),
+    "net_income": re.compile(r"\bnet\s+income\b", re.IGNORECASE),
+    "gross_margin": re.compile(r"\bgross\s+margin\b", re.IGNORECASE),
+    "operating_margin": re.compile(r"\boperating\s+margin\b", re.IGNORECASE),
+    "net_profit_margin": re.compile(r"\bnet(?:\s+profit)?\s+margin\b", re.IGNORECASE),
+    "fcf_net_income_conversion": re.compile(r"\b(?:fcf|free\s+cash\s+flow)(?:-to-|\s+to\s+|/)net\s+income\s+conversion\b", re.IGNORECASE),
+    "debt_to_equity": re.compile(r"\bdebt(?:-to-|\s+to\s+|/)equity\b", re.IGNORECASE),
+    "cash": re.compile(r"\bcash(?:\s+and\s+short-term\s+investments)?\b", re.IGNORECASE),
+    "debt": re.compile(r"\b(?:total\s+)?debt\b", re.IGNORECASE),
+    "shares": re.compile(r"\b(?:share\s+count|shares?\s+outstanding|dilution)\b", re.IGNORECASE),
+    "stockholder_equity": re.compile(r"\b(?:stockholders?'?|shareholders?'?)\s+equity\b", re.IGNORECASE),
+    "statement_count": re.compile(r"\b(?:statement\s+count|statements?)\b", re.IGNORECASE),
+    "fcf_growth_rate": re.compile(r"\b(?:fcf|free\s+cash\s+flow)\s+growth\b", re.IGNORECASE),
+    "wacc": re.compile(r"\bwacc\b", re.IGNORECASE),
+    "perpetual_growth": re.compile(r"\b(?:perpetual|terminal)\s+growth\b", re.IGNORECASE),
+}
 MAX_REPORT_GENERATION_ATTEMPTS = 2
 
 
@@ -199,6 +274,10 @@ class _EvidenceNumericContext:
     string_values: list[float]
     percent_string_values: list[float]
     strings: set[str]
+    semantic_numeric_values: dict[str, list[float]]
+    semantic_ratio_values: dict[str, list[float]]
+    semantic_multiple_values: dict[str, list[float]]
+    semantic_currency_values: dict[str, list[float]]
 
 
 def build_evidence_hash(decision_support: dict, model: str) -> str:
@@ -304,6 +383,18 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
     string_values: list[float] = []
     percent_string_values: list[float] = []
     strings: set[str] = set()
+    semantic_numeric_values: dict[str, list[float]] = {}
+    semantic_ratio_values: dict[str, list[float]] = {}
+    semantic_multiple_values: dict[str, list[float]] = {}
+    semantic_currency_values: dict[str, list[float]] = {}
+
+    def append_semantic(
+        target: dict[str, list[float]],
+        semantic_hint: Optional[str],
+        number: float,
+    ) -> None:
+        if semantic_hint:
+            target.setdefault(semantic_hint, []).append(number)
 
     def visit(
         value: object,
@@ -311,6 +402,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         ratio_hint: bool = False,
         multiple_hint: bool = False,
         currency_hint: bool = False,
+        semantic_hint: Optional[str] = None,
     ) -> None:
         if isinstance(value, bool):
             return
@@ -318,12 +410,16 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
             number = float(value)
             if math.isfinite(number):
                 numeric_values.append(number)
+                append_semantic(semantic_numeric_values, semantic_hint, number)
                 if ratio_hint:
                     ratio_values.append(number)
+                    append_semantic(semantic_ratio_values, semantic_hint, number)
                 if multiple_hint:
                     multiple_values.append(number)
+                    append_semantic(semantic_multiple_values, semantic_hint, number)
                 if currency_hint:
                     currency_values.append(number)
+                    append_semantic(semantic_currency_values, semantic_hint, number)
         elif isinstance(value, str):
             strings.add(value)
             numeric_text = ISO_DATE_RE.sub("", value)
@@ -363,6 +459,11 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
             format_is_percent = value.get("format") == "percent"
             format_is_multiple = value.get("format") in {"multiple", "ratio"}
             warning_metric = value.get("metric")
+            warning_semantic = SEMANTIC_VALUE_KEYS.get(str(warning_metric))
+            if warning_semantic is None:
+                warning_semantic = SEMANTIC_VALUE_KEYS.get(
+                    str(value.get("evidence_metric"))
+                )
             for key, nested in value.items():
                 normalized_key = str(key).lower()
                 if (
@@ -397,11 +498,19 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                         and warning_metric in CURRENCY_WARNING_METRICS
                     )
                 )
+                nested_semantic = SEMANTIC_VALUE_KEYS.get(normalized_key)
+                if (
+                    nested_semantic is None
+                    and normalized_key in {"current", "previous"}
+                    and warning_semantic
+                ):
+                    nested_semantic = warning_semantic
                 visit(
                     nested,
                     ratio_hint=nested_is_ratio,
                     multiple_hint=nested_is_multiple,
                     currency_hint=nested_is_currency,
+                    semantic_hint=nested_semantic or semantic_hint,
                 )
         elif isinstance(value, (list, tuple)):
             for nested in value:
@@ -410,6 +519,7 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
                     ratio_hint=ratio_hint,
                     multiple_hint=multiple_hint,
                     currency_hint=currency_hint,
+                    semantic_hint=semantic_hint,
                 )
 
     # The stable ID is intentionally excluded: citing E24 must not make 24 a
@@ -419,7 +529,11 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         value = item.get(key)
         if value is not None:
             strings.add(str(value))
-    visit(item.get("value"), currency_hint=item.get("kind") == "price")
+    visit(
+        item.get("value"),
+        currency_hint=item.get("kind") == "price",
+        semantic_hint="current_price" if item.get("kind") == "price" else None,
+    )
     return _EvidenceNumericContext(
         numeric_values=numeric_values,
         ratio_values=ratio_values,
@@ -428,6 +542,10 @@ def _evidence_numeric_context(item: dict) -> _EvidenceNumericContext:
         string_values=string_values,
         percent_string_values=percent_string_values,
         strings=strings,
+        semantic_numeric_values=semantic_numeric_values,
+        semantic_ratio_values=semantic_ratio_values,
+        semantic_multiple_values=semantic_multiple_values,
+        semantic_currency_values=semantic_currency_values,
     )
 
 
@@ -584,11 +702,15 @@ def _claim_direction(match: re.Match[str], claim: str) -> str:
         semantic_directions.add("+")
     if (
         NEGATED_NEGATIVE_BEFORE_RE.search(word_before)
+        and not AFFIRMING_NEGATIVE_BEFORE_RE.search(word_before)
     ):
         semantic_directions.add("+")
     elif NEGATIVE_DIRECTION_BEFORE_RE.search(word_before):
         semantic_directions.add("-")
-    if NEGATED_POSITIVE_BEFORE_RE.search(word_before):
+    if (
+        NEGATED_POSITIVE_BEFORE_RE.search(word_before)
+        and not AFFIRMING_POSITIVE_BEFORE_RE.search(word_before)
+    ):
         semantic_directions.add("-")
     elif POSITIVE_DIRECTION_BEFORE_RE.search(word_before):
         semantic_directions.add("+")
@@ -611,6 +733,21 @@ def _rounded_match(candidate: float, supported: float, decimal_places: int, dire
     return abs(candidate_value - supported_value) <= tolerance
 
 
+def _claim_semantic_key(match: re.Match[str], claim: str) -> Optional[str]:
+    candidates: list[tuple[int, int, str]] = []
+    for semantic_key, pattern in SEMANTIC_CLAIM_PATTERNS.items():
+        for semantic_match in pattern.finditer(claim):
+            if semantic_match.end() <= match.start():
+                distance = match.start() - semantic_match.end()
+            elif match.end() <= semantic_match.start():
+                distance = semantic_match.start() - match.end()
+            else:
+                distance = 0
+            if distance <= 64:
+                candidates.append((distance, -len(semantic_match.group(0)), semantic_key))
+    return min(candidates)[2] if candidates else None
+
+
 def _numeric_claim_supported(
     match: re.Match[str],
     context: _EvidenceNumericContext,
@@ -630,6 +767,15 @@ def _numeric_claim_supported(
     scale = (match.group("scale") or "").lower()
     compact_scale = (match.group("compact_scale") or "").lower()
     basis_points = bool(match.group("basis_points"))
+    semantic_key = _claim_semantic_key(match, claim)
+
+    def semantic_or_default(
+        semantic_values: dict[str, list[float]],
+        default_values: list[float],
+    ) -> list[float]:
+        if semantic_key is None:
+            return default_values
+        return semantic_values.get(semantic_key, [])
 
     unit_count = sum(bool(value) for value in (
         match.group("percent"),
@@ -649,33 +795,69 @@ def _numeric_claim_supported(
 
     if match.group("percent"):
         supported_values = [
-            *[value * 100.0 for value in context.ratio_values],
-            *context.percent_string_values,
+            *[
+                value * 100.0
+                for value in semantic_or_default(
+                    context.semantic_ratio_values,
+                    context.ratio_values,
+                )
+            ],
+            *([] if semantic_key else context.percent_string_values),
         ]
     elif basis_points:
-        supported_values = [value * 10_000.0 for value in context.ratio_values]
+        supported_values = [
+            value * 10_000.0
+            for value in semantic_or_default(
+                context.semantic_ratio_values,
+                context.ratio_values,
+            )
+        ]
     elif scale:
         divisor = SCALE_DIVISORS[scale]
         source_values = (
-            context.currency_values
+            semantic_or_default(
+                context.semantic_currency_values,
+                context.currency_values,
+            )
             if match.group("currency")
-            else context.numeric_values
+            else semantic_or_default(
+                context.semantic_numeric_values,
+                context.numeric_values,
+            )
         )
         supported_values = [value / divisor for value in source_values]
     elif compact_scale:
         divisor = COMPACT_SCALE_DIVISORS[compact_scale]
         source_values = (
-            context.currency_values
+            semantic_or_default(
+                context.semantic_currency_values,
+                context.currency_values,
+            )
             if match.group("currency")
-            else context.numeric_values
+            else semantic_or_default(
+                context.semantic_numeric_values,
+                context.numeric_values,
+            )
         )
         supported_values = [value / divisor for value in source_values]
     elif match.group("multiple"):
-        supported_values = context.multiple_values
+        supported_values = semantic_or_default(
+            context.semantic_multiple_values,
+            context.multiple_values,
+        )
     elif match.group("currency"):
-        supported_values = context.currency_values
+        supported_values = semantic_or_default(
+            context.semantic_currency_values,
+            context.currency_values,
+        )
     else:
-        supported_values = [*context.numeric_values, *context.string_values]
+        supported_values = [
+            *semantic_or_default(
+                context.semantic_numeric_values,
+                context.numeric_values,
+            ),
+            *([] if semantic_key else context.string_values),
+        ]
 
     return any(
         _rounded_match(candidate, supported, decimal_places, direction)
@@ -754,6 +936,16 @@ def validate_evidence_numbers(
                     f"Unknown evidence citations: {', '.join(sorted(unknown_ids))}."
                 )
             local_contexts = [contexts[evidence_id] for evidence_id in local_ids]
+
+            def merge_semantic_values(
+                attribute: str,
+            ) -> dict[str, list[float]]:
+                merged: dict[str, list[float]] = {}
+                for context in local_contexts:
+                    for semantic_key, values in getattr(context, attribute).items():
+                        merged.setdefault(semantic_key, []).extend(values)
+                return merged
+
             return (
                 local_ids,
                 _EvidenceNumericContext(
@@ -792,6 +984,18 @@ def validate_evidence_numbers(
                         for context in local_contexts
                         for value in context.strings
                     },
+                    semantic_numeric_values=merge_semantic_values(
+                        "semantic_numeric_values"
+                    ),
+                    semantic_ratio_values=merge_semantic_values(
+                        "semantic_ratio_values"
+                    ),
+                    semantic_multiple_values=merge_semantic_values(
+                        "semantic_multiple_values"
+                    ),
+                    semantic_currency_values=merge_semantic_values(
+                        "semantic_currency_values"
+                    ),
                 ),
             )
 

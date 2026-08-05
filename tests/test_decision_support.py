@@ -655,6 +655,7 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             "value": {
                 "statement_count": 8,
                 "revenue": 466_823_000_000,
+                "fcf": 5_000_000_000,
                 "gross_margin": 0.486529,
             },
         },
@@ -746,6 +747,8 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("Negative free cash flow of $40 million was recorded [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not yet positive at -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not yet negative at +$40 million [E31].", evidence)
+    validate_evidence_numbers("Free cash flow was not only negative at -$40 million [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was not merely positive at +$40 million [E31].", evidence)
     validate_evidence_numbers("Enterprise value is $12.3 billion [E33].", evidence)
     validate_evidence_numbers("Projected FCF reaches $900 million [E33].", evidence)
     validate_evidence_numbers("The published spread is 300bps [E32].", evidence)
@@ -784,6 +787,10 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("Free cash flow was not yet positive at +$40 million [E31].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Free cash flow was not yet negative at -$40 million [E30].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Free cash flow was $466.8 billion [E3].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Revenue was $5 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("The base case differs by 32.4% [E5].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
@@ -829,6 +836,11 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             evidence,
             identity_strings=("3M",),
         )
+    validate_evidence_numbers(
+        "3M stock is trading at $10 [E1].",
+        evidence,
+        identity_strings=("3M",),
+    )
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim '3M'"):
         validate_evidence_numbers(
             "3M shares were outstanding [E1].",
