@@ -695,6 +695,19 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
             "source_date": "2026-06-30",
             "value": {"wacc": 0.03},
         },
+        {
+            "id": "E33",
+            "kind": "valuation",
+            "label": "DCF cash-flow fixture",
+            "source_date": "2026-06-30",
+            "value": {
+                "enterprise_value": 12_300_000_000,
+                "equity_value": 11_900_000_000,
+                "projected_fcf": [800_000_000, 900_000_000],
+                "present_value_explicit_fcf": 3_500_000_000,
+                "present_value_terminal": 8_800_000_000,
+            },
+        },
     ]
     valid = (
         "As of 2026-06-30, 8 statements show revenue of $466.8 billion "
@@ -709,6 +722,9 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("Free cash flow was −$40M [E30].", evidence)
     validate_evidence_numbers("Free cash flow was $-40MM [E30].", evidence)
     validate_evidence_numbers("Free cash flow was ($40M) [E30].", evidence)
+    validate_evidence_numbers("Negative free cash flow of $40 million was recorded [E30].", evidence)
+    validate_evidence_numbers("Enterprise value is $12.3 billion [E33].", evidence)
+    validate_evidence_numbers("Projected FCF reaches $900 million [E33].", evidence)
     validate_evidence_numbers("The published spread is 300bps [E32].", evidence)
     validate_evidence_numbers(
         "The current price is $10 [E1], while revenue is $466.8 billion [E3].",

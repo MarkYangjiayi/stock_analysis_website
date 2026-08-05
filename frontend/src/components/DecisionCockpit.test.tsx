@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DecisionCockpit from "@/components/DecisionCockpit";
@@ -158,6 +158,39 @@ describe("DecisionCockpit", () => {
         expect(apiMocks.savePersonalValuationScenarios).toHaveBeenCalledWith("AAA.US", scenarios, "secret");
         await user.click(screen.getByRole("button", { name: "Reset defaults" }));
         expect(apiMocks.resetPersonalValuationScenarios).toHaveBeenCalledWith("AAA.US", "secret");
+        expect(apiMocks.calculateDecisionValuation).toHaveBeenLastCalledWith("AAA.US", scenarios);
+    });
+
+    it("clears a saved valuation while default recalculation is pending", async () => {
+        const user = userEvent.setup();
+        let resolveCalculation!: (value: DecisionValuation) => void;
+        apiMocks.calculateDecisionValuation.mockReturnValueOnce(new Promise((resolve) => {
+            resolveCalculation = resolve;
+        }));
+        const savedValuation: DecisionValuation = {
+            ...valuation,
+            scenario_source: "saved",
+            scenarios: valuation.scenarios.map((item) => ({
+                ...item,
+                intrinsic_value_per_share: 999,
+            })),
+        };
+        const componentProps = {
+            ...props(),
+            adminKey: "secret",
+            decision: { ...decision, valuation: savedValuation },
+        };
+        render(<DecisionCockpit {...componentProps} />);
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+        expect(screen.getAllByText("$999.00")).toHaveLength(3);
+
+        await user.click(screen.getByRole("button", { name: "Reset defaults" }));
+        await waitFor(() => expect(apiMocks.resetPersonalValuationScenarios).toHaveBeenCalled());
+        expect(screen.queryByText("$999.00")).not.toBeInTheDocument();
+
+        resolveCalculation(valuation);
+        await waitFor(() => expect(screen.getAllByText("$80.00").length).toBeGreaterThan(0));
+        expect(componentProps.onRefresh).toHaveBeenCalled();
     });
 
     it("keeps fractional and negative scenario drafts editable until calculation", async () => {

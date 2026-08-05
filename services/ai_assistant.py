@@ -106,6 +106,12 @@ CURRENCY_VALUE_KEYS = {
     "total_debt",
     "equity",
     "stockholder_equity",
+    "enterprise_value",
+    "equity_value",
+    "projected_fcf",
+    "present_value_explicit_fcf",
+    "present_value_terminal",
+    "terminal_value",
 }
 MULTIPLE_VALUE_KEYS = {"debt_to_equity"}
 CURRENCY_WARNING_METRICS = {
@@ -117,7 +123,8 @@ CURRENCY_WARNING_METRICS = {
 MULTIPLE_WARNING_METRICS = {"debt_to_equity", "debt_to_equity_change"}
 NEGATIVE_DIRECTION_BEFORE_RE = re.compile(
     r"\b(?:downside|decline|decrease|drop|loss)(?:\s+(?:of|is|was|by))?\s*$"
-    r"|\b(?:fell|declined|decreased|dropped|lost|down)(?:\s+by)?\s*$",
+    r"|\b(?:fell|declined|decreased|dropped|lost|down)(?:\s+by)?\s*$"
+    r"|(?<!not )(?<!non-)\bnegative(?:\s+[A-Za-z][A-Za-z/-]*){0,6}\s*$",
     re.IGNORECASE,
 )
 POSITIVE_DIRECTION_BEFORE_RE = re.compile(

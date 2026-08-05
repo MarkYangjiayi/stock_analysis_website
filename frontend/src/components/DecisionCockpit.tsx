@@ -133,7 +133,7 @@ export default function DecisionCockpit({
     const [activeTab, setActiveTab] = useState<CockpitTab>("overview");
     const [peerScope, setPeerScope] = useState<"industry" | "sector">("industry");
     const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDraft[]>(() => toScenarioDrafts(DEFAULT_SCENARIOS));
-    const [workingValuation, setWorkingValuation] = useState<DecisionValuation | null>(null);
+    const [workingValuation, setWorkingValuation] = useState<DecisionValuation | null>(() => decision?.valuation ?? null);
     const [valuationBusy, setValuationBusy] = useState(false);
     const [valuationError, setValuationError] = useState("");
     const [saveMessage, setSaveMessage] = useState("");
@@ -150,7 +150,7 @@ export default function DecisionCockpit({
         setScenarioDrafts(toScenarioDrafts(decision.valuation.scenarios.map((item) => ({ ...item.assumptions }))));
     }, [decision]);
 
-    const valuation = workingValuation || decision?.valuation || null;
+    const valuation = workingValuation;
     const selectedPeerAvailable = useMemo(
         () => decision?.peer_comparison.metrics.filter((metric) => metric[peerScope].available).length ?? 0,
         [decision, peerScope],
@@ -242,6 +242,17 @@ export default function DecisionCockpit({
         setValuationBusy(true);
         try {
             await resetPersonalValuationScenarios(ticker, adminKey);
+            // The delete is authoritative. Do not leave saved assumptions on
+            // screen while the parent refresh is delayed or records an error.
+            setWorkingValuation(null);
+            try {
+                const defaultValuation = await calculateDecisionValuation(ticker, defaults);
+                setWorkingValuation(defaultValuation);
+            } catch (caught) {
+                setValuationError(caught instanceof Error
+                    ? `Scenarios were reset, but defaults could not be recalculated: ${caught.message}`
+                    : "Scenarios were reset, but defaults could not be recalculated.");
+            }
             setSaveMessage("Saved scenarios reset to defaults.");
             await onRefresh();
         } catch (caught) {
