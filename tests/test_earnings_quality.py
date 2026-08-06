@@ -259,6 +259,33 @@ def test_relevant_context_honors_configured_character_cap(monkeypatch):
     assert sum(len(item["text"]) for item in context) == 30
 
 
+def test_relevant_context_prioritizes_unrealized_gain_over_generic_matches(
+    monkeypatch,
+):
+    import services.filing_analysis as filing_analysis
+
+    monkeypatch.setattr(settings, "EARNINGS_QUALITY_MAX_CONTEXT_CHARS", 300)
+    documents = [{
+        "source_id": "filing:primary",
+        "accession": "0001",
+        "form": "10-Q",
+        "document_name": "report.htm",
+        "source_url": "https://www.sec.gov/report.htm",
+        "text": "\n".join([
+            *[
+                f"Investment and fair value background line {index}"
+                for index in range(220)
+            ],
+            "Other income included unrealized gains on equity securities of $99.0 billion.",
+            *[f"Trailing filing line {index}" for index in range(20)],
+        ]),
+    }]
+
+    context = filing_analysis._relevant_context(documents)
+
+    assert "unrealized gains on equity securities" in context[0]["text"]
+
+
 def extraction_payload(**overrides):
     payload = {
         "period_end": "2025-12-31",
@@ -803,7 +830,7 @@ async def test_statement_revision_supersedes_stale_active_run(
 
 
 @pytest.mark.asyncio
-async def test_old_model_or_schema_cache_is_not_exposed_as_current(
+async def test_old_prompt_cache_is_not_exposed_as_current(
     db_session,
 ):
     await seed_supported_company(db_session)
@@ -823,8 +850,8 @@ async def test_old_model_or_schema_cache_is_not_exposed_as_current(
             currency="USD",
         ),
         cache_identity="old-version",
-        model="retired-model",
-        prompt_version=EARNINGS_QUALITY_PROMPT_VERSION,
+        model=settings.DEEPSEEK_MODEL,
+        prompt_version="earnings-quality-v1",
         schema_version=EARNINGS_QUALITY_SCHEMA_VERSION,
         status="completed",
         stage="completed",
@@ -888,7 +915,7 @@ def test_sec_fixture_selects_matching_primary_nearest_earnings_8k_and_exhibit(
 
     class FakeCompany:
         def get_filings(self, *, form, filing_date):
-            assert isinstance(filing_date, tuple)
+            assert filing_date == "2025-12-21:2026-04-30"
             return [primary] if form == "10-Q" else [farther, nearest]
 
     company_factory = Mock(return_value=FakeCompany())
@@ -937,7 +964,7 @@ def test_quarterly_sec_fixture_falls_back_to_matching_ten_k(monkeypatch):
 
     class FakeCompany:
         def get_filings(self, *, form, filing_date):
-            assert isinstance(filing_date, tuple)
+            assert filing_date == "2025-12-21:2026-04-30"
             requested_forms.append(form)
             if form == "10-K":
                 return [FakeFiling()]
