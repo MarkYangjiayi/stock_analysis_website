@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v16"
+PROMPT_VERSION = "decision-evidence-v17"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -365,6 +365,47 @@ PROJECTION_FINAL_RE = re.compile(
     r"\b(?:final|last|fifth(?:-year)?|year\s+five)\b",
     re.IGNORECASE,
 )
+QUALITATIVE_TREND_PATTERNS = (
+    (
+        "+",
+        re.compile(
+            r"\b(?:grow(?:s|ing)?|grew|grown|ris(?:e|es|ing)|rose|risen|"
+            r"increas(?:e|es|ed|ing)|improv(?:e|es|ed|ing)|"
+            r"expand(?:s|ed|ing)|strengthen(?:s|ed|ing)|"
+            r"accelerat(?:e|es|ed|ing)|recover(?:s|ed|ing)|booming|higher)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "-",
+        re.compile(
+            r"\b(?:declin(?:es|ed|ing)|decreas(?:e|es|ed|ing)|"
+            r"fall(?:s|ing)?|fell|fallen|drop(?:s|ped|ping)|"
+            r"contract(?:s|ed|ing)|deteriorat(?:e|es|ed|ing)|"
+            r"weaken(?:s|ed|ing)|shrink(?:s|ing)?|shrank|shrunk|"
+            r"collaps(?:es|ed|ing)|lower)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "stable",
+        re.compile(
+            r"\b(?:stable|flat|unchanged|steady)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+QUALITATIVE_SIGN_PATTERNS = (
+    ("+", re.compile(r"\bpositive\b", re.IGNORECASE)),
+    ("-", re.compile(r"\bnegative\b", re.IGNORECASE)),
+)
+EVALUATIVE_QUALITATIVE_RE = re.compile(
+    r"\b(?:strong(?:er|est)?|weak(?:er|est)?|cheap(?:er|est)?|"
+    r"expensive|attractive|unattractive|healthy|poor|robust|elevated|"
+    r"depressed|superior|inferior|favou?rable|unfavou?rable|compelling|"
+    r"concerning|resilient)\b",
+    re.IGNORECASE,
+)
 
 
 class EvidenceCitationError(ValueError):
@@ -396,6 +437,7 @@ def build_evidence_hash(decision_support: dict, model: str) -> str:
         "prompt_identity": {
             "ticker": metadata.get("ticker"),
             "company_name": metadata.get("company_name"),
+            "currency": metadata.get("currency"),
         },
         "source_dates": {
             key: value
@@ -946,8 +988,7 @@ def _claim_direction(match: re.Match[str], claim: str) -> str:
         word_before = word_before[:-1].rstrip()
     semantic_directions: set[str] = set()
     if (
-        match.group("currency")
-        and before.endswith("(")
+        before.endswith("(")
         and after.lstrip().startswith(")")
     ):
         semantic_directions.add("-")
@@ -1573,6 +1614,186 @@ def validate_evidence_numbers(
                 )
 
 
+def _qualitative_semantic_key(
+    claim: str,
+    start: int,
+    end: int,
+) -> Optional[str]:
+    candidates: list[tuple[int, int, str, int, int]] = []
+    for semantic_key, pattern in SEMANTIC_CLAIM_PATTERNS.items():
+        for semantic_match in pattern.finditer(claim):
+            if semantic_match.end() <= start:
+                distance = start - semantic_match.end()
+                side = 0
+            elif end <= semantic_match.start():
+                distance = semantic_match.start() - end
+                side = 1
+            else:
+                distance = 0
+                side = 0
+            if distance <= 96:
+                candidates.append((
+                    distance,
+                    side,
+                    semantic_key,
+                    semantic_match.start(),
+                    semantic_match.end(),
+                ))
+    candidates = [
+        candidate
+        for candidate in candidates
+        if not any(
+            other[3] <= candidate[3]
+            and candidate[4] <= other[4]
+            and (other[4] - other[3]) > (candidate[4] - candidate[3])
+            for other in candidates
+        )
+    ]
+    if not candidates:
+        return None
+    minimum_distance = min(candidate[0] for candidate in candidates)
+    nearest = [
+        candidate
+        for candidate in candidates
+        if candidate[0] == minimum_distance
+    ]
+    if len({candidate[2] for candidate in nearest}) != 1:
+        return None
+    return min(nearest)[2]
+
+
+def validate_evidence_qualitative_claims(
+    content: str,
+    evidence: list[dict],
+) -> None:
+    """Validate directional prose that can contradict evidence without digits."""
+    contexts = {
+        str(item.get("id")): _evidence_numeric_context(item)
+        for item in evidence
+        if item.get("id")
+    }
+
+    for segment in _claim_segments(content):
+        clusters = _citation_clusters(segment)
+        if not clusters:
+            continue
+
+        def cited_contexts(start: int, end: int) -> list[_EvidenceNumericContext]:
+            evidence_ids = _nearest_citation_cluster(start, end, clusters)[2]
+            return [
+                contexts[evidence_id]
+                for evidence_id in evidence_ids
+                if evidence_id in contexts
+            ]
+
+        for expected_direction, pattern in QUALITATIVE_TREND_PATTERNS:
+            for direction_match in pattern.finditer(segment):
+                semantic_key = _qualitative_semantic_key(
+                    segment,
+                    direction_match.start(),
+                    direction_match.end(),
+                )
+                if semantic_key is None:
+                    raise EvidenceCitationError(
+                        f"Unsupported qualitative claim {direction_match.group(0)!r}; "
+                        "no unambiguous evidence metric is identified."
+                    )
+                local_contexts = cited_contexts(
+                    direction_match.start(),
+                    direction_match.end(),
+                )
+                current_values = [
+                    value
+                    for context in local_contexts
+                    for value in context.semantic_numeric_values.get(
+                        f"current:{semantic_key}",
+                        [],
+                    )
+                ]
+                previous_values = [
+                    value
+                    for context in local_contexts
+                    for value in context.semantic_numeric_values.get(
+                        f"previous:{semantic_key}",
+                        [],
+                    )
+                ]
+                if expected_direction == "+":
+                    supported = any(
+                        current > previous
+                        for current in current_values
+                        for previous in previous_values
+                    )
+                elif expected_direction == "-":
+                    supported = any(
+                        current < previous
+                        for current in current_values
+                        for previous in previous_values
+                    )
+                else:
+                    supported = any(
+                        math.isclose(current, previous, rel_tol=1e-9, abs_tol=1e-12)
+                        for current in current_values
+                        for previous in previous_values
+                    )
+                if not supported:
+                    raise EvidenceCitationError(
+                        f"Unsupported qualitative direction "
+                        f"{direction_match.group(0)!r} for {semantic_key}."
+                    )
+
+        for expected_sign, pattern in QUALITATIVE_SIGN_PATTERNS:
+            for sign_match in pattern.finditer(segment):
+                semantic_key = _qualitative_semantic_key(
+                    segment,
+                    sign_match.start(),
+                    sign_match.end(),
+                )
+                if semantic_key is None:
+                    raise EvidenceCitationError(
+                        f"Unsupported qualitative sign {sign_match.group(0)!r}."
+                    )
+                local_contexts = cited_contexts(
+                    sign_match.start(),
+                    sign_match.end(),
+                )
+                values = [
+                    value
+                    for context in local_contexts
+                    for value in (
+                        context.semantic_numeric_values.get(
+                            f"current:{semantic_key}",
+                            [],
+                        )
+                        or context.semantic_numeric_values.get(semantic_key, [])
+                    )
+                ]
+                supported = any(
+                    value > 0 if expected_sign == "+" else value < 0
+                    for value in values
+                )
+                if not supported:
+                    raise EvidenceCitationError(
+                        f"Unsupported qualitative sign {sign_match.group(0)!r} "
+                        f"for {semantic_key}."
+                    )
+
+        for evaluation_match in EVALUATIVE_QUALITATIVE_RE.finditer(segment):
+            word = evaluation_match.group(0).casefold()
+            local_contexts = cited_contexts(
+                evaluation_match.start(),
+                evaluation_match.end(),
+            )
+            if not any(
+                re.search(rf"\b{re.escape(word)}\b", value, re.IGNORECASE)
+                for context in local_contexts
+                for value in context.strings
+            ):
+                raise EvidenceCitationError(
+                    f"Unsupported evaluative claim {evaluation_match.group(0)!r}."
+                )
+
+
 def _evidence_prompt(ticker: str, decision_support: dict) -> str:
     metadata = decision_support.get("metadata") or {}
     evidence = decision_support.get("evidence") or []
@@ -1588,6 +1809,8 @@ You are preparing an objective personal-investment research brief for
 {metadata.get('company_name') or ticker} ({ticker}). You may use only the
 decision-support evidence records below. Do not add facts, forecasts, news,
 technical signals, scores, or recommendations that are not present in them.
+All monetary evidence is denominated in {metadata.get('currency') or 'the reported currency'};
+do not label it as another currency.
 
 Evidence records (their stable IDs are the only permitted citations):
 {evidence_payload}
@@ -1608,7 +1831,10 @@ values, format ratios as percentages, and scale
 currency values to thousands, millions, billions, or trillions. Do not perform
 new arithmetic or introduce a derived number; reuse the supplied values such as
 upside_downside directly. Directional words such as upside/downside and
-above/below must agree with the sign of the cited evidence. Keep the brief
+above/below must agree with the sign of the cited evidence. Trend words such as
+growing, declining, improving, or weakening must agree with cited current and
+previous values. Avoid subjective adjectives unless the cited evidence uses
+that exact assessment. Keep the brief
 below 650 words, avoid an aggregate
 score or confidence number, and avoid direct buy/sell advice.
 """.strip()
@@ -1743,6 +1969,10 @@ async def generate_stock_report(
                             content,
                             decision_support.get("evidence", []),
                             identity_strings=identity_strings,
+                        )
+                        validate_evidence_qualitative_claims(
+                            content,
+                            decision_support.get("evidence", []),
                         )
                         break
                     except EvidenceCitationError as exc:

@@ -86,7 +86,7 @@ const warning = {
 
 const decision: DecisionSupportResponse = {
     metadata: {
-        ticker: "AAA.US", company_name: "Alpha", industry: "Software", sector: "Technology",
+        ticker: "AAA.US", company_name: "Alpha", currency: "USD", industry: "Software", sector: "Technology",
         price_date: "2026-01-02", screener_date: "2025-12-31", screener_published_at: "2026-01-01",
         financial_statement_date: "2025-12-31", factor_date: "2025-12-31", factor_published_at: "2026-01-01",
     },
@@ -147,6 +147,21 @@ describe("DecisionCockpit", () => {
         await user.click(screen.getByRole("button", { name: /Unlock to save/ }));
         expect(componentProps.onUnlock).toHaveBeenCalledTimes(1);
         expect(apiMocks.savePersonalValuationScenarios).not.toHaveBeenCalled();
+    });
+
+    it("formats price and intrinsic values in the ticker currency", () => {
+        render(
+            <DecisionCockpit
+                {...props()}
+                decision={{
+                    ...decision,
+                    metadata: { ...decision.metadata, currency: "JPY" },
+                }}
+            />,
+        );
+
+        expect(screen.getByText("¥80")).toBeInTheDocument();
+        expect(screen.queryByText("$80.00")).not.toBeInTheDocument();
     });
 
     it("pauses the evidence brief while calculated scenarios are unsaved", async () => {

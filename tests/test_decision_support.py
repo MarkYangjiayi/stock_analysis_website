@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from models import (
+    CorporateAction,
     DailyPrice,
     DataPublication,
     DecisionBriefCache,
@@ -28,6 +29,7 @@ from services.ai_assistant import (
     generate_stock_report,
     validate_evidence_citations,
     validate_evidence_numbers,
+    validate_evidence_qualitative_claims,
 )
 from services.decision_support import (
     DEFAULT_SCENARIOS,
@@ -290,6 +292,23 @@ def test_cash_decline_thresholds(decline, severity):
     assert (result or {}).get("severity") == severity
 
 
+def test_cash_decline_uses_supported_cash_equivalent_fallbacks():
+    context = _warning_context()
+    context["latest_balance"].update({
+        "cash": 50.0,
+        "cash_and_short_term_investments": None,
+    })
+    context["prior_year_balance"].update({
+        "cash": 100.0,
+        "cash_and_short_term_investments": None,
+    })
+
+    warning = _warning(context, "cash_decline")
+    assert warning["severity"] == "high"
+    assert warning["current"] == pytest.approx(50.0)
+    assert warning["previous"] == pytest.approx(100.0)
+
+
 @pytest.mark.parametrize(("increase", "severity"), [(0.0299, None), (0.03, "warning"), (0.10, "high")])
 def test_share_dilution_thresholds(increase, severity):
     context = _warning_context()
@@ -303,6 +322,7 @@ def test_missing_and_negative_comparison_periods_are_notes_not_warnings():
     context["previous_ttm"]["revenue"] = -10
     context["previous_ttm"]["fcf"] = -10
     context["prior_year_balance"]["cash_and_short_term_investments"] = None
+    context["prior_year_balance"]["cash"] = None
     result = evaluate_fundamental_warnings(context)
     assert _warning(context, "revenue_decline") is None
     assert _warning(context, "fcf_decline") is None
@@ -528,6 +548,77 @@ async def test_decision_support_loads_only_target_peer_cohorts(db_session):
     assert "sector" in select_statements[1]
     assert result["peer_comparison"]["industry_member_count"] == 2
     assert result["peer_comparison"]["sector_member_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_decision_support_normalizes_statement_shares_for_later_splits(
+    db_session,
+):
+    db_session.add(
+        Ticker(
+            ticker="SPLIT.US",
+            name="Split Fixture",
+            currency="USD",
+        )
+    )
+    db_session.add(DailyPrice(
+        ticker="SPLIT.US",
+        date=date(2025, 6, 30),
+        close=50,
+        adjusted_close=50,
+    ))
+    statement_dates = [
+        date(2025, 3, 31),
+        date(2024, 12, 31),
+        date(2024, 9, 30),
+        date(2024, 6, 30),
+        date(2024, 3, 31),
+        date(2023, 12, 31),
+        date(2023, 9, 30),
+        date(2023, 6, 30),
+    ]
+    db_session.add_all([
+        _quarterly_statement("SPLIT.US", statement_date)
+        for statement_date in statement_dates
+    ])
+    db_session.add(CorporateAction(
+        ticker="SPLIT.US",
+        ex_date=date(2025, 5, 1),
+        action_type="split",
+        split_factor=2,
+        source="EODHD",
+        source_id="split-fixture",
+    ))
+    await db_session.commit()
+
+    result = await get_decision_support("SPLIT.US", db_session)
+    financial_evidence = next(
+        item for item in result["evidence"] if item["id"] == "E3"
+    )["value"]
+    latest = financial_evidence["latest_balance"]
+    prior = financial_evidence["prior_year_balance"]
+    assert result["metadata"]["currency"] == "USD"
+    assert result["valuation"]["inputs"]["shares"] == pytest.approx(200)
+    assert latest["shares_reported"] == pytest.approx(100)
+    assert latest["share_adjustment_factor"] == pytest.approx(2)
+    assert prior["shares"] == pytest.approx(200)
+    assert prior["share_adjustment_factor"] == pytest.approx(2)
+    assert not any(
+        warning["id"] == "share_dilution"
+        for warning in result["risks"]["warnings"]
+    )
+    expected = calculate_dcf_value(
+        fcf=100,
+        cash=200,
+        debt=50,
+        shares=200,
+        fcf_growth_rate=0.10,
+        wacc=0.09,
+        perpetual_growth=0.025,
+    )["intrinsic_value_per_share"]
+    assert result["valuation"]["scenarios"][1][
+        "intrinsic_value_per_share"
+    ] == pytest.approx(expected)
 
 
 def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
@@ -814,6 +905,8 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
     validate_evidence_numbers("Free cash flow was −$40M [E30].", evidence)
     validate_evidence_numbers("Free cash flow was $-40MM [E30].", evidence)
     validate_evidence_numbers("Free cash flow was ($40M) [E30].", evidence)
+    validate_evidence_numbers("Free cash flow was (40 million) [E30].", evidence)
+    validate_evidence_numbers("Downside was (32.4%) [E5].", evidence)
     validate_evidence_numbers("Negative free cash flow of $40 million was recorded [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not yet positive at -$40 million [E30].", evidence)
     validate_evidence_numbers("Free cash flow was not yet negative at +$40 million [E31].", evidence)
@@ -877,6 +970,10 @@ def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence(
         validate_evidence_numbers("40M was revenue [E13].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Free cash flow was -$40M [E31].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("Free cash flow was (40 million) [E31].", evidence)
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers("WACC was (3%) [E32].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Free cash flow was $41M [E30].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
@@ -974,6 +1071,57 @@ def test_semantic_evidence_preserves_period_scope():
         validate_evidence_numbers("Prior-year revenue was $100 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Revenue was previously $100 billion [E3].", evidence)
+
+
+def test_ai_qualitative_directions_must_agree_with_cited_periods():
+    evidence = [
+        {
+            "id": "E3",
+            "source_date": "2026-06-30",
+            "value": {
+                "current_ttm": {
+                    "revenue": 80_000_000_000,
+                    "fcf": -10_000_000,
+                },
+                "previous_ttm": {
+                    "revenue": 100_000_000_000,
+                    "fcf": 20_000_000,
+                },
+            },
+        },
+        {
+            "id": "E31",
+            "source_date": "2026-06-30",
+            "value": {
+                "title": "Weak cash conversion",
+                "metric": "fcf_net_income_conversion",
+                "current": 0.20,
+            },
+        },
+    ]
+    validate_evidence_qualitative_claims(
+        "Revenue is declining and free cash flow is negative [E3].",
+        evidence,
+    )
+    validate_evidence_qualitative_claims(
+        "FCF to net income conversion is weak [E31].",
+        evidence,
+    )
+    with pytest.raises(EvidenceCitationError, match="qualitative direction"):
+        validate_evidence_qualitative_claims(
+            "Revenue is growing [E3].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="qualitative sign"):
+        validate_evidence_qualitative_claims(
+            "Free cash flow is positive [E3].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="evaluative claim"):
+        validate_evidence_qualitative_claims(
+            "Revenue is strong [E3].",
+            evidence,
+        )
 
 
 def test_semantic_evidence_tags_warning_percentages_and_peer_metrics():
@@ -1233,14 +1381,17 @@ def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
     changed_assumption["valuation"]["scenarios"][0]["assumptions"]["wacc"] = 0.2
     changed_identity = deepcopy(decision)
     changed_identity["metadata"]["company_name"] = "AAA Holdings"
+    changed_currency = deepcopy(decision)
+    changed_currency["metadata"]["currency"] = "JPY"
     assert len({
         baseline,
         build_evidence_hash(changed_value, "model-a"),
         build_evidence_hash(changed_date, "model-a"),
         build_evidence_hash(changed_assumption, "model-a"),
         build_evidence_hash(changed_identity, "model-a"),
+        build_evidence_hash(changed_currency, "model-a"),
         build_evidence_hash(decision, "model-b"),
-    }) == 6
+    }) == 7
 
 
 @pytest.mark.asyncio
@@ -1344,6 +1495,45 @@ async def test_ai_unsupported_numbers_are_not_cached(db_session, monkeypatch):
     monkeypatch.setattr("services.ai_assistant.generate_deepseek_text", generate)
     response = "".join([chunk async for chunk in generate_stock_report("AAA.US", decision, db_session)])
     count = (await db_session.execute(select(func.count(DecisionBriefCache.id)))).scalar_one()
+    assert response.startswith("Error:")
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_ai_unsupported_qualitative_claims_are_not_cached(
+    db_session,
+    monkeypatch,
+):
+    decision = _decision_for_ai()
+    decision["evidence"].append({
+        "id": "E3",
+        "source_date": "2026-06-30",
+        "value": {
+            "current_ttm": {"revenue": 80},
+            "previous_ttm": {"revenue": 100},
+        },
+    })
+    monkeypatch.setattr("services.ai_assistant.settings.DEEPSEEK_API_KEY", "configured")
+    monkeypatch.setattr("services.ai_assistant.settings.DEEPSEEK_MODEL", "test-model")
+
+    async def generate(_prompt):
+        return _valid_brief().replace(
+            "The snapshot is available [E1].",
+            "Revenue is growing [E3].",
+        )
+
+    monkeypatch.setattr("services.ai_assistant.generate_deepseek_text", generate)
+    response = "".join([
+        chunk
+        async for chunk in generate_stock_report(
+            "AAA.US",
+            decision,
+            db_session,
+        )
+    ])
+    count = (
+        await db_session.execute(select(func.count(DecisionBriefCache.id)))
+    ).scalar_one()
     assert response.startswith("Error:")
     assert count == 0
 

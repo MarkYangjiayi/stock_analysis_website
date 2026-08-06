@@ -239,6 +239,7 @@ export interface DecisionSupportResponse {
     metadata: {
         ticker: string;
         company_name: string | null;
+        currency: string | null;
         industry: string | null;
         sector: string | null;
         price_date: string | null;

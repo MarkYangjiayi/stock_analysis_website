@@ -90,9 +90,23 @@ const tabs: Array<{ key: CockpitTab; label: string; icon: typeof Calculator }> =
     { key: "brief", label: "Evidence Brief", icon: Bot },
 ];
 
-const money = (value?: number | null) => value == null || !Number.isFinite(value)
-    ? "—"
-    : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+const money = (value?: number | null, currency?: string | null) => {
+    if (value == null || !Number.isFinite(value)) return "—";
+    const normalizedCurrency = currency?.trim().toUpperCase() || "USD";
+    try {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: normalizedCurrency,
+            maximumFractionDigits: 2,
+        }).format(value);
+    } catch {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 2,
+        }).format(value);
+    }
+};
 
 const compact = (value?: number | null) => value == null || !Number.isFinite(value)
     ? "—"
@@ -166,6 +180,10 @@ export default function DecisionCockpit({
     }, [decision]);
 
     const valuation = workingValuation;
+    const formatMoney = (value?: number | null) => money(
+        value,
+        decision?.metadata.currency,
+    );
     const selectedPeerAvailable = useMemo(
         () => decision?.peer_comparison.metrics.filter((metric) => metric[peerScope].available).length ?? 0,
         [decision, peerScope],
@@ -332,9 +350,9 @@ export default function DecisionCockpit({
                                 <p className="eyebrow">Valuation position</p>
                                 <h3 className="mt-2 text-lg font-black">{valuation?.position.text || decision.summary.valuation_position.text}</h3>
                                 <div className="mt-4 grid grid-cols-3 gap-2">
-                                    {(valuation?.scenarios || decision.valuation.scenarios).map((scenario) => <div key={scenario.scenario} className="rounded-lg border bg-white/70 p-3 dark:bg-slate-950/30"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{scenario.scenario}</p><p className="mt-1 font-mono text-base font-black">{scenario.available ? money(scenario.intrinsic_value_per_share) : "—"}</p></div>)}
+                                    {(valuation?.scenarios || decision.valuation.scenarios).map((scenario) => <div key={scenario.scenario} className="rounded-lg border bg-white/70 p-3 dark:bg-slate-950/30"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{scenario.scenario}</p><p className="mt-1 font-mono text-base font-black">{scenario.available ? formatMoney(scenario.intrinsic_value_per_share) : "—"}</p></div>)}
                                 </div>
-                                <p className="mt-3 text-xs text-slate-500">Current price {money(valuation?.current_price ?? decision.valuation.current_price)} · assumptions {valuation?.scenario_source || decision.valuation.scenario_source}</p>
+                                <p className="mt-3 text-xs text-slate-500">Current price {formatMoney(valuation?.current_price ?? decision.valuation.current_price)} · assumptions {valuation?.scenario_source || decision.valuation.scenario_source}</p>
                             </article>
                             <article className="surface-subtle rounded-xl border p-5">
                                 <p className="eyebrow">Coverage facts</p>
@@ -361,12 +379,12 @@ export default function DecisionCockpit({
                         <div className="grid gap-4 lg:grid-cols-3">
                             {scenarioDrafts.map((scenario, index) => {
                                 const result = valuation.scenarios.find((item) => item.scenario === scenario.scenario);
-                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? money(result.intrinsic_value_per_share) : "Unavailable"}</span></div><div className="mt-4 grid grid-cols-3 gap-2">{([['fcf_growth_rate', 'FCF growth', -20, 50], ['wacc', 'WACC', 3, 25], ['perpetual_growth', 'Terminal', -2, 6]] as const).map(([key, label, min, max]) => <label key={key} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><input type="number" min={min} max={max} step="0.1" value={scenario[key]} onChange={(event) => editScenario(index, key, event.target.value)} className="control-field py-2 pr-6 font-mono text-xs" aria-label={`${scenario.scenario} ${label}`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>)}</div>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
+                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? formatMoney(result.intrinsic_value_per_share) : "Unavailable"}</span></div><div className="mt-4 grid grid-cols-3 gap-2">{([['fcf_growth_rate', 'FCF growth', -20, 50], ['wacc', 'WACC', 3, 25], ['perpetual_growth', 'Terminal', -2, 6]] as const).map(([key, label, min, max]) => <label key={key} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><input type="number" min={min} max={max} step="0.1" value={scenario[key]} onChange={(event) => editScenario(index, key, event.target.value)} className="control-field py-2 pr-6 font-mono text-xs" aria-label={`${scenario.scenario} ${label}`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>)}</div>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
                             })}
                         </div>
                         <div className="flex flex-wrap items-center gap-2"><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void calculate()}><Calculator size={15} /> Calculate</button><button type="button" className="primary-button" disabled={valuationBusy} onClick={() => void save()}><Save size={15} /> {adminKey ? "Save scenarios" : "Unlock to save"}</button><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void reset()}><RotateCcw size={15} /> Reset defaults</button>{valuationBusy && <LoaderCircle className="animate-spin text-emerald-500" size={18} />}{saveMessage && <span className="text-xs font-bold text-emerald-600">{saveMessage}</span>}</div>
                         {valuationError && <div className="error-panel" role="alert">{valuationError}</div>}
-                        <section className="overflow-hidden rounded-xl border"><header className="surface-subtle border-b p-4"><h3 className="text-sm font-black">Base-case sensitivity</h3><p className="mt-1 text-xs text-slate-500">Intrinsic value per share · growth ±5/10 points · WACC ±1/2 points · terminal growth {(valuation.sensitivity.terminal_growth * 100).toFixed(1)}%</p></header><div className="overflow-x-auto p-3"><table className="w-full min-w-[620px] border-separate border-spacing-1 text-right font-mono text-xs"><thead><tr><th className="p-2 text-left text-slate-500">Growth ↓ / WACC →</th>{valuation.sensitivity.wacc_values.map((wacc) => <th key={wacc} className="p-2 text-slate-500">{(wacc * 100).toFixed(1)}%</th>)}</tr></thead><tbody>{valuation.sensitivity.growth_values.map((growth, rowIndex) => <tr key={`${growth}-${rowIndex}`}><th className="p-2 text-left text-slate-500">{(growth * 100).toFixed(1)}%</th>{valuation.sensitivity.values[rowIndex].map((value, columnIndex) => <td key={columnIndex} title={valuation.sensitivity.cell_reasons[rowIndex][columnIndex] || undefined} className={`rounded-lg border p-2.5 font-bold ${rowIndex === 2 && columnIndex === 2 ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 dark:bg-slate-900/50"}`}>{value == null ? "—" : money(value)}</td>)}</tr>)}</tbody></table></div></section>
+                        <section className="overflow-hidden rounded-xl border"><header className="surface-subtle border-b p-4"><h3 className="text-sm font-black">Base-case sensitivity</h3><p className="mt-1 text-xs text-slate-500">Intrinsic value per share · growth ±5/10 points · WACC ±1/2 points · terminal growth {(valuation.sensitivity.terminal_growth * 100).toFixed(1)}%</p></header><div className="overflow-x-auto p-3"><table className="w-full min-w-[620px] border-separate border-spacing-1 text-right font-mono text-xs"><thead><tr><th className="p-2 text-left text-slate-500">Growth ↓ / WACC →</th>{valuation.sensitivity.wacc_values.map((wacc) => <th key={wacc} className="p-2 text-slate-500">{(wacc * 100).toFixed(1)}%</th>)}</tr></thead><tbody>{valuation.sensitivity.growth_values.map((growth, rowIndex) => <tr key={`${growth}-${rowIndex}`}><th className="p-2 text-left text-slate-500">{(growth * 100).toFixed(1)}%</th>{valuation.sensitivity.values[rowIndex].map((value, columnIndex) => <td key={columnIndex} title={valuation.sensitivity.cell_reasons[rowIndex][columnIndex] || undefined} className={`rounded-lg border p-2.5 font-bold ${rowIndex === 2 && columnIndex === 2 ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 dark:bg-slate-900/50"}`}>{value == null ? "—" : formatMoney(value)}</td>)}</tr>)}</tbody></table></div></section>
                         <p className="rounded-xl border p-4 text-xs leading-5 text-slate-500">Five-year FCF forecast. Cash is added, debt is deducted, and terminal value uses <span className="font-mono">FCF₅ × (1 + g) / (WACC − g)</span>. Inputs: FCF {compact(valuation.inputs.fcf)}, cash {compact(valuation.inputs.cash)}, debt {compact(valuation.inputs.debt)}, shares {compact(valuation.inputs.shares)}.</p>
                     </div>}
 

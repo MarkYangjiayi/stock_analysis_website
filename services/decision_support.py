@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
+    CorporateAction,
     DailyPrice,
     DataPublication,
     FactorValue,
@@ -584,10 +585,43 @@ def _sum_complete(points: Sequence[dict[str, Any]], key: str) -> float | None:
     return sum(values) if values and all(value is not None for value in values) else None
 
 
+def _share_split_adjustment_factor(
+    statement_date: date | None,
+    reference_date: date | None,
+    split_actions: Sequence[CorporateAction],
+) -> float:
+    if statement_date is None or reference_date is None:
+        return 1.0
+    factor = 1.0
+    for action in split_actions:
+        split_factor = _safe_float(action.split_factor)
+        if (
+            split_factor is not None
+            and split_factor > 0
+            and statement_date < action.ex_date <= reference_date
+        ):
+            factor *= split_factor
+    return factor if math.isfinite(factor) and factor > 0 else 1.0
+
+
 def build_financial_context(
     records: Sequence[FinancialStatement],
+    *,
+    split_actions: Sequence[CorporateAction] = (),
+    share_reference_date: date | None = None,
 ) -> dict[str, Any]:
     points = [_statement_point(record) for record in sorted(records, key=lambda row: row.fiscal_date, reverse=True)[:8]]
+    for point in points:
+        reported_shares = point.get("shares")
+        adjustment_factor = _share_split_adjustment_factor(
+            point.get("date"),
+            share_reference_date,
+            split_actions,
+        )
+        point["shares_reported"] = reported_shares
+        point["share_adjustment_factor"] = adjustment_factor
+        if reported_shares is not None:
+            point["shares"] = reported_shares * adjustment_factor
     current_points = points[:4]
     previous_points = points[4:8]
     current_contiguous = _window_is_contiguous(current_points)
@@ -694,6 +728,9 @@ def build_financial_context(
             "debt": latest.get("debt"),
             "equity": latest.get("equity"),
             "shares": latest.get("shares"),
+            "shares_reported": latest.get("shares_reported"),
+            "share_adjustment_factor": latest.get("share_adjustment_factor"),
+            "shares_reference_date": share_reference_date,
             "debt_to_equity": current_de,
         },
         "prior_year_balance": {
@@ -702,6 +739,11 @@ def build_financial_context(
             "debt": prior_year.get("debt"),
             "equity": prior_year.get("equity"),
             "shares": prior_year.get("shares"),
+            "shares_reported": prior_year.get("shares_reported"),
+            "share_adjustment_factor": prior_year.get(
+                "share_adjustment_factor"
+            ),
+            "shares_reference_date": share_reference_date,
             "debt_to_equity": previous_de,
         },
         "data_quality_notes": data_quality_notes,
@@ -814,11 +856,15 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
         notes.append({"code": "debt_trend_unavailable", "message": "The YoY debt / equity trend could not be assessed from two positive observations."})
 
     current_cash = latest.get("cash_and_short_term_investments")
+    if current_cash is None:
+        current_cash = latest.get("cash")
     previous_cash = prior.get("cash_and_short_term_investments")
+    if previous_cash is None:
+        previous_cash = prior.get("cash")
     cash_decline = _decline(current_cash, previous_cash)
     if cash_decline is not None and cash_decline >= 0.25:
         severity = "high" if cash_decline >= 0.50 else "warning"
-        warnings.append(_risk("cash_decline", severity, "Cash balance decline", f"Cash and short-term investments declined {cash_decline:.1%} year over year.", "cash_change", current_cash, previous_cash, "cash"))
+        warnings.append(_risk("cash_decline", severity, "Cash balance decline", f"Cash and cash-equivalent balances declined {cash_decline:.1%} year over year.", "cash_change", current_cash, previous_cash, "cash"))
     elif current_cash is None or previous_cash is None or previous_cash <= 0:
         notes.append({"code": "cash_comparison_unavailable", "message": "Cash decline could not be assessed from two observations with positive prior-year cash."})
 
@@ -1014,7 +1060,27 @@ async def _load_price_and_financial_context(
         .order_by(FinancialStatement.fiscal_date.desc())
         .limit(8)
     )
-    financial = build_financial_context(list(financial_result.scalars().all()))
+    financial_records = list(financial_result.scalars().all())
+    split_actions: list[CorporateAction] = []
+    if price_row is not None and financial_records:
+        earliest_statement_date = min(
+            record.fiscal_date for record in financial_records
+        )
+        split_result = await db.execute(
+            select(CorporateAction).where(
+                CorporateAction.ticker == ticker,
+                CorporateAction.action_type == "split",
+                CorporateAction.split_factor.is_not(None),
+                CorporateAction.ex_date > earliest_statement_date,
+                CorporateAction.ex_date <= price_row.date,
+            )
+        )
+        split_actions = list(split_result.scalars().all())
+    financial = build_financial_context(
+        financial_records,
+        split_actions=split_actions,
+        share_reference_date=price_row.date if price_row else None,
+    )
     return price_row, current_price, financial
 
 
@@ -1143,6 +1209,7 @@ async def get_decision_support(
         "metadata": {
             "ticker": canonical_ticker,
             "company_name": profile.name if profile else (target_snapshot.name if target_snapshot else None),
+            "currency": profile.currency if profile else None,
             "industry": peers["industry"],
             "sector": peers["sector"],
             "price_date": _iso(price_row.date if price_row else None),
