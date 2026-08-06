@@ -781,6 +781,74 @@ def _normalize_extraction_to_base_units(
     return FilingEarningsQualityExtraction.model_validate(payload)
 
 
+def _omit_unquantified_adjustments(ai_payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop unusable shadow candidates without mutating the retained raw AI JSON."""
+    adjustments = ai_payload.get("adjustments")
+    if not isinstance(adjustments, list):
+        return ai_payload
+
+    retained: list[Any] = []
+    omitted_labels: list[str] = []
+    for item in adjustments:
+        citation = item.get("citation") if isinstance(item, dict) else None
+        try:
+            after_tax_effect = float(item.get("earnings_effect_after_tax"))
+            source_amount = float(citation.get("source_amount"))
+        except (AttributeError, TypeError, ValueError):
+            after_tax_effect = math.nan
+            source_amount = math.nan
+        usable = (
+            math.isfinite(after_tax_effect)
+            and after_tax_effect != 0
+            and math.isfinite(source_amount)
+            and source_amount != 0
+        )
+        if usable:
+            retained.append(item)
+        else:
+            label = item.get("label") if isinstance(item, dict) else None
+            omitted_labels.append(str(label or "unnamed candidate"))
+
+    if not omitted_labels:
+        return ai_payload
+    sanitized = {**ai_payload, "adjustments": retained}
+    existing_notes = ai_payload.get("notes")
+    if existing_notes is None or isinstance(existing_notes, list):
+        notes = existing_notes if isinstance(existing_notes, list) else []
+        preview = ", ".join(omitted_labels[:3])
+        suffix = "" if len(omitted_labels) <= 3 else ", …"
+        sanitized["notes"] = [
+            *notes[:49],
+            "Omitted unquantified filing candidate(s) before validation: "
+            f"{preview}{suffix}",
+        ]
+    return sanitized
+
+
+async def _compatible_historical_runs(
+    db: AsyncSession,
+    run: EarningsQualityAnalysisRun,
+) -> list[EarningsQualityAnalysisRun]:
+    """Load schema-compatible recurrence history across prompt-only revisions."""
+    historical_result = await db.execute(
+        select(EarningsQualityAnalysisRun)
+        .where(
+            EarningsQualityAnalysisRun.ticker == run.ticker,
+            EarningsQualityAnalysisRun.period_type == run.period_type,
+            EarningsQualityAnalysisRun.period_end < run.period_end,
+            EarningsQualityAnalysisRun.status == "completed",
+            EarningsQualityAnalysisRun.model == run.model,
+            EarningsQualityAnalysisRun.schema_version == run.schema_version,
+        )
+        .order_by(
+            EarningsQualityAnalysisRun.period_end.desc(),
+            EarningsQualityAnalysisRun.id.desc(),
+        )
+        .limit(50)
+    )
+    return list(historical_result.scalars().all())
+
+
 async def _fetch_sec_documents(
     *,
     cik: str,
@@ -816,9 +884,11 @@ unit_scale to 1. For each citation, source_amount is the number as disclosed and
 that source's stated multiplier (for example, 1000000 for a table in millions). For adjustment
 citations, give source_amount the same earnings-effect sign as pretax_earnings_effect even when a
 charge is printed as an unsigned positive number; the cited excerpt still has to contain its magnitude.
-The cited excerpt for an adjustment must also contain the disclosed magnitudes of its tax effect and
-after-tax earnings effect. If the filing does not disclose all three amounts, leave the missing value
-null or keep the item flag-only; never derive or fabricate an amount merely to pass reconciliation.
+The cited excerpt for an adjustment must also contain the disclosed magnitude of its after-tax
+earnings effect. Omit an adjustment entirely if either earnings_effect_after_tax or citation
+source_amount is unavailable or zero; mention the qualitative event in notes instead. A missing
+pretax_earnings_effect or tax_effect may be null and will keep the item flag-only. Never derive or
+fabricate an amount merely to pass reconciliation.
 The sign convention is mandatory: positive earnings_effect_after_tax means the item raised reported
 earnings; negative means it reduced reported earnings. pretax_earnings_effect and tax_effect use the
 same earnings sign convention and must sum to earnings_effect_after_tax. Charges and gains must be
@@ -1151,7 +1221,9 @@ async def _perform_analysis(run_id: int) -> None:
     )
     await _set_stage(run_id, "validating", ai_result=ai_payload)
     try:
-        extraction = FilingEarningsQualityExtraction.model_validate(ai_payload)
+        extraction = FilingEarningsQualityExtraction.model_validate(
+            _omit_unquantified_adjustments(ai_payload)
+        )
     except ValidationError as exc:
         raise FilingAnalysisError(f"AI output failed schema validation: {exc}") from exc
     extraction = _normalize_extraction_to_base_units(
@@ -1159,24 +1231,7 @@ async def _perform_analysis(run_id: int) -> None:
         expected_reported_net_income=reported_net_income,
     )
     async with async_session_maker() as db:
-        historical_result = await db.execute(
-            select(EarningsQualityAnalysisRun)
-            .where(
-                EarningsQualityAnalysisRun.ticker == run.ticker,
-                EarningsQualityAnalysisRun.period_type == run.period_type,
-                EarningsQualityAnalysisRun.period_end < run.period_end,
-                EarningsQualityAnalysisRun.status == "completed",
-                EarningsQualityAnalysisRun.model == run.model,
-                EarningsQualityAnalysisRun.prompt_version == run.prompt_version,
-                EarningsQualityAnalysisRun.schema_version == run.schema_version,
-            )
-            .order_by(
-                EarningsQualityAnalysisRun.period_end.desc(),
-                EarningsQualityAnalysisRun.id.desc(),
-            )
-            .limit(50)
-        )
-        historical_runs = list(historical_result.scalars().all())
+        historical_runs = await _compatible_historical_runs(db, run)
     recurring_categories = _recurring_categories_for_extraction(
         recurring_flags,
         extraction,

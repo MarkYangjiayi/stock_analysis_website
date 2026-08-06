@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from core.config import settings
@@ -287,6 +288,77 @@ def test_incoherent_model_unit_scale_remains_blocked_for_validation():
     )
 
     assert unchanged.unit_scale == 1_000_000
+
+
+def test_unquantified_ai_candidates_are_omitted_without_mutating_raw_payload():
+    import services.filing_analysis as filing_analysis
+
+    payload = extraction_payload()
+    missing_amount = {
+        **payload["adjustments"][0],
+        "label": "Qualitative event without disclosed effect",
+        "earnings_effect_after_tax": None,
+        "citation": {
+            **payload["adjustments"][0]["citation"],
+            "source_amount": None,
+        },
+    }
+    zero_effect = {
+        **payload["adjustments"][0],
+        "label": "Held for sale with no impairment",
+        "pretax_earnings_effect": 0,
+        "tax_effect": 0,
+        "earnings_effect_after_tax": 0,
+        "citation": {
+            **payload["adjustments"][0]["citation"],
+            "source_amount": 0,
+        },
+    }
+    payload["adjustments"] = [
+        payload["adjustments"][0],
+        missing_amount,
+        zero_effect,
+    ]
+
+    sanitized = filing_analysis._omit_unquantified_adjustments(payload)
+    extraction = FilingEarningsQualityExtraction.model_validate(sanitized)
+
+    assert len(payload["adjustments"]) == 3
+    assert len(extraction.adjustments) == 1
+    assert extraction.adjustments[0].label == "Asset impairment"
+    assert "Qualitative event without disclosed effect" in extraction.notes[-1]
+    assert "Held for sale with no impairment" in extraction.notes[-1]
+
+    without_notes = {**payload}
+    without_notes.pop("notes")
+    sanitized_without_notes = filing_analysis._omit_unquantified_adjustments(
+        without_notes
+    )
+    assert "Qualitative event without disclosed effect" in (
+        sanitized_without_notes["notes"][-1]
+    )
+
+
+def test_quantified_candidates_with_broken_citations_reach_strict_schema():
+    import services.filing_analysis as filing_analysis
+
+    payload = extraction_payload()
+    malformed = {
+        **payload["adjustments"][0],
+        "label": "Quantified candidate with malformed citation",
+        "citation": {
+            **payload["adjustments"][0]["citation"],
+            "excerpt": "",
+            "source_unit_scale": 0,
+        },
+    }
+    payload["adjustments"].append(malformed)
+
+    sanitized = filing_analysis._omit_unquantified_adjustments(payload)
+
+    assert len(sanitized["adjustments"]) == 2
+    with pytest.raises(ValidationError):
+        FilingEarningsQualityExtraction.model_validate(sanitized)
 
 
 def test_relevant_context_honors_configured_character_cap(monkeypatch):
@@ -1004,6 +1076,56 @@ async def seed_supported_company(db_session, ticker="API.US", general=None):
 
 
 @pytest.mark.asyncio
+async def test_recurrence_history_survives_prompt_only_version_bumps(db_session):
+    await seed_supported_company(db_session)
+    import services.filing_analysis as filing_analysis
+
+    compatible_v3 = EarningsQualityAnalysisRun(
+        ticker="API.US",
+        period_end=date(2024, 12, 31),
+        period_type="annual",
+        statement_fingerprint="compatible-v3",
+        cache_identity="compatible-v3",
+        model=settings.DEEPSEEK_MODEL,
+        prompt_version="earnings-quality-v3",
+        schema_version=EARNINGS_QUALITY_SCHEMA_VERSION,
+        status="completed",
+        stage="completed",
+        result={"adjustments": []},
+    )
+    incompatible_schema = EarningsQualityAnalysisRun(
+        ticker="API.US",
+        period_end=date(2023, 12, 31),
+        period_type="annual",
+        statement_fingerprint="old-schema",
+        cache_identity="old-schema",
+        model=settings.DEEPSEEK_MODEL,
+        prompt_version="earnings-quality-v3",
+        schema_version="old-schema",
+        status="completed",
+        stage="completed",
+        result={"adjustments": []},
+    )
+    db_session.add_all([compatible_v3, incompatible_schema])
+    await db_session.commit()
+    current_v4 = SimpleNamespace(
+        ticker="API.US",
+        period_end=date(2025, 12, 31),
+        period_type="annual",
+        model=settings.DEEPSEEK_MODEL,
+        prompt_version=EARNINGS_QUALITY_PROMPT_VERSION,
+        schema_version=EARNINGS_QUALITY_SCHEMA_VERSION,
+    )
+
+    history = await filing_analysis._compatible_historical_runs(
+        db_session,
+        current_v4,
+    )
+
+    assert [run.id for run in history] == [compatible_v3.id]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("ticker", "general", "reason_fragment"),
     [
@@ -1458,6 +1580,15 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     ai_mock.return_value["company_adjusted"]["net_income_citation"]["excerpt"] = job_source
     ai_mock.return_value["company_adjusted"]["net_income_citation"]["source_amount"] = 100
     ai_mock.return_value["company_adjusted"]["diluted_eps_citation"]["excerpt"] = job_source
+    ai_mock.return_value["adjustments"].append({
+        **ai_mock.return_value["adjustments"][0],
+        "label": "Qualitative event without disclosed effect",
+        "earnings_effect_after_tax": None,
+        "citation": {
+            **ai_mock.return_value["adjustments"][0]["citation"],
+            "source_amount": None,
+        },
+    })
     sec_mock.return_value[0]["html"] = f"<html><body>{job_source}</body></html>"
     sec_mock.return_value[0]["text"] = job_source
     monkeypatch.setattr(filing_analysis, "_fetch_sec_documents_sync", sec_mock)
@@ -1478,6 +1609,9 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     assert completed.status == "completed"
     assert completed.result["verification_status"] == "verified"
     assert completed.result["normalized_net_income"] == 100
+    assert len(completed.ai_result["adjustments"]) == 2
+    assert len(completed.result["adjustments"]) == 1
+    assert "Qualitative event without disclosed effect" in completed.result["notes"][-1]
     assert len(completed.source_snapshots) == 1
     assert completed.source_snapshots[0]["html_snapshot_id"]
     assert completed.source_snapshots[0]["text_snapshot_id"]
@@ -1581,7 +1715,7 @@ async def test_timeout_retains_global_slot_until_sec_thread_exits(
 
     monkeypatch.setattr(settings, "SEC_USER_AGENT", "Quantify test@example.com")
     monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "test-model-key")
-    monkeypatch.setattr(settings, "EARNINGS_QUALITY_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(settings, "EARNINGS_QUALITY_TIMEOUT_SECONDS", 0.2)
     sec_started = Event()
     release_sec = Event()
 
@@ -1615,7 +1749,7 @@ async def test_timeout_retains_global_slot_until_sec_thread_exits(
     )
     try:
         assert await asyncio.to_thread(sec_started.wait, 1)
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.25)
         db_session.expire_all()
         in_flight = await db_session.get(EarningsQualityAnalysisRun, annual_id)
         assert in_flight.status == "running"
