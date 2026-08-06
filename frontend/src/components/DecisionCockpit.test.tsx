@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DecisionCockpit from "@/components/DecisionCockpit";
@@ -189,6 +189,61 @@ describe("DecisionCockpit", () => {
         expect(screen.getByRole("status")).toHaveTextContent("Brief paused");
         expect(screen.getByText(/working assumptions that are not in the server evidence/)).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Generate brief" })).not.toBeInTheDocument();
+    });
+
+    it("discards a valuation response after the ticker changes", async () => {
+        const user = userEvent.setup();
+        let resolveOldCalculation!: (value: DecisionValuation) => void;
+        apiMocks.calculateDecisionValuation.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveOldCalculation = resolve;
+            }),
+        );
+        const { rerender } = render(<DecisionCockpit {...props()} />);
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+        await user.click(screen.getByRole("button", { name: "Calculate" }));
+        await waitFor(() => {
+            expect(apiMocks.calculateDecisionValuation).toHaveBeenCalledTimes(1);
+        });
+
+        const nextValuation: DecisionValuation = {
+            ...valuation,
+            scenarios: valuation.scenarios.map((item) => ({
+                ...item,
+                intrinsic_value_per_share: (item.intrinsic_value_per_share ?? 0) + 100,
+            })),
+        };
+        rerender(
+            <DecisionCockpit
+                {...props()}
+                ticker="BBB.US"
+                decision={{
+                    ...decision,
+                    metadata: {
+                        ...decision.metadata,
+                        ticker: "BBB.US",
+                        company_name: "Beta",
+                    },
+                    valuation: nextValuation,
+                }}
+            />,
+        );
+        await waitFor(() => expect(screen.getByText("$180.00")).toBeInTheDocument());
+
+        const staleValuation: DecisionValuation = {
+            ...valuation,
+            scenarios: valuation.scenarios.map((item) => ({
+                ...item,
+                intrinsic_value_per_share: 999,
+            })),
+        };
+        await act(async () => {
+            resolveOldCalculation(staleValuation);
+            await Promise.resolve();
+        });
+
+        expect(screen.queryByText("$999.00")).not.toBeInTheDocument();
+        expect(screen.getByText("$180.00")).toBeInTheDocument();
     });
 
     it("saves and resets scenarios when the workspace is unlocked", async () => {

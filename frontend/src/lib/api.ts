@@ -118,6 +118,8 @@ export interface HistoricalFinancialPoint {
     stockholder_equity?: number | null;
     debt_to_equity?: number | null;
     shares_outstanding?: number | null;
+    shares_reported?: number | null;
+    share_adjustment_factor?: number | null;
     price?: number | null;
 }
 

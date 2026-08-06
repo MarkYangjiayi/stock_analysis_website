@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     AlertTriangle,
     BarChart3,
@@ -166,8 +166,19 @@ export default function DecisionCockpit({
     const [valuationBusy, setValuationBusy] = useState(false);
     const [valuationError, setValuationError] = useState("");
     const [saveMessage, setSaveMessage] = useState("");
+    const tickerRef = useRef(ticker);
+    const valuationRequestVersionRef = useRef(0);
+    tickerRef.current = ticker;
+
+    const valuationRequestIsCurrent = (
+        requestTicker: string,
+        requestVersion: number,
+    ) => tickerRef.current === requestTicker
+        && valuationRequestVersionRef.current === requestVersion;
 
     useEffect(() => {
+        valuationRequestVersionRef.current += 1;
+        setValuationBusy(false);
         setActiveTab("overview");
         setValuationError("");
         setSaveMessage("");
@@ -175,6 +186,8 @@ export default function DecisionCockpit({
 
     useEffect(() => {
         if (!decision) return;
+        valuationRequestVersionRef.current += 1;
+        setValuationBusy(false);
         setWorkingValuation(decision.valuation);
         setScenarioDrafts(toScenarioDrafts(decision.valuation.scenarios.map((item) => ({ ...item.assumptions }))));
     }, [decision]);
@@ -244,18 +257,32 @@ export default function DecisionCockpit({
                 return null;
             }
         }
+        const requestTicker = ticker;
+        const requestVersion = valuationRequestVersionRef.current + 1;
+        valuationRequestVersionRef.current = requestVersion;
         setValuationBusy(true);
         setValuationError("");
         setSaveMessage("");
         try {
-            const result = await calculateDecisionValuation(ticker, calculationInputs);
+            const result = await calculateDecisionValuation(
+                requestTicker,
+                calculationInputs,
+            );
+            if (!valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                return null;
+            }
             setWorkingValuation(result);
             return calculationInputs;
         } catch (caught) {
+            if (!valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                return null;
+            }
             setValuationError(caught instanceof Error ? caught.message : "Unable to calculate these scenarios.");
             return null;
         } finally {
-            setValuationBusy(false);
+            if (valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                setValuationBusy(false);
+            }
         }
     };
 
@@ -266,16 +293,27 @@ export default function DecisionCockpit({
         }
         const calculatedInputs = await calculate();
         if (!calculatedInputs) return;
+        const requestTicker = ticker;
+        const requestVersion = valuationRequestVersionRef.current;
         setValuationBusy(true);
         try {
-            await savePersonalValuationScenarios(ticker, calculatedInputs, adminKey);
+            await savePersonalValuationScenarios(
+                requestTicker,
+                calculatedInputs,
+                adminKey,
+            );
+            if (!valuationRequestIsCurrent(requestTicker, requestVersion)) return;
             setSaveMessage("Saved for this ticker.");
             await onRefresh();
         } catch (caught) {
             if (caught instanceof ApiError && caught.status === 401) onUnauthorized();
-            else setValuationError(caught instanceof Error ? caught.message : "Unable to save these scenarios.");
+            else if (valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                setValuationError(caught instanceof Error ? caught.message : "Unable to save these scenarios.");
+            }
         } finally {
-            setValuationBusy(false);
+            if (valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                setValuationBusy(false);
+            }
         }
     };
 
@@ -288,16 +326,29 @@ export default function DecisionCockpit({
             await calculate(defaults);
             return;
         }
+        const requestTicker = ticker;
+        const requestVersion = valuationRequestVersionRef.current + 1;
+        valuationRequestVersionRef.current = requestVersion;
         setValuationBusy(true);
         try {
-            await resetPersonalValuationScenarios(ticker, adminKey);
+            await resetPersonalValuationScenarios(requestTicker, adminKey);
+            if (!valuationRequestIsCurrent(requestTicker, requestVersion)) return;
             // The delete is authoritative. Do not leave saved assumptions on
             // screen while the parent refresh is delayed or records an error.
             setWorkingValuation(null);
             try {
-                const defaultValuation = await calculateDecisionValuation(ticker, defaults);
+                const defaultValuation = await calculateDecisionValuation(
+                    requestTicker,
+                    defaults,
+                );
+                if (!valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                    return;
+                }
                 setWorkingValuation(defaultValuation);
             } catch (caught) {
+                if (!valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                    return;
+                }
                 setValuationError(caught instanceof Error
                     ? `Scenarios were reset, but defaults could not be recalculated: ${caught.message}`
                     : "Scenarios were reset, but defaults could not be recalculated.");
@@ -306,9 +357,13 @@ export default function DecisionCockpit({
             await onRefresh();
         } catch (caught) {
             if (caught instanceof ApiError && caught.status === 401) onUnauthorized();
-            else setValuationError(caught instanceof Error ? caught.message : "Unable to reset scenarios.");
+            else if (valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                setValuationError(caught instanceof Error ? caught.message : "Unable to reset scenarios.");
+            }
         } finally {
-            setValuationBusy(false);
+            if (valuationRequestIsCurrent(requestTicker, requestVersion)) {
+                setValuationBusy(false);
+            }
         }
     };
 

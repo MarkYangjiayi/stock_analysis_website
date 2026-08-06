@@ -424,6 +424,59 @@ async def test_financial_history_exposes_optional_warning_evidence_fields(db_ses
 
 
 @pytest.mark.asyncio
+async def test_financial_history_chart_uses_cash_fallback_and_split_adjusted_shares(
+    db_session,
+):
+    db_session.add(Ticker(ticker="CHART.US", name="Chart Evidence"))
+    db_session.add(DailyPrice(
+        ticker="CHART.US",
+        date=date(2025, 6, 30),
+        open=50,
+        high=51,
+        low=49,
+        close=50,
+        adjusted_close=50,
+        volume=1_000,
+    ))
+    db_session.add(FinancialStatement(
+        ticker="CHART.US",
+        fiscal_date=date(2024, 12, 31),
+        period="Yearly",
+        revenue=100,
+        net_income=20,
+        income_statement={
+            "totalRevenue": 100,
+            "grossProfit": 50,
+            "operatingIncome": 25,
+            "netIncome": 20,
+        },
+        cash_flow={"freeCashFlow": 18},
+        balance_sheet={
+            "cashAndCashEquivalents": 40,
+            "totalDebt": 10,
+            "totalStockholderEquity": 50,
+            "commonStockSharesOutstanding": 100,
+        },
+    ))
+    db_session.add(CorporateAction(
+        ticker="CHART.US",
+        ex_date=date(2025, 5, 1),
+        action_type="split",
+        split_factor=2,
+        source="EODHD",
+        source_id="chart-split-fixture",
+    ))
+    await db_session.commit()
+
+    result = await get_analyzed_stock_data("CHART.US", db_session)
+    point = result["historical_financials"][0]
+    assert point["cash_and_short_term_investments"] == pytest.approx(40)
+    assert point["shares_reported"] == pytest.approx(100)
+    assert point["share_adjustment_factor"] == pytest.approx(2)
+    assert point["shares_outstanding"] == pytest.approx(200)
+
+
+@pytest.mark.asyncio
 async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_session):
     tickers = ["COMPLETE.US", "SPARSE.US", "OUTSIDE.US", "NEGFCF.US"]
     db_session.add_all([Ticker(ticker=ticker, name=ticker, sector="Technology", industry="Software") for ticker in tickers])

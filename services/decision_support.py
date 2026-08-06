@@ -585,7 +585,7 @@ def _sum_complete(points: Sequence[dict[str, Any]], key: str) -> float | None:
     return sum(values) if values and all(value is not None for value in values) else None
 
 
-def _share_split_adjustment_factor(
+def share_split_adjustment_factor(
     statement_date: date | None,
     reference_date: date | None,
     split_actions: Sequence[CorporateAction],
@@ -613,7 +613,7 @@ def build_financial_context(
     points = [_statement_point(record) for record in sorted(records, key=lambda row: row.fiscal_date, reverse=True)[:8]]
     for point in points:
         reported_shares = point.get("shares")
-        adjustment_factor = _share_split_adjustment_factor(
+        adjustment_factor = share_split_adjustment_factor(
             point.get("date"),
             share_reference_date,
             split_actions,
