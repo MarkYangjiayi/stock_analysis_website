@@ -19,12 +19,14 @@ from services.earnings_quality import (
     evaluate_statement_series,
     get_earnings_quality,
     get_statement_for_period,
+    serialize_analysis_run,
     statement_fingerprint,
 )
 from services.earnings_quality_validation import (
     FilingCitation,
     FilingEarningsQualityExtraction,
     canonical_adjustment_category,
+    unquantified_adjustment_candidates,
     validate_filing_extraction,
 )
 from services.raw_store import persist_snapshot
@@ -321,6 +323,7 @@ def test_unquantified_ai_candidates_are_omitted_without_mutating_raw_payload():
     ]
 
     sanitized = filing_analysis._omit_unquantified_adjustments(payload)
+    omitted = unquantified_adjustment_candidates(payload)
     extraction = FilingEarningsQualityExtraction.model_validate(sanitized)
 
     assert len(payload["adjustments"]) == 3
@@ -328,6 +331,14 @@ def test_unquantified_ai_candidates_are_omitted_without_mutating_raw_payload():
     assert extraction.adjustments[0].label == "Asset impairment"
     assert "Qualitative event without disclosed effect" in extraction.notes[-1]
     assert "Held for sale with no impairment" in extraction.notes[-1]
+    assert [candidate["label"] for candidate in omitted] == [
+        "Qualitative event without disclosed effect",
+        "Held for sale with no impairment",
+    ]
+    assert all(
+        candidate["failure_codes"] == ["unquantified_candidate"]
+        for candidate in omitted
+    )
 
     without_notes = {**payload}
     without_notes.pop("notes")
@@ -1649,6 +1660,10 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     assert completed.result["normalized_net_income"] == 100
     assert len(completed.ai_result["adjustments"]) == 2
     assert len(completed.result["adjustments"]) == 1
+    assert "unquantified_candidates" not in completed.result
+    assert serialize_analysis_run(completed)["result"][
+        "unquantified_candidates"
+    ][0]["label"] == "Qualitative event without disclosed effect"
     assert "Qualitative event without disclosed effect" in completed.result["notes"][-1]
     assert len(completed.source_snapshots) == 1
     assert completed.source_snapshots[0]["html_snapshot_id"]

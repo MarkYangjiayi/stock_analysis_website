@@ -313,6 +313,12 @@ export interface EarningsQualityAnalysis {
                 period_scope: "quarter" | "annual";
             };
         }>;
+        unquantified_candidates?: Array<{
+            label: string;
+            model_category: string;
+            policy_category: string;
+            failure_codes: string[];
+        }>;
         notes: string[];
     } | null;
     validation_report: {
