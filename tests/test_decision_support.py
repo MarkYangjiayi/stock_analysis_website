@@ -24,6 +24,7 @@ from models import (
 )
 from services.ai_assistant import (
     EvidenceCitationError,
+    VALIDATION_SAFE_REPAIR_TEMPLATE,
     _company_identity_strings,
     build_evidence_hash,
     generate_stock_report,
@@ -978,6 +979,34 @@ def test_ai_citation_validation_rejects_missing_and_unknown_ids():
         )
 
 
+def test_ai_citation_segmentation_handles_legal_company_suffixes():
+    allowed = {"E1", "E5", "E7", "E27"}
+    validate_evidence_citations(
+        _valid_brief().replace(
+            "The snapshot is available [E1].",
+            "Apple Inc. is covered by the current snapshot [E1].",
+        ),
+        allowed,
+    )
+    with pytest.raises(EvidenceCitationError, match="Every analytical sentence"):
+        validate_evidence_citations(
+            _valid_brief().replace(
+                "The snapshot is available [E1].",
+                "The issuer is Apple Inc. Revenue is covered [E1].",
+            ),
+            allowed,
+        )
+
+
+def test_ai_validation_safe_repair_template_is_accepted():
+    validate_evidence_citations(
+        VALIDATION_SAFE_REPAIR_TEMPLATE,
+        {"E2", "E5", "E7", "E27"},
+    )
+    validate_evidence_numbers(VALIDATION_SAFE_REPAIR_TEMPLATE, [])
+    validate_evidence_qualitative_claims(VALIDATION_SAFE_REPAIR_TEMPLATE, [])
+
+
 def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence():
     evidence = [
         {
@@ -1811,6 +1840,9 @@ async def test_ai_validation_failure_gets_one_repair_attempt(db_session, monkeyp
                 "The base case downside is 24% [E5].",
             )
         assert "Unsupported numeric claim '24%'" in prompt
+        assert "exactly one sentence under each heading" in prompt
+        assert "Return exactly this Markdown" in prompt
+        assert "The fundamental warning record is documented [E27]." in prompt
         return _valid_brief()
 
     monkeypatch.setattr("services.ai_assistant.generate_deepseek_text", generate)

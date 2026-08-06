@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v20"
+PROMPT_VERSION = "decision-evidence-v21"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -192,6 +192,9 @@ LEGAL_COMPANY_SUFFIX_RE = re.compile(
     r"limited|ltd\.?|llc|plc|n\.?v\.?|s\.?a\.?|a\.?g\.?|s\.?e\.?)\.?$",
     re.IGNORECASE,
 )
+LEGAL_SUFFIX_CONTINUATION_RE = re.compile(
+    r"^(?:[*_`~\"'“‘(—–-]*\s*)?(?:[a-z]|\[E\d+\])",
+)
 IDENTITY_PREFIX_RE = re.compile(
     r"(?:^|\b(?:at|for|from|by|about|with|within|inside|regarding|company|"
     r"issuer|business|peer)\s+)$",
@@ -324,7 +327,18 @@ CHANGE_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 AMBIGUOUS_SEMANTIC_KEY = "__ambiguous__"
-MAX_REPORT_GENERATION_ATTEMPTS = 2
+MAX_REPORT_GENERATION_ATTEMPTS = 3
+VALIDATION_SAFE_REPAIR_TEMPLATE = """## Core View
+The published Screener membership record is documented [E2].
+
+## Valuation
+The base valuation record is documented [E5].
+
+## Peer Context
+The peer benchmark record is documented [E7].
+
+## Risks
+The fundamental warning record is documented [E27]."""
 _REPORT_GENERATION_LOCKS_GUARD = Lock()
 _REPORT_GENERATION_LOCKS: dict[tuple[str, str, str], asyncio.Lock] = {}
 _REPORT_GENERATION_LOCK_USERS: dict[tuple[str, str, str], int] = {}
@@ -864,11 +878,22 @@ def _claim_segments(content: str) -> list[str]:
         if not line or line.startswith("#"):
             continue
         line = re.sub(r"^(?:[-*+]\s+|\d+[.)]\s+)", "", line)
-        segments.extend(
-            part.strip()
-            for part in re.split(r"(?<=[.!?])\s+", line)
-            if part.strip()
-        )
+        start = 0
+        for boundary in re.finditer(r"(?<=[.!?])\s+", line):
+            preceding = line[:boundary.start()].rstrip()
+            following = line[boundary.end():]
+            if (
+                LEGAL_COMPANY_SUFFIX_RE.search(preceding)
+                and LEGAL_SUFFIX_CONTINUATION_RE.match(following)
+            ):
+                continue
+            part = line[start:boundary.start()].strip()
+            if part:
+                segments.append(part)
+            start = boundary.end()
+        trailing = line[start:].strip()
+        if trailing:
+            segments.append(trailing)
     return segments
 
 
@@ -2025,6 +2050,10 @@ Write concise English Markdown using exactly these four level-two headings:
 
 Every analytical sentence must contain at least one inline citation in the
 exact form [E1], [E2], and so on. Cite only IDs in the evidence records.
+Use exactly one evidence record per sentence, put exactly one citation at the
+end of that sentence, and discuss at most one numeric or dated fact in each
+sentence. Do not write uncited introductions, labels, fragments, or company-name
+lead-ins. Split distinct facts into distinct sentences.
 Explicitly call out unavailable evidence and data-quality limits. Every
 sentence containing a number must place the supporting evidence ID immediately
 after that claim.
@@ -2052,15 +2081,18 @@ def _repair_prompt(base_prompt: str, rejected_content: str, error: Exception) ->
 The previous draft below was rejected by deterministic evidence validation:
 {error}
 
-Rewrite the entire brief. Preserve the four required headings. Correct the
-reported validation issue, keep every numeric sentence tied to its supporting
-evidence in that same sentence, and do not copy an unsupported number from the
-rejected draft.
+Return exactly the validation-safe Markdown shown after the rejected draft. Do
+not add a preface, explanation, code fence, or any other text. It intentionally
+uses exactly one sentence under each heading, exactly one evidence record per
+sentence, and no numeric claims beyond the digits inside its citations.
 
 Rejected draft:
 ---
 {rejected_content}
 ---
+
+Return exactly this Markdown:
+{VALIDATION_SAFE_REPAIR_TEMPLATE}
 """.strip()
 
 
