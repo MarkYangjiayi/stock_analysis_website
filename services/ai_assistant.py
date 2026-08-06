@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v21"
+PROMPT_VERSION = "decision-evidence-v22"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -328,17 +328,6 @@ CHANGE_CONTEXT_RE = re.compile(
 )
 AMBIGUOUS_SEMANTIC_KEY = "__ambiguous__"
 MAX_REPORT_GENERATION_ATTEMPTS = 3
-VALIDATION_SAFE_REPAIR_TEMPLATE = """## Core View
-The published Screener membership record is documented [E2].
-
-## Valuation
-The base valuation record is documented [E5].
-
-## Peer Context
-The peer benchmark record is documented [E7].
-
-## Risks
-The fundamental warning record is documented [E27]."""
 _REPORT_GENERATION_LOCKS_GUARD = Lock()
 _REPORT_GENERATION_LOCKS: dict[tuple[str, str, str], asyncio.Lock] = {}
 _REPORT_GENERATION_LOCK_USERS: dict[tuple[str, str, str], int] = {}
@@ -2074,7 +2063,152 @@ score or confidence number, and avoid direct buy/sell advice.
 """.strip()
 
 
-def _repair_prompt(base_prompt: str, rejected_content: str, error: Exception) -> str:
+def _validation_safe_repair_template(decision_support: dict) -> str:
+    evidence = decision_support.get("evidence") or []
+    by_id = {
+        str(item.get("id")): item
+        for item in evidence
+        if item.get("id")
+    }
+
+    screener = by_id.get("E2") or evidence[0]
+    screener_id = str(screener.get("id"))
+    screener_value = screener.get("value")
+    in_screener = (
+        screener_value.get("ticker_in_screener")
+        if isinstance(screener_value, dict)
+        else None
+    )
+    if in_screener is True:
+        core_sentence = (
+            f"The ticker is included in the published Screener universe "
+            f"[{screener_id}]."
+        )
+    elif in_screener is False:
+        core_sentence = (
+            f"The ticker is outside the published Screener universe "
+            f"[{screener_id}]."
+        )
+    elif screener.get("available"):
+        core_sentence = f"The Screener membership status is documented [{screener_id}]."
+    else:
+        core_sentence = f"Screener membership evidence is unavailable [{screener_id}]."
+
+    valuation = by_id.get("E5") or next(
+        (item for item in evidence if item.get("kind") == "valuation"),
+        evidence[0],
+    )
+    valuation_id = str(valuation.get("id"))
+    valuation_value = valuation.get("value")
+    scenario_available = valuation.get("available")
+    comparison = None
+    if isinstance(valuation_value, dict):
+        scenario_available = valuation_value.get("available", scenario_available)
+        comparison = valuation_value.get("upside_downside")
+    if (
+        scenario_available
+        and isinstance(comparison, (int, float))
+        and not isinstance(comparison, bool)
+        and math.isfinite(comparison)
+    ):
+        if comparison > 0:
+            valuation_sentence = (
+                f"The Base DCF indicates upside to the current price "
+                f"[{valuation_id}]."
+            )
+        elif comparison < 0:
+            valuation_sentence = (
+                f"The Base DCF indicates downside to the current price "
+                f"[{valuation_id}]."
+            )
+        else:
+            valuation_sentence = (
+                f"The Base DCF matches the current price [{valuation_id}]."
+            )
+    elif scenario_available:
+        valuation_sentence = f"The Base DCF result is available [{valuation_id}]."
+    else:
+        valuation_sentence = (
+            f"The Base DCF is unavailable from the supplied financial inputs "
+            f"[{valuation_id}]."
+        )
+
+    peer_records = [item for item in evidence if item.get("kind") == "peer_metric"]
+    peer = next(
+        (item for item in peer_records if item.get("available")),
+        peer_records[0] if peer_records else evidence[0],
+    )
+    peer_id = str(peer.get("id"))
+    peer_value = peer.get("value")
+    peer_scope = (
+        peer_value.get("summary_scope")
+        if isinstance(peer_value, dict)
+        else None
+    )
+    if peer.get("available") and peer_scope in {"industry", "sector"}:
+        peer_sentence = (
+            f"The cited peer metric is benchmarked at the {peer_scope} level "
+            f"[{peer_id}]."
+        )
+    elif peer.get("available"):
+        peer_sentence = f"The cited peer metric has a published benchmark [{peer_id}]."
+    else:
+        peer_sentence = (
+            f"The cited peer metric lacks sufficient benchmark coverage "
+            f"[{peer_id}]."
+        )
+
+    warning_records = [
+        item for item in evidence
+        if item.get("kind") == "fundamental_warning"
+    ]
+    triggered_warning = next(
+        (
+            item for item in warning_records
+            if isinstance(item.get("value"), dict)
+            and item["value"].get("triggered") is True
+        ),
+        None,
+    )
+    available_warning = next(
+        (
+            item for item in warning_records
+            if isinstance(item.get("value"), dict)
+            and item["value"].get("triggered") is False
+        ),
+        None,
+    )
+    warning = triggered_warning or available_warning or (
+        warning_records[0] if warning_records else evidence[0]
+    )
+    warning_id = str(warning.get("id"))
+    if warning is triggered_warning:
+        risk_sentence = f"A cited fundamental warning is triggered [{warning_id}]."
+    elif warning is available_warning:
+        risk_sentence = f"The cited fundamental warning is not triggered [{warning_id}]."
+    else:
+        risk_sentence = f"Fundamental warning coverage is unavailable [{warning_id}]."
+
+    return f"""## Core View
+{core_sentence}
+
+## Valuation
+{valuation_sentence}
+
+## Peer Context
+{peer_sentence}
+
+## Risks
+{risk_sentence}"""
+
+
+def _repair_prompt(
+    base_prompt: str,
+    rejected_content: str,
+    error: Exception,
+    decision_support: dict,
+) -> str:
+    safe_template = _validation_safe_repair_template(decision_support)
     return f"""
 {base_prompt}
 
@@ -2092,7 +2226,7 @@ Rejected draft:
 ---
 
 Return exactly this Markdown:
-{VALIDATION_SAFE_REPAIR_TEMPLATE}
+{safe_template}
 """.strip()
 
 
@@ -2221,7 +2355,12 @@ async def generate_stock_report(
                             canonical_ticker,
                             exc,
                         )
-                        prompt = _repair_prompt(base_prompt, content, exc)
+                        prompt = _repair_prompt(
+                            base_prompt,
+                            content,
+                            exc,
+                            decision_support,
+                        )
                 db.add(
                     DecisionBriefCache(
                         ticker=canonical_ticker,

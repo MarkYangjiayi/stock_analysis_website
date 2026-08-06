@@ -24,8 +24,8 @@ from models import (
 )
 from services.ai_assistant import (
     EvidenceCitationError,
-    VALIDATION_SAFE_REPAIR_TEMPLATE,
     _company_identity_strings,
+    _validation_safe_repair_template,
     build_evidence_hash,
     generate_stock_report,
     validate_evidence_citations,
@@ -954,10 +954,11 @@ def _decision_for_ai():
         },
         "valuation": {"scenarios": [{"assumptions": DEFAULT_SCENARIOS[0]}]},
         "evidence": [
-            {"id": "E1", "available": True, "source_date": "2025-01-01", "value": 10},
-            {"id": "E5", "available": True, "source_date": "2025-01-01", "value": 12},
-            {"id": "E7", "available": True, "source_date": "2025-01-01", "value": 80},
-            {"id": "E27", "available": True, "source_date": "2025-01-01", "value": {"triggered": False}},
+            {"id": "E1", "kind": "price", "available": True, "source_date": "2025-01-01", "value": 10},
+            {"id": "E2", "kind": "screener", "available": True, "source_date": "2025-01-01", "value": {"ticker_in_screener": True}},
+            {"id": "E5", "kind": "valuation", "available": True, "source_date": "2025-01-01", "value": 12},
+            {"id": "E7", "kind": "peer_metric", "available": True, "source_date": "2025-01-01", "value": 80},
+            {"id": "E27", "kind": "fundamental_warning", "available": True, "source_date": "2025-01-01", "value": {"triggered": False}},
         ],
     }
 
@@ -999,12 +1000,58 @@ def test_ai_citation_segmentation_handles_legal_company_suffixes():
 
 
 def test_ai_validation_safe_repair_template_is_accepted():
+    decision = _decision_for_ai()
+    template = _validation_safe_repair_template(decision)
+    evidence = decision["evidence"]
     validate_evidence_citations(
-        VALIDATION_SAFE_REPAIR_TEMPLATE,
-        {"E2", "E5", "E7", "E27"},
+        template,
+        {item["id"] for item in evidence},
     )
-    validate_evidence_numbers(VALIDATION_SAFE_REPAIR_TEMPLATE, [])
-    validate_evidence_qualitative_claims(VALIDATION_SAFE_REPAIR_TEMPLATE, [])
+    validate_evidence_numbers(template, evidence)
+    validate_evidence_qualitative_claims(template, evidence)
+    assert "The Base DCF result is available [E5]." in template
+    assert "The cited fundamental warning is not triggered [E27]." in template
+
+
+def test_ai_validation_safe_repair_template_preserves_decision_signals():
+    decision = {
+        "evidence": [
+            {
+                "id": "E2",
+                "kind": "screener",
+                "available": True,
+                "value": {"ticker_in_screener": True},
+            },
+            {
+                "id": "E5",
+                "kind": "valuation",
+                "available": True,
+                "value": {"available": True, "upside_downside": -0.2},
+            },
+            {
+                "id": "E9",
+                "kind": "peer_metric",
+                "available": True,
+                "value": {"summary_scope": "sector"},
+            },
+            {
+                "id": "E30",
+                "kind": "fundamental_warning",
+                "available": True,
+                "value": {"metric": "fcf", "triggered": True},
+            },
+        ],
+    }
+    template = _validation_safe_repair_template(decision)
+    evidence = decision["evidence"]
+
+    assert "included in the published Screener universe [E2]" in template
+    assert "indicates downside to the current price [E5]" in template
+    assert "benchmarked at the sector level [E9]" in template
+    assert "A cited fundamental warning is triggered [E30]" in template
+    validate_evidence_citations(template, {item["id"] for item in evidence})
+    validate_evidence_numbers(template, evidence)
+    validate_evidence_qualitative_claims(template, evidence)
 
 
 def test_ai_numeric_validation_accepts_only_numbers_supported_by_cited_evidence():
@@ -1842,7 +1889,7 @@ async def test_ai_validation_failure_gets_one_repair_attempt(db_session, monkeyp
         assert "Unsupported numeric claim '24%'" in prompt
         assert "exactly one sentence under each heading" in prompt
         assert "Return exactly this Markdown" in prompt
-        assert "The fundamental warning record is documented [E27]." in prompt
+        assert "The cited fundamental warning is not triggered [E27]." in prompt
         return _valid_brief()
 
     monkeypatch.setattr("services.ai_assistant.generate_deepseek_text", generate)
