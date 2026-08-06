@@ -33,6 +33,7 @@ from services.earnings_quality import (
 from services.earnings_quality_validation import (
     ALLOWED_ADJUSTMENT_CATEGORIES,
     FilingEarningsQualityExtraction,
+    adjustment_has_usable_quantification,
     canonical_adjustment_category,
     validate_filing_extraction,
 )
@@ -791,20 +792,7 @@ def _omit_unquantified_adjustments(ai_payload: dict[str, Any]) -> dict[str, Any]
     retained: list[Any] = []
     omitted_labels: list[str] = []
     for item in adjustments:
-        citation = item.get("citation") if isinstance(item, dict) else None
-        try:
-            after_tax_effect = float(item.get("earnings_effect_after_tax"))
-            source_amount = float(citation.get("source_amount"))
-        except (AttributeError, TypeError, ValueError):
-            after_tax_effect = math.nan
-            source_amount = math.nan
-        usable = (
-            math.isfinite(after_tax_effect)
-            and after_tax_effect != 0
-            and math.isfinite(source_amount)
-            and source_amount != 0
-        )
-        if usable:
+        if adjustment_has_usable_quantification(item):
             retained.append(item)
         else:
             label = item.get("label") if isinstance(item, dict) else None

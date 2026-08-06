@@ -23,6 +23,7 @@ from models import (
 )
 from services.earnings_quality_validation import (
     FILING_EARNINGS_QUALITY_SCHEMA_VERSION,
+    unquantified_adjustment_candidates,
 )
 from services.security_master import canonicalize_ticker
 
@@ -435,6 +436,13 @@ def serialize_analysis_run(run: EarningsQualityAnalysisRun) -> dict[str, Any]:
     def iso(value: Any) -> str | None:
         return value.isoformat() if value is not None else None
 
+    serialized_result = run.result
+    if isinstance(run.result, dict):
+        serialized_result = dict(run.result)
+        serialized_result["unquantified_candidates"] = (
+            unquantified_adjustment_candidates(run.ai_result)
+        )
+
     return {
         "id": run.id,
         "ticker": run.ticker,
@@ -446,7 +454,7 @@ def serialize_analysis_run(run: EarningsQualityAnalysisRun) -> dict[str, Any]:
         "prompt_version": run.prompt_version,
         "source_accession": run.sec_accession,
         "source_snapshots": run.source_snapshots or [],
-        "result": run.result,
+        "result": serialized_result,
         "validation_report": run.validation_report,
         "error_message": run.error_message,
         "retryable": run.status in {"failed", "waiting_for_filing"},

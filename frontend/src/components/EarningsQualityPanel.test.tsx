@@ -207,6 +207,33 @@ describe("EarningsQualityPanel", () => {
         expect(screen.getByText("No source-validated adjustment amount is available.")).toBeInTheDocument();
     });
 
+    it("counts and displays unquantified filing candidates", async () => {
+        const user = userEvent.setup();
+        const data = response(true);
+        const analysis = data.quarterly[0].analysis;
+        if (!analysis?.result || !analysis.validation_report) throw new Error("invalid fixture");
+        analysis.result.verification_status = "flag_only";
+        analysis.result.normalized_net_income = null;
+        analysis.result.adjustments = [];
+        analysis.result.unquantified_candidates = [{
+            label: "Pending divestiture with no recognized impairment",
+            model_category: "asset_or_business_disposal",
+            policy_category: "asset_or_business_disposal",
+            failure_codes: ["unquantified_candidate"],
+        }];
+        analysis.validation_report.verified = false;
+        data.quarterly[0].verified_normalized = null;
+
+        render(<EarningsQualityPanel data={data} adminKey="secret" />);
+
+        expect(screen.getByText("Filing candidates flagged")).toBeInTheDocument();
+        expect(screen.getByText("1 filing flag")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
+        expect(screen.getByText("Unquantified filing candidates")).toBeInTheDocument();
+        expect(screen.getByText("Pending divestiture with no recognized impairment")).toBeInTheDocument();
+        expect(screen.getByText(/amount unavailable/i)).toBeInTheDocument();
+    });
+
     it("shows a retryable waiting state when the matching SEC filing is not filed", async () => {
         const user = userEvent.setup();
         const onAnalyze = vi.fn();

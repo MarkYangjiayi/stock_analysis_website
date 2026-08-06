@@ -151,6 +151,68 @@ def canonical_adjustment_category(
     return category
 
 
+def adjustment_has_usable_quantification(item: Any) -> bool:
+    """Return whether a raw model candidate has finite, non-zero effect amounts."""
+    citation = item.get("citation") if isinstance(item, dict) else None
+    try:
+        after_tax_effect = float(item.get("earnings_effect_after_tax"))
+        source_amount = float(citation.get("source_amount"))
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return (
+        math.isfinite(after_tax_effect)
+        and after_tax_effect != 0
+        and math.isfinite(source_amount)
+        and source_amount != 0
+    )
+
+
+def unquantified_adjustment_candidates(
+    ai_payload: Any,
+) -> list[dict[str, Any]]:
+    """Extract safe metadata for raw candidates omitted from amount validation."""
+    adjustments = ai_payload.get("adjustments") if isinstance(ai_payload, dict) else None
+    if not isinstance(adjustments, list):
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    for item in adjustments[:100]:
+        if adjustment_has_usable_quantification(item):
+            continue
+        if isinstance(item, dict):
+            label = str(item.get("label") or "unnamed candidate")
+            raw_category = item.get("category")
+            model_category = (
+                raw_category if isinstance(raw_category, str) else "other"
+            )
+            citation = item.get("citation")
+            excerpt = (
+                citation.get("excerpt", "")
+                if isinstance(citation, dict)
+                else ""
+            )
+        else:
+            label = "unnamed candidate"
+            model_category = "other"
+            excerpt = ""
+        schema_category = (
+            model_category
+            if model_category in ALLOWED_ADJUSTMENT_CATEGORIES
+            else "other"
+        )
+        candidates.append({
+            "label": label,
+            "model_category": model_category,
+            "policy_category": canonical_adjustment_category(
+                schema_category,
+                label,
+                str(excerpt),
+            ),
+            "failure_codes": ["unquantified_candidate"],
+        })
+    return candidates
+
+
 def _fair_value_earnings_direction(
     category: str,
     label: str,
