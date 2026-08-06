@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 import uuid
 from datetime import date, datetime, timedelta
@@ -456,8 +457,10 @@ _RELEVANT_TERMS = re.compile(
 
 
 def _relevant_context(documents: list[dict[str, Any]]) -> list[dict[str, str]]:
-    max_chars = max(10_000, settings.EARNINGS_QUALITY_MAX_CONTEXT_CHARS)
-    per_document = max(4_000, max_chars // max(1, len(documents)))
+    max_chars = max(0, int(settings.EARNINGS_QUALITY_MAX_CONTEXT_CHARS))
+    if max_chars == 0:
+        return []
+    per_document = max(1, max_chars // max(1, len(documents)))
     context: list[dict[str, str]] = []
     remaining = max_chars
     for document in documents:
@@ -486,6 +489,40 @@ def _relevant_context(documents: list[dict[str, Any]]) -> list[dict[str, str]]:
         if remaining <= 0:
             break
     return context
+
+
+def _reported_net_income(statement: FinancialStatement) -> float:
+    income = statement.income_statement or {}
+    for candidate in (income.get("netIncome"), statement.net_income):
+        try:
+            parsed = float(candidate)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(parsed):
+            return parsed
+    raise FilingAnalysisError("Reported net income is unavailable")
+
+
+async def _fetch_sec_documents(
+    *,
+    cik: str,
+    period_end: date,
+    period_type: str,
+) -> list[dict[str, Any]]:
+    """Keep cancellation pending until the non-cancellable SEC thread exits."""
+    fetch_task = asyncio.create_task(asyncio.to_thread(
+        _fetch_sec_documents_sync,
+        cik=cik,
+        period_end=period_end,
+        period_type=period_type,
+    ))
+    try:
+        return await asyncio.shield(fetch_task)
+    except asyncio.CancelledError:
+        # asyncio.to_thread cannot stop its underlying thread. Waiting here
+        # keeps the database-wide execution slot leased until that work ends.
+        await asyncio.gather(fetch_task, return_exceptions=True)
+        raise
 
 
 def _system_prompt() -> str:
@@ -660,6 +697,7 @@ async def _renew_lease(run_id: int) -> None:
 
 
 async def _perform_analysis(run_id: int) -> None:
+    assert_filing_analysis_configured()
     async with async_session_maker() as db:
         run = await db.get(EarningsQualityAnalysisRun, run_id)
         if run is None:
@@ -685,12 +723,7 @@ async def _perform_analysis(run_id: int) -> None:
         cik = public_data["sec_analysis"].get("cik")
         if not cik:
             raise FilingAnalysisError("No CIK is available")
-        income = statement.income_statement or {}
-        raw_reported = income.get("netIncome", statement.net_income)
-        try:
-            reported_net_income = float(raw_reported)
-        except (TypeError, ValueError) as exc:
-            raise FilingAnalysisError("Reported net income is unavailable") from exc
+        reported_net_income = _reported_net_income(statement)
         selected_periods = public_data[
             "annual" if run.period_type == "annual" else "quarterly"
         ]
@@ -709,8 +742,7 @@ async def _perform_analysis(run_id: int) -> None:
         ]
 
     await _set_stage(run_id, "fetching_sec")
-    documents = await asyncio.to_thread(
-        _fetch_sec_documents_sync,
+    documents = await _fetch_sec_documents(
         cik=cik,
         period_end=run.period_end,
         period_type=run.period_type,

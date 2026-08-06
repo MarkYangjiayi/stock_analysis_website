@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, timedelta
+from threading import Event
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -223,6 +224,39 @@ def test_financial_company_disables_non_operating_swing_rule():
 
 
 VALID_SOURCE = "The company recorded an impairment charge of 25, a tax benefit of 5, and an after-tax earnings effect of 20; adjusted net income was 120 and adjusted diluted EPS was 1.2."
+
+
+def test_reported_net_income_falls_back_from_invalid_json_to_column():
+    import services.filing_analysis as filing_analysis
+
+    record = statement(date(2025, 12, 31), net_income=80)
+    record.income_statement["netIncome"] = None
+    assert filing_analysis._reported_net_income(record) == 80
+
+    record.income_statement["netIncome"] = "not-a-number"
+    assert filing_analysis._reported_net_income(record) == 80
+
+
+def test_relevant_context_honors_configured_character_cap(monkeypatch):
+    import services.filing_analysis as filing_analysis
+
+    monkeypatch.setattr(settings, "EARNINGS_QUALITY_MAX_CONTEXT_CHARS", 30)
+    documents = [
+        {
+            "source_id": f"filing:{index}",
+            "accession": str(index),
+            "form": "10-K",
+            "document_name": f"report-{index}.htm",
+            "source_url": f"https://www.sec.gov/{index}",
+            "text": "Adjusted net income and impairment details are disclosed here.",
+        }
+        for index in range(2)
+    ]
+
+    context = filing_analysis._relevant_context(documents)
+
+    assert [len(item["text"]) for item in context] == [15, 15]
+    assert sum(len(item["text"]) for item in context) == 30
 
 
 def extraction_payload(**overrides):
@@ -546,6 +580,42 @@ async def test_public_earnings_quality_read_never_calls_sec_or_ai(
     assert response.status_code == 200
     assert response.json()["sec_analysis"]["supported"] is True
     fetch_mock.assert_not_called()
+    ai_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recovered_analysis_rechecks_ai_kill_switch(
+    db_session,
+    monkeypatch,
+):
+    await seed_supported_company(db_session)
+    import services.filing_analysis as filing_analysis
+
+    monkeypatch.setattr(settings, "SEC_USER_AGENT", "Quantify test@example.com")
+    monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "test-model-key")
+    run, _ = await filing_analysis.enqueue_filing_analysis(
+        db_session,
+        "API.US",
+        date(2025, 12, 31),
+        "annual",
+    )
+    run_id = run.id
+    run.stage = "recovered"
+    await db_session.commit()
+
+    sec_mock = Mock(side_effect=AssertionError("SEC must remain disabled"))
+    ai_mock = AsyncMock(side_effect=AssertionError("AI must remain disabled"))
+    monkeypatch.setattr(filing_analysis, "_fetch_sec_documents_sync", sec_mock)
+    monkeypatch.setattr(filing_analysis, "generate_deepseek_json", ai_mock)
+    monkeypatch.setattr(settings, "EARNINGS_QUALITY_AI_ENABLED", False)
+
+    await filing_analysis.execute_filing_analysis(run_id)
+
+    db_session.expire_all()
+    failed = await db_session.get(EarningsQualityAnalysisRun, run_id)
+    assert failed.status == "failed"
+    assert "disabled" in failed.error_message.lower()
+    sec_mock.assert_not_called()
     ai_mock.assert_not_awaited()
 
 
@@ -984,6 +1054,72 @@ async def test_analysis_timeout_releases_single_flight_for_retry(
     )
     assert created is True
     assert retry.id != run_id
+
+
+@pytest.mark.asyncio
+async def test_timeout_retains_global_slot_until_sec_thread_exits(
+    db_session,
+    monkeypatch,
+):
+    await seed_supported_company(db_session)
+    quarterly_statement = statement(date(2025, 9, 30), period="Quarterly")
+    quarterly_statement.ticker = "API.US"
+    db_session.add(quarterly_statement)
+    await db_session.commit()
+    import services.filing_analysis as filing_analysis
+
+    monkeypatch.setattr(settings, "SEC_USER_AGENT", "Quantify test@example.com")
+    monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "test-model-key")
+    monkeypatch.setattr(settings, "EARNINGS_QUALITY_TIMEOUT_SECONDS", 0.01)
+    sec_started = Event()
+    release_sec = Event()
+
+    def blocked_sec_fetch(**_kwargs):
+        sec_started.set()
+        release_sec.wait(timeout=2)
+        return []
+
+    monkeypatch.setattr(
+        filing_analysis,
+        "_fetch_sec_documents_sync",
+        blocked_sec_fetch,
+    )
+    annual, _ = await filing_analysis.enqueue_filing_analysis(
+        db_session,
+        "API.US",
+        date(2025, 12, 31),
+        "annual",
+    )
+    quarterly, _ = await filing_analysis.enqueue_filing_analysis(
+        db_session,
+        "API.US",
+        date(2025, 9, 30),
+        "quarterly",
+    )
+    annual_id = annual.id
+    quarterly_id = quarterly.id
+
+    execution = asyncio.create_task(
+        filing_analysis.execute_filing_analysis(annual_id)
+    )
+    try:
+        assert await asyncio.to_thread(sec_started.wait, 1)
+        await asyncio.sleep(0.05)
+        db_session.expire_all()
+        in_flight = await db_session.get(EarningsQualityAnalysisRun, annual_id)
+        assert in_flight.status == "running"
+        assert in_flight.global_slot == filing_analysis.GLOBAL_ANALYSIS_SLOT
+        assert await filing_analysis._claim(quarterly_id) is False
+    finally:
+        release_sec.set()
+        await execution
+
+    db_session.expire_all()
+    failed = await db_session.get(EarningsQualityAnalysisRun, annual_id)
+    assert failed.status == "failed"
+    assert "timed out" in failed.error_message.lower()
+    assert await filing_analysis._claim(quarterly_id) is True
+    await filing_analysis._record_failure(quarterly_id, "test cleanup")
 
 
 @pytest.mark.asyncio
