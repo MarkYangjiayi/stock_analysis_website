@@ -665,6 +665,7 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     ttm_net_income = ttm_data['ttm_net_income']
     ttm_fcf = ttm_data['ttm_fcf']
     roe = ttm_data['roe']
+    data_quality_warnings: list[dict[str, Any]] = []
     
     # 实施异常保护：校验 TTM 算出的 Gross Margin 是否由于数据脏污而与前序年报产生巨大偏差
     ttm_gm = (ttm_gross_profit / ttm_revenue) if ttm_revenue > 0 else 0
@@ -686,9 +687,24 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         # 允许 ±20% (比如原先是 40%，偏离到 20% 以下或 60% 以上则判定异常)
         TTM_GM_DEVIATION_THRESHOLD = 0.20
         if abs(ttm_gm - prev_gm) > TTM_GM_DEVIATION_THRESHOLD:
-            logger.warning(f"[TTM DIRT CHECK] TTM Gross Margin ({ttm_gm:.2%}) deviation >{TTM_GM_DEVIATION_THRESHOLD:.0%} from Prev Yearly ({prev_gm:.2%}). Fallback GP to Prev GP adjusted by Rev growth.")
-            # 使用年度比例进行平滑替换脏数据，以免图表剧烈抖动
-            ttm_gross_profit = ttm_revenue * prev_gm
+            logger.warning(
+                "[TTM DATA QUALITY] Reported TTM Gross Margin (%.2f%%) deviates "
+                ">%.0f%% from the latest annual value (%.2f%%); preserving the "
+                "reported quarterly total.",
+                ttm_gm * 100,
+                TTM_GM_DEVIATION_THRESHOLD * 100,
+                prev_gm * 100,
+            )
+            data_quality_warnings.append({
+                "code": "ttm_gross_margin_deviation",
+                "message": (
+                    "Reported TTM gross margin differs materially from the latest annual "
+                    "margin. The reported value is shown without smoothing."
+                ),
+                "reported_ttm_gross_margin": ttm_gm,
+                "latest_annual_gross_margin": prev_gm,
+                "threshold": TTM_GM_DEVIATION_THRESHOLD,
+            })
     
     total_assets = ttm_data['total_assets']
     total_liab = ttm_data['total_liab']
@@ -762,7 +778,8 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
                 "perpetual_growth": perpetual_growth
             }
         },
-        "factor_scores": factor_scores
+        "factor_scores": factor_scores,
+        "data_quality_warnings": data_quality_warnings,
     }
 
 

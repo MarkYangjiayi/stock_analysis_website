@@ -576,7 +576,17 @@ async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_ses
 
     assert complete_result["valuation"]["available"] is True
     assert complete_result["summary"]["coverage"]["quarterly_statements"] == 8
-    assert len(complete_result["evidence"]) == 36
+    earnings_period_evidence = [
+        item
+        for item in complete_result["evidence"]
+        if item["kind"] == "earnings_quality_period"
+    ]
+    assert len(complete_result["evidence"]) == 45
+    assert len(earnings_period_evidence) == 8
+    assert [item["id"] for item in earnings_period_evidence] == [
+        f"E{index}" for index in range(38, 46)
+    ]
+    assert len({item["source_date"] for item in earnings_period_evidence}) == 8
     assert sparse_result["valuation"]["available"] is False
     assert sparse_result["risks"]["warnings"] == []
     assert outside_result["peer_comparison"]["ticker_in_screener"] is False
@@ -586,6 +596,8 @@ async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_ses
     complete_evidence = {item["id"]: item for item in complete_result["evidence"]}
     sparse_evidence = {item["id"]: item for item in sparse_result["evidence"]}
     negative_evidence = {item["id"]: item for item in negative_result["evidence"]}
+    assert complete_evidence["E37"]["kind"] == "earnings_quality"
+    assert "periods" not in complete_evidence["E37"]["value"]
     assert complete_evidence["E27"]["available"] is True
     assert complete_evidence["E27"]["value"]["assessment"] == "not triggered on available data"
     assert sparse_evidence["E27"]["available"] is False
@@ -1325,6 +1337,65 @@ def test_semantic_evidence_preserves_period_scope():
         validate_evidence_numbers("Prior-year revenue was $100 billion [E3].", evidence)
     with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
         validate_evidence_numbers("Revenue was previously $100 billion [E3].", evidence)
+
+
+def test_earnings_quality_evidence_preserves_period_and_income_basis():
+    evidence = [
+        {
+            "id": "E38",
+            "kind": "earnings_quality_period",
+            "source_date": "2025-12-31",
+            "value": {
+                "period_end": "2025-12-31",
+                "reported_net_income": 100,
+                "analysis": {
+                    "result": {
+                        "reported_net_income": 100,
+                        "normalized_net_income": 120,
+                    }
+                },
+            },
+        },
+        {
+            "id": "E39",
+            "kind": "earnings_quality_period",
+            "source_date": "2025-09-30",
+            "value": {
+                "period_end": "2025-09-30",
+                "reported_net_income": 120,
+                "analysis": {
+                    "result": {
+                        "reported_net_income": 120,
+                        "normalized_net_income": 90,
+                    }
+                },
+            },
+        },
+    ]
+
+    validate_evidence_numbers(
+        "For 2025-12-31, reported net income was $100 [E38].",
+        evidence,
+    )
+    validate_evidence_numbers(
+        "For 2025-12-31, normalized net income was $120 [E38].",
+        evidence,
+    )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "For 2025-12-31, reported net income was $120 [E38].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "For 2025-12-31, normalized net income was $100 [E38].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Unsupported numeric claim"):
+        validate_evidence_numbers(
+            "For 2025-12-31, normalized net income was $90 [E38].",
+            evidence,
+        )
 
 
 def test_ai_qualitative_directions_must_agree_with_cited_periods():

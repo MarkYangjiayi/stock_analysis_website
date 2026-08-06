@@ -314,6 +314,57 @@ class AnomalyScanRun(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
+class EarningsQualityAnalysisRun(Base):
+    """Durable, evidence-bound analysis of one reported financial period."""
+
+    __tablename__ = "earnings_quality_analysis_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(ForeignKey("tickers.ticker"), index=True)
+    period_end: Mapped[dt_date] = mapped_column(Date, index=True)
+    period_type: Mapped[str] = mapped_column(String, index=True)
+    statement_fingerprint: Mapped[str] = mapped_column(String, index=True)
+    cache_identity: Mapped[str] = mapped_column(String, index=True)
+    model: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[str] = mapped_column(String)
+    schema_version: Mapped[str] = mapped_column(String)
+
+    status: Mapped[str] = mapped_column(String, default="queued", index=True)
+    stage: Mapped[str] = mapped_column(String, default="queued")
+    active_key: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    global_slot: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    owner_token: Mapped[Optional[str]] = mapped_column(String, index=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    sec_accession: Mapped[Optional[str]] = mapped_column(String, index=True)
+    source_checksum: Mapped[Optional[str]] = mapped_column(String, index=True)
+    source_snapshots: Mapped[Optional[Any]] = mapped_column(JSON)
+    ai_result: Mapped[Optional[Any]] = mapped_column(JSON)
+    result: Mapped[Optional[Any]] = mapped_column(JSON)
+    validation_report: Mapped[Optional[Any]] = mapped_column(JSON)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_earnings_quality_period_cache",
+            "ticker",
+            "period_end",
+            "period_type",
+            "cache_identity",
+        ),
+    )
+
+
 class SecurityMaster(Base):
     """Canonical security identity independent of a vendor ticker spelling."""
     __tablename__ = "security_master"

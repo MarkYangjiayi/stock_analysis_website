@@ -76,6 +76,7 @@ class ValuationMetricsModel(BaseModel):
     balance_sheet_latest: BalanceSheetLatestModel
     valuation: ValuationModel
     factor_scores: FactorScoresModel
+    data_quality_warnings: List[dict] = Field(default_factory=list)
 
 class StockDataResponse(BaseModel):
     profile: StockProfileModel
@@ -93,6 +94,11 @@ class DecisionValuationScenarioInput(BaseModel):
 
 class ValuationScenariosRequest(BaseModel):
     scenarios: List[DecisionValuationScenarioInput] = Field(min_length=3, max_length=3)
+
+
+class EarningsQualityAnalysisRequest(BaseModel):
+    period_end: date
+    period_type: Literal["annual", "quarterly"]
 
 
 class PersonalWatchlistRequest(BaseModel):

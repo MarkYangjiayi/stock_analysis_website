@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     ANOMALY_SCAN_LEASE_SECONDS: float = 15.0
     ANOMALY_NEWS_LOOKBACK_HOURS: int = 24
 
+    # Earnings-quality filing analysis is strictly user-triggered and runs one
+    # financial period at a time. Public endpoints only read cached local data.
+    SEC_USER_AGENT: str = ""
+    EARNINGS_QUALITY_AI_ENABLED: bool = True
+    EARNINGS_QUALITY_TIMEOUT_SECONDS: float = 120.0
+    EARNINGS_QUALITY_LEASE_SECONDS: float = 180.0
+    EARNINGS_QUALITY_MAX_CONTEXT_CHARS: int = 80_000
+
     # Background workers are intentionally disabled in the web process. Run
     # `python worker.py` as a separate service instead.
     RUN_BACKGROUND_TASKS: bool = False

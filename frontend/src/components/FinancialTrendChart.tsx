@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { useTheme } from "next-themes";
-import { HistoricalFinancialPoint, ValuationMetrics } from "@/lib/api";
+import { AlertTriangle, ExternalLink, ShieldCheck, X } from "lucide-react";
+import { EarningsQualityResponse, HistoricalFinancialPoint, ValuationMetrics } from "@/lib/api";
 
 export type FinancialEvidenceMetric =
     | "overview"
@@ -25,6 +26,8 @@ interface FinancialTrendChartProps {
     onTimePeriodChange: (period: "annual" | "ttm" | "quarterly") => void;
     selectedMetric?: FinancialEvidenceMetric;
     onMetricChange?: (metric: FinancialEvidenceMetric) => void;
+    earningsQuality?: EarningsQualityResponse | null;
+    dataQualityWarnings?: Array<{ code: string; message: string }>;
 }
 
 const METRICS: Array<{
@@ -64,7 +67,12 @@ interface TooltipParam {
     axisValue: string;
     marker: string;
     seriesName: string;
-    value: number | null;
+    value: number | [string, number] | null;
+}
+
+interface ChartClickParam {
+    seriesName?: string;
+    data?: { periodEnd?: string };
 }
 
 export default function FinancialTrendChart({
@@ -75,10 +83,19 @@ export default function FinancialTrendChart({
     onTimePeriodChange,
     selectedMetric,
     onMetricChange,
+    earningsQuality,
+    dataQualityWarnings = [],
 }: FinancialTrendChartProps) {
     const { resolvedTheme } = useTheme();
     const [internalMetric, setInternalMetric] = useState<FinancialEvidenceMetric>("overview");
+    const [selectedEarningsPeriodKey, setSelectedEarningsPeriodKey] = useState<string | null>(null);
     const metric = selectedMetric ?? internalMetric;
+    const visibleEarningsPeriods = timePeriod === "quarterly"
+        ? earningsQuality?.quarterly ?? []
+        : earningsQuality?.annual ?? [];
+    const selectedEarningsPeriod = visibleEarningsPeriods.find((period) => (
+        `${earningsQuality?.ticker}:${timePeriod}:${period.period_end}` === selectedEarningsPeriodKey
+    )) ?? null;
 
     const changeMetric = (next: FinancialEvidenceMetric) => {
         setInternalMetric(next);
@@ -103,6 +120,10 @@ export default function FinancialTrendChart({
         const textColor = isDark ? "#9ca3af" : "#475569";
         const gridColor = isDark ? "#374151" : "#e2e8f0";
         const dates = points.map((point) => point.date);
+        const earningsPeriods = timePeriod === "quarterly"
+            ? earningsQuality?.quarterly ?? []
+            : earningsQuality?.annual ?? [];
+        const earningsByDate = new Map(earningsPeriods.map((period) => [period.period_end, period]));
         const amountAxis = {
             type: "value",
             name: "Amount",
@@ -186,6 +207,57 @@ export default function FinancialTrendChart({
             ];
         }
 
+        if (metric === "overview" || metric === "net_income") {
+            const normalizedValues = points.map((point) => earningsByDate.get(point.date)?.verified_normalized?.net_income ?? null);
+            if (normalizedValues.some((value) => value != null)) {
+                series.push({
+                    name: "Verified normalized net income",
+                    type: "line",
+                    yAxisIndex: 0,
+                    data: normalizedValues,
+                    itemStyle: { color: "#059669" },
+                    lineStyle: { width: 2.5, type: "dashed" },
+                    symbol: "circle",
+                    symbolSize: 7,
+                    connectNulls: false,
+                    z: 5,
+                });
+            }
+        }
+
+        const flaggedMarkers = earningsPeriods.flatMap((period) => {
+            if ((!period.flags.length && !period.data_quality_warnings.length) || !dates.includes(period.period_end)) return [];
+            const point = points.find((candidate) => candidate.date === period.period_end);
+            if (!point) return [];
+            const yValue = metric === "overview"
+                ? point.net_income
+                : valueForMetric(point, metric);
+            if (yValue == null) return [];
+            return [{
+                name: "Earnings-quality flag",
+                value: [period.period_end, yValue] as [string, number],
+                periodEnd: period.period_end,
+                itemStyle: {
+                    color: period.flags.some((flag) => flag.severity === "high")
+                        ? "#e11d48"
+                        : period.flags.length
+                            ? "#f59e0b"
+                            : "#64748b",
+                },
+            }];
+        });
+        if (flaggedMarkers.length) {
+            series.push({
+                name: "Earnings-quality flag",
+                type: "scatter",
+                yAxisIndex: 0,
+                data: flaggedMarkers,
+                symbol: "pin",
+                symbolSize: 34,
+                z: 10,
+            });
+        }
+
         return {
             aria: { enabled: true, description: `Historical financial evidence focused on ${metric.replaceAll("_", " ")}` },
             animationDuration: 300,
@@ -197,6 +269,9 @@ export default function FinancialTrendChart({
                 formatter: (params: TooltipParam[]) => {
                     if (!params.length) return "";
                     const rows = params.filter((param) => param.value != null).map((param) => {
+                        if (param.seriesName === "Earnings-quality flag") {
+                            return `<div style="margin-top:6px"><strong>${param.marker}Earnings-quality details</strong> · click marker</div>`;
+                        }
                         const isPercent = param.seriesName.toLowerCase().includes("margin");
                         const isPrice = param.seriesName === "Matched stock price";
                         const isShares = param.seriesName === "Shares outstanding";
@@ -225,7 +300,14 @@ export default function FinancialTrendChart({
             yAxis,
             series,
         };
-    }, [currentPrice, data, metric, resolvedTheme, timePeriod, ttmData]);
+    }, [currentPrice, data, earningsQuality, metric, resolvedTheme, timePeriod, ttmData]);
+
+    const chartEvents = {
+        click: (params: ChartClickParam) => {
+            if (params.seriesName !== "Earnings-quality flag" || !params.data?.periodEnd) return;
+            setSelectedEarningsPeriodKey(`${earningsQuality?.ticker}:${timePeriod}:${params.data.periodEnd}`);
+        },
+    };
 
     if (!data?.length) return null;
 
@@ -250,8 +332,15 @@ export default function FinancialTrendChart({
                 </div>
             </header>
             <div className="h-[420px] p-2 sm:h-[470px] sm:p-4">
-                <ReactECharts option={options} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
+                <ReactECharts option={options} onEvents={chartEvents} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
             </div>
+            {timePeriod === "ttm" && dataQualityWarnings.length > 0 && <div className="mx-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"><AlertTriangle className="mr-1.5 inline" size={14} /><strong>Reported data-quality warning:</strong> {dataQualityWarnings.map((warning) => warning.message).join(" ")}</div>}
+            {selectedEarningsPeriod && <aside className="m-4 mt-0 rounded-xl border p-4" aria-label={`Earnings-quality details for ${selectedEarningsPeriod.period_end}`}>
+                <div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-black">{selectedEarningsPeriod.period_end} earnings quality</h3>{selectedEarningsPeriod.verified_normalized?.net_income != null && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"><ShieldCheck size={11} /> Verified normalized</span>}</div><p className="mt-1 text-xs text-slate-500">Reported net income remains the primary series. Marker values are screening evidence only.</p></div><button type="button" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setSelectedEarningsPeriodKey(null)} aria-label="Close earnings-quality details"><X size={16} /></button></div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">{selectedEarningsPeriod.flags.map((flag, index) => <div key={`${flag.category}-${index}`} className="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-900/50"><div className="flex justify-between gap-2"><span className="font-black">{flag.label}</span><span className="font-mono">{(flag.materiality_ratio * 100).toFixed(1)}% of base</span></div><p className="mt-1 leading-5 text-slate-500">{flag.detail}</p></div>)}</div>
+                {selectedEarningsPeriod.data_quality_warnings.map((warning) => <div key={warning.code} className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"><strong>{warning.code}</strong><p className="mt-1">{warning.message}</p></div>)}
+                {selectedEarningsPeriod.analysis?.source_snapshots.length ? <div className="mt-3 flex flex-wrap gap-2">{selectedEarningsPeriod.analysis.source_snapshots.map((source) => source.source_url && <a key={source.source_id} href={source.source_url} target="_blank" rel="noreferrer" className="secondary-button min-h-8 px-2.5 py-1 text-[10px]"><ExternalLink size={12} /> {source.form} source</a>)}</div> : null}
+            </aside>}
         </section>
     );
 }

@@ -18,6 +18,7 @@ import {
     ShieldAlert,
 } from "lucide-react";
 import AIReport from "@/components/AIReport";
+import EarningsQualityPanel from "@/components/EarningsQualityPanel";
 import {
     ApiError,
     calculateDecisionValuation,
@@ -26,6 +27,8 @@ import {
     DecisionValuation,
     DecisionValuationScenarioInput,
     DecisionWarning,
+    EarningsQualityPeriod,
+    EarningsQualityResponse,
     PeerMetric,
     resetPersonalValuationScenarios,
     savePersonalValuationScenarios,
@@ -44,6 +47,11 @@ interface DecisionCockpitProps {
     onRetry: () => void;
     onRefresh: () => Promise<void>;
     onShowEvidence: (metric: DecisionWarning["evidence_metric"]) => void;
+    earningsQuality?: EarningsQualityResponse | null;
+    earningsQualityLoading?: boolean;
+    earningsQualityError?: string;
+    earningsQualityBusyPeriod?: string | null;
+    onAnalyzeEarningsPeriod?: (period: EarningsQualityPeriod) => Promise<void> | void;
 }
 
 const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
@@ -179,6 +187,11 @@ export default function DecisionCockpit({
     onRetry,
     onRefresh,
     onShowEvidence,
+    earningsQuality = null,
+    earningsQualityLoading = false,
+    earningsQualityError = "",
+    earningsQualityBusyPeriod = null,
+    onAnalyzeEarningsPeriod,
 }: DecisionCockpitProps) {
     const [activeTab, setActiveTab] = useState<CockpitTab>("overview");
     const [peerScope, setPeerScope] = useState<"industry" | "sector">("industry");
@@ -486,6 +499,15 @@ export default function DecisionCockpit({
                     {activeTab === "risks" && <div className="space-y-5">
                         <div><h3 className="text-sm font-black">Triggered fundamental rules</h3><p className="mt-1 text-xs text-slate-500">Only deterministic financial-statement rules are included in Phase 1.</p></div>
                         <WarningResults warnings={decision.risks.warnings} unavailableCount={unavailableWarningCheckCount} onShowEvidence={onShowEvidence} />
+                        <EarningsQualityPanel
+                            data={earningsQuality || decision.earnings_quality || null}
+                            loading={earningsQualityLoading}
+                            error={earningsQualityError}
+                            adminKey={adminKey}
+                            busyPeriod={earningsQualityBusyPeriod}
+                            onUnlock={onUnlock}
+                            onAnalyze={onAnalyzeEarningsPeriod}
+                        />
                         <section className="rounded-xl border p-4"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500"><Database size={14} /> Data-quality notes</h3>{decision.risks.data_quality_notes.length ? <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">{decision.risks.data_quality_notes.map((note) => <li key={`${note.code}-${note.message}`} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50"><span className="font-mono text-[10px] text-slate-400">{note.code}</span><p className="mt-1">{note.message}</p></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No data-quality limitation was recorded for these checks.</p>}</section>
                     </div>}
 

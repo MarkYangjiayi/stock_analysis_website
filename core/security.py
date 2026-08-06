@@ -27,6 +27,26 @@ async def require_admin_api_key(x_api_key: str = Header(default="")) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
 
+async def require_configured_admin_api_key(
+    x_api_key: str = Header(default=""),
+) -> None:
+    """Require an explicitly configured key even outside production.
+
+    Cost-bearing, user-triggered AI operations use this stricter guard; an
+    empty development key must never turn them into anonymous endpoints.
+    """
+    if not settings.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin operations are disabled",
+        )
+    if not x_api_key or not secrets.compare_digest(x_api_key, settings.ADMIN_API_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+
+
 class SlidingWindowRateLimiter:
     def __init__(self, limit: int, window_seconds: int = 60):
         self.limit = limit

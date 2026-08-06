@@ -101,6 +101,8 @@ CURRENCY_VALUE_KEYS = {
     "gross_profit",
     "operating_income",
     "net_income",
+    "reported_net_income",
+    "normalized_net_income",
     "fcf",
     "free_cash_flow",
     "cash",
@@ -207,6 +209,8 @@ SEMANTIC_VALUE_KEYS = {
     "gross_profit": "gross_profit",
     "operating_income": "operating_income",
     "net_income": "net_income",
+    "reported_net_income": "reported_net_income",
+    "normalized_net_income": "normalized_net_income",
     "fcf": "fcf",
     "free_cash_flow": "fcf",
     "cash": "cash",
@@ -271,6 +275,8 @@ SEMANTIC_CLAIM_PATTERNS = {
     "revenue": re.compile(r"\b(?:revenue|sales)\b", re.IGNORECASE),
     "gross_profit": re.compile(r"\bgross\s+profit\b", re.IGNORECASE),
     "operating_income": re.compile(r"\boperating\s+income\b", re.IGNORECASE),
+    "reported_net_income": re.compile(r"\breported\s+net\s+income\b", re.IGNORECASE),
+    "normalized_net_income": re.compile(r"\bnormalized\s+net\s+income\b", re.IGNORECASE),
     "net_income": re.compile(r"\bnet\s+income\b", re.IGNORECASE),
     "gross_margin": re.compile(r"\bgross\s+margin\b", re.IGNORECASE),
     "operating_margin": re.compile(r"\boperating\s+margin\b", re.IGNORECASE),
@@ -303,7 +309,8 @@ SEMANTIC_CLAIM_PATTERNS = {
     "ev_to_ebitda": re.compile(r"\b(?:ev\s*/\s*ebitda|enterprise[- ]value[- ]to[- ]ebitda)\b", re.IGNORECASE),
 }
 PERIOD_SCOPED_SEMANTICS = {
-    "revenue", "gross_profit", "operating_income", "net_income", "fcf",
+    "revenue", "gross_profit", "operating_income", "net_income",
+    "reported_net_income", "normalized_net_income", "fcf",
     "gross_margin", "operating_margin", "net_profit_margin", "cash", "debt",
     "shares", "stockholder_equity", "debt_to_equity",
 }
