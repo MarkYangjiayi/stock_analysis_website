@@ -361,6 +361,41 @@ def test_quantified_candidates_with_broken_citations_reach_strict_schema():
         FilingEarningsQualityExtraction.model_validate(sanitized)
 
 
+def test_unknown_adjustment_category_is_retained_as_conservative_flag_only():
+    import services.filing_analysis as filing_analysis
+
+    payload = extraction_payload()
+    payload["adjustments"][0]["category"] = "acquisition_financing_divestitures"
+
+    sanitized, prevalidation_failures = (
+        filing_analysis._normalize_unknown_adjustment_categories(payload)
+    )
+    extraction = FilingEarningsQualityExtraction.model_validate(sanitized)
+    result, report = validate_filing_extraction(
+        extraction,
+        expected_period_end=date(2025, 12, 31),
+        expected_currency="USD",
+        reported_net_income=100,
+        source_documents={"filing:primary": VALID_SOURCE},
+        prevalidation_failures=prevalidation_failures,
+    )
+
+    assert payload["adjustments"][0]["category"] == (
+        "acquisition_financing_divestitures"
+    )
+    assert extraction.adjustments[0].category == "other"
+    assert extraction.adjustments[0].include_in_normalized is False
+    assert extraction.adjustments[0].recurring is True
+    assert "Asset impairment" in extraction.notes[-1]
+    assert result["verification_status"] == "flag_only"
+    assert result["normalized_net_income"] is None
+    assert result["adjustments"][0]["category"] == "other"
+    assert result["adjustments"][0]["include_in_normalized"] is False
+    assert "unknown_adjustment_category" in {
+        failure["code"] for failure in report["failures"]
+    }
+
+
 def test_relevant_context_honors_configured_character_cap(monkeypatch):
     import services.filing_analysis as filing_analysis
 
@@ -816,6 +851,9 @@ def test_wrong_period_citation_is_rejected_from_public_adjustments():
 
     assert result["adjustments"] == []
     assert report["rejected_adjustments"][0]["label"] == "Asset impairment"
+    assert report["rejected_adjustments"][0]["failure_codes"] == [
+        "citation_period_mismatch"
+    ]
     assert "citation_period_mismatch" in {
         failure["code"] for failure in report["failures"]
     }

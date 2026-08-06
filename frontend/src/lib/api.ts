@@ -326,6 +326,7 @@ export interface EarningsQualityAnalysis {
             label: string;
             model_category: string;
             policy_category: string;
+            failure_codes?: string[];
         }>;
         sign_convention: string;
         gains_and_charges_treated_symmetrically: boolean;
