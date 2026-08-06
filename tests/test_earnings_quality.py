@@ -289,6 +289,46 @@ def test_incoherent_model_unit_scale_remains_blocked_for_validation():
     assert unchanged.unit_scale == 1_000_000
 
 
+def test_unquantified_ai_candidates_are_omitted_without_mutating_raw_payload():
+    import services.filing_analysis as filing_analysis
+
+    payload = extraction_payload()
+    missing_amount = {
+        **payload["adjustments"][0],
+        "label": "Qualitative event without disclosed effect",
+        "earnings_effect_after_tax": None,
+        "citation": {
+            **payload["adjustments"][0]["citation"],
+            "source_amount": None,
+        },
+    }
+    zero_effect = {
+        **payload["adjustments"][0],
+        "label": "Held for sale with no impairment",
+        "pretax_earnings_effect": 0,
+        "tax_effect": 0,
+        "earnings_effect_after_tax": 0,
+        "citation": {
+            **payload["adjustments"][0]["citation"],
+            "source_amount": 0,
+        },
+    }
+    payload["adjustments"] = [
+        payload["adjustments"][0],
+        missing_amount,
+        zero_effect,
+    ]
+
+    sanitized = filing_analysis._omit_unquantified_adjustments(payload)
+    extraction = FilingEarningsQualityExtraction.model_validate(sanitized)
+
+    assert len(payload["adjustments"]) == 3
+    assert len(extraction.adjustments) == 1
+    assert extraction.adjustments[0].label == "Asset impairment"
+    assert "Qualitative event without disclosed effect" in extraction.notes[-1]
+    assert "Held for sale with no impairment" in extraction.notes[-1]
+
+
 def test_relevant_context_honors_configured_character_cap(monkeypatch):
     import services.filing_analysis as filing_analysis
 
