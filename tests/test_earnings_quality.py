@@ -1498,6 +1498,15 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     ai_mock.return_value["company_adjusted"]["net_income_citation"]["excerpt"] = job_source
     ai_mock.return_value["company_adjusted"]["net_income_citation"]["source_amount"] = 100
     ai_mock.return_value["company_adjusted"]["diluted_eps_citation"]["excerpt"] = job_source
+    ai_mock.return_value["adjustments"].append({
+        **ai_mock.return_value["adjustments"][0],
+        "label": "Qualitative event without disclosed effect",
+        "earnings_effect_after_tax": None,
+        "citation": {
+            **ai_mock.return_value["adjustments"][0]["citation"],
+            "source_amount": None,
+        },
+    })
     sec_mock.return_value[0]["html"] = f"<html><body>{job_source}</body></html>"
     sec_mock.return_value[0]["text"] = job_source
     monkeypatch.setattr(filing_analysis, "_fetch_sec_documents_sync", sec_mock)
@@ -1518,6 +1527,9 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     assert completed.status == "completed"
     assert completed.result["verification_status"] == "verified"
     assert completed.result["normalized_net_income"] == 100
+    assert len(completed.ai_result["adjustments"]) == 2
+    assert len(completed.result["adjustments"]) == 1
+    assert "Qualitative event without disclosed effect" in completed.result["notes"][-1]
     assert len(completed.source_snapshots) == 1
     assert completed.source_snapshots[0]["html_snapshot_id"]
     assert completed.source_snapshots[0]["text_snapshot_id"]
