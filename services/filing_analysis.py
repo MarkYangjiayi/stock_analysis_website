@@ -794,21 +794,14 @@ def _omit_unquantified_adjustments(ai_payload: dict[str, Any]) -> dict[str, Any]
         try:
             after_tax_effect = float(item.get("earnings_effect_after_tax"))
             source_amount = float(citation.get("source_amount"))
-            source_unit_scale = float(citation.get("source_unit_scale"))
         except (AttributeError, TypeError, ValueError):
             after_tax_effect = math.nan
             source_amount = math.nan
-            source_unit_scale = math.nan
-        excerpt = citation.get("excerpt") if isinstance(citation, dict) else None
         usable = (
             math.isfinite(after_tax_effect)
             and after_tax_effect != 0
             and math.isfinite(source_amount)
             and source_amount != 0
-            and math.isfinite(source_unit_scale)
-            and source_unit_scale > 0
-            and isinstance(excerpt, str)
-            and bool(excerpt.strip())
         )
         if usable:
             retained.append(item)
@@ -820,15 +813,40 @@ def _omit_unquantified_adjustments(ai_payload: dict[str, Any]) -> dict[str, Any]
         return ai_payload
     sanitized = {**ai_payload, "adjustments": retained}
     existing_notes = ai_payload.get("notes")
-    if isinstance(existing_notes, list):
+    if existing_notes is None or isinstance(existing_notes, list):
+        notes = existing_notes if isinstance(existing_notes, list) else []
         preview = ", ".join(omitted_labels[:3])
         suffix = "" if len(omitted_labels) <= 3 else ", …"
         sanitized["notes"] = [
-            *existing_notes[:49],
+            *notes[:49],
             "Omitted unquantified filing candidate(s) before validation: "
             f"{preview}{suffix}",
         ]
     return sanitized
+
+
+async def _compatible_historical_runs(
+    db: AsyncSession,
+    run: EarningsQualityAnalysisRun,
+) -> list[EarningsQualityAnalysisRun]:
+    """Load schema-compatible recurrence history across prompt-only revisions."""
+    historical_result = await db.execute(
+        select(EarningsQualityAnalysisRun)
+        .where(
+            EarningsQualityAnalysisRun.ticker == run.ticker,
+            EarningsQualityAnalysisRun.period_type == run.period_type,
+            EarningsQualityAnalysisRun.period_end < run.period_end,
+            EarningsQualityAnalysisRun.status == "completed",
+            EarningsQualityAnalysisRun.model == run.model,
+            EarningsQualityAnalysisRun.schema_version == run.schema_version,
+        )
+        .order_by(
+            EarningsQualityAnalysisRun.period_end.desc(),
+            EarningsQualityAnalysisRun.id.desc(),
+        )
+        .limit(50)
+    )
+    return list(historical_result.scalars().all())
 
 
 async def _fetch_sec_documents(
@@ -1213,24 +1231,7 @@ async def _perform_analysis(run_id: int) -> None:
         expected_reported_net_income=reported_net_income,
     )
     async with async_session_maker() as db:
-        historical_result = await db.execute(
-            select(EarningsQualityAnalysisRun)
-            .where(
-                EarningsQualityAnalysisRun.ticker == run.ticker,
-                EarningsQualityAnalysisRun.period_type == run.period_type,
-                EarningsQualityAnalysisRun.period_end < run.period_end,
-                EarningsQualityAnalysisRun.status == "completed",
-                EarningsQualityAnalysisRun.model == run.model,
-                EarningsQualityAnalysisRun.prompt_version == run.prompt_version,
-                EarningsQualityAnalysisRun.schema_version == run.schema_version,
-            )
-            .order_by(
-                EarningsQualityAnalysisRun.period_end.desc(),
-                EarningsQualityAnalysisRun.id.desc(),
-            )
-            .limit(50)
-        )
-        historical_runs = list(historical_result.scalars().all())
+        historical_runs = await _compatible_historical_runs(db, run)
     recurring_categories = _recurring_categories_for_extraction(
         recurring_flags,
         extraction,
