@@ -259,9 +259,12 @@ def test_relevant_context_honors_configured_character_cap(monkeypatch):
     assert sum(len(item["text"]) for item in context) == 30
 
 
-def test_relevant_context_keeps_unrealized_equity_gain_evidence():
+def test_relevant_context_prioritizes_unrealized_gain_over_generic_matches(
+    monkeypatch,
+):
     import services.filing_analysis as filing_analysis
 
+    monkeypatch.setattr(settings, "EARNINGS_QUALITY_MAX_CONTEXT_CHARS", 300)
     documents = [{
         "source_id": "filing:primary",
         "accession": "0001",
@@ -269,7 +272,10 @@ def test_relevant_context_keeps_unrealized_equity_gain_evidence():
         "document_name": "report.htm",
         "source_url": "https://www.sec.gov/report.htm",
         "text": "\n".join([
-            *[f"Unrelated filing line {index}" for index in range(220)],
+            *[
+                f"Investment and fair value background line {index}"
+                for index in range(220)
+            ],
             "Other income included unrealized gains on equity securities of $99.0 billion.",
             *[f"Trailing filing line {index}" for index in range(20)],
         ]),
@@ -824,7 +830,7 @@ async def test_statement_revision_supersedes_stale_active_run(
 
 
 @pytest.mark.asyncio
-async def test_old_model_or_schema_cache_is_not_exposed_as_current(
+async def test_old_prompt_cache_is_not_exposed_as_current(
     db_session,
 ):
     await seed_supported_company(db_session)
@@ -844,8 +850,8 @@ async def test_old_model_or_schema_cache_is_not_exposed_as_current(
             currency="USD",
         ),
         cache_identity="old-version",
-        model="retired-model",
-        prompt_version=EARNINGS_QUALITY_PROMPT_VERSION,
+        model=settings.DEEPSEEK_MODEL,
+        prompt_version="earnings-quality-v1",
         schema_version=EARNINGS_QUALITY_SCHEMA_VERSION,
         status="completed",
         stage="completed",

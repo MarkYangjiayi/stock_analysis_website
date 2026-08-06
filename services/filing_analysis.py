@@ -451,11 +451,16 @@ def _fetch_sec_documents_sync(
     return documents
 
 
-_RELEVANT_TERMS = re.compile(
+_PRIMARY_RELEVANT_TERMS = re.compile(
     r"(non[- ]?gaap|adjusted|restructur|impair|discontinued|litigation|settlement|"
     r"insurance|catastrophe|extinguish|divest|disposal|stock[- ]based|share[- ]based|"
-    r"foreign exchange|amortization|income tax|net income|diluted eps|earnings per share|"
-    r"unrealized|investment|equity securit|fair value|other income|oi&e|remeasur)",
+    r"foreign exchange|amortization|unrealized|equity securit|investment (?:gain|loss)|"
+    r"remeasur)",
+    re.IGNORECASE,
+)
+_SUPPORTING_RELEVANT_TERMS = re.compile(
+    r"(income tax|net income|diluted eps|earnings per share|investment|fair value|"
+    r"other income|oi&e)",
     re.IGNORECASE,
 )
 
@@ -473,11 +478,20 @@ def _relevant_context(documents: list[dict[str, Any]]) -> list[dict[str, str]]:
             for line in str(document.get("text") or "").splitlines()
             if line.strip()
         ]
-        selected_indexes: set[int] = set()
-        for index, line in enumerate(lines):
-            if _RELEVANT_TERMS.search(line):
-                selected_indexes.update(range(max(0, index - 3), min(len(lines), index + 5)))
-        selected = "\n".join(lines[index] for index in sorted(selected_indexes))
+        selected_indexes: list[int] = []
+        seen_indexes: set[int] = set()
+        for pattern in (_PRIMARY_RELEVANT_TERMS, _SUPPORTING_RELEVANT_TERMS):
+            matched_indexes: set[int] = set()
+            for index, line in enumerate(lines):
+                if pattern.search(line):
+                    matched_indexes.update(
+                        range(max(0, index - 3), min(len(lines), index + 5))
+                    )
+            for index in sorted(matched_indexes):
+                if index not in seen_indexes:
+                    selected_indexes.append(index)
+                    seen_indexes.add(index)
+        selected = "\n".join(lines[index] for index in selected_indexes)
         if not selected:
             selected = "\n".join(lines[:200])
         selected = selected[: min(per_document, remaining)]
