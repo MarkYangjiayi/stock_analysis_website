@@ -150,6 +150,34 @@ async def test_anomaly_scan_uses_quote_time_and_configured_threshold(
 
 
 @pytest.mark.asyncio
+async def test_anomaly_scan_uses_top_1000_market_cap_universe(
+    db_session,
+    monkeypatch,
+):
+    from services import anomaly_detector
+
+    tickers = [f"T{index:04d}.US" for index in range(1_001)]
+    await _seed_universe(db_session, tickers)
+    quote_time = datetime.now(timezone.utc).replace(microsecond=0)
+
+    async def fake_quotes(*args, **kwargs):
+        return [
+            _quote(tickers[999], -8.0, quote_time),
+            _quote(tickers[1_000], -12.0, quote_time),
+        ]
+
+    async def fake_news(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(anomaly_detector, "get_bulk_realtime_prices", fake_quotes)
+    monkeypatch.setattr(anomaly_detector, "fetch_yahoo_news", fake_news)
+
+    scan = await scan_and_analyze_anomalies(db_session)
+
+    assert [item["ticker"] for item in scan.results] == [tickers[999]]
+
+
+@pytest.mark.asyncio
 async def test_anomaly_scan_excludes_prior_session_symbols_from_fresh_batch(
     db_session,
     monkeypatch,

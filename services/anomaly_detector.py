@@ -23,6 +23,7 @@ from services.news_fetcher import NewsFetchError, fetch_yahoo_news
 
 logger = logging.getLogger(__name__)
 _NEW_YORK = ZoneInfo("America/New_York")
+_ANOMALY_UNIVERSE_LIMIT = 1_000
 
 
 class AnomalyScanError(RuntimeError):
@@ -184,7 +185,7 @@ async def scan_and_analyze_anomalies(
         select(StockScreenerSnapshot.ticker, StockScreenerSnapshot.name)
         .where(StockScreenerSnapshot.date == universe_as_of)
         .order_by(StockScreenerSnapshot.market_cap.desc().nullslast())
-        .limit(500)
+        .limit(_ANOMALY_UNIVERSE_LIMIT)
     )
     universe = universe_result.all()
     await db.rollback()
