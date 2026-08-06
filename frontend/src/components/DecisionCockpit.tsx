@@ -147,6 +147,27 @@ function RiskCard({ warning, onShowEvidence }: { warning: DecisionWarning; onSho
     );
 }
 
+function WarningResults({
+    warnings,
+    unavailableCount,
+    limit,
+    onShowEvidence,
+}: {
+    warnings: DecisionWarning[];
+    unavailableCount: number;
+    limit?: number;
+    onShowEvidence: (metric: DecisionWarning["evidence_metric"]) => void;
+}) {
+    const displayedWarnings = limit == null ? warnings : warnings.slice(0, limit);
+    return (
+        <div className="space-y-3">
+            {displayedWarnings.length > 0 && <div className="grid gap-3 lg:grid-cols-2">{displayedWarnings.map((warning) => <RiskCard key={warning.id} warning={warning} onShowEvidence={() => onShowEvidence(warning.evidence_metric)} />)}</div>}
+            {warnings.length === 0 && unavailableCount === 0 && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300"><CheckCircle2 className="mr-2 inline" size={17} />No fundamental warning rule is triggered by the fully evaluated history.</div>}
+            {unavailableCount > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"><AlertTriangle className="mr-2 inline" size={17} />{unavailableCount} fundamental warning {unavailableCount === 1 ? "check is" : "checks are"} unavailable because required history is missing. No clean conclusion is shown for {unavailableCount === 1 ? "that rule" : "those rules"}.</div>}
+        </div>
+    );
+}
+
 export default function DecisionCockpit({
     ticker,
     decision,
@@ -200,6 +221,12 @@ export default function DecisionCockpit({
     const selectedPeerAvailable = useMemo(
         () => decision?.peer_comparison.metrics.filter((metric) => metric[peerScope].available).length ?? 0,
         [decision, peerScope],
+    );
+    const unavailableWarningCheckCount = useMemo(
+        () => decision?.evidence.filter(
+            (item) => item.kind === "fundamental_warning" && !item.available,
+        ).length ?? 0,
+        [decision],
     );
     const decisionValuationEvidence = useMemo(
         () => valuationEvidenceFingerprint(decision?.valuation),
@@ -425,7 +452,7 @@ export default function DecisionCockpit({
                             <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black">Weakest peer positions</h3><span className="text-[10px] text-slate-500">Bottom three with valid coverage</span></div><div className="grid gap-3 sm:grid-cols-3">{decision.summary.weakest_peer_metrics.length ? decision.summary.weakest_peer_metrics.map((metric) => <SummaryMetricCard key={metric.key} metric={metric} tone="weak" />) : <p className="col-span-full rounded-xl border p-4 text-sm text-slate-500">No peer metric has sufficient coverage.</p>}</div></section>
                         </div>
 
-                        <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black">Triggered fundamental warnings</h3><button type="button" className="text-xs font-bold text-emerald-700 dark:text-emerald-300" onClick={() => setActiveTab("risks")}>View all evidence</button></div>{decision.risks.warnings.length ? <div className="grid gap-3 lg:grid-cols-2">{decision.risks.warnings.slice(0, 4).map((warning) => <RiskCard key={warning.id} warning={warning} onShowEvidence={() => onShowEvidence(warning.evidence_metric)} />)}</div> : <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300"><CheckCircle2 className="mr-2 inline" size={17} />No fundamental warning rule is triggered by available history.</div>}</section>
+                        <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black">Triggered fundamental warnings</h3><button type="button" className="text-xs font-bold text-emerald-700 dark:text-emerald-300" onClick={() => setActiveTab("risks")}>View all evidence</button></div><WarningResults warnings={decision.risks.warnings} unavailableCount={unavailableWarningCheckCount} limit={4} onShowEvidence={onShowEvidence} /></section>
 
                         {decision.summary.coverage.missing_data_reasons.length > 0 && <section className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Coverage limits</h3><ul className="mt-2 space-y-1.5 text-sm text-slate-600 dark:text-slate-400">{decision.summary.coverage.missing_data_reasons.map((reason) => <li key={reason}>• {reason}</li>)}</ul></section>}
                     </div>}
@@ -458,7 +485,7 @@ export default function DecisionCockpit({
 
                     {activeTab === "risks" && <div className="space-y-5">
                         <div><h3 className="text-sm font-black">Triggered fundamental rules</h3><p className="mt-1 text-xs text-slate-500">Only deterministic financial-statement rules are included in Phase 1.</p></div>
-                        {decision.risks.warnings.length ? <div className="grid gap-3 lg:grid-cols-2">{decision.risks.warnings.map((warning) => <RiskCard key={warning.id} warning={warning} onShowEvidence={() => onShowEvidence(warning.evidence_metric)} />)}</div> : <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300"><CheckCircle2 className="mr-2 inline" size={17} />No rule is triggered by the available periods.</div>}
+                        <WarningResults warnings={decision.risks.warnings} unavailableCount={unavailableWarningCheckCount} onShowEvidence={onShowEvidence} />
                         <section className="rounded-xl border p-4"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500"><Database size={14} /> Data-quality notes</h3>{decision.risks.data_quality_notes.length ? <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">{decision.risks.data_quality_notes.map((note) => <li key={`${note.code}-${note.message}`} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50"><span className="font-mono text-[10px] text-slate-400">{note.code}</span><p className="mt-1">{note.message}</p></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No data-quality limitation was recorded for these checks.</p>}</section>
                     </div>}
 

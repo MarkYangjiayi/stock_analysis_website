@@ -43,6 +43,7 @@ from services.decision_support import (
     validate_scenarios,
 )
 from services.analyzer import get_analyzed_stock_data
+from services.data_sync import sync_ticker_data
 
 
 def _scenario_copy():
@@ -241,6 +242,22 @@ def test_margin_warning_thresholds(rule_id, key, compression, severity):
     context["current_ttm"][key] = context["previous_ttm"][key] - compression
     result = _warning(context, rule_id)
     assert (result or {}).get("severity") == severity
+
+
+@pytest.mark.parametrize(
+    ("previous_margin", "current_margin", "severity"),
+    [(0.43, 0.40, "warning"), (0.48, 0.40, "high")],
+)
+def test_margin_warning_exact_decimal_points_are_tolerance_safe(
+    previous_margin,
+    current_margin,
+    severity,
+):
+    context = _warning_context()
+    context["previous_ttm"]["gross_margin"] = previous_margin
+    context["current_ttm"]["gross_margin"] = current_margin
+
+    assert _warning(context, "gross_margin_compression")["severity"] == severity
 
 
 @pytest.mark.parametrize(("decline", "severity"), [(0.2999, None), (0.30, "warning"), (0.60, "high")])
@@ -709,6 +726,77 @@ async def test_decision_support_normalizes_statement_shares_for_later_splits(
     assert result["valuation"]["scenarios"][1][
         "intrinsic_value_per_share"
     ] == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+async def test_cold_ticker_sync_fetches_and_persists_splits(
+    db_session,
+    monkeypatch,
+):
+    ticker = "COLDSPLIT.US"
+    requested_splits: list[str] = []
+
+    class FakeClientContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, _exc_type, _exc, _traceback):
+            return False
+
+    async def fake_fundamentals(requested_ticker, *, client=None):
+        assert client is not None
+        return {
+            "General": {
+                "Name": "Cold Split Fixture",
+                "Exchange": "NASDAQ",
+                "CurrencyCode": "USD",
+            },
+            "Financials": {},
+        }
+
+    async def fake_prices(requested_ticker, *, client=None):
+        assert client is not None
+        return [{
+            "date": "2025-06-30",
+            "open": 50,
+            "high": 51,
+            "low": 49,
+            "close": 50,
+            "adjusted_close": 50,
+            "volume": 1_000,
+        }]
+
+    async def fake_splits(requested_ticker, *, client=None):
+        assert client is not None
+        requested_splits.append(requested_ticker)
+        return [{"date": "2025-05-01", "split": "2/1"}]
+
+    monkeypatch.setattr(
+        "services.data_sync.eodhd_client.create_http_client",
+        lambda: FakeClientContext(),
+    )
+    monkeypatch.setattr(
+        "services.data_sync.eodhd_client.get_fundamental_data",
+        fake_fundamentals,
+    )
+    monkeypatch.setattr(
+        "services.data_sync.eodhd_client.get_eod_historical_data",
+        fake_prices,
+    )
+    monkeypatch.setattr(
+        "services.data_sync.eodhd_client.get_splits",
+        fake_splits,
+    )
+
+    assert await sync_ticker_data(ticker, db_session) is True
+    action = (
+        await db_session.execute(
+            select(CorporateAction).where(CorporateAction.ticker == ticker)
+        )
+    ).scalar_one()
+    assert requested_splits == [ticker]
+    assert action.action_type == "split"
+    assert float(action.split_factor) == pytest.approx(2)
 
 
 def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
@@ -1228,6 +1316,10 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
         evidence,
     )
     validate_evidence_qualitative_claims(
+        "E27 was not triggered [E27].",
+        evidence,
+    )
+    validate_evidence_qualitative_claims(
         "The FCF decline warning was triggered [E30].",
         evidence,
     )
@@ -1269,6 +1361,11 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
     with pytest.raises(EvidenceCitationError, match="trigger polarity"):
         validate_evidence_qualitative_claims(
             "The revenue decline warning was triggered [E27].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="trigger polarity"):
+        validate_evidence_qualitative_claims(
+            "E27 was triggered [E27].",
             evidence,
         )
     with pytest.raises(EvidenceCitationError, match="not supported"):
@@ -1537,6 +1634,10 @@ def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
     changed_identity["metadata"]["company_name"] = "AAA Holdings"
     changed_currency = deepcopy(decision)
     changed_currency["metadata"]["currency"] = "JPY"
+    changed_label = deepcopy(decision)
+    changed_label["evidence"][0]["label"] = "Corrected current-price label"
+    changed_kind = deepcopy(decision)
+    changed_kind["evidence"][0]["kind"] = "corrected_price_kind"
     assert len({
         baseline,
         build_evidence_hash(changed_value, "model-a"),
@@ -1544,8 +1645,10 @@ def test_ai_evidence_hash_changes_for_values_assumptions_dates_and_model():
         build_evidence_hash(changed_assumption, "model-a"),
         build_evidence_hash(changed_identity, "model-a"),
         build_evidence_hash(changed_currency, "model-a"),
+        build_evidence_hash(changed_label, "model-a"),
+        build_evidence_hash(changed_kind, "model-a"),
         build_evidence_hash(decision, "model-b"),
-    }) == 7
+    }) == 9
 
 
 @pytest.mark.asyncio

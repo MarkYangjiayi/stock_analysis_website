@@ -773,6 +773,15 @@ def _increase(current: float | None, previous: float | None) -> float | None:
     return current / previous - 1
 
 
+def _meets_inclusive_threshold(value: float, threshold: float) -> bool:
+    return value > threshold or math.isclose(
+        value,
+        threshold,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    )
+
+
 def _risk(
     rule_id: str,
     severity: str,
@@ -806,8 +815,15 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
     notes = list(financial.get("data_quality_notes", []))
 
     revenue_decline = _decline(current.get("revenue"), previous.get("revenue"))
-    if revenue_decline is not None and revenue_decline >= 0.05:
-        severity = "high" if revenue_decline >= 0.15 else "warning"
+    if revenue_decline is not None and _meets_inclusive_threshold(
+        revenue_decline,
+        0.05,
+    ):
+        severity = (
+            "high"
+            if _meets_inclusive_threshold(revenue_decline, 0.15)
+            else "warning"
+        )
         warnings.append(_risk("revenue_decline", severity, "TTM revenue decline", f"TTM revenue declined {revenue_decline:.1%} year over year.", "revenue_change", current.get("revenue"), previous.get("revenue"), "revenue"))
     elif current.get("revenue") is None or previous.get("revenue") is None or (previous.get("revenue") or 0) <= 0:
         notes.append({"code": "revenue_comparison_unavailable", "message": "Revenue decline could not be assessed from two positive, complete TTM periods."})
@@ -823,8 +839,15 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
             if current_margin is not None and previous_margin is not None
             else None
         )
-        if compression is not None and compression >= 0.03:
-            severity = "high" if compression >= 0.08 else "warning"
+        if compression is not None and _meets_inclusive_threshold(
+            compression,
+            0.03,
+        ):
+            severity = (
+                "high"
+                if _meets_inclusive_threshold(compression, 0.08)
+                else "warning"
+            )
             warnings.append(_risk(rule_id, severity, title, f"{title.replace('-', ' ')} was {compression * 100:.1f} percentage points year over year.", "margin_compression", current_margin, previous_margin, evidence_metric))
         elif compression is None:
             notes.append({"code": f"{key}_comparison_unavailable", "message": f"{title} could not be assessed because one TTM margin is missing."})
@@ -835,8 +858,15 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
         warnings.append(_risk("fcf_decline", "high", "Negative free cash flow", "TTM free cash flow is negative.", "fcf", current_fcf, previous_fcf, "fcf"))
     else:
         fcf_decline = _decline(current_fcf, previous_fcf)
-        if fcf_decline is not None and fcf_decline >= 0.30:
-            severity = "high" if fcf_decline >= 0.60 else "warning"
+        if fcf_decline is not None and _meets_inclusive_threshold(
+            fcf_decline,
+            0.30,
+        ):
+            severity = (
+                "high"
+                if _meets_inclusive_threshold(fcf_decline, 0.60)
+                else "warning"
+            )
             warnings.append(_risk("fcf_decline", severity, "TTM free-cash-flow decline", f"TTM free cash flow declined {fcf_decline:.1%} year over year.", "fcf_change", current_fcf, previous_fcf, "fcf"))
         elif current_fcf is None or previous_fcf is None or previous_fcf <= 0:
             notes.append({"code": "fcf_comparison_unavailable", "message": "FCF decline could not be assessed from two complete periods with positive prior-TTM FCF."})
@@ -874,15 +904,26 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
     if previous_cash is None:
         previous_cash = prior.get("cash")
     cash_decline = _decline(current_cash, previous_cash)
-    if cash_decline is not None and cash_decline >= 0.25:
-        severity = "high" if cash_decline >= 0.50 else "warning"
+    if cash_decline is not None and _meets_inclusive_threshold(
+        cash_decline,
+        0.25,
+    ):
+        severity = (
+            "high"
+            if _meets_inclusive_threshold(cash_decline, 0.50)
+            else "warning"
+        )
         warnings.append(_risk("cash_decline", severity, "Cash balance decline", f"Cash and cash-equivalent balances declined {cash_decline:.1%} year over year.", "cash_change", current_cash, previous_cash, "cash"))
     elif current_cash is None or previous_cash is None or previous_cash <= 0:
         notes.append({"code": "cash_comparison_unavailable", "message": "Cash decline could not be assessed from two observations with positive prior-year cash."})
 
     dilution = _increase(latest.get("shares"), prior.get("shares"))
-    if dilution is not None and dilution >= 0.03:
-        severity = "high" if dilution >= 0.10 else "warning"
+    if dilution is not None and _meets_inclusive_threshold(dilution, 0.03):
+        severity = (
+            "high"
+            if _meets_inclusive_threshold(dilution, 0.10)
+            else "warning"
+        )
         warnings.append(_risk("share_dilution", severity, "Share dilution", f"Shares outstanding increased {dilution:.1%} year over year.", "shares_change", latest.get("shares"), prior.get("shares"), "shares"))
     elif latest.get("shares") is None or prior.get("shares") is None or (prior.get("shares") or 0) <= 0:
         notes.append({"code": "shares_comparison_unavailable", "message": "Share dilution could not be assessed from two observations with positive prior-year shares."})

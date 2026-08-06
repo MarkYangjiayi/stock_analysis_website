@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v19"
+PROMPT_VERSION = "decision-evidence-v20"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -416,10 +416,6 @@ QUALITATIVE_RULE_LABEL_AFTER_RE = re.compile(
     r"^\s+(?:warning|rule|check|risk|threshold|assessment)\b",
     re.IGNORECASE,
 )
-WARNING_LABEL_RE = re.compile(
-    r"\b(?:warning|rule|check|risk|threshold|assessment)\b",
-    re.IGNORECASE,
-)
 WARNING_TRIGGER_RE = re.compile(
     r"\btrigger(?:s|ed|ing)?\b",
     re.IGNORECASE,
@@ -471,15 +467,7 @@ def build_evidence_hash(decision_support: dict, model: str) -> str:
             item.get("assumptions")
             for item in (decision_support.get("valuation") or {}).get("scenarios", [])
         ],
-        "evidence": [
-            {
-                "id": item.get("id"),
-                "available": item.get("available"),
-                "source_date": item.get("source_date"),
-                "value": item.get("value"),
-            }
-            for item in decision_support.get("evidence", [])
-        ],
+        "evidence": decision_support.get("evidence", []),
     }
     serialized = json.dumps(
         payload,
@@ -1797,48 +1785,47 @@ def validate_evidence_qualitative_claims(
         def cited_ids(start: int, end: int) -> tuple[str, ...]:
             return _nearest_citation_cluster(start, end, clusters)[2]
 
-        if WARNING_LABEL_RE.search(segment):
-            for trigger_match in WARNING_TRIGGER_RE.finditer(segment):
-                local_ids = cited_ids(
-                    trigger_match.start(),
-                    trigger_match.end(),
+        for trigger_match in WARNING_TRIGGER_RE.finditer(segment):
+            local_ids = cited_ids(
+                trigger_match.start(),
+                trigger_match.end(),
+            )
+            expected_triggered = not _warning_trigger_is_negated(
+                segment,
+                trigger_match.start(),
+            )
+            semantic_key = _qualitative_semantic_key(
+                segment,
+                trigger_match.start(),
+                trigger_match.end(),
+            )
+            trigger_states: list[bool] = []
+            for evidence_id in local_ids:
+                item = evidence_by_id.get(evidence_id)
+                value = item.get("value") if item else None
+                state = (
+                    value.get("triggered")
+                    if isinstance(value, dict)
+                    else None
                 )
-                expected_triggered = not _warning_trigger_is_negated(
-                    segment,
-                    trigger_match.start(),
-                )
-                semantic_key = _qualitative_semantic_key(
-                    segment,
-                    trigger_match.start(),
-                    trigger_match.end(),
-                )
-                trigger_states: list[bool] = []
-                for evidence_id in local_ids:
-                    item = evidence_by_id.get(evidence_id)
-                    value = item.get("value") if item else None
-                    state = (
-                        value.get("triggered")
-                        if isinstance(value, dict)
-                        else None
-                    )
-                    if not isinstance(state, bool):
-                        raise EvidenceCitationError(
-                            f"Unsupported warning trigger claim for {evidence_id}."
-                        )
-                    evidence_metric = _evidence_semantic_metric(item)
-                    if semantic_key is not None and evidence_metric != semantic_key:
-                        raise EvidenceCitationError(
-                            f"Warning trigger claim for {semantic_key} is not "
-                            f"supported by {evidence_id}."
-                        )
-                    trigger_states.append(state)
-                if not trigger_states or any(
-                    state is not expected_triggered
-                    for state in trigger_states
-                ):
+                if not isinstance(state, bool):
                     raise EvidenceCitationError(
-                        "Warning trigger polarity does not match cited evidence."
+                        f"Unsupported warning trigger claim for {evidence_id}."
                     )
+                evidence_metric = _evidence_semantic_metric(item)
+                if semantic_key is not None and evidence_metric != semantic_key:
+                    raise EvidenceCitationError(
+                        f"Warning trigger claim for {semantic_key} is not "
+                        f"supported by {evidence_id}."
+                    )
+                trigger_states.append(state)
+            if not trigger_states or any(
+                state is not expected_triggered
+                for state in trigger_states
+            ):
+                raise EvidenceCitationError(
+                    "Warning trigger polarity does not match cited evidence."
+                )
 
         for expected_direction, pattern in QUALITATIVE_TREND_PATTERNS:
             for direction_match in pattern.finditer(segment):

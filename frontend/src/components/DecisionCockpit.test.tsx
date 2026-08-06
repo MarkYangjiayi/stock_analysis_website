@@ -164,6 +164,51 @@ describe("DecisionCockpit", () => {
         expect(screen.queryByText("$80.00")).not.toBeInTheDocument();
     });
 
+    it("shows unavailable warning coverage instead of a clean result", async () => {
+        const user = userEvent.setup();
+        const dataQualityNote = {
+            code: "revenue_comparison_unavailable",
+            message: "Revenue history is incomplete.",
+        };
+        const partialDecision: DecisionSupportResponse = {
+            ...decision,
+            summary: {
+                ...decision.summary,
+                fundamental_warnings: [],
+                coverage: {
+                    ...decision.summary.coverage,
+                    data_quality_notes: [dataQualityNote],
+                },
+            },
+            risks: {
+                warnings: [],
+                data_quality_notes: [dataQualityNote],
+                high_count: 0,
+                warning_count: 0,
+            },
+            evidence: [
+                ...decision.evidence,
+                {
+                    id: "E27",
+                    kind: "fundamental_warning",
+                    label: "Revenue Decline",
+                    value: { triggered: null, assessment: "unavailable" },
+                    source_date: "2025-12-31",
+                    available: false,
+                },
+            ],
+        };
+
+        render(<DecisionCockpit {...props()} decision={partialDecision} />);
+
+        expect(screen.getByText(/1 fundamental warning check is unavailable/)).toBeInTheDocument();
+        expect(screen.queryByText(/fully evaluated history/)).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Risks" }));
+        expect(screen.getByText(/1 fundamental warning check is unavailable/)).toBeInTheDocument();
+        expect(screen.getByText("Revenue history is incomplete.")).toBeInTheDocument();
+    });
+
     it("pauses the evidence brief while calculated scenarios are unsaved", async () => {
         const user = userEvent.setup();
         apiMocks.calculateDecisionValuation.mockImplementationOnce(
