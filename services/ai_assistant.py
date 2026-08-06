@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v17"
+PROMPT_VERSION = "decision-evidence-v18"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -379,7 +379,7 @@ QUALITATIVE_TREND_PATTERNS = (
     (
         "-",
         re.compile(
-            r"\b(?:declin(?:es|ed|ing)|decreas(?:e|es|ed|ing)|"
+            r"\b(?:declin(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|"
             r"fall(?:s|ing)?|fell|fallen|drop(?:s|ped|ping)|"
             r"contract(?:s|ed|ing)|deteriorat(?:e|es|ed|ing)|"
             r"weaken(?:s|ed|ing)|shrink(?:s|ing)?|shrank|shrunk|"
@@ -404,6 +404,16 @@ EVALUATIVE_QUALITATIVE_RE = re.compile(
     r"expensive|attractive|unattractive|healthy|poor|robust|elevated|"
     r"depressed|superior|inferior|favou?rable|unfavou?rable|compelling|"
     r"concerning|resilient)\b",
+    re.IGNORECASE,
+)
+QUALITATIVE_NEGATION_BEFORE_RE = re.compile(
+    r"(?:\b(?:not|never|no\s+longer|hardly|scarcely|without)\b"
+    r"(?:\s+[A-Za-z'-]+){0,3}|\b[A-Za-z]+n['’]t"
+    r"(?:\s+[A-Za-z'-]+){0,3})\s*$",
+    re.IGNORECASE,
+)
+QUALITATIVE_RULE_LABEL_AFTER_RE = re.compile(
+    r"^\s+(?:warning|rule|check|risk|threshold|assessment)\b",
     re.IGNORECASE,
 )
 
@@ -1662,6 +1672,14 @@ def _qualitative_semantic_key(
     return min(nearest)[2]
 
 
+def _qualitative_match_is_negated(claim: str, start: int) -> bool:
+    return bool(
+        QUALITATIVE_NEGATION_BEFORE_RE.search(
+            claim[max(0, start - 64):start]
+        )
+    )
+
+
 def validate_evidence_qualitative_claims(
     content: str,
     evidence: list[dict],
@@ -1688,6 +1706,18 @@ def validate_evidence_qualitative_claims(
 
         for expected_direction, pattern in QUALITATIVE_TREND_PATTERNS:
             for direction_match in pattern.finditer(segment):
+                if QUALITATIVE_RULE_LABEL_AFTER_RE.search(
+                    segment[direction_match.end():]
+                ):
+                    continue
+                if _qualitative_match_is_negated(
+                    segment,
+                    direction_match.start(),
+                ):
+                    raise EvidenceCitationError(
+                        f"Negated qualitative construction around "
+                        f"{direction_match.group(0)!r} is not accepted."
+                    )
                 semantic_key = _qualitative_semantic_key(
                     segment,
                     direction_match.start(),
@@ -1744,6 +1774,14 @@ def validate_evidence_qualitative_claims(
 
         for expected_sign, pattern in QUALITATIVE_SIGN_PATTERNS:
             for sign_match in pattern.finditer(segment):
+                if _qualitative_match_is_negated(
+                    segment,
+                    sign_match.start(),
+                ):
+                    raise EvidenceCitationError(
+                        f"Negated qualitative construction around "
+                        f"{sign_match.group(0)!r} is not accepted."
+                    )
                 semantic_key = _qualitative_semantic_key(
                     segment,
                     sign_match.start(),
@@ -1779,6 +1817,14 @@ def validate_evidence_qualitative_claims(
                     )
 
         for evaluation_match in EVALUATIVE_QUALITATIVE_RE.finditer(segment):
+            if _qualitative_match_is_negated(
+                segment,
+                evaluation_match.start(),
+            ):
+                raise EvidenceCitationError(
+                    f"Negated qualitative construction around "
+                    f"{evaluation_match.group(0)!r} is not accepted."
+                )
             word = evaluation_match.group(0).casefold()
             local_contexts = cited_contexts(
                 evaluation_match.start(),
@@ -1834,7 +1880,7 @@ upside_downside directly. Directional words such as upside/downside and
 above/below must agree with the sign of the cited evidence. Trend words such as
 growing, declining, improving, or weakening must agree with cited current and
 previous values. Avoid subjective adjectives unless the cited evidence uses
-that exact assessment. Keep the brief
+that exact assessment, and avoid negated qualitative constructions. Keep the brief
 below 650 words, avoid an aggregate
 score or confidence number, and avoid direct buy/sell advice.
 """.strip()

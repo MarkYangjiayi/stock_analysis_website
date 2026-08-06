@@ -1165,9 +1165,19 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
             "Revenue is growing [E3].",
             evidence,
         )
+    with pytest.raises(EvidenceCitationError, match="Negated qualitative"):
+        validate_evidence_qualitative_claims(
+            "Revenue did not decline [E3].",
+            evidence,
+        )
     with pytest.raises(EvidenceCitationError, match="qualitative sign"):
         validate_evidence_qualitative_claims(
             "Free cash flow is positive [E3].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="Negated qualitative"):
+        validate_evidence_qualitative_claims(
+            "Free cash flow is not negative [E3].",
             evidence,
         )
     with pytest.raises(EvidenceCitationError, match="evaluative claim"):

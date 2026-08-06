@@ -258,6 +258,30 @@ describe("DecisionCockpit", () => {
         expect(apiMocks.calculateDecisionValuation).toHaveBeenLastCalledWith("AAA.US", scenarios);
     });
 
+    it("locks scenario inputs while a save is in flight", async () => {
+        const user = userEvent.setup();
+        let resolveSave!: (value: { ticker: string; is_saved: boolean; scenarios: typeof scenarios }) => void;
+        apiMocks.savePersonalValuationScenarios.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveSave = resolve;
+            }),
+        );
+        render(<DecisionCockpit {...props()} adminKey="secret" />);
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+        const growth = screen.getByRole("spinbutton", { name: "bear FCF growth" });
+        await user.click(screen.getByRole("button", { name: "Save scenarios" }));
+        await waitFor(() => {
+            expect(apiMocks.savePersonalValuationScenarios).toHaveBeenCalled();
+        });
+        expect(growth).toBeDisabled();
+
+        await act(async () => {
+            resolveSave({ ticker: "AAA.US", is_saved: true, scenarios });
+            await Promise.resolve();
+        });
+        await waitFor(() => expect(growth).not.toBeDisabled());
+    });
+
     it("clears a saved valuation while default recalculation is pending", async () => {
         const user = userEvent.setup();
         let resolveCalculation!: (value: DecisionValuation) => void;
