@@ -169,4 +169,27 @@ describe("EarningsQualityPanel", () => {
         expect(screen.getByText("Why adjusted EPS is withheld")).toBeInTheDocument();
         expect(screen.getByText("Adjusted diluted EPS is not source-reconciled.")).toBeInTheDocument();
     });
+
+    it("shows a retryable waiting state when the matching SEC filing is not filed", async () => {
+        const user = userEvent.setup();
+        const onAnalyze = vi.fn();
+        const data = response(true);
+        const analysis = data.quarterly[0].analysis;
+        if (!analysis) throw new Error("invalid fixture");
+        analysis.status = "waiting_for_filing";
+        analysis.stage = "waiting_for_filing";
+        analysis.result = null;
+        analysis.validation_report = null;
+        analysis.error_message = "The matching 10-Q has not been filed for this reporting period yet.";
+        analysis.retryable = true;
+        data.quarterly[0].verified_normalized = null;
+
+        render(<EarningsQualityPanel data={data} adminKey="secret" onAnalyze={onAnalyze} />);
+        await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
+
+        expect(screen.getByText("SEC filing not available yet")).toBeInTheDocument();
+        expect(screen.queryByText("Analysis failed")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /check for filing/i }));
+        expect(onAnalyze).toHaveBeenCalledOnce();
+    });
 });

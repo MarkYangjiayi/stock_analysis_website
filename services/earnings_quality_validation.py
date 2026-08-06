@@ -19,6 +19,10 @@ ELIGIBLE_NORMALIZATION_CATEGORIES = {
     "impairment",
     "discrete_tax",
 }
+INHERENTLY_RECURRING_CATEGORIES = {
+    "investment_fair_value",
+    "derivative_fair_value",
+}
 AdjustmentCategory = Literal[
     "discontinued_operations",
     "asset_or_business_disposal",
@@ -32,6 +36,8 @@ AdjustmentCategory = Literal[
     "acquired_intangible_amortization",
     "routine_tax",
     "restructuring_or_integration",
+    "investment_fair_value",
+    "derivative_fair_value",
     "other",
 ]
 
@@ -48,6 +54,8 @@ class FilingCitation(StrictModel):
     excerpt: str = Field(min_length=1, max_length=1200)
     source_amount: float
     source_unit_scale: float = Field(gt=0)
+    period_end: date
+    period_scope: Literal["quarter", "annual"]
 
 
 class EarningsAdjustment(StrictModel):
@@ -110,6 +118,64 @@ def _reason(
     return value
 
 
+_DERIVATIVE_FAIR_VALUE_TERMS = re.compile(
+    r"(derivative liabilit|escrowed shares?|warrant.{0,80}fair value|"
+    r"fair value.{0,80}(?:derivative|warrant)|"
+    r"mark[- ]to[- ]market.{0,80}(?:derivative|warrant|escrowed shares?))",
+    re.IGNORECASE,
+)
+_INVESTMENT_FAIR_VALUE_TERMS = re.compile(
+    r"(unrealized (?:gain|loss).{0,80}(?:investment|securit)|"
+    r"(?:investment|securit).{0,80}unrealized (?:gain|loss)|"
+    r"(?:gain|loss).{0,80}(?:equity|debt) securit|"
+    r"(?:equity securit|equity investment|strategic investment|debt and equity "
+    r"securit|measurement alternative|investment).{0,80}(?:fair value|remeasur|revaluat)|"
+    r"(?:fair value|remeasur|revaluat).{0,80}(?:equity securit|equity investment|"
+    r"strategic investment|investment))",
+    re.IGNORECASE,
+)
+
+
+def canonical_adjustment_category(
+    category: str,
+    label: str,
+    excerpt: str = "",
+) -> str:
+    """Apply non-AI category overrides for volatile fair-value items."""
+    evidence = _normalized_text(f"{label}\n{excerpt}")
+    if _DERIVATIVE_FAIR_VALUE_TERMS.search(evidence):
+        return "derivative_fair_value"
+    if _INVESTMENT_FAIR_VALUE_TERMS.search(evidence):
+        return "investment_fair_value"
+    return category
+
+
+def _fair_value_earnings_direction(
+    category: str,
+    label: str,
+    excerpt: str,
+) -> int | None:
+    if category not in INHERENTLY_RECURRING_CATEGORIES:
+        return None
+    evidence = _normalized_text(f"{label}\n{excerpt}")
+    if re.search(
+        r"(?:increased|raised|boosted).{0,100}(?:net income|earnings)",
+        evidence,
+    ):
+        return 1
+    if re.search(
+        r"(?:decreased|reduced|lowered).{0,100}(?:net income|earnings)",
+        evidence,
+    ):
+        return -1
+    normalized_label = _normalized_text(label)
+    has_gain = bool(re.search(r"\bgains?\b", normalized_label))
+    has_loss = bool(re.search(r"\bloss(?:es)?\b", normalized_label))
+    if has_gain != has_loss:
+        return 1 if has_gain else -1
+    return None
+
+
 def _excerpt_contains_amount(excerpt: str, amount: float) -> bool:
     normalized_excerpt = _normalized_text(excerpt).replace(",", "")
     magnitude = abs(amount)
@@ -125,6 +191,15 @@ def _excerpt_contains_amount(excerpt: str, amount: float) -> bool:
         )
         for candidate in candidates
     )
+
+
+def _excerpt_explicitly_discloses_zero_tax(excerpt: str) -> bool:
+    normalized = _normalized_text(excerpt)
+    return bool(re.search(
+        r"(?:(?:no|zero) (?:income )?tax (?:effect|expense|benefit|impact)|"
+        r"tax (?:effect|expense|benefit|impact)(?: was| of|:) ?\$?0(?:\.0+)?)",
+        normalized,
+    ))
 
 
 def _citation_is_located(
@@ -144,15 +219,77 @@ def _citation_is_located(
         ):
             return False
     excerpt = _normalized_text(citation.excerpt)
-    if not excerpt or excerpt not in _normalized_text(source):
+    if not excerpt or excerpt not in source:
         return False
     return _excerpt_contains_amount(excerpt, citation.source_amount)
+
+
+def _citation_period_is_located(
+    citation: FilingCitation,
+    *,
+    expected_period_end: date,
+    expected_period_type: str,
+) -> bool:
+    expected_scope = "annual" if expected_period_type == "annual" else "quarter"
+    if (
+        citation.period_end != expected_period_end
+        or citation.period_scope != expected_scope
+    ):
+        return False
+
+    excerpt_lines = [
+        _normalized_text(line)
+        for line in citation.excerpt.splitlines()
+        if line.strip()
+    ]
+    excerpt = _normalized_text(citation.excerpt)
+    marker = (
+        f"selected_period_end={expected_period_end.isoformat()} "
+        f"scope={expected_scope}"
+    )
+    if "[period_table " in excerpt:
+        return (
+            len(excerpt_lines) == 1
+            and excerpt_lines[0].startswith("[period_table ")
+            and marker in excerpt_lines[0]
+        )
+
+    year = str(expected_period_end.year)
+    if year not in excerpt:
+        return False
+    cited_years = set(re.findall(r"\b(?:19|20)\d{2}\b", excerpt))
+    if len(cited_years) > 1:
+        # Comparative tables are ambiguous without a deterministic selected-
+        # period marker, even when the expected year appears somewhere in them.
+        return False
+    if expected_scope == "annual":
+        return any(
+            phrase in excerpt
+            for phrase in ("year ended", "years ended", "twelve months ended")
+        )
+    if "six months ended" in excerpt or "nine months ended" in excerpt:
+        # An excerpt spanning both quarter and YTD columns cannot bind a value
+        # to the quarter without the pre-extracted PERIOD_TABLE marker.
+        return False
+    return any(
+        phrase in excerpt
+        for phrase in (
+            "quarter ended",
+            "quarterly period ended",
+            "three months ended",
+            "first quarter",
+            "second quarter",
+            "third quarter",
+            "fourth quarter",
+        )
+    )
 
 
 def validate_filing_extraction(
     extraction: FilingEarningsQualityExtraction,
     *,
     expected_period_end: date,
+    expected_period_type: str = "annual",
     expected_currency: str | None,
     reported_net_income: float,
     source_documents: dict[str, str],
@@ -162,6 +299,10 @@ def validate_filing_extraction(
     """Validate model output and expose adjusted values only after every gate passes."""
     failures: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
+    normalized_source_documents = {
+        source_id: _normalized_text(source)
+        for source_id, source in source_documents.items()
+    }
 
     period_matches = extraction.period_end == expected_period_end
     checks.append({"check": "period_matches", "passed": period_matches})
@@ -195,10 +336,74 @@ def validate_filing_extraction(
         failures.append(_reason("reported_net_income_mismatch", "Extracted reported net income does not match the local statement."))
 
     included_effects: list[float] = []
+    public_adjustments: list[dict[str, Any]] = []
+    rejected_adjustments: list[dict[str, Any]] = []
     for index, adjustment in enumerate(extraction.adjustments):
+        canonical_category = canonical_adjustment_category(
+            adjustment.category,
+            adjustment.label,
+            adjustment.citation.excerpt,
+        )
+        category_unchanged = canonical_category == adjustment.category
+        checks.append({
+            "check": "category_policy_matches",
+            "adjustment_index": index,
+            "passed": category_unchanged,
+        })
+        if not category_unchanged:
+            failures.append(_reason(
+                "category_policy_override",
+                "The model category conflicted with deterministic fair-value policy and was overridden.",
+                index,
+            ))
+
+        policy_pretax_effect = adjustment.pretax_earnings_effect
+        policy_tax_effect = adjustment.tax_effect
+        policy_after_tax_effect = adjustment.earnings_effect_after_tax
+        policy_source_amount = adjustment.citation.source_amount
+        earnings_direction = _fair_value_earnings_direction(
+            canonical_category,
+            adjustment.label,
+            adjustment.citation.excerpt,
+        )
+        effect_sign_policy_unchanged = True
+        citation_sign_policy_unchanged = True
+        if earnings_direction is not None:
+            effect_sign_policy_unchanged = all(
+                value is None
+                or value == 0
+                or (1 if value > 0 else -1) == earnings_direction
+                for value in (policy_pretax_effect, policy_after_tax_effect)
+            )
+            citation_sign_policy_unchanged = (
+                policy_source_amount == 0
+                or (1 if policy_source_amount > 0 else -1) == earnings_direction
+            )
+            policy_source_amount = earnings_direction * abs(policy_source_amount)
+        if earnings_direction is not None and not effect_sign_policy_unchanged:
+            if policy_pretax_effect is not None:
+                policy_pretax_effect = earnings_direction * abs(policy_pretax_effect)
+            policy_after_tax_effect = earnings_direction * abs(policy_after_tax_effect)
+            if policy_pretax_effect is not None and policy_tax_effect is not None:
+                policy_tax_effect = policy_after_tax_effect - policy_pretax_effect
+        sign_policy_unchanged = (
+            effect_sign_policy_unchanged and citation_sign_policy_unchanged
+        )
+        checks.append({
+            "check": "earnings_effect_sign_policy_matches",
+            "adjustment_index": index,
+            "passed": sign_policy_unchanged,
+        })
+        if not sign_policy_unchanged:
+            failures.append(_reason(
+                "earnings_effect_sign_override",
+                "The extracted fair-value gain/loss sign conflicted with the cited earnings direction and was corrected.",
+                index,
+            ))
+
         citation_located = _citation_is_located(
             adjustment.citation,
-            source_documents,
+            normalized_source_documents,
             source_metadata,
         )
         checks.append({
@@ -209,11 +414,28 @@ def validate_filing_extraction(
         if not citation_located:
             failures.append(_reason("citation_not_located", "The cited excerpt could not be located in its saved SEC source.", index))
 
-        cited_amount = adjustment.citation.source_amount * adjustment.citation.source_unit_scale
+        citation_period_located = _citation_period_is_located(
+            adjustment.citation,
+            expected_period_end=expected_period_end,
+            expected_period_type=expected_period_type,
+        )
+        checks.append({
+            "check": "citation_period_matches",
+            "adjustment_index": index,
+            "passed": citation_period_located,
+        })
+        if not citation_period_located:
+            failures.append(_reason(
+                "citation_period_mismatch",
+                "The cited amount is not bound to the selected quarter or year.",
+                index,
+            ))
+
+        cited_amount = policy_source_amount * adjustment.citation.source_unit_scale
         comparable_amount = (
-            adjustment.pretax_earnings_effect
-            if adjustment.pretax_earnings_effect is not None
-            else adjustment.earnings_effect_after_tax
+            policy_pretax_effect
+            if policy_pretax_effect is not None
+            else policy_after_tax_effect
         )
         amount_tolerance = max(abs(comparable_amount) * 0.01, adjustment.citation.source_unit_scale)
         amount_located = _close(cited_amount, comparable_amount, amount_tolerance)
@@ -226,14 +448,17 @@ def validate_filing_extraction(
             failures.append(_reason("cited_amount_mismatch", "The cited filing amount does not match the extracted adjustment.", index))
 
         source_scale = adjustment.citation.source_unit_scale
-        tax_amount_located = (
-            adjustment.tax_effect is None
-            or adjustment.tax_effect == 0
-            or _excerpt_contains_amount(
-                adjustment.citation.excerpt,
-                adjustment.tax_effect / source_scale,
+        if policy_tax_effect is None:
+            tax_amount_located = True
+        elif policy_tax_effect == 0:
+            tax_amount_located = _excerpt_explicitly_discloses_zero_tax(
+                adjustment.citation.excerpt
             )
-        )
+        else:
+            tax_amount_located = _excerpt_contains_amount(
+                adjustment.citation.excerpt,
+                policy_tax_effect / source_scale,
+            )
         checks.append({
             "check": "tax_amount_located",
             "adjustment_index": index,
@@ -248,7 +473,7 @@ def validate_filing_extraction(
 
         after_tax_amount_located = _excerpt_contains_amount(
             adjustment.citation.excerpt,
-            adjustment.earnings_effect_after_tax / source_scale,
+            policy_after_tax_effect / source_scale,
         )
         checks.append({
             "check": "after_tax_amount_located",
@@ -262,24 +487,24 @@ def validate_filing_extraction(
                 index,
             ))
 
-        if adjustment.category == "discrete_tax":
+        if canonical_category == "discrete_tax":
             tax_complete = (
-                adjustment.pretax_earnings_effect is None
-                and adjustment.tax_effect is not None
+                policy_pretax_effect is None
+                and policy_tax_effect is not None
                 and _close(
-                    adjustment.tax_effect,
-                    adjustment.earnings_effect_after_tax,
-                    max(abs(adjustment.earnings_effect_after_tax) * 0.01, 1.0),
+                    policy_tax_effect,
+                    policy_after_tax_effect,
+                    max(abs(policy_after_tax_effect) * 0.01, 1.0),
                 )
             )
         else:
             tax_complete = (
-                adjustment.pretax_earnings_effect is not None
-                and adjustment.tax_effect is not None
+                policy_pretax_effect is not None
+                and policy_tax_effect is not None
                 and _close(
-                    adjustment.pretax_earnings_effect + adjustment.tax_effect,
-                    adjustment.earnings_effect_after_tax,
-                    max(abs(adjustment.earnings_effect_after_tax) * 0.01, 1.0),
+                    policy_pretax_effect + policy_tax_effect,
+                    policy_after_tax_effect,
+                    max(abs(policy_after_tax_effect) * 0.01, 1.0),
                 )
             )
         checks.append({
@@ -290,16 +515,40 @@ def validate_filing_extraction(
         if not tax_complete:
             failures.append(_reason("tax_reconciliation_incomplete", "The adjustment lacks a complete pre-tax to after-tax reconciliation.", index))
 
-        deterministically_recurring = adjustment.category in (recurring_categories or set())
+        deterministically_recurring = (
+            canonical_category in (recurring_categories or set())
+            or canonical_category in INHERENTLY_RECURRING_CATEGORIES
+        )
         allowed = (
-            adjustment.category in ELIGIBLE_NORMALIZATION_CATEGORIES
+            canonical_category in ELIGIBLE_NORMALIZATION_CATEGORIES
             and not adjustment.recurring
             and not deterministically_recurring
         )
         if adjustment.include_in_normalized and not allowed:
             failures.append(_reason("category_not_normalizable", "This category is recurring or outside the conservative normalization policy.", index))
-        if adjustment.include_in_normalized:
-            included_effects.append(adjustment.earnings_effect_after_tax)
+        sanitized_include = adjustment.include_in_normalized and allowed
+        if sanitized_include:
+            included_effects.append(policy_after_tax_effect)
+
+        sanitized = adjustment.model_dump(mode="json")
+        sanitized["category"] = canonical_category
+        sanitized["pretax_earnings_effect"] = policy_pretax_effect
+        sanitized["tax_effect"] = policy_tax_effect
+        sanitized["earnings_effect_after_tax"] = policy_after_tax_effect
+        sanitized["citation"]["source_amount"] = policy_source_amount
+        sanitized["include_in_normalized"] = sanitized_include
+        sanitized["recurring"] = bool(
+            adjustment.recurring or deterministically_recurring
+        )
+        if citation_located and citation_period_located and amount_located:
+            public_adjustments.append(sanitized)
+        else:
+            rejected_adjustments.append({
+                "adjustment_index": index,
+                "label": adjustment.label,
+                "model_category": adjustment.category,
+                "policy_category": canonical_category,
+            })
 
     normalized_net_income = reported_net_income - sum(included_effects)
     disclosed = extraction.disclosed_adjusted_net_income
@@ -329,8 +578,13 @@ def validate_filing_extraction(
             and net_income_citation is not None
             and _citation_is_located(
                 net_income_citation,
-                source_documents,
+                normalized_source_documents,
                 source_metadata,
+            )
+            and _citation_period_is_located(
+                net_income_citation,
+                expected_period_end=expected_period_end,
+                expected_period_type=expected_period_type,
             )
             and _close(
                 extraction.company_adjusted.adjusted_net_income,
@@ -368,8 +622,13 @@ def validate_filing_extraction(
             and extraction.company_adjusted.diluted_eps_citation is not None
             and _citation_is_located(
                 extraction.company_adjusted.diluted_eps_citation,
-                source_documents,
+                normalized_source_documents,
                 source_metadata,
+            )
+            and _citation_period_is_located(
+                extraction.company_adjusted.diluted_eps_citation,
+                expected_period_end=expected_period_end,
+                expected_period_type=expected_period_type,
             )
             and _close(
                 extraction.company_adjusted.adjusted_diluted_eps,
@@ -396,6 +655,7 @@ def validate_filing_extraction(
         "checks": checks,
         "failures": failures,
         "eps_failures": eps_failures,
+        "rejected_adjustments": rejected_adjustments,
         "sign_convention": (
             "Positive earnings_effect_after_tax raised reported earnings; "
             "normalized net income equals reported net income minus included effects."
@@ -416,10 +676,7 @@ def validate_filing_extraction(
             if extraction.company_adjusted
             else None
         ),
-        "adjustments": [
-            adjustment.model_dump(mode="json")
-            for adjustment in extraction.adjustments
-        ],
+        "adjustments": public_adjustments,
         "notes": extraction.notes,
     }
     return result, validation_report
