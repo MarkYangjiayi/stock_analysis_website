@@ -6,7 +6,16 @@ import remarkGfm from "remark-gfm";
 import { Bot, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 
-export default function AIReport({ ticker }: { ticker: string }) {
+interface AIReportProps {
+    ticker: string;
+    evidenceKey: string;
+    adminKey?: string | null;
+    onUnauthorized?: () => void;
+    embedded?: boolean;
+    disabledReason?: string;
+}
+
+export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized, embedded = false, disabledReason }: AIReportProps) {
     const [report, setReport] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -18,9 +27,10 @@ export default function AIReport({ ticker }: { ticker: string }) {
         setError("");
         setLoading(false);
         return () => abortRef.current?.abort();
-    }, [ticker]);
+    }, [ticker, evidenceKey, adminKey, disabledReason]);
 
     const loadReport = async () => {
+        if (disabledReason) return;
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
@@ -28,18 +38,36 @@ export default function AIReport({ ticker }: { ticker: string }) {
         setError("");
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/report`, { signal: controller.signal });
+            const response = await fetch(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/report`, {
+                signal: controller.signal,
+                headers: adminKey ? { "X-API-Key": adminKey } : undefined,
+            });
             if (!response.ok) {
+                if (response.status === 401) onUnauthorized?.();
                 const payload = await response.json().catch(() => ({})) as { detail?: string };
                 throw new Error(payload.detail || `Report request failed with status ${response.status}`);
             }
             if (!response.body) throw new Error("The report stream was empty.");
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let complete = "";
             while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
-                if (value) setReport((current) => current + decoder.decode(value, { stream: true }));
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true });
+                    complete += chunk;
+                    setReport((current) => current + chunk);
+                }
+            }
+            const tail = decoder.decode();
+            if (tail) {
+                complete += tail;
+                setReport((current) => current + tail);
+            }
+            if (complete.trimStart().startsWith("Error:")) {
+                setReport("");
+                setError(complete.trim().replace(/^Error:\s*/, ""));
             }
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
@@ -50,20 +78,26 @@ export default function AIReport({ ticker }: { ticker: string }) {
     };
 
     return (
-        <section className="surface-panel flex min-h-[360px] flex-col p-5 sm:p-6" aria-labelledby="ai-brief-title">
+        <section className={`${embedded ? "flex" : "surface-panel flex"} min-h-[360px] flex-col p-5 sm:p-6`} aria-labelledby="ai-brief-title">
             <header className="flex items-start justify-between gap-4 border-b pb-4">
                 <div className="flex items-center gap-3">
                     <span className="rounded-xl bg-indigo-50 p-2.5 text-indigo-500 dark:bg-indigo-950/40"><Bot size={21} /></span>
                     <div>
-                        <p className="eyebrow">Optional synthesis</p>
-                        <h2 id="ai-brief-title" className="mt-0.5 font-black">AI research brief</h2>
+                        <p className="eyebrow">Optional · evidence constrained</p>
+                        <h2 id="ai-brief-title" className="mt-0.5 font-black">Evidence brief</h2>
                     </div>
                 </div>
                 {report && <button type="button" onClick={loadReport} disabled={loading} className="secondary-button min-h-9 px-3 py-1.5" aria-label="Regenerate research brief"><RefreshCw className={loading ? "animate-spin" : ""} size={15} /> Refresh</button>}
             </header>
 
             <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pt-4">
-                {loading && !report ? (
+                {disabledReason ? (
+                    <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50/70 p-5 text-center text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200" role="status">
+                        <TriangleAlert size={28} />
+                        <h3 className="mt-4 font-bold">Brief paused</h3>
+                        <p className="mt-2 max-w-md text-sm leading-6">{disabledReason}</p>
+                    </div>
+                ) : loading && !report ? (
                     <div className="flex h-full min-h-[240px] flex-col items-center justify-center text-center">
                         <RefreshCw className="animate-spin text-indigo-500" size={28} />
                         <p className="mt-4 text-sm font-semibold">Generating a synthesis from the current snapshot…</p>
@@ -82,7 +116,7 @@ export default function AIReport({ ticker }: { ticker: string }) {
                     <div className="flex min-h-[240px] flex-col items-center justify-center text-center">
                         <Sparkles className="text-indigo-400" size={30} />
                         <h3 className="mt-4 font-bold">Generate on demand</h3>
-                        <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Create a narrative summary after reviewing the published factors and fundamental data. The quantitative panels remain the source of record.</p>
+                        <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Create a cited narrative from the cockpit evidence IDs only. The deterministic panels remain available and authoritative even if generation fails.</p>
                         <button type="button" onClick={loadReport} className="primary-button mt-5 bg-indigo-600 hover:bg-indigo-700"><Sparkles size={16} /> Generate brief</button>
                     </div>
                 )}

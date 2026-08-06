@@ -1,4 +1,5 @@
 # api/routers.py
+import logging
 from datetime import date, timedelta
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.schemas import (
     AnomalyScanResponse,
     BacktestRequest,
+    PersonalWatchlistRequest,
+    ValuationScenariosRequest,
     FactorComputeRequest,
     FactorResearchRequest,
     MarketOverviewResponse,
@@ -26,7 +29,21 @@ from services.analyzer import (
     filter_screener_stocks,
     get_rrg_data_for_tickers
 )
-from services.ai_assistant import generate_stock_report
+from services.ai_assistant import generate_stock_report, get_cached_stock_report
+from services.decision_support import (
+    DEFAULT_SCENARIOS,
+    calculate_ticker_valuation,
+    get_decision_support,
+    validate_scenarios,
+)
+from services.personal_workspace import (
+    delete_valuation_scenarios,
+    get_saved_valuation_scenarios,
+    get_watchlist,
+    import_watchlist_if_empty,
+    replace_watchlist,
+    save_valuation_scenarios,
+)
 from services.news_fetcher import NewsFetchError, fetch_yahoo_news
 from services.anomaly_scans import (
     enqueue_manual_anomaly_scan,
@@ -51,6 +68,7 @@ from services.market_breadth import (
 import pandas as pd
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class BatchFactorsRequest(BaseModel):
     tickers: List[str]
@@ -190,6 +208,145 @@ async def read_batch_factors(request: BatchFactorsRequest, db: AsyncSession = De
     results = await batch_get_factor_scores(request.tickers, db)
     return results
 
+
+def _scenario_dicts(request: ValuationScenariosRequest) -> list[dict[str, Any]]:
+    try:
+        return validate_scenarios(
+            [scenario.model_dump() for scenario in request.scenarios]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/stocks/{ticker}/decision-support",
+    tags=["Stocks Decision Support"],
+)
+async def read_decision_support(
+    ticker: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return deterministic decision evidence; saved assumptions are opt-in via Admin Key."""
+    include_saved = False
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        await require_admin_api_key(api_key)
+        include_saved = True
+    return await get_decision_support(
+        ticker,
+        db,
+        include_saved_scenarios=include_saved,
+    )
+
+
+@router.post(
+    "/api/stocks/{ticker}/valuation/calculate",
+    tags=["Stocks Decision Support"],
+)
+async def calculate_stock_valuation(
+    ticker: str,
+    request: ValuationScenariosRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    scenarios = _scenario_dicts(request)
+    return await calculate_ticker_valuation(ticker, db, scenarios)
+
+
+@router.get(
+    "/api/personal/stocks/{ticker}/valuation-scenarios",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def read_personal_valuation_scenarios(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    canonical_ticker = canonicalize_ticker(ticker)
+    saved = await get_saved_valuation_scenarios(db, canonical_ticker)
+    return {
+        "ticker": canonical_ticker,
+        "is_saved": saved is not None,
+        "scenarios": saved or DEFAULT_SCENARIOS,
+    }
+
+
+@router.put(
+    "/api/personal/stocks/{ticker}/valuation-scenarios",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def put_personal_valuation_scenarios(
+    ticker: str,
+    request: ValuationScenariosRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    scenarios = _scenario_dicts(request)
+    saved = await save_valuation_scenarios(db, ticker, scenarios)
+    return {
+        "ticker": canonicalize_ticker(ticker),
+        "is_saved": True,
+        "scenarios": saved,
+    }
+
+
+@router.delete(
+    "/api/personal/stocks/{ticker}/valuation-scenarios",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def remove_personal_valuation_scenarios(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    await delete_valuation_scenarios(db, ticker)
+    return {
+        "ticker": canonicalize_ticker(ticker),
+        "is_saved": False,
+        "scenarios": DEFAULT_SCENARIOS,
+    }
+
+
+@router.get(
+    "/api/personal/watchlist",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def read_personal_watchlist(db: AsyncSession = Depends(get_db)):
+    return {"tickers": await get_watchlist(db)}
+
+
+@router.put(
+    "/api/personal/watchlist",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def put_personal_watchlist(
+    request: PersonalWatchlistRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        tickers = await replace_watchlist(db, request.tickers)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"tickers": tickers}
+
+
+@router.post(
+    "/api/personal/watchlist/import",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def import_personal_watchlist(
+    request: PersonalWatchlistRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        tickers, imported = await import_watchlist_if_empty(db, request.tickers)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"tickers": tickers, "imported": imported}
+
 @router.post(
     "/api/stocks/{ticker}/sync",
     tags=["Stocks Synchronization"],
@@ -256,41 +413,61 @@ async def read_stock_analysis(ticker: str, request: Request, interval: str = "1d
 @router.get(
     "/api/stocks/{ticker}/report",
     tags=["AI Report Generation"],
-    dependencies=[Depends(limit_expensive_requests)],
 )
-async def read_ai_stock_report(ticker: str, db: AsyncSession = Depends(get_db)):
+async def read_ai_stock_report(
+    ticker: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Generate an AI investment brief based on latest quantitive data points.
-    Includes read-through automatic synchronization.
+    Generate an optional AI brief from decision-support evidence only.
     """
     ticker = canonicalize_ticker(ticker)
-    data = await get_analyzed_stock_data(ticker, db)
-    
-    freshness = await assess_ticker_freshness(db, ticker)
-    if not data or freshness.needs_sync:
-        async with ticker_sync_lock(ticker):
-            await db.rollback()
-            freshness = await assess_ticker_freshness(db, ticker)
-            success = True if not freshness.needs_sync else await sync_ticker_data(ticker, db)
-        if not success:
-            raise HTTPException(
-                status_code=503, 
-                detail=f"Data for {ticker} not found and external synchronization failed."
+    include_saved = False
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        await require_admin_api_key(api_key)
+        include_saved = True
+
+    async def static_report(content: str):
+        yield content
+
+    try:
+        decision = await get_decision_support(
+            ticker,
+            db,
+            include_saved_scenarios=include_saved,
+        )
+        cached = await get_cached_stock_report(ticker, decision, db)
+    except Exception:
+        logger.exception("Unable to build AI report evidence for %s", ticker)
+        return StreamingResponse(
+            static_report(
+                "Error: The evidence brief is temporarily unavailable. "
+                "Deterministic cockpit data remains available."
+            ),
+            media_type="text/event-stream",
+        )
+
+    # Cached reads are deterministic database lookups and should not consume
+    # the budget reserved for calls that can reach an external model provider.
+    if cached is not None:
+        return StreamingResponse(static_report(cached), media_type="text/event-stream")
+
+    await limit_expensive_requests(request)
+
+    async def report_generator():
+        try:
+            async for chunk in generate_stock_report(ticker, decision, db):
+                yield chunk
+        except Exception:
+            logger.exception("Unable to generate AI report for %s", ticker)
+            yield (
+                "Error: The evidence brief is temporarily unavailable. "
+                "Deterministic cockpit data remains available."
             )
-        data = await get_analyzed_stock_data(ticker, db)
-        if not data:
-             raise HTTPException(
-                status_code=500, 
-                detail=f"Synchronization succeeded but analytics extraction failed for {ticker}."
-            )
-        
-    valuation = await get_fundamental_valuation(ticker, db)
-    data["valuation_metrics"] = valuation
-    data["published_factor_snapshot"] = await _load_latest_published_factor_snapshot(ticker, db)
     
-    report_generator = generate_stock_report(ticker, data)
-    
-    return StreamingResponse(report_generator, media_type="text/event-stream")
+    return StreamingResponse(report_generator(), media_type="text/event-stream")
 
 @router.get("/api/stocks/{ticker}/news")
 async def get_stock_news(ticker: str):

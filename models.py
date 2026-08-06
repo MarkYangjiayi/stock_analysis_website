@@ -495,6 +495,85 @@ class FactorValue(Base):
     )
 
 
+class PersonalWatchlistItem(Base):
+    """Ordered watchlist for the single-user personal workspace."""
+
+    __tablename__ = "personal_watchlist_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, unique=True, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
+class PersonalWorkspaceState(Base):
+    """Singleton state that distinguishes uninitialized from intentionally empty data."""
+
+    __tablename__ = "personal_workspace_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    watchlist_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
+class TickerValuationScenario(Base):
+    """Saved transparent DCF inputs for one ticker and named scenario."""
+
+    __tablename__ = "ticker_valuation_scenarios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    scenario: Mapped[str] = mapped_column(String)
+    fcf_growth_rate: Mapped[float] = mapped_column(Float)
+    wacc: Mapped[float] = mapped_column(Float)
+    perpetual_growth: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ticker",
+            "scenario",
+            name="uix_ticker_valuation_scenario",
+        ),
+    )
+
+
+class DecisionBriefCache(Base):
+    """Validated, evidence-bound AI decision brief cache."""
+
+    __tablename__ = "decision_brief_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    evidence_hash: Mapped[str] = mapped_column(String, index=True)
+    model: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text)
+    evidence_ids: Mapped[Any] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ticker",
+            "evidence_hash",
+            "model",
+            name="uix_decision_brief_evidence_model",
+        ),
+    )
+
+
 class StrategyDefinition(Base):
     __tablename__ = "strategy_definitions"
 

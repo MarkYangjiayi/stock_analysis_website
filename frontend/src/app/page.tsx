@@ -4,12 +4,14 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, Clock3, Plus, Search, ShieldCheck } from "lucide-react";
-import { fetchLatestTickerFactors, fetchStockData, PublishedFactorSnapshot, StockDataResponse } from "@/lib/api";
-import AIReport from "@/components/AIReport";
+import { ApiError, DecisionSupportResponse, DecisionWarning, fetchDecisionSupport, fetchLatestTickerFactors, fetchStockData, PublishedFactorSnapshot, StockDataResponse } from "@/lib/api";
+import DecisionCockpit from "@/components/DecisionCockpit";
 import NewsFeed from "@/components/NewsFeed";
+import PersonalUnlockDialog from "@/components/PersonalUnlockDialog";
 import PointInTimeFactorPanel from "@/components/PointInTimeFactorPanel";
-import ValuationDashboard from "@/components/ValuationDashboard";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
+import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
+import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
 
 const StockChart = dynamic(() => import("@/components/StockChart"), {
     ssr: false,
@@ -20,45 +22,34 @@ const FinancialTrendChart = dynamic(() => import("@/components/FinancialTrendCha
     loading: () => <div className="h-[520px] animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />,
 });
 
-const DEFAULT_WATCHLIST = ["AAPL.US", "AMAT.US", "ASTS.US", "UNH.US"];
-
 function AnalysisPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const requestedTicker = searchParams.get("ticker")?.trim().toUpperCase() || "";
+    const requestedSymbol = searchParams.get("ticker")?.trim().toUpperCase() || "";
+    const requestedTicker = requestedSymbol && !requestedSymbol.includes(".") ? `${requestedSymbol}.US` : requestedSymbol;
     const [ticker, setTicker] = useState("");
     const [stockData, setStockData] = useState<StockDataResponse | null>(null);
     const [factorSnapshot, setFactorSnapshot] = useState<PublishedFactorSnapshot | null>(null);
+    const [decision, setDecision] = useState<DecisionSupportResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [factorLoading, setFactorLoading] = useState(false);
+    const [decisionLoading, setDecisionLoading] = useState(false);
+    const [decisionRefreshVersion, setDecisionRefreshVersion] = useState(0);
     const [chartLoading, setChartLoading] = useState(false);
     const [error, setError] = useState("");
     const [factorError, setFactorError] = useState("");
+    const [decisionError, setDecisionError] = useState("");
     const [chartInterval, setChartInterval] = useState("1d");
     const [financialPeriod, setFinancialPeriod] = useState<"annual" | "ttm" | "quarterly">("annual");
-    const [watchlist, setWatchlist] = useState<string[]>([]);
+    const [financialMetric, setFinancialMetric] = useState<FinancialEvidenceMetric>("overview");
+    const [unlockOpen, setUnlockOpen] = useState(false);
+    const personal = usePersonalWorkspace();
+    const watchlist = personal.watchlist;
+    const handlePersonalUnauthorized = personal.handleUnauthorized;
     const stockRequestRef = useRef<AbortController | null>(null);
     const factorRequestRef = useRef<AbortController | null>(null);
-
-    useEffect(() => {
-        const stored = window.localStorage.getItem("my_watchlist");
-        if (stored) {
-            try {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    setWatchlist(parsed.filter((value): value is string => typeof value === "string"));
-                    return;
-                }
-            } catch { /* Use defaults below. */ }
-        }
-        setWatchlist(DEFAULT_WATCHLIST);
-        window.localStorage.setItem("my_watchlist", JSON.stringify(DEFAULT_WATCHLIST));
-    }, []);
-
-    const saveWatchlist = (next: string[]) => {
-        setWatchlist(next);
-        window.localStorage.setItem("my_watchlist", JSON.stringify(next));
-    };
+    const decisionRequestRef = useRef<AbortController | null>(null);
+    const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
 
     const loadStock = useCallback(async (
         symbol: string,
@@ -73,10 +64,15 @@ function AnalysisPage() {
         setError("");
         try {
             const data = await fetchStockData(symbol, interval, period === "quarterly" ? "Quarterly" : "Yearly", controller.signal);
-            if (!controller.signal.aborted) setStockData(data);
+            if (!controller.signal.aborted) {
+                setStockData(data);
+                return true;
+            }
+            return false;
         } catch (caught) {
-            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (caught instanceof DOMException && caught.name === "AbortError") return false;
             if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Unable to load this security.");
+            return false;
         } finally {
             if (!controller.signal.aborted) {
                 setLoading(false);
@@ -103,6 +99,34 @@ function AnalysisPage() {
         }
     }, []);
 
+    const loadDecision = useCallback(async (symbol: string, adminKey?: string | null) => {
+        decisionRequestRef.current?.abort();
+        const controller = new AbortController();
+        decisionRequestRef.current = controller;
+        setDecisionLoading(true);
+        setDecisionError("");
+        try {
+            const result = await fetchDecisionSupport(symbol, adminKey || undefined, controller.signal);
+            if (!controller.signal.aborted) setDecision(result);
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (caught instanceof ApiError && caught.status === 401 && adminKey) {
+                handlePersonalUnauthorized();
+                try {
+                    const publicResult = await fetchDecisionSupport(symbol, undefined, controller.signal);
+                    if (!controller.signal.aborted) setDecision(publicResult);
+                    return;
+                } catch (fallbackError) {
+                    if (!controller.signal.aborted) setDecisionError(fallbackError instanceof Error ? fallbackError.message : "Decision support is unavailable.");
+                    return;
+                }
+            }
+            if (!controller.signal.aborted) setDecisionError(caught instanceof Error ? caught.message : "Decision support is unavailable.");
+        } finally {
+            if (!controller.signal.aborted) setDecisionLoading(false);
+        }
+    }, [handlePersonalUnauthorized]);
+
     useEffect(() => {
         if (!requestedTicker) {
             setTicker("");
@@ -113,15 +137,31 @@ function AnalysisPage() {
         }
         setTicker(requestedTicker);
         setStockData(null);
+        setDecision(null);
         setChartInterval("1d");
         setFinancialPeriod("annual");
-        void loadStock(requestedTicker, "1d", "annual", true);
+        setFinancialMetric("overview");
+        void loadStock(requestedTicker, "1d", "annual", true).then((loaded) => {
+            // The stock endpoint can populate a cold local snapshot. Refresh the
+            // cockpit after that read-through completes so it sees the new data.
+            if (loaded) setDecisionRefreshVersion((version) => version + 1);
+        });
         void loadFactors(requestedTicker);
         return () => {
             stockRequestRef.current?.abort();
             factorRequestRef.current?.abort();
         };
     }, [loadFactors, loadStock, requestedTicker]);
+
+    useEffect(() => {
+        if (!requestedTicker) {
+            setDecision(null);
+            setDecisionError("");
+            return;
+        }
+        void loadDecision(requestedTicker, personal.adminKey);
+        return () => decisionRequestRef.current?.abort();
+    }, [decisionRefreshVersion, loadDecision, personal.adminKey, requestedTicker]);
 
     const selectTicker = (symbol: string) => router.push(`/?ticker=${encodeURIComponent(symbol.toUpperCase())}`);
 
@@ -138,6 +178,43 @@ function AnalysisPage() {
         if (period === "quarterly" || previous === "quarterly") await loadStock(ticker, chartInterval, period);
     };
 
+    const addToWatchlist = (symbol: string) => {
+        if (!personal.isUnlocked) {
+            setUnlockOpen(true);
+            return;
+        }
+        if (!watchlist.includes(symbol)) void personal.replaceWatchlist([symbol, ...watchlist]);
+    };
+
+    const removeFromWatchlist = (symbol: string) => {
+        if (!personal.isUnlocked) {
+            setUnlockOpen(true);
+            return;
+        }
+        void personal.replaceWatchlist(watchlist.filter((item) => item !== symbol));
+    };
+
+    const refreshDecision = useCallback(async () => {
+        if (!ticker) return;
+        await loadDecision(ticker, personal.adminKey);
+    }, [loadDecision, personal.adminKey, ticker]);
+
+    const showFinancialEvidence = async (metric: DecisionWarning["evidence_metric"]) => {
+        const metricMap: Record<DecisionWarning["evidence_metric"], FinancialEvidenceMetric> = {
+            revenue: "revenue",
+            gross_margin: "gross_margin",
+            operating_margin: "operating_margin",
+            fcf: "free_cash_flow",
+            cash: "cash_and_short_term_investments",
+            debt: "total_debt",
+            debt_to_equity: "debt_to_equity",
+            shares: "shares_outstanding",
+        };
+        setFinancialMetric(metricMap[metric]);
+        if (financialPeriod !== "quarterly") await handlePeriodChange("quarterly");
+        window.requestAnimationFrame(() => financialEvidenceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    };
+
     const latest = stockData?.historical_data.filter((point) => point.close != null).at(-1);
     const previous = stockData?.historical_data.filter((point) => point.close != null).at(-2);
     const change = latest?.close != null && previous?.close != null ? latest.close - previous.close : null;
@@ -147,12 +224,12 @@ function AnalysisPage() {
     return (
         <div className="flex h-full w-full overflow-hidden bg-[var(--app-bg)]">
             <div className="hidden h-full md:block">
-                <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={(symbol) => !watchlist.includes(symbol) && saveWatchlist([symbol, ...watchlist])} onRemove={(symbol) => saveWatchlist(watchlist.filter((item) => item !== symbol))} />
+                <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} />
             </div>
 
             <div className="app-page min-w-0 flex-1">
                 <div className="page-container">
-                    <WatchlistSidebar compact currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={(symbol) => !watchlist.includes(symbol) && saveWatchlist([symbol, ...watchlist])} onRemove={(symbol) => saveWatchlist(watchlist.filter((item) => item !== symbol))} />
+                    <WatchlistSidebar compact currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} />
 
                     {!ticker && (
                         <section className="surface-panel flex min-h-[65vh] flex-col items-center justify-center px-6 py-16 text-center">
@@ -192,7 +269,7 @@ function AnalysisPage() {
                                             {watchlist.includes(stockData.profile.ticker) ? (
                                                 <span className="status-pill"><Check size={14} /> In watchlist</span>
                                             ) : (
-                                                <button type="button" onClick={() => saveWatchlist([stockData.profile.ticker, ...watchlist])} className="secondary-button min-h-9 px-3 py-1.5"><Plus size={15} /> Add</button>
+                                                <button type="button" onClick={() => addToWatchlist(stockData.profile.ticker)} className="secondary-button min-h-9 px-3 py-1.5"><Plus size={15} /> {personal.isUnlocked ? "Add" : "Unlock to add"}</button>
                                             )}
                                         </div>
                                         <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -212,10 +289,20 @@ function AnalysisPage() {
                                 {stockData.profile.description && <p className="mt-6 border-t pt-5 text-sm leading-6 text-slate-600 line-clamp-3 hover:line-clamp-none dark:text-slate-400">{stockData.profile.description}</p>}
                             </section>
 
-                            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
-                                {stockData.valuation_metrics ? <ValuationDashboard metrics={stockData.valuation_metrics} /> : <section className="surface-panel p-8 text-sm text-slate-500">Fundamental valuation is not available for this security.</section>}
-                                <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
-                            </div>
+                            <DecisionCockpit
+                                ticker={stockData.profile.ticker}
+                                decision={decision}
+                                loading={decisionLoading}
+                                error={decisionError}
+                                adminKey={personal.adminKey}
+                                onUnlock={() => setUnlockOpen(true)}
+                                onUnauthorized={personal.handleUnauthorized}
+                                onRetry={() => void refreshDecision()}
+                                onRefresh={refreshDecision}
+                                onShowEvidence={(metric) => void showFinancialEvidence(metric)}
+                            />
+
+                            <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
 
                             <section className="surface-panel overflow-hidden">
                                 <header className="surface-subtle flex flex-col justify-between gap-2 border-b px-4 py-3 sm:flex-row sm:items-center">
@@ -225,20 +312,26 @@ function AnalysisPage() {
                                 <div className="p-2 sm:p-4"><StockChart data={stockData.historical_data} interval={chartInterval} onIntervalChange={handleIntervalChange} isLoading={chartLoading} /></div>
                             </section>
 
-                            <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} />
-
-                            <div className="grid items-stretch gap-5 xl:grid-cols-2">
-                                <AIReport ticker={stockData.profile.ticker} />
-                                <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>
+                            <div ref={financialEvidenceRef} className="scroll-mt-5">
+                                <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} selectedMetric={financialMetric} onMetricChange={setFinancialMetric} />
                             </div>
 
+                            <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>
+
                             <footer className="flex flex-wrap items-center gap-2 rounded-xl border px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
-                                <ShieldCheck size={14} className="text-emerald-500" /> Published factor values are versioned and quality-gated. DCF and AI outputs are illustrative secondary views.
+                                <ShieldCheck size={14} className="text-emerald-500" /> Published factor values are versioned and quality-gated. Cockpit calculations are transparent decision support, not investment advice.
                             </footer>
                         </>
                     )}
                 </div>
             </div>
+            <PersonalUnlockDialog
+                open={unlockOpen}
+                loading={personal.unlocking || personal.restoring}
+                error={personal.error}
+                onClose={() => setUnlockOpen(false)}
+                onUnlock={(key) => personal.unlock(key)}
+            />
         </div>
     );
 }

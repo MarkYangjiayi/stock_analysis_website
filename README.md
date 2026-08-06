@@ -29,14 +29,16 @@
     异步对接 EODHD API 海量金融数据源，支持拉取美股/A股等全球市场的历史日 K 线数据与季度/年度权威财务报表。底层已全面切转至极轻量的 **SQLite** 数据底座，并在 FastAPI 异步启动层注入了 `PRAGMA journal_mode=WAL` (预写式日志) 钩子，实现了极低服务器开销与高并发读写的完美平衡。
 *   **🧠 硬核多因子估值引擎 (Screener)**
     自研基本面财务分析引擎。内置经典的 DCF (现金流折现模型) 测算股票绝对内在价值 (`Intrinsic Value`) 与安全边际 (`Margin of Safety`)。创新的五维多因子雷达：覆盖 `Value (价值)`、`Quality (质量)`、`Growth (成长)`、`Health (健康)` 与 `Momentum (动量)` 维度，让优质公司显像化。
-*   **🤖 Streaming AI 流式智能研报**
-    无缝接入 DeepSeek **V4 Flash** 大模型。我们将数十项冷血的数据字典投喂至 LLM 提示词矩阵，瞬时生成包含“核心观点、估值诊断、因子解读、潜在风险”的专业 Markdown 财报。配备原生 Event-Stream 打印机效果。
+*   **🧭 Personal Stock Decision Cockpit**
+    个股页顶部提供无黑盒总分的决策驾驶舱：Bear/Base/Bull 三情景五年 FCF DCF、Base 5×5 敏感性矩阵、20 项行业/板块 midrank 分位、确定性基本面预警，以及价格、Screener、财报和因子的独立来源日期。缺失数据会给出明确原因，不会回填为零估值。
+*   **🤖 Evidence-cited AI Brief**
+    DeepSeek 简报仅按需生成，并且只能使用驾驶舱输出的稳定证据 ID。四个分析章节都必须包含 `[E#]` 引用；未知或缺失引用会被拒绝，只有校验通过的结果才会按证据哈希缓存。AI 不可用时不影响确定性驾驶舱。
 *   **📊 专业级沉浸交互图表**
     完美集成顶级图表库体系。使用 **TradingView Lightweight Charts** 高性能渲染带交互的蜡烛图、成交量潮，并支持动态挂载服务端实时算出的 `MACD`、`RSI`、`MA20/50` 指标。使用 **ECharts** 构建震撼的双 Y 轴（历史金额对比+毛利率走势）柱线复合财务趋势图。
 *   **🌐 Point-in-Time 市场总览**
     `/market` 在同一条联动时间轴上展示 11 个美股板块相对 SPY 趋势、`RSP/SPY`、MA20/50/200 市场宽度、涨跌家数、新高新低、McClellan 与横截面离散度。当前发布严格历史成分口径的 S&P 500；Russell 2000 与合并股票池在可靠历史成分源接入前暂时禁用，绝不以当前成分回填历史。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
-    内置暗黑悬浮侧边栏。支持自定义极客自选股，与前端 LocalStorage 永久绑定。对接后端独库并发 `Batch Factors` 评分接口，支持一键依照特定因子（如高成长、低估值）进行列表横向截面降序排名。
+    内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
     构建了企业级高可用推送路由，完美支持**飞书 (Lark) 富文本卡片**穿透。
     *   **Scheduled Daily Reporter**: 依托 `APScheduler` 时钟锁死美东时区，在每个工作日开盘与收盘后，自动唤醒 AI 撰写大盘异动速递并投递至群聊。
@@ -152,6 +154,9 @@ python worker.py
 生产环境的 Docker Compose 会强制使用 `ENVIRONMENT=production`。服务器未配置
 `ADMIN_API_KEY` 时，公开只读功能仍会启动，但同步、回测和运维等管理接口会返回
 `503 Admin operations are disabled`；配置后，请通过 `X-API-Key` 调用这些接口。
+个人工作区的 watchlist 与估值情景读取、写入接口也使用同一个请求头；公开的
+`GET /api/stocks/{ticker}/decision-support` 在没有该请求头时只返回默认估值情景，
+不会暴露保存的个人假设。
 
 首次建立可信数据集时运行：
 

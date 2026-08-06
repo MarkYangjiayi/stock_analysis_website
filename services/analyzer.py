@@ -8,6 +8,7 @@ from sqlalchemy import and_, select, asc, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
+    CorporateAction,
     DataPublication,
     DailyPrice,
     FinancialStatement,
@@ -16,6 +17,7 @@ from models import (
     StockScreenerSnapshot,
     Ticker,
 )
+from services.decision_support import share_split_adjustment_factor
 from services.rrg_prices import (
     RRG_PRICE_HISTORY_DATASET,
     RRG_PRICE_TICKERS,
@@ -194,6 +196,23 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         result_fallback = await db.execute(stmt_fallback)
         fs_records = list(result_fallback.scalars().all())
 
+    share_reference_date = price_records[-1].date if price_records else None
+    split_actions: list[CorporateAction] = []
+    if fs_records and share_reference_date is not None:
+        earliest_statement_date = min(
+            record.fiscal_date for record in fs_records
+        )
+        split_result = await db.execute(
+            select(CorporateAction).where(
+                CorporateAction.ticker == ticker,
+                CorporateAction.action_type == "split",
+                CorporateAction.split_factor.is_not(None),
+                CorporateAction.ex_date > earliest_statement_date,
+                CorporateAction.ex_date <= share_reference_date,
+            )
+        )
+        split_actions = list(split_result.scalars().all())
+
     historical_financials = []
     fs_records.reverse()  # 翻转为升序排列 (最老的数据在前)
     
@@ -203,19 +222,102 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         except (ValueError, TypeError):
             return 0.0
 
+    def _optional_float(val) -> Optional[float]:
+        try:
+            result = float(val) if val is not None else None
+            return result if result is None or math.isfinite(result) else None
+        except (ValueError, TypeError):
+            return None
+
+    def _first_optional(mapping: dict, *keys: str) -> Optional[float]:
+        for key in keys:
+            value = _optional_float(mapping.get(key))
+            if value is not None:
+                return value
+        return None
+
     for rec in fs_records:
         inc_stmt = rec.income_statement or {}
+        balance_stmt = rec.balance_sheet or {}
+        cash_flow_stmt = rec.cash_flow or {}
         rev = _safe_float(inc_stmt.get('totalRevenue', rec.revenue))
         ni = _safe_float(inc_stmt.get('netIncome', rec.net_income))
         gp = _safe_float(inc_stmt.get('grossProfit', 0.0))
-        
+        operating_income = _optional_float(inc_stmt.get('operatingIncome'))
+        total_debt = _first_optional(
+            balance_stmt,
+            'shortLongTermDebtTotal',
+            'totalDebt',
+        )
+        if total_debt is None:
+            short_debt = _first_optional(
+                balance_stmt,
+                'shortTermDebt',
+                'shortTermDebtTotal',
+            )
+            long_debt = _first_optional(
+                balance_stmt,
+                'longTermDebt',
+                'longTermDebtTotal',
+            )
+            if short_debt is not None or long_debt is not None:
+                total_debt = (short_debt or 0.0) + (long_debt or 0.0)
+        stockholder_equity = _first_optional(
+            balance_stmt,
+            'totalStockholderEquity',
+            'totalShareholderEquity',
+        )
+        debt_to_equity = (
+            total_debt / stockholder_equity
+            if total_debt is not None
+            and total_debt >= 0
+            and stockholder_equity is not None
+            and stockholder_equity > 0
+            else None
+        )
+
         gross_margin = (gp / rev) if rev > 0 else 0.0
+        operating_margin = (
+            operating_income / rev
+            if operating_income is not None and rev > 0
+            else None
+        )
+        reported_shares = _first_optional(
+            balance_stmt,
+            'commonStockSharesOutstanding',
+            'sharesOutstanding',
+        )
+        share_adjustment_factor = share_split_adjustment_factor(
+            rec.fiscal_date,
+            share_reference_date,
+            split_actions,
+        )
+        adjusted_shares = (
+            reported_shares * share_adjustment_factor
+            if reported_shares is not None
+            else None
+        )
         
         historical_financials.append({
             "date": rec.fiscal_date.isoformat() if hasattr(rec.fiscal_date, 'isoformat') else str(rec.fiscal_date),
             "revenue": rev,
             "net_income": ni,
-            "gross_margin": gross_margin
+            "gross_margin": gross_margin,
+            "free_cash_flow": _optional_float(cash_flow_stmt.get('freeCashFlow')),
+            "operating_margin": operating_margin,
+            "cash_and_short_term_investments": _first_optional(
+                balance_stmt,
+                'cashAndShortTermInvestments',
+                'cashAndCashEquivalents',
+                'cashAndEquivalents',
+                'cash',
+            ),
+            "total_debt": total_debt,
+            "stockholder_equity": stockholder_equity,
+            "debt_to_equity": debt_to_equity,
+            "shares_outstanding": adjusted_shares,
+            "shares_reported": reported_shares,
+            "share_adjustment_factor": share_adjustment_factor,
         })
 
     # 4.5 利用 Pandas merge_asof 将财务报表日期与最近交易日的收盘价匹配

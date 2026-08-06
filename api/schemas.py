@@ -31,6 +31,13 @@ class HistoricalFinancialPointModel(BaseModel):
     revenue: float
     net_income: float
     gross_margin: float
+    free_cash_flow: Optional[float] = None
+    operating_margin: Optional[float] = None
+    cash_and_short_term_investments: Optional[float] = None
+    total_debt: Optional[float] = None
+    stockholder_equity: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    shares_outstanding: Optional[float] = None
     price: Optional[float] = None
 
 class TTMDataModel(BaseModel):
@@ -75,6 +82,21 @@ class StockDataResponse(BaseModel):
     historical_data: List[HistoricalDataPointModel]
     historical_financials: List[HistoricalFinancialPointModel]
     valuation_metrics: Optional[ValuationMetricsModel] = None
+
+
+class DecisionValuationScenarioInput(BaseModel):
+    scenario: Literal["bear", "base", "bull"]
+    fcf_growth_rate: float
+    wacc: float
+    perpetual_growth: float
+
+
+class ValuationScenariosRequest(BaseModel):
+    scenarios: List[DecisionValuationScenarioInput] = Field(min_length=3, max_length=3)
+
+
+class PersonalWatchlistRequest(BaseModel):
+    tickers: List[str] = Field(default_factory=list, max_length=100)
 
 
 class MarketOverviewMeta(BaseModel):
