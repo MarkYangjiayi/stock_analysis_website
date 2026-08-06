@@ -1116,21 +1116,33 @@ def _evidence_items(
             "available": available,
         })
     items.append({"id": "E36", "kind": "published_factors", "label": "Published factors", "value": {"version": factors["version"], "factors": factors["factors"]}, "source_date": _iso(factors["as_of_date"]), "available": bool(factors["factors"])})
-    earnings_periods = [
-        {
+    earnings_periods = []
+    for period in [
+        *earnings_quality.get("annual", []),
+        *earnings_quality.get("quarterly", []),
+    ]:
+        reported = dict(period.get("reported") or {})
+        reported_net_income = reported.pop("net_income", None)
+        earnings_periods.append({
             "period_end": period["period_end"],
             "period_type": period["period_type"],
             "assessment": period["assessment"],
+            "reported": reported,
+            "reported_net_income": reported_net_income,
             "flags": period["flags"],
             "data_quality_warnings": period["data_quality_warnings"],
-            "verified_normalized": period.get("verified_normalized"),
             "analysis": _earnings_analysis_evidence(period.get("analysis")),
-        }
-        for period in [
-            *earnings_quality.get("annual", []),
-            *earnings_quality.get("quarterly", []),
-        ]
-    ]
+        })
+    verified_period_count = sum(
+        1
+        for period in earnings_periods
+        if (
+            ((period.get("analysis") or {}).get("result") or {}).get(
+                "verification_status"
+            )
+            == "verified"
+        )
+    )
     items.append({
         "id": "E37",
         "kind": "earnings_quality",
@@ -1138,7 +1150,7 @@ def _evidence_items(
         "value": {
             "summary": earnings_quality["summary"],
             "methodology": earnings_quality["methodology"],
-            "periods": earnings_periods,
+            "verified_period_count": verified_period_count,
         },
         "source_date": (
             max(period["period_end"] for period in earnings_periods)
@@ -1154,6 +1166,22 @@ def _evidence_items(
             )
         ),
     })
+    for index, period in enumerate(earnings_periods, start=38):
+        analysis = period.get("analysis") or {}
+        items.append({
+            "id": f"E{index}",
+            "kind": "earnings_quality_period",
+            "label": (
+                f"Earnings quality {period['period_type']} "
+                f"{period['period_end']}"
+            ),
+            "value": period,
+            "source_date": period["period_end"],
+            "available": (
+                period["assessment"] != "unavailable"
+                or analysis.get("status") == "completed"
+            ),
+        })
     return items
 
 

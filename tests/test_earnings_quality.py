@@ -688,6 +688,51 @@ async def test_statement_revision_naturally_invalidates_completed_cache(
 
 
 @pytest.mark.asyncio
+async def test_statement_revision_supersedes_stale_active_run(
+    db_session,
+    monkeypatch,
+):
+    await seed_supported_company(db_session)
+    from services.filing_analysis import enqueue_filing_analysis
+
+    monkeypatch.setattr(settings, "SEC_USER_AGENT", "Quantify test@example.com")
+    monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "test-model-key")
+    stale, created = await enqueue_filing_analysis(
+        db_session,
+        "API.US",
+        date(2025, 12, 31),
+        "annual",
+    )
+    assert created is True
+
+    statement_result = await db_session.execute(
+        select(FinancialStatement).where(
+            FinancialStatement.ticker == "API.US",
+            FinancialStatement.fiscal_date == date(2025, 12, 31),
+        )
+    )
+    revised = statement_result.scalar_one()
+    revised.income_statement = {**revised.income_statement, "netIncome": 81}
+    revised.net_income = 81
+    await db_session.commit()
+
+    replacement, replacement_created = await enqueue_filing_analysis(
+        db_session,
+        "API.US",
+        date(2025, 12, 31),
+        "annual",
+    )
+
+    await db_session.refresh(stale)
+    assert replacement_created is True
+    assert replacement.id != stale.id
+    assert replacement.cache_identity != stale.cache_identity
+    assert stale.status == "failed"
+    assert stale.stage == "superseded"
+    assert stale.active_key is None
+
+
+@pytest.mark.asyncio
 async def test_old_model_or_schema_cache_is_not_exposed_as_current(
     db_session,
 ):
@@ -796,6 +841,51 @@ def test_sec_fixture_selects_matching_primary_nearest_earnings_8k_and_exhibit(
     assert documents[-1]["form"] == "EX-99.1"
     company_factory.assert_called_once_with("320193", include_old_filings=False)
     identity.assert_called_once_with("Quantify test@example.com")
+
+
+def test_quarterly_sec_fixture_falls_back_to_matching_ten_k(monkeypatch):
+    import edgar
+    import services.filing_analysis as filing_analysis
+
+    class FakeFiling:
+        accession_no = "year-end"
+        form = "10-K"
+        filing_date = "2026-02-01"
+        report_date = "2025-12-31"
+        items = ""
+        attachments = []
+        primary_document = "year-end.htm"
+        url = "https://www.sec.gov/year-end"
+
+        def html(self):
+            return "<html><body>Fiscal year-end results</body></html>"
+
+        def text(self):
+            raise AssertionError("HTML should be converted without a second download")
+
+    requested_forms = []
+
+    class FakeCompany:
+        def get_filings(self, *, form, filing_date):
+            assert isinstance(filing_date, tuple)
+            requested_forms.append(form)
+            if form == "10-K":
+                return [FakeFiling()]
+            return []
+
+    monkeypatch.setattr(edgar, "Company", Mock(return_value=FakeCompany()))
+    monkeypatch.setattr(edgar, "set_identity", Mock())
+    monkeypatch.setattr(settings, "SEC_USER_AGENT", "Quantify test@example.com")
+
+    documents = filing_analysis._fetch_sec_documents_sync(
+        cik="320193",
+        period_end=date(2025, 12, 31),
+        period_type="quarterly",
+    )
+
+    assert documents[0]["form"] == "10-K"
+    assert documents[0]["source_id"] == "year-end:primary"
+    assert requested_forms == ["10-Q", "10-K", "8-K"]
 
 
 @pytest.mark.asyncio

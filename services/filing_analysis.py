@@ -146,17 +146,55 @@ async def find_reusable_analysis(
             EarningsQualityAnalysisRun.ticker == canonical_ticker,
             EarningsQualityAnalysisRun.period_end == period_end,
             EarningsQualityAnalysisRun.period_type == period_type,
-            or_(
-                EarningsQualityAnalysisRun.cache_identity == identity,
-                EarningsQualityAnalysisRun.active_key
-                == _active_key(canonical_ticker, period_end, period_type),
-            ),
+            EarningsQualityAnalysisRun.cache_identity == identity,
             EarningsQualityAnalysisRun.status.in_(("completed", *ACTIVE_STATUSES)),
         )
         .order_by(EarningsQualityAnalysisRun.id.desc())
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _supersede_stale_active_analyses(
+    db: AsyncSession,
+    *,
+    ticker: str,
+    period_end: date,
+    period_type: str,
+    cache_identity: str,
+) -> None:
+    """Release the single-flight key held by work for an obsolete input."""
+    active_key = _active_key(ticker, period_end, period_type)
+    result = await db.execute(
+        select(EarningsQualityAnalysisRun).where(
+            EarningsQualityAnalysisRun.active_key == active_key,
+            EarningsQualityAnalysisRun.status.in_(ACTIVE_STATUSES),
+            EarningsQualityAnalysisRun.cache_identity != cache_identity,
+        )
+    )
+    stale_runs = list(result.scalars().all())
+    if not stale_runs:
+        return
+
+    now = utc_now()
+    for stale in stale_runs:
+        stale.active_key = None
+        if stale.status == "queued":
+            # A queued task has not claimed the global slot. Marking it failed
+            # makes any already-scheduled coroutine exit without external work.
+            stale.status = "failed"
+            stale.stage = "superseded"
+            stale.global_slot = None
+            stale.owner_token = None
+            stale.lease_expires_at = None
+            stale.error_message = (
+                "Superseded because the local statement or analysis "
+                "configuration changed"
+            )
+            stale.finished_at = now
+        # A running task keeps its global slot until its fingerprint check or
+        # lease cleanup finishes, preserving the cross-process concurrency cap.
+    await db.commit()
 
 
 async def enqueue_filing_analysis(
@@ -183,48 +221,74 @@ async def enqueue_filing_analysis(
             return reusable, False
 
         assert_filing_analysis_configured()
-        profile = await db.get(Ticker, canonical_ticker)
-
-        run = EarningsQualityAnalysisRun(
+        await _supersede_stale_active_analyses(
+            db,
             ticker=canonical_ticker,
             period_end=period_end,
             period_type=period_type,
-            statement_fingerprint=statement_fingerprint(
-                statement,
-                currency=profile.currency if profile else None,
-            ),
             cache_identity=identity,
-            model=settings.DEEPSEEK_MODEL,
-            prompt_version=PROMPT_VERSION,
-            schema_version=SCHEMA_VERSION,
-            status="queued",
-            stage="queued",
-            active_key=_active_key(canonical_ticker, period_end, period_type),
-            global_slot=None,
-            owner_token=None,
-            lease_expires_at=None,
-            source_snapshots=[],
-            attempt_count=0,
         )
-        db.add(run)
-        try:
-            await db.commit()
-        except IntegrityError:
-            await db.rollback()
-            concurrent_result = await db.execute(
-                select(EarningsQualityAnalysisRun)
-                .where(
-                    EarningsQualityAnalysisRun.active_key
-                    == _active_key(canonical_ticker, period_end, period_type)
-                )
-                .limit(1)
+        profile = await db.get(Ticker, canonical_ticker)
+        active_key = _active_key(canonical_ticker, period_end, period_type)
+        fingerprint = statement_fingerprint(
+            statement,
+            currency=profile.currency if profile else None,
+        )
+
+        for attempt in range(2):
+            run = EarningsQualityAnalysisRun(
+                ticker=canonical_ticker,
+                period_end=period_end,
+                period_type=period_type,
+                statement_fingerprint=fingerprint,
+                cache_identity=identity,
+                model=settings.DEEPSEEK_MODEL,
+                prompt_version=PROMPT_VERSION,
+                schema_version=SCHEMA_VERSION,
+                status="queued",
+                stage="queued",
+                active_key=active_key,
+                global_slot=None,
+                owner_token=None,
+                lease_expires_at=None,
+                source_snapshots=[],
+                attempt_count=0,
             )
-            concurrent = concurrent_result.scalar_one_or_none()
-            if concurrent is None:
-                raise
-            return concurrent, False
-        await db.refresh(run)
-        return run, True
+            db.add(run)
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
+                concurrent_result = await db.execute(
+                    select(EarningsQualityAnalysisRun)
+                    .where(EarningsQualityAnalysisRun.active_key == active_key)
+                    .limit(1)
+                )
+                concurrent = concurrent_result.scalar_one_or_none()
+                if (
+                    concurrent is not None
+                    and concurrent.cache_identity == identity
+                    and concurrent.status in ACTIVE_STATUSES
+                ):
+                    return concurrent, False
+                if attempt == 0:
+                    await _supersede_stale_active_analyses(
+                        db,
+                        ticker=canonical_ticker,
+                        period_end=period_end,
+                        period_type=period_type,
+                        cache_identity=identity,
+                    )
+                    continue
+                raise FilingAnalysisError(
+                    "Could not establish single-flight ownership for the current input"
+                )
+            await db.refresh(run)
+            return run, True
+
+        raise FilingAnalysisError(
+            "Could not enqueue filing analysis for the current input"
+        )
 
 
 async def get_filing_analysis(
@@ -311,28 +375,33 @@ def _fetch_sec_documents_sync(
 
     set_identity(settings.SEC_USER_AGENT)
     company = Company(cik, include_old_filings=False)
-    primary_form = "10-K" if period_type == "annual" else "10-Q"
+    primary_forms = ("10-K",) if period_type == "annual" else ("10-Q", "10-K")
     filing_window = (
         (period_end - timedelta(days=10)).isoformat(),
         (period_end + timedelta(days=120)).isoformat(),
     )
-    primary_candidates = _iter_filings(
-        company.get_filings(form=primary_form, filing_date=filing_window)
-    )
-    ranked_primary = sorted(
-        (
-            (abs((report_date - period_end).days), filing)
-            for filing in primary_candidates
-            if (report_date := _as_date(getattr(filing, "report_date", None)))
-            and abs((report_date - period_end).days) <= 60
-        ),
-        key=lambda item: item[0],
-    )
-    if not ranked_primary:
-        raise FilingAnalysisError(
-            f"No {primary_form} filing matches the selected reporting period"
+    primary_filing = None
+    for primary_form in primary_forms:
+        primary_candidates = _iter_filings(
+            company.get_filings(form=primary_form, filing_date=filing_window)
         )
-    primary_filing = ranked_primary[0][1]
+        ranked_primary = sorted(
+            (
+                (abs((report_date - period_end).days), filing)
+                for filing in primary_candidates
+                if (report_date := _as_date(getattr(filing, "report_date", None)))
+                and abs((report_date - period_end).days) <= 60
+            ),
+            key=lambda item: item[0],
+        )
+        if ranked_primary:
+            primary_filing = ranked_primary[0][1]
+            break
+    if primary_filing is None:
+        expected_forms = " or ".join(primary_forms)
+        raise FilingAnalysisError(
+            f"No {expected_forms} filing matches the selected reporting period"
+        )
     documents = [_source_document(primary_filing)]
 
     eight_k_candidates = []
