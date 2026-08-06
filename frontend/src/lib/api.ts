@@ -276,7 +276,7 @@ export interface EarningsQualityAnalysis {
     ticker: string;
     period_end: string;
     period_type: EarningsQualityPeriodType;
-    status: "queued" | "running" | "completed" | "failed";
+    status: "queued" | "running" | "completed" | "failed" | "waiting_for_filing";
     stage: string;
     model: string;
     prompt_version: string;
@@ -309,6 +309,8 @@ export interface EarningsQualityAnalysis {
                 excerpt: string;
                 source_amount: number;
                 source_unit_scale: number;
+                period_end: string;
+                period_scope: "quarter" | "annual";
             };
         }>;
         notes: string[];
@@ -319,6 +321,12 @@ export interface EarningsQualityAnalysis {
         checks: Array<Record<string, unknown>>;
         failures: Array<{ code: string; message: string; adjustment_index?: number }>;
         eps_failures?: Array<{ code: string; message: string }>;
+        rejected_adjustments?: Array<{
+            adjustment_index: number;
+            label: string;
+            model_category: string;
+            policy_category: string;
+        }>;
         sign_convention: string;
         gains_and_charges_treated_symmetrically: boolean;
     } | null;

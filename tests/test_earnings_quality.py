@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date, timedelta
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -21,6 +22,7 @@ from services.earnings_quality import (
 )
 from services.earnings_quality_validation import (
     FilingEarningsQualityExtraction,
+    canonical_adjustment_category,
     validate_filing_extraction,
 )
 from services.raw_store import persist_snapshot
@@ -223,7 +225,7 @@ def test_financial_company_disables_non_operating_swing_rule():
     assert not any(flag["category"] == "non_operating_swing" for flag in financial["flags"])
 
 
-VALID_SOURCE = "The company recorded an impairment charge of 25, a tax benefit of 5, and an after-tax earnings effect of 20; adjusted net income was 120 and adjusted diluted EPS was 1.2."
+VALID_SOURCE = "For the year ended December 31, 2025, the company recorded an impairment charge of 25, a tax benefit of 5, and an after-tax earnings effect of 20; adjusted net income was 120 and adjusted diluted EPS was 1.2."
 
 
 def test_reported_net_income_falls_back_from_invalid_json_to_column():
@@ -235,6 +237,55 @@ def test_reported_net_income_falls_back_from_invalid_json_to_column():
 
     record.income_statement["netIncome"] = "not-a-number"
     assert filing_analysis._reported_net_income(record) == 80
+
+
+def test_coherent_model_unit_scale_is_converted_to_base_units():
+    import services.filing_analysis as filing_analysis
+
+    payload = extraction_payload(unit_scale=1_000_000)
+    payload["adjustments"][0]["citation"]["source_unit_scale"] = 1_000_000
+    payload["company_adjusted"]["net_income_citation"]["source_unit_scale"] = 1_000_000
+    extraction = FilingEarningsQualityExtraction.model_validate(payload)
+
+    normalized = filing_analysis._normalize_extraction_to_base_units(
+        extraction,
+        expected_reported_net_income=100_000_000,
+    )
+
+    assert normalized.unit_scale == 1
+    assert normalized.reported_net_income == 100_000_000
+    assert normalized.adjustments[0].pretax_earnings_effect == -25_000_000
+    assert normalized.adjustments[0].tax_effect == 5_000_000
+    assert normalized.adjustments[0].earnings_effect_after_tax == -20_000_000
+    assert normalized.company_adjusted.adjusted_net_income == 120_000_000
+    assert normalized.company_adjusted.adjusted_diluted_eps == 1.2
+    assert normalized.disclosed_adjusted_net_income == 120_000_000
+    assert normalized.disclosed_adjusted_diluted_eps == 1.2
+
+    result, report = validate_filing_extraction(
+        normalized,
+        expected_period_end=date(2025, 12, 31),
+        expected_currency="USD",
+        reported_net_income=100_000_000,
+        source_documents={"filing:primary": VALID_SOURCE},
+    )
+    assert report["verified"] is True
+    assert result["normalized_net_income"] == 120_000_000
+
+
+def test_incoherent_model_unit_scale_remains_blocked_for_validation():
+    import services.filing_analysis as filing_analysis
+
+    extraction = FilingEarningsQualityExtraction.model_validate(
+        extraction_payload(unit_scale=1_000_000)
+    )
+
+    unchanged = filing_analysis._normalize_extraction_to_base_units(
+        extraction,
+        expected_reported_net_income=100,
+    )
+
+    assert unchanged.unit_scale == 1_000_000
 
 
 def test_relevant_context_honors_configured_character_cap(monkeypatch):
@@ -286,6 +337,32 @@ def test_relevant_context_prioritizes_unrealized_gain_over_generic_matches(
     assert "unrealized gains on equity securities" in context[0]["text"]
 
 
+def test_period_scoped_table_evidence_excludes_ytd_amounts_from_quarter():
+    import services.filing_analysis as filing_analysis
+
+    html = """
+    <table>
+      <tr><th></th><th colspan="2">Three Months Ended</th><th colspan="2">Six Months Ended</th></tr>
+      <tr><th></th><th>April 26, 2026</th><th>April 27, 2025</th><th>April 26, 2026</th><th>April 27, 2025</th></tr>
+      <tr><td>Legal settlement</td><td>—</td><td>—</td><td>253</td><td>—</td></tr>
+      <tr><td>Unrealized gain on strategic investment</td><td>(685)</td><td>—</td><td>(1,169)</td><td>—</td></tr>
+      <tr><td>Net income</td><td>1,000</td><td>900</td><td>1,900</td><td>1,700</td></tr>
+    </table>
+    """
+
+    evidence = filing_analysis._period_scoped_table_evidence(
+        html,
+        period_end=date(2026, 4, 30),
+        period_type="quarterly",
+    )
+
+    assert "selected_period_end=2026-04-30 scope=quarter" in evidence
+    assert "Legal settlement | —" in evidence
+    assert "Unrealized gain on strategic investment | (685)" in evidence
+    assert "253" not in evidence
+    assert "1,169" not in evidence
+
+
 def extraction_payload(**overrides):
     payload = {
         "period_end": "2025-12-31",
@@ -309,6 +386,8 @@ def extraction_payload(**overrides):
                 "excerpt": VALID_SOURCE,
                 "source_amount": -25,
                 "source_unit_scale": 1,
+                "period_end": "2025-12-31",
+                "period_scope": "annual",
             },
         }],
         "company_adjusted": {
@@ -323,6 +402,8 @@ def extraction_payload(**overrides):
                 "excerpt": VALID_SOURCE,
                 "source_amount": 120,
                 "source_unit_scale": 1,
+                "period_end": "2025-12-31",
+                "period_scope": "annual",
             },
             "diluted_eps_citation": {
                 "source_id": "filing:primary",
@@ -332,6 +413,8 @@ def extraction_payload(**overrides):
                 "excerpt": VALID_SOURCE,
                 "source_amount": 1.2,
                 "source_unit_scale": 1,
+                "period_end": "2025-12-31",
+                "period_scope": "annual",
             },
         },
         "disclosed_adjusted_net_income": 120,
@@ -363,7 +446,7 @@ def test_complete_filing_reconciliation_produces_verified_normalized_values():
 
 
 def test_gain_is_normalized_symmetrically_with_charge():
-    gain_source = "The company reported a disposal gain of 25, tax expense of 5, and an after-tax earnings effect of 20; adjusted net income was 80."
+    gain_source = "For the year ended December 31, 2025, the company reported a disposal gain of 25, tax expense of 5, and an after-tax earnings effect of 20; adjusted net income was 80."
     payload = extraction_payload(
         adjustments=[{
             **extraction_payload()["adjustments"][0],
@@ -392,6 +475,8 @@ def test_gain_is_normalized_symmetrically_with_charge():
                 "excerpt": gain_source,
                 "source_amount": 80,
                 "source_unit_scale": 1,
+                "period_end": "2025-12-31",
+                "period_scope": "annual",
             },
             "diluted_eps_citation": None,
         },
@@ -442,6 +527,195 @@ def test_recurring_provider_amount_binds_to_filing_level_category():
 
     assert "non_recurring" in categories
     assert "impairment" in categories
+
+
+def test_cached_quarterly_history_marks_fourth_occurrence_recurring():
+    import services.filing_analysis as filing_analysis
+
+    extraction = FilingEarningsQualityExtraction.model_validate(extraction_payload())
+    historical_runs = [
+        SimpleNamespace(
+            period_end=period_end,
+            result={
+                "adjustments": [{
+                    "category": "impairment",
+                    "label": "Asset impairment",
+                    "citation": {"excerpt": "Impairment charge"},
+                }]
+            },
+        )
+        for period_end in (
+            date(2025, 9, 30),
+            date(2025, 6, 30),
+            date(2025, 3, 31),
+        )
+    ]
+
+    categories = filing_analysis._recurring_categories_for_extraction(
+        [],
+        extraction,
+        historical_runs=historical_runs,
+        period_type="quarterly",
+    )
+
+    assert "impairment" in categories
+
+
+@pytest.mark.parametrize(
+    ("model_category", "label", "excerpt", "policy_category"),
+    [
+        (
+            "impairment",
+            "Unrealized gain on strategic investment",
+            "The unrealized gain from revaluation of a strategic investment was 685.",
+            "investment_fair_value",
+        ),
+        (
+            "debt_extinguishment",
+            "Escrowed Shares mark-to-market loss",
+            "The mark-to-market loss on Escrowed Shares was 12,529.",
+            "derivative_fair_value",
+        ),
+    ],
+)
+def test_fair_value_categories_override_model_misclassification(
+    model_category,
+    label,
+    excerpt,
+    policy_category,
+):
+    assert canonical_adjustment_category(model_category, label, excerpt) == policy_category
+
+
+def test_investment_fair_value_override_is_recurring_flag_only():
+    source = (
+        "For the three months ended April 26, 2026, the unrealized gain from "
+        "revaluation of a strategic investment was 685, tax expense was 137, "
+        "and the after-tax earnings effect was 548."
+    )
+    extraction = FilingEarningsQualityExtraction.model_validate({
+        "period_end": "2026-04-30",
+        "currency": "USD",
+        "unit_scale": 1,
+        "reported_net_income": 1_000,
+        "adjustments": [{
+            "category": "impairment",
+            "label": "Unrealized gain on strategic investment",
+            "pretax_earnings_effect": 685,
+            "tax_effect": -137,
+            "earnings_effect_after_tax": 548,
+            "include_in_normalized": True,
+            "recurring": False,
+            "cash_effect": "non_cash",
+            "citation": {
+                "source_id": "filing:primary",
+                "accession": "0002",
+                "document_name": "quarter.htm",
+                "section": "Other income",
+                "excerpt": source,
+                "source_amount": 685,
+                "source_unit_scale": 1,
+                "period_end": "2026-04-30",
+                "period_scope": "quarter",
+            },
+        }],
+        "company_adjusted": None,
+        "disclosed_adjusted_net_income": None,
+        "disclosed_adjusted_diluted_eps": None,
+        "notes": [],
+    })
+
+    result, report = validate_filing_extraction(
+        extraction,
+        expected_period_end=date(2026, 4, 30),
+        expected_period_type="quarterly",
+        expected_currency="USD",
+        reported_net_income=1_000,
+        source_documents={"filing:primary": source},
+    )
+
+    assert result["verification_status"] == "flag_only"
+    assert result["adjustments"][0]["category"] == "investment_fair_value"
+    assert result["adjustments"][0]["include_in_normalized"] is False
+    assert result["adjustments"][0]["recurring"] is True
+    assert {"category_policy_override", "category_not_normalizable"} <= {
+        failure["code"] for failure in report["failures"]
+    }
+    assert "earnings_effect_sign_override" not in {
+        failure["code"] for failure in report["failures"]
+    }
+
+
+def test_fair_value_gain_sign_is_corrected_from_explicit_earnings_direction():
+    source = (
+        "For the three months ended June 30, 2026, the net gain on equity "
+        "securities was 99, tax expense was 22, and the after-tax effect of 77 "
+        "increased net income."
+    )
+    extraction = FilingEarningsQualityExtraction.model_validate({
+        "period_end": "2026-06-30",
+        "currency": "USD",
+        "unit_scale": 1,
+        "reported_net_income": 112,
+        "adjustments": [{
+            "category": "other",
+            "label": "Net gain on equity securities",
+            "pretax_earnings_effect": -99,
+            "tax_effect": 22,
+            "earnings_effect_after_tax": -77,
+            "include_in_normalized": False,
+            "recurring": False,
+            "cash_effect": "non_cash",
+            "citation": {
+                "source_id": "filing:primary",
+                "accession": "0003",
+                "document_name": "quarter.htm",
+                "section": "Other income",
+                "excerpt": source,
+                "source_amount": 99,
+                "source_unit_scale": 1,
+                "period_end": "2026-06-30",
+                "period_scope": "quarter",
+            },
+        }],
+        "company_adjusted": None,
+        "disclosed_adjusted_net_income": None,
+        "disclosed_adjusted_diluted_eps": None,
+        "notes": [],
+    })
+
+    result, report = validate_filing_extraction(
+        extraction,
+        expected_period_end=date(2026, 6, 30),
+        expected_period_type="quarterly",
+        expected_currency="USD",
+        reported_net_income=112,
+        source_documents={"filing:primary": source},
+    )
+
+    adjustment = result["adjustments"][0]
+    assert adjustment["pretax_earnings_effect"] == 99
+    assert adjustment["tax_effect"] == -22
+    assert adjustment["earnings_effect_after_tax"] == 77
+    assert adjustment["category"] == "investment_fair_value"
+    assert adjustment["include_in_normalized"] is False
+    assert adjustment["recurring"] is True
+    assert "earnings_effect_sign_override" in {
+        failure["code"] for failure in report["failures"]
+    }
+
+
+def test_wrong_period_citation_is_rejected_from_public_adjustments():
+    payload = extraction_payload()
+    payload["adjustments"][0]["citation"]["period_scope"] = "quarter"
+
+    result, report = validate(payload)
+
+    assert result["adjustments"] == []
+    assert report["rejected_adjustments"][0]["label"] == "Asset impairment"
+    assert "citation_period_mismatch" in {
+        failure["code"] for failure in report["failures"]
+    }
 
 
 @pytest.mark.parametrize(
@@ -509,7 +783,7 @@ def test_citation_identity_must_match_the_saved_sec_document():
 
 
 def test_pretax_only_disclosure_cannot_verify_tax_or_after_tax_amounts():
-    pretax_only_source = "The company recorded an impairment charge of 25 and reported adjusted net income of 120 and adjusted diluted EPS of 1.2."
+    pretax_only_source = "For the year ended December 31, 2025, the company recorded an impairment charge of 25 and reported adjusted net income of 120 and adjusted diluted EPS of 1.2."
     payload = extraction_payload()
     payload["adjustments"][0]["citation"]["excerpt"] = pretax_only_source
     payload["company_adjusted"]["net_income_citation"]["excerpt"] = pretax_only_source
@@ -1009,7 +1283,7 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     ai_mock = AsyncMock(return_value=extraction_payload(reported_net_income=80))
     ai_mock.return_value["disclosed_adjusted_net_income"] = 100
     ai_mock.return_value["company_adjusted"]["adjusted_net_income"] = 100
-    job_source = "The company recorded an impairment charge of 25, a tax benefit of 5, and an after-tax earnings effect of 20; adjusted net income was 100 and adjusted diluted EPS was 1.2."
+    job_source = "For the year ended December 31, 2025, the company recorded an impairment charge of 25, a tax benefit of 5, and an after-tax earnings effect of 20; adjusted net income was 100 and adjusted diluted EPS was 1.2."
     ai_mock.return_value["adjustments"][0]["citation"]["excerpt"] = job_source
     ai_mock.return_value["company_adjusted"]["net_income_citation"]["excerpt"] = job_source
     ai_mock.return_value["company_adjusted"]["net_income_citation"]["source_amount"] = 100
@@ -1040,6 +1314,46 @@ async def test_clicked_job_uses_mocked_sec_and_ai_and_persists_verified_sources(
     sec_mock.assert_called_once()
     ai_mock.assert_awaited_once()
     assert ai_mock.await_args.kwargs["model"] == settings.DEEPSEEK_MODEL
+
+
+@pytest.mark.asyncio
+async def test_missing_primary_filing_is_retryable_waiting_state(
+    db_session,
+    monkeypatch,
+):
+    await seed_supported_company(db_session)
+    import services.filing_analysis as filing_analysis
+    from services.earnings_quality import serialize_analysis_run
+
+    monkeypatch.setattr(settings, "SEC_USER_AGENT", "Quantify test@example.com")
+    monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "test-model-key")
+    sec_mock = Mock(side_effect=filing_analysis.FilingNotAvailableError(
+        "The matching 10-K has not been filed for this reporting period yet."
+    ))
+    ai_mock = AsyncMock(side_effect=AssertionError("AI must not run without a filing"))
+    monkeypatch.setattr(filing_analysis, "_fetch_sec_documents_sync", sec_mock)
+    monkeypatch.setattr(filing_analysis, "generate_deepseek_json", ai_mock)
+
+    run, created = await filing_analysis.enqueue_filing_analysis(
+        db_session,
+        "API.US",
+        date(2025, 12, 31),
+        "annual",
+    )
+    assert created is True
+    run_id = run.id
+
+    await filing_analysis.execute_filing_analysis(run_id)
+
+    db_session.expire_all()
+    waiting = await db_session.get(EarningsQualityAnalysisRun, run_id)
+    assert waiting.status == "waiting_for_filing"
+    assert waiting.stage == "waiting_for_filing"
+    assert waiting.active_key is None
+    assert waiting.global_slot is None
+    assert serialize_analysis_run(waiting)["retryable"] is True
+    sec_mock.assert_called_once()
+    ai_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

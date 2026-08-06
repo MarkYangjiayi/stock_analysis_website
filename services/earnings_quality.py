@@ -31,7 +31,7 @@ MATERIALITY_WARNING_RATIO = 0.10
 MATERIALITY_HIGH_RATIO = 0.25
 ANNUAL_RECURRENCE_COUNT = 2
 QUARTERLY_RECURRENCE_COUNT = 4
-EARNINGS_QUALITY_PROMPT_VERSION = "earnings-quality-v2"
+EARNINGS_QUALITY_PROMPT_VERSION = "earnings-quality-v3"
 EARNINGS_QUALITY_SCHEMA_VERSION = FILING_EARNINGS_QUALITY_SCHEMA_VERSION
 
 _CANDIDATE_FIELDS: tuple[tuple[str, str, str], ...] = (
@@ -449,7 +449,7 @@ def serialize_analysis_run(run: EarningsQualityAnalysisRun) -> dict[str, Any]:
         "result": run.result,
         "validation_report": run.validation_report,
         "error_message": run.error_message,
-        "retryable": run.status == "failed",
+        "retryable": run.status in {"failed", "waiting_for_filing"},
         "created_at": iso(run.created_at),
         "started_at": iso(run.started_at),
         "finished_at": iso(run.finished_at),
