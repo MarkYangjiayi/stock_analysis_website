@@ -44,6 +44,13 @@ const verdictLabel: Record<EarningsQualityResponse["summary"]["verdict"], string
 
 const periodKey = (period: EarningsQualityPeriod) => `${period.period_type}:${period.period_end}`;
 
+const filingCandidateCount = (period: EarningsQualityPeriod) => {
+    const analysis = period.analysis;
+    if (analysis?.status !== "completed" || !analysis.result) return 0;
+    return analysis.result.adjustments.length
+        + (analysis.validation_report?.rejected_adjustments?.length ?? 0);
+};
+
 export default function EarningsQualityPanel({
     data,
     loading = false,
@@ -60,6 +67,13 @@ export default function EarningsQualityPanel({
         () => data?.[periodType] ?? [],
         [data, periodType],
     );
+    const totalFilingCandidates = useMemo(
+        () => data
+            ? [...data.quarterly, ...data.annual]
+                .reduce((total, period) => total + filingCandidateCount(period), 0)
+            : 0,
+        [data],
+    );
 
     if (loading && !data) {
         return <div className="flex min-h-48 items-center justify-center rounded-xl border"><LoaderCircle className="mr-2 animate-spin text-emerald-500" size={18} /> Loading earnings-quality evidence…</div>;
@@ -75,7 +89,7 @@ export default function EarningsQualityPanel({
                     <div className="flex flex-wrap items-center gap-2">
                         <h3 id="earnings-quality-title" className="text-sm font-black">Earnings Quality</h3>
                         <span className="font-mono text-[10px] text-slate-400">E37</span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${data.summary.verdict === "flags_present" || data.summary.verdict === "data_quality_warning" ? "border-amber-300 text-amber-700 dark:text-amber-300" : data.summary.verdict === "unavailable" ? "text-slate-500" : "border-emerald-300 text-emerald-700 dark:text-emerald-300"}`}>{verdictLabel[data.summary.verdict]}</span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${totalFilingCandidates > 0 || data.summary.verdict === "flags_present" || data.summary.verdict === "data_quality_warning" ? "border-amber-300 text-amber-700 dark:text-amber-300" : data.summary.verdict === "unavailable" ? "text-slate-500" : "border-emerald-300 text-emerald-700 dark:text-emerald-300"}`}>{totalFilingCandidates > 0 ? "Filing candidates flagged" : verdictLabel[data.summary.verdict]}</span>
                     </div>
                     <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">Reported figures remain primary. Structured fields create screening candidates only; adjusted values appear only after SEC-source and reconciliation validation.</p>
                 </div>
@@ -93,6 +107,7 @@ export default function EarningsQualityPanel({
                     const isExpanded = expanded === key;
                     const analysis = period.analysis;
                     const rejectedAdjustments = analysis?.validation_report?.rejected_adjustments ?? [];
+                    const periodFilingCandidateCount = filingCandidateCount(period);
                     const isBusy = busyPeriod === periodKey(period) || analysis?.status === "queued" || analysis?.status === "running";
                     const highCount = period.flags.filter((flag) => flag.severity === "high").length;
                     const includedEarningsEffect = analysis?.result?.adjustments
@@ -104,6 +119,7 @@ export default function EarningsQualityPanel({
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <span className="font-mono text-sm font-black">{period.period_end}</span>
                                     {period.flags.length > 0 ? <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${highCount ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"}`}>{period.flags.length} flag{period.flags.length === 1 ? "" : "s"}</span> : period.assessment === "unavailable" ? <span className="text-[10px] font-bold text-slate-400">Unavailable</span> : period.assessment === "data_quality_warning" ? <span className="text-[10px] font-bold text-amber-600">Data quality warning</span> : <span className="text-[10px] font-bold text-emerald-600">No material candidates on available data</span>}
+                                    {periodFilingCandidateCount > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-950 dark:text-amber-300">{periodFilingCandidateCount} filing flag{periodFilingCandidateCount === 1 ? "" : "s"}</span>}
                                     {period.verified_normalized?.net_income != null && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"><ShieldCheck size={11} /> Verified adjusted</span>}
                                     {isBusy && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600"><LoaderCircle size={11} className="animate-spin" /> {analysis?.stage || "queued"}</span>}
                                 </div>

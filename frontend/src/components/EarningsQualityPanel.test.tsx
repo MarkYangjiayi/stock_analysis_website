@@ -194,6 +194,9 @@ describe("EarningsQualityPanel", () => {
         data.quarterly[0].verified_normalized = null;
 
         render(<EarningsQualityPanel data={data} adminKey="secret" />);
+
+        expect(screen.getByText("Filing candidates flagged")).toBeInTheDocument();
+        expect(screen.getByText("1 filing flag")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
 
         expect(screen.getByText("Unverified filing candidates")).toBeInTheDocument();
