@@ -21,6 +21,7 @@ from services.earnings_quality import (
     statement_fingerprint,
 )
 from services.earnings_quality_validation import (
+    FilingCitation,
     FilingEarningsQualityExtraction,
     canonical_adjustment_category,
     validate_filing_extraction,
@@ -357,10 +358,32 @@ def test_period_scoped_table_evidence_excludes_ytd_amounts_from_quarter():
     )
 
     assert "selected_period_end=2026-04-30 scope=quarter" in evidence
-    assert "Legal settlement | —" in evidence
+    assert "Legal settlement" not in evidence
     assert "Unrealized gain on strategic investment | (685)" in evidence
     assert "253" not in evidence
     assert "1,169" not in evidence
+
+
+def test_period_scoped_table_evidence_accepts_plural_annual_header():
+    import services.filing_analysis as filing_analysis
+
+    html = """
+    <table>
+      <tr><th></th><th colspan="2">Years Ended</th></tr>
+      <tr><th></th><th>December 31, 2025</th><th>December 31, 2024</th></tr>
+      <tr><td>Impairment charge</td><td>25</td><td>30</td></tr>
+    </table>
+    """
+
+    evidence = filing_analysis._period_scoped_table_evidence(
+        html,
+        period_end=date(2025, 12, 31),
+        period_type="annual",
+    )
+
+    assert "selected_period_end=2025-12-31 scope=annual" in evidence
+    assert "Impairment charge | 25" in evidence
+    assert "30" not in evidence
 
 
 def extraction_payload(**overrides):
@@ -587,6 +610,14 @@ def test_fair_value_categories_override_model_misclassification(
     assert canonical_adjustment_category(model_category, label, excerpt) == policy_category
 
 
+def test_unrealized_foreign_exchange_is_not_relabelled_as_investment():
+    assert canonical_adjustment_category(
+        "foreign_exchange",
+        "Unrealized foreign-exchange loss",
+        "The unrealized foreign-exchange loss was 20.",
+    ) == "foreign_exchange"
+
+
 def test_investment_fair_value_override_is_recurring_flag_only():
     source = (
         "For the three months ended April 26, 2026, the unrealized gain from "
@@ -718,6 +749,103 @@ def test_wrong_period_citation_is_rejected_from_public_adjustments():
     }
 
 
+def test_opposite_signed_citation_amount_is_rejected():
+    payload = extraction_payload()
+    payload["adjustments"][0]["citation"]["source_amount"] = 25
+
+    result, report = validate(payload)
+
+    assert result["adjustments"] == []
+    assert "cited_amount_mismatch" in {
+        failure["code"] for failure in report["failures"]
+    }
+
+
+def test_comparative_multi_year_excerpt_cannot_bind_selected_year_amount():
+    source = (
+        "For the years ended December 31, 2025 and 2024, impairment charges "
+        "were 25 and 30; the 2025 tax benefit was 5, the after-tax earnings "
+        "effect was 20, adjusted net income was 120, and adjusted diluted EPS was 1.2."
+    )
+    payload = extraction_payload()
+    payload["adjustments"][0]["citation"]["excerpt"] = source
+    extraction = FilingEarningsQualityExtraction.model_validate(payload)
+
+    result, report = validate_filing_extraction(
+        extraction,
+        expected_period_end=date(2025, 12, 31),
+        expected_currency="USD",
+        reported_net_income=100,
+        source_documents={"filing:primary": source},
+    )
+
+    assert result["adjustments"] == []
+    assert "citation_period_mismatch" in {
+        failure["code"] for failure in report["failures"]
+    }
+
+
+def test_period_table_marker_must_be_the_only_cited_line():
+    import services.earnings_quality_validation as validation
+
+    marker_line = (
+        "[PERIOD_TABLE selected_period_end=2026-04-30 scope=quarter "
+        "source_period_end=2026-04-26 table=9] Net income | 1,000"
+    )
+    citation_payload = {
+        "source_id": "filing:primary",
+        "accession": "0004",
+        "document_name": "quarter.htm",
+        "section": "Selected table",
+        "excerpt": marker_line,
+        "source_amount": 1_000,
+        "source_unit_scale": 1,
+        "period_end": "2026-04-30",
+        "period_scope": "quarter",
+    }
+    valid = FilingCitation.model_validate(citation_payload)
+    piggybacked = FilingCitation.model_validate({
+        **citation_payload,
+        "excerpt": f"{marker_line}\nLegal settlement | 253",
+        "source_amount": 253,
+    })
+
+    assert validation._citation_period_is_located(
+        valid,
+        expected_period_end=date(2026, 4, 30),
+        expected_period_type="quarterly",
+    ) is True
+    assert validation._citation_period_is_located(
+        piggybacked,
+        expected_period_end=date(2026, 4, 30),
+        expected_period_type="quarterly",
+    ) is False
+
+
+def test_plain_annual_citation_accepts_plural_years_ended():
+    import services.earnings_quality_validation as validation
+
+    citation = FilingCitation.model_validate({
+        "source_id": "filing:primary",
+        "accession": "0005",
+        "document_name": "annual.htm",
+        "section": "Impairment",
+        "excerpt": (
+            "For the years ended December 31, 2025, the impairment charge was 25."
+        ),
+        "source_amount": -25,
+        "source_unit_scale": 1,
+        "period_end": "2025-12-31",
+        "period_scope": "annual",
+    })
+
+    assert validation._citation_period_is_located(
+        citation,
+        expected_period_end=date(2025, 12, 31),
+        expected_period_type="annual",
+    ) is True
+
+
 @pytest.mark.parametrize(
     ("mutator", "failure_code"),
     [
@@ -801,6 +929,48 @@ def test_pretax_only_disclosure_cannot_verify_tax_or_after_tax_amounts():
     assert report["verified"] is False
     assert result["normalized_net_income"] is None
     assert {"tax_amount_not_located", "after_tax_amount_not_located"} <= {
+        failure["code"] for failure in report["failures"]
+    }
+
+
+def test_zero_tax_effect_requires_explicit_filing_disclosure():
+    source = (
+        "For the year ended December 31, 2025, the company recorded an "
+        "impairment charge of 25 with an after-tax earnings effect of 25; "
+        "adjusted net income was 125."
+    )
+    payload = extraction_payload(
+        disclosed_adjusted_net_income=125,
+        disclosed_adjusted_diluted_eps=None,
+    )
+    payload["adjustments"][0].update(
+        tax_effect=0,
+        earnings_effect_after_tax=-25,
+    )
+    payload["adjustments"][0]["citation"]["excerpt"] = source
+    payload["company_adjusted"] = {
+        "label": "Adjusted net income",
+        "adjusted_net_income": 125,
+        "adjusted_diluted_eps": None,
+        "net_income_citation": {
+            **payload["adjustments"][0]["citation"],
+            "source_amount": 125,
+        },
+        "diluted_eps_citation": None,
+    }
+    extraction = FilingEarningsQualityExtraction.model_validate(payload)
+
+    result, report = validate_filing_extraction(
+        extraction,
+        expected_period_end=date(2025, 12, 31),
+        expected_currency="USD",
+        reported_net_income=100,
+        source_documents={"filing:primary": source},
+    )
+
+    assert report["verified"] is False
+    assert result["normalized_net_income"] is None
+    assert "tax_amount_not_located" in {
         failure["code"] for failure in report["failures"]
     }
 

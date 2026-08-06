@@ -341,8 +341,20 @@ _PERIOD_TABLE_TERMS = re.compile(
 
 
 def _cell_text(value: Any) -> str:
-    text = str(value or "").strip()
-    return "" if text.lower() in {"nan", "none"} else re.sub(r"\s+", " ", text)
+    text = str("" if value is None else value).strip()
+    return "" if text.lower() in {"nan", "none", "<na>"} else re.sub(r"\s+", " ", text)
+
+
+def _has_nonzero_numeric_value(values: Iterable[str]) -> bool:
+    for value in values:
+        normalized = value.replace(",", "")
+        for candidate in re.findall(r"\d+(?:\.\d+)?", normalized):
+            try:
+                if float(candidate) != 0:
+                    return True
+            except ValueError:
+                continue
+    return False
 
 
 def _header_scope(value: str) -> str | None:
@@ -351,7 +363,11 @@ def _header_scope(value: str) -> str | None:
         return "year_to_date"
     if "three months" in normalized or "quarter ended" in normalized:
         return "quarter"
-    if "twelve months" in normalized or "year ended" in normalized:
+    if (
+        "twelve months" in normalized
+        or "year ended" in normalized
+        or "years ended" in normalized
+    ):
         return "annual"
     return None
 
@@ -451,7 +467,11 @@ def _period_scoped_table_evidence(
                 value = _cell_text(table.iat[row_index, column_index])
                 if value and value not in selected_values and value != label:
                     selected_values.append(value)
-            if not label or not selected_values:
+            if (
+                not label
+                or not selected_values
+                or not _has_nonzero_numeric_value(selected_values)
+            ):
                 continue
             rendered = f"{label} | {' | '.join(selected_values)}"
             if not _PERIOD_TABLE_TERMS.search(rendered):
@@ -755,7 +775,7 @@ def _normalize_extraction_to_base_units(
     if payload["disclosed_adjusted_net_income"] is not None:
         payload["disclosed_adjusted_net_income"] *= scale
     payload["notes"] = [
-        *payload["notes"],
+        *payload["notes"][:49],
         f"Amounts converted deterministically from model unit scale {scale:g} to base units.",
     ]
     return FilingEarningsQualityExtraction.model_validate(payload)

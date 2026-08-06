@@ -1005,28 +1005,35 @@ def _earnings_analysis_evidence(analysis: Any) -> dict[str, Any] | None:
     raw_result = analysis.get("result")
     summarized_result = None
     if isinstance(raw_result, dict):
+        verified = raw_result.get("verification_status") == "verified"
         company_adjusted = raw_result.get("company_adjusted")
         summarized_result = {
             "verification_status": raw_result.get("verification_status"),
             "reported_net_income": raw_result.get("reported_net_income"),
-            "normalized_net_income": raw_result.get("normalized_net_income"),
-            "adjusted_eps": raw_result.get("adjusted_eps"),
+            "normalized_net_income": (
+                raw_result.get("normalized_net_income") if verified else None
+            ),
+            "adjusted_eps": raw_result.get("adjusted_eps") if verified else None,
             "company_adjusted": (
                 {
                     "label": company_adjusted.get("label"),
                     "adjusted_net_income": company_adjusted.get("adjusted_net_income"),
                     "adjusted_diluted_eps": company_adjusted.get("adjusted_diluted_eps"),
                 }
-                if isinstance(company_adjusted, dict)
+                if verified and isinstance(company_adjusted, dict)
                 else None
             ),
             "adjustments": [
                 {
                     "category": adjustment.get("category"),
                     "label": adjustment.get("label"),
-                    "pretax_earnings_effect": adjustment.get("pretax_earnings_effect"),
-                    "tax_effect": adjustment.get("tax_effect"),
-                    "earnings_effect_after_tax": adjustment.get("earnings_effect_after_tax"),
+                    "pretax_earnings_effect": (
+                        adjustment.get("pretax_earnings_effect") if verified else None
+                    ),
+                    "tax_effect": adjustment.get("tax_effect") if verified else None,
+                    "earnings_effect_after_tax": (
+                        adjustment.get("earnings_effect_after_tax") if verified else None
+                    ),
                     "include_in_normalized": adjustment.get("include_in_normalized"),
                     "recurring": adjustment.get("recurring"),
                     "cash_effect": adjustment.get("cash_effect"),

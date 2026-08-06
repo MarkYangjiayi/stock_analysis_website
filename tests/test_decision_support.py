@@ -34,6 +34,7 @@ from services.ai_assistant import (
 )
 from services.decision_support import (
     DEFAULT_SCENARIOS,
+    _earnings_analysis_evidence,
     build_financial_context,
     build_peer_comparison,
     calculate_dcf_value,
@@ -1396,6 +1397,41 @@ def test_earnings_quality_evidence_preserves_period_and_income_basis():
             "For 2025-12-31, normalized net income was $90 [E38].",
             evidence,
         )
+
+
+def test_flag_only_filing_amounts_are_withheld_from_brief_evidence():
+    evidence = _earnings_analysis_evidence({
+        "id": 7,
+        "status": "completed",
+        "result": {
+            "verification_status": "flag_only",
+            "reported_net_income": 100,
+            "normalized_net_income": None,
+            "adjusted_eps": None,
+            "company_adjusted": {
+                "label": "Adjusted earnings",
+                "adjusted_net_income": 999,
+                "adjusted_diluted_eps": 9.99,
+            },
+            "adjustments": [{
+                "category": "impairment",
+                "label": "Unverified item",
+                "pretax_earnings_effect": 500,
+                "tax_effect": 100,
+                "earnings_effect_after_tax": 400,
+                "include_in_normalized": False,
+                "recurring": False,
+                "cash_effect": "non_cash",
+                "citation": {},
+            }],
+        },
+    })
+
+    assert evidence["result"]["reported_net_income"] == 100
+    assert evidence["result"]["company_adjusted"] is None
+    assert evidence["result"]["adjustments"][0]["pretax_earnings_effect"] is None
+    assert evidence["result"]["adjustments"][0]["tax_effect"] is None
+    assert evidence["result"]["adjustments"][0]["earnings_effect_after_tax"] is None
 
 
 def test_ai_qualitative_directions_must_agree_with_cited_periods():
