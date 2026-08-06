@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v18"
+PROMPT_VERSION = "decision-evidence-v19"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -414,6 +414,19 @@ QUALITATIVE_NEGATION_BEFORE_RE = re.compile(
 )
 QUALITATIVE_RULE_LABEL_AFTER_RE = re.compile(
     r"^\s+(?:warning|rule|check|risk|threshold|assessment)\b",
+    re.IGNORECASE,
+)
+WARNING_LABEL_RE = re.compile(
+    r"\b(?:warning|rule|check|risk|threshold|assessment)\b",
+    re.IGNORECASE,
+)
+WARNING_TRIGGER_RE = re.compile(
+    r"\btrigger(?:s|ed|ing)?\b",
+    re.IGNORECASE,
+)
+WARNING_TRIGGER_NEGATION_BEFORE_RE = re.compile(
+    r"(?:\bno(?:\s+[A-Za-z'-]+){0,8}|"
+    r"\bfail(?:s|ed|ing)?\s+to)\s*$",
     re.IGNORECASE,
 )
 
@@ -1680,11 +1693,88 @@ def _qualitative_match_is_negated(claim: str, start: int) -> bool:
     )
 
 
+def _qualitative_period_scope(
+    claim: str,
+    start: int,
+    end: int,
+) -> Optional[str]:
+    candidates: list[tuple[int, str]] = []
+    for scope, pattern in (
+        ("current", CURRENT_PERIOD_RE),
+        ("previous", PREVIOUS_PERIOD_RE),
+    ):
+        for period_match in pattern.finditer(claim):
+            if period_match.end() <= start:
+                distance = start - period_match.end()
+            elif end <= period_match.start():
+                distance = period_match.start() - end
+            else:
+                distance = 0
+            if distance <= 96:
+                candidates.append((distance, scope))
+    if not candidates:
+        return None
+    minimum_distance = min(distance for distance, _scope in candidates)
+    nearest_scopes = {
+        scope for distance, scope in candidates if distance == minimum_distance
+    }
+    if len(nearest_scopes) != 1:
+        return AMBIGUOUS_SEMANTIC_KEY
+    return next(iter(nearest_scopes))
+
+
+def _evidence_semantic_metric(item: dict) -> Optional[str]:
+    value = item.get("value")
+    if not isinstance(value, dict):
+        return None
+    for key in ("metric", "evidence_metric", "metric_key"):
+        semantic_key = SEMANTIC_VALUE_KEYS.get(str(value.get(key)))
+        if semantic_key:
+            return semantic_key
+    return None
+
+
+def _evidence_evaluative_strings(item: dict) -> dict[str, set[str]]:
+    semantic_key = _evidence_semantic_metric(item)
+    if semantic_key is None:
+        return {}
+
+    strings: set[str] = set()
+
+    def collect(value: object) -> None:
+        if isinstance(value, str):
+            strings.add(value)
+        elif isinstance(value, dict):
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                collect(nested)
+
+    collect(item.get("value"))
+    if item.get("label") is not None:
+        strings.add(str(item["label"]))
+    return {semantic_key: strings}
+
+
+def _warning_trigger_is_negated(claim: str, start: int) -> bool:
+    before = claim[max(0, start - 128):start]
+    return bool(
+        QUALITATIVE_NEGATION_BEFORE_RE.search(before)
+        or WARNING_TRIGGER_NEGATION_BEFORE_RE.search(before)
+    )
+
+
 def validate_evidence_qualitative_claims(
     content: str,
     evidence: list[dict],
 ) -> None:
     """Validate directional prose that can contradict evidence without digits."""
+    evidence_by_id = {
+        str(item.get("id")): item
+        for item in evidence
+        if item.get("id")
+    }
     contexts = {
         str(item.get("id")): _evidence_numeric_context(item)
         for item in evidence
@@ -1703,6 +1793,52 @@ def validate_evidence_qualitative_claims(
                 for evidence_id in evidence_ids
                 if evidence_id in contexts
             ]
+
+        def cited_ids(start: int, end: int) -> tuple[str, ...]:
+            return _nearest_citation_cluster(start, end, clusters)[2]
+
+        if WARNING_LABEL_RE.search(segment):
+            for trigger_match in WARNING_TRIGGER_RE.finditer(segment):
+                local_ids = cited_ids(
+                    trigger_match.start(),
+                    trigger_match.end(),
+                )
+                expected_triggered = not _warning_trigger_is_negated(
+                    segment,
+                    trigger_match.start(),
+                )
+                semantic_key = _qualitative_semantic_key(
+                    segment,
+                    trigger_match.start(),
+                    trigger_match.end(),
+                )
+                trigger_states: list[bool] = []
+                for evidence_id in local_ids:
+                    item = evidence_by_id.get(evidence_id)
+                    value = item.get("value") if item else None
+                    state = (
+                        value.get("triggered")
+                        if isinstance(value, dict)
+                        else None
+                    )
+                    if not isinstance(state, bool):
+                        raise EvidenceCitationError(
+                            f"Unsupported warning trigger claim for {evidence_id}."
+                        )
+                    evidence_metric = _evidence_semantic_metric(item)
+                    if semantic_key is not None and evidence_metric != semantic_key:
+                        raise EvidenceCitationError(
+                            f"Warning trigger claim for {semantic_key} is not "
+                            f"supported by {evidence_id}."
+                        )
+                    trigger_states.append(state)
+                if not trigger_states or any(
+                    state is not expected_triggered
+                    for state in trigger_states
+                ):
+                    raise EvidenceCitationError(
+                        "Warning trigger polarity does not match cited evidence."
+                    )
 
         for expected_direction, pattern in QUALITATIVE_TREND_PATTERNS:
             for direction_match in pattern.finditer(segment):
@@ -1795,15 +1931,35 @@ def validate_evidence_qualitative_claims(
                     sign_match.start(),
                     sign_match.end(),
                 )
+                period_scope = _qualitative_period_scope(
+                    segment,
+                    sign_match.start(),
+                    sign_match.end(),
+                )
+                if period_scope == AMBIGUOUS_SEMANTIC_KEY:
+                    raise EvidenceCitationError(
+                        f"Ambiguous period for qualitative sign "
+                        f"{sign_match.group(0)!r}."
+                    )
                 values = [
                     value
                     for context in local_contexts
                     for value in (
                         context.semantic_numeric_values.get(
-                            f"current:{semantic_key}",
+                            f"{period_scope}:{semantic_key}",
                             [],
                         )
-                        or context.semantic_numeric_values.get(semantic_key, [])
+                        if period_scope
+                        else (
+                            context.semantic_numeric_values.get(
+                                f"current:{semantic_key}",
+                                [],
+                            )
+                            or context.semantic_numeric_values.get(
+                                semantic_key,
+                                [],
+                            )
+                        )
                     )
                 ]
                 supported = any(
@@ -1826,17 +1982,30 @@ def validate_evidence_qualitative_claims(
                     f"{evaluation_match.group(0)!r} is not accepted."
                 )
             word = evaluation_match.group(0).casefold()
-            local_contexts = cited_contexts(
+            semantic_key = _qualitative_semantic_key(
+                segment,
+                evaluation_match.start(),
+                evaluation_match.end(),
+            )
+            if semantic_key is None:
+                raise EvidenceCitationError(
+                    f"Unsupported evaluative claim {evaluation_match.group(0)!r}; "
+                    "no unambiguous evidence metric is identified."
+                )
+            local_ids = cited_ids(
                 evaluation_match.start(),
                 evaluation_match.end(),
             )
             if not any(
                 re.search(rf"\b{re.escape(word)}\b", value, re.IGNORECASE)
-                for context in local_contexts
-                for value in context.strings
+                for evidence_id in local_ids
+                for value in _evidence_evaluative_strings(
+                    evidence_by_id.get(evidence_id, {})
+                ).get(semantic_key, set())
             ):
                 raise EvidenceCitationError(
-                    f"Unsupported evaluative claim {evaluation_match.group(0)!r}."
+                    f"Unsupported evaluative claim {evaluation_match.group(0)!r} "
+                    f"for {semantic_key}."
                 )
 
 
@@ -1879,8 +2048,11 @@ new arithmetic or introduce a derived number; reuse the supplied values such as
 upside_downside directly. Directional words such as upside/downside and
 above/below must agree with the sign of the cited evidence. Trend words such as
 growing, declining, improving, or weakening must agree with cited current and
-previous values. Avoid subjective adjectives unless the cited evidence uses
-that exact assessment, and avoid negated qualitative constructions. Keep the brief
+previous values. Sign words must respect any current or prior-period wording.
+Use triggered or not triggered only when that exact warning state is present in
+the cited record. Avoid subjective adjectives unless the cited evidence applies
+that exact assessment to the same metric, and avoid other negated qualitative
+constructions. Keep the brief
 below 650 words, avoid an aggregate
 score or confidence number, and avoid direct buy/sell advice.
 """.strip()

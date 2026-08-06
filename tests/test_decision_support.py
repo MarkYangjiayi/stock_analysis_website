@@ -477,6 +477,43 @@ async def test_financial_history_chart_uses_cash_fallback_and_split_adjusted_sha
 
 
 @pytest.mark.asyncio
+async def test_decision_support_uses_latest_usable_positive_price(db_session):
+    ticker = "PRICE.US"
+    db_session.add(Ticker(ticker=ticker, name="Price Fixture"))
+    db_session.add_all([
+        DailyPrice(
+            ticker=ticker,
+            date=date(2025, 12, 29),
+            close=95,
+            adjusted_close=100,
+        ),
+        DailyPrice(
+            ticker=ticker,
+            date=date(2025, 12, 30),
+            close=110,
+            adjusted_close=0,
+        ),
+        DailyPrice(
+            ticker=ticker,
+            date=date(2025, 12, 31),
+            close=0,
+            adjusted_close=None,
+        ),
+    ])
+    await db_session.commit()
+
+    result = await get_decision_support(ticker, db_session)
+
+    assert result["metadata"]["price_date"] == "2025-12-30"
+    assert result["valuation"]["current_price"] == pytest.approx(110)
+    price_evidence = next(
+        item for item in result["evidence"] if item["id"] == "E1"
+    )
+    assert price_evidence["source_date"] == "2025-12-30"
+    assert price_evidence["value"] == pytest.approx(110)
+
+
+@pytest.mark.asyncio
 async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_session):
     tickers = ["COMPLETE.US", "SPARSE.US", "OUTSIDE.US", "NEGFCF.US"]
     db_session.add_all([Ticker(ticker=ticker, name=ticker, sector="Technology", industry="Software") for ticker in tickers])
@@ -1144,11 +1181,33 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
         },
         {
             "id": "E31",
+            "kind": "fundamental_warning",
             "source_date": "2026-06-30",
             "value": {
                 "title": "Weak cash conversion",
                 "metric": "fcf_net_income_conversion",
                 "current": 0.20,
+                "triggered": True,
+            },
+        },
+        {
+            "id": "E27",
+            "kind": "fundamental_warning",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric": "revenue",
+                "triggered": False,
+                "assessment": "not triggered on available data",
+            },
+        },
+        {
+            "id": "E30",
+            "kind": "fundamental_warning",
+            "source_date": "2026-06-30",
+            "value": {
+                "metric": "fcf",
+                "triggered": True,
+                "title": "TTM free-cash-flow decline",
             },
         },
     ]
@@ -1158,6 +1217,18 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
     )
     validate_evidence_qualitative_claims(
         "FCF to net income conversion is weak [E31].",
+        evidence,
+    )
+    validate_evidence_qualitative_claims(
+        "Free cash flow was previously positive [E3].",
+        evidence,
+    )
+    validate_evidence_qualitative_claims(
+        "The revenue decline warning was not triggered [E27].",
+        evidence,
+    )
+    validate_evidence_qualitative_claims(
+        "The FCF decline warning was triggered [E30].",
         evidence,
     )
     with pytest.raises(EvidenceCitationError, match="qualitative direction"):
@@ -1175,6 +1246,11 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
             "Free cash flow is positive [E3].",
             evidence,
         )
+    with pytest.raises(EvidenceCitationError, match="qualitative sign"):
+        validate_evidence_qualitative_claims(
+            "Free cash flow was previously negative [E3].",
+            evidence,
+        )
     with pytest.raises(EvidenceCitationError, match="Negated qualitative"):
         validate_evidence_qualitative_claims(
             "Free cash flow is not negative [E3].",
@@ -1183,6 +1259,21 @@ def test_ai_qualitative_directions_must_agree_with_cited_periods():
     with pytest.raises(EvidenceCitationError, match="evaluative claim"):
         validate_evidence_qualitative_claims(
             "Revenue is strong [E3].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="evaluative claim"):
+        validate_evidence_qualitative_claims(
+            "Revenue is weak [E31].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="trigger polarity"):
+        validate_evidence_qualitative_claims(
+            "The revenue decline warning was triggered [E27].",
+            evidence,
+        )
+    with pytest.raises(EvidenceCitationError, match="not supported"):
+        validate_evidence_qualitative_claims(
+            "The revenue decline warning was triggered [E30].",
             evidence,
         )
 

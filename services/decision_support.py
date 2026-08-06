@@ -88,6 +88,17 @@ WARNING_EVIDENCE_IDS = {
     "cash_decline": "E34",
     "share_dilution": "E35",
 }
+WARNING_RULE_METRICS = {
+    "revenue_decline": "revenue",
+    "gross_margin_compression": "gross_margin",
+    "operating_margin_compression": "operating_margin",
+    "fcf_decline": "fcf",
+    "fcf_conversion": "fcf_net_income_conversion",
+    "debt_level": "debt_to_equity",
+    "debt_increase": "debt_to_equity",
+    "cash_decline": "cash",
+    "share_dilution": "shares",
+}
 WARNING_UNAVAILABLE_NOTE_CODES = {
     "revenue_decline": {"revenue_comparison_unavailable"},
     "gross_margin_compression": {"gross_margin_comparison_unavailable"},
@@ -774,6 +785,7 @@ def _risk(
 ) -> dict[str, Any]:
     return {
         "id": rule_id,
+        "triggered": True,
         "severity": severity,
         "title": title,
         "message": message,
@@ -982,11 +994,15 @@ def _evidence_items(
             value = warning
         elif available:
             value = {
+                "rule_id": rule_id,
+                "metric": WARNING_RULE_METRICS[rule_id],
                 "triggered": False,
                 "assessment": "not triggered on available data",
             }
         else:
             value = {
+                "rule_id": rule_id,
+                "metric": WARNING_RULE_METRICS[rule_id],
                 "triggered": None,
                 "assessment": "unavailable",
                 "data_quality_notes": unavailable_notes,
@@ -1041,16 +1057,27 @@ async def _load_price_and_financial_context(
 ) -> tuple[DailyPrice | None, float | None, dict[str, Any]]:
     price_result = await db.execute(
         select(DailyPrice)
-        .where(DailyPrice.ticker == ticker)
+        .where(
+            DailyPrice.ticker == ticker,
+            or_(
+                DailyPrice.adjusted_close > 0,
+                DailyPrice.close > 0,
+            ),
+        )
         .order_by(DailyPrice.date.desc())
         .limit(1)
     )
     price_row = price_result.scalar_one_or_none()
-    current_price = (
-        _safe_float(price_row.adjusted_close)
-        if price_row and price_row.adjusted_close is not None
-        else _safe_float(price_row.close) if price_row else None
+    adjusted_close = (
+        _safe_float(price_row.adjusted_close) if price_row else None
     )
+    regular_close = _safe_float(price_row.close) if price_row else None
+    if adjusted_close is not None and adjusted_close > 0:
+        current_price = adjusted_close
+    elif regular_close is not None and regular_close > 0:
+        current_price = regular_close
+    else:
+        current_price = None
     financial_result = await db.execute(
         select(FinancialStatement)
         .where(
