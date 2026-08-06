@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from models import FinancialStatement
-from services.analyzer import calculate_ttm
+from models import DailyPrice, FinancialStatement, Ticker
+from services.analyzer import calculate_ttm, get_fundamental_valuation
 
 
 def _quarter(
@@ -81,3 +81,60 @@ def test_calculate_ttm_rejects_four_quarters_with_a_gap(caplog):
     assert result["total_assets"] == 1_000
     assert result["total_equity"] == 600
     assert "quarterly statements are not contiguous" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ttm_gross_margin_anomaly_preserves_reported_value_and_warns(db_session):
+    ticker = "MARGIN.US"
+    db_session.add(Ticker(ticker=ticker, name="Margin Test", currency="USD"))
+    quarter_dates = [
+        date(2025, 12, 31),
+        date(2025, 9, 30),
+        date(2025, 6, 30),
+        date(2025, 3, 31),
+    ]
+    quarters = [
+        _quarter(
+            period_end,
+            revenue=100,
+            gross_profit=10,
+            net_income=5,
+            free_cash_flow=4,
+        )
+        for period_end in quarter_dates
+    ]
+    for quarter in quarters:
+        quarter.ticker = ticker
+    balance = _latest_balance_sheet().balance_sheet
+    quarters[0].balance_sheet = balance
+    yearly = FinancialStatement(
+        ticker=ticker,
+        fiscal_date=date(2024, 12, 31),
+        period="Yearly",
+        revenue=400,
+        net_income=40,
+        income_statement={
+            "totalRevenue": 400,
+            "grossProfit": 200,
+            "netIncome": 40,
+        },
+        balance_sheet=balance,
+        cash_flow={"freeCashFlow": 30},
+    )
+    db_session.add_all([
+        *quarters,
+        yearly,
+        DailyPrice(
+            ticker=ticker,
+            date=date(2026, 1, 2),
+            close=10,
+            adjusted_close=10,
+        ),
+    ])
+    await db_session.commit()
+
+    result = await get_fundamental_valuation(ticker, db_session)
+
+    assert result["ttm"]["gross_profit"] == 40
+    assert result["ttm"]["gross_profit"] != 200
+    assert result["data_quality_warnings"][0]["code"] == "ttm_gross_margin_deviation"

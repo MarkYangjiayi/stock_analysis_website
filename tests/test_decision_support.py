@@ -576,7 +576,7 @@ async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_ses
 
     assert complete_result["valuation"]["available"] is True
     assert complete_result["summary"]["coverage"]["quarterly_statements"] == 8
-    assert len(complete_result["evidence"]) == 36
+    assert len(complete_result["evidence"]) == 37
     assert sparse_result["valuation"]["available"] is False
     assert sparse_result["risks"]["warnings"] == []
     assert outside_result["peer_comparison"]["ticker_in_screener"] is False
@@ -586,6 +586,7 @@ async def test_complete_sparse_outside_and_negative_fcf_decision_fixtures(db_ses
     complete_evidence = {item["id"]: item for item in complete_result["evidence"]}
     sparse_evidence = {item["id"]: item for item in sparse_result["evidence"]}
     negative_evidence = {item["id"]: item for item in negative_result["evidence"]}
+    assert complete_evidence["E37"]["kind"] == "earnings_quality"
     assert complete_evidence["E27"]["available"] is True
     assert complete_evidence["E27"]["value"]["assessment"] == "not triggered on available data"
     assert sparse_evidence["E27"]["available"] is False

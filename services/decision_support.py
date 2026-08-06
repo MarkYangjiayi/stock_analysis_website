@@ -19,6 +19,7 @@ from models import (
     Ticker,
 )
 from services.personal_workspace import get_saved_valuation_scenarios
+from services.earnings_quality import get_earnings_quality
 from services.security_master import canonicalize_ticker
 
 
@@ -998,6 +999,63 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None and hasattr(value, "isoformat") else None
 
 
+def _earnings_analysis_evidence(analysis: Any) -> dict[str, Any] | None:
+    if not isinstance(analysis, dict):
+        return None
+    raw_result = analysis.get("result")
+    summarized_result = None
+    if isinstance(raw_result, dict):
+        company_adjusted = raw_result.get("company_adjusted")
+        summarized_result = {
+            "verification_status": raw_result.get("verification_status"),
+            "reported_net_income": raw_result.get("reported_net_income"),
+            "normalized_net_income": raw_result.get("normalized_net_income"),
+            "adjusted_eps": raw_result.get("adjusted_eps"),
+            "company_adjusted": (
+                {
+                    "label": company_adjusted.get("label"),
+                    "adjusted_net_income": company_adjusted.get("adjusted_net_income"),
+                    "adjusted_diluted_eps": company_adjusted.get("adjusted_diluted_eps"),
+                }
+                if isinstance(company_adjusted, dict)
+                else None
+            ),
+            "adjustments": [
+                {
+                    "category": adjustment.get("category"),
+                    "label": adjustment.get("label"),
+                    "pretax_earnings_effect": adjustment.get("pretax_earnings_effect"),
+                    "tax_effect": adjustment.get("tax_effect"),
+                    "earnings_effect_after_tax": adjustment.get("earnings_effect_after_tax"),
+                    "include_in_normalized": adjustment.get("include_in_normalized"),
+                    "recurring": adjustment.get("recurring"),
+                    "cash_effect": adjustment.get("cash_effect"),
+                    "citation": {
+                        key: (adjustment.get("citation") or {}).get(key)
+                        for key in (
+                            "source_id",
+                            "accession",
+                            "document_name",
+                            "section",
+                        )
+                    },
+                }
+                for adjustment in raw_result.get("adjustments", [])
+                if isinstance(adjustment, dict)
+            ],
+        }
+    return {
+        "id": analysis.get("id"),
+        "status": analysis.get("status"),
+        "model": analysis.get("model"),
+        "prompt_version": analysis.get("prompt_version"),
+        "source_accession": analysis.get("source_accession"),
+        "finished_at": analysis.get("finished_at"),
+        "result": summarized_result,
+        "validation_report": analysis.get("validation_report"),
+    }
+
+
 def _evidence_items(
     *,
     price: float | None,
@@ -1008,6 +1066,7 @@ def _evidence_items(
     peers: dict[str, Any],
     risks: dict[str, Any],
     factors: dict[str, Any],
+    earnings_quality: dict[str, Any],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = [
         {"id": "E1", "kind": "price", "label": "Current price", "value": price, "source_date": _iso(price_date), "available": price is not None},
@@ -1057,6 +1116,44 @@ def _evidence_items(
             "available": available,
         })
     items.append({"id": "E36", "kind": "published_factors", "label": "Published factors", "value": {"version": factors["version"], "factors": factors["factors"]}, "source_date": _iso(factors["as_of_date"]), "available": bool(factors["factors"])})
+    earnings_periods = [
+        {
+            "period_end": period["period_end"],
+            "period_type": period["period_type"],
+            "assessment": period["assessment"],
+            "flags": period["flags"],
+            "data_quality_warnings": period["data_quality_warnings"],
+            "verified_normalized": period.get("verified_normalized"),
+            "analysis": _earnings_analysis_evidence(period.get("analysis")),
+        }
+        for period in [
+            *earnings_quality.get("annual", []),
+            *earnings_quality.get("quarterly", []),
+        ]
+    ]
+    items.append({
+        "id": "E37",
+        "kind": "earnings_quality",
+        "label": "Earnings quality",
+        "value": {
+            "summary": earnings_quality["summary"],
+            "methodology": earnings_quality["methodology"],
+            "periods": earnings_periods,
+        },
+        "source_date": (
+            max(period["period_end"] for period in earnings_periods)
+            if earnings_periods
+            else None
+        ),
+        "available": (
+            earnings_quality["summary"]["verdict"] != "unavailable"
+            or any(
+                period.get("analysis", {}).get("status") == "completed"
+                for period in earnings_periods
+                if period.get("analysis")
+            )
+        ),
+    })
     return items
 
 
@@ -1262,6 +1359,7 @@ async def get_decision_support(
     )
     valuation["scenario_source"] = scenario_source
     risks = evaluate_fundamental_warnings(financial)
+    earnings_quality = await get_earnings_quality(canonical_ticker, db)
     evidence = _evidence_items(
         price=current_price,
         price_date=price_row.date if price_row else None,
@@ -1271,6 +1369,7 @@ async def get_decision_support(
         peers=peers,
         risks=risks,
         factors=factors,
+        earnings_quality=earnings_quality,
     )
     summary = _deterministic_summary(valuation, peers, risks, factors, financial)
     return {
@@ -1296,5 +1395,6 @@ async def get_decision_support(
             "as_of_date": _iso(factors["as_of_date"]),
             "published_at": _iso(factors["published_at"]),
         },
+        "earnings_quality": earnings_quality,
         "evidence": evidence,
     }

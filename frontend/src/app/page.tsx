@@ -4,7 +4,22 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, Clock3, Plus, Search, ShieldCheck } from "lucide-react";
-import { ApiError, DecisionSupportResponse, DecisionWarning, fetchDecisionSupport, fetchLatestTickerFactors, fetchStockData, PublishedFactorSnapshot, StockDataResponse } from "@/lib/api";
+import {
+    ApiError,
+    DecisionSupportResponse,
+    DecisionWarning,
+    EarningsQualityAnalysis,
+    EarningsQualityPeriod,
+    EarningsQualityResponse,
+    fetchDecisionSupport,
+    fetchEarningsQuality,
+    fetchEarningsQualityAnalysis,
+    fetchLatestTickerFactors,
+    fetchStockData,
+    PublishedFactorSnapshot,
+    startEarningsQualityAnalysis,
+    StockDataResponse,
+} from "@/lib/api";
 import DecisionCockpit from "@/components/DecisionCockpit";
 import NewsFeed from "@/components/NewsFeed";
 import PersonalUnlockDialog from "@/components/PersonalUnlockDialog";
@@ -22,6 +37,47 @@ const FinancialTrendChart = dynamic(() => import("@/components/FinancialTrendCha
     loading: () => <div className="h-[520px] animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />,
 });
 
+const attachEarningsAnalysis = (
+    current: EarningsQualityResponse | null,
+    analysis: EarningsQualityAnalysis,
+): EarningsQualityResponse | null => {
+    if (!current || current.ticker !== analysis.ticker) return current;
+    const update = (period: EarningsQualityPeriod) => period.period_end === analysis.period_end
+        && period.period_type === analysis.period_type
+        ? {
+            ...period,
+            analysis,
+            verified_normalized: analysis.status === "completed"
+                && analysis.result?.verification_status === "verified"
+                ? {
+                    net_income: analysis.result.normalized_net_income,
+                    adjusted_eps: analysis.result.adjusted_eps,
+                }
+                : period.verified_normalized,
+        }
+        : period;
+    return {
+        ...current,
+        annual: current.annual.map(update),
+        quarterly: current.quarterly.map(update),
+    };
+};
+
+const waitForPoll = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+    const finish = () => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+    };
+    const timer = globalThis.setTimeout(finish, milliseconds);
+    const abort = () => {
+        globalThis.clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+});
+
 function AnalysisPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -31,14 +87,18 @@ function AnalysisPage() {
     const [stockData, setStockData] = useState<StockDataResponse | null>(null);
     const [factorSnapshot, setFactorSnapshot] = useState<PublishedFactorSnapshot | null>(null);
     const [decision, setDecision] = useState<DecisionSupportResponse | null>(null);
+    const [earningsQuality, setEarningsQuality] = useState<EarningsQualityResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [factorLoading, setFactorLoading] = useState(false);
     const [decisionLoading, setDecisionLoading] = useState(false);
+    const [earningsQualityLoading, setEarningsQualityLoading] = useState(false);
+    const [earningsQualityBusyPeriod, setEarningsQualityBusyPeriod] = useState<string | null>(null);
     const [decisionRefreshVersion, setDecisionRefreshVersion] = useState(0);
     const [chartLoading, setChartLoading] = useState(false);
     const [error, setError] = useState("");
     const [factorError, setFactorError] = useState("");
     const [decisionError, setDecisionError] = useState("");
+    const [earningsQualityError, setEarningsQualityError] = useState("");
     const [chartInterval, setChartInterval] = useState("1d");
     const [financialPeriod, setFinancialPeriod] = useState<"annual" | "ttm" | "quarterly">("annual");
     const [financialMetric, setFinancialMetric] = useState<FinancialEvidenceMetric>("overview");
@@ -49,6 +109,8 @@ function AnalysisPage() {
     const stockRequestRef = useRef<AbortController | null>(null);
     const factorRequestRef = useRef<AbortController | null>(null);
     const decisionRequestRef = useRef<AbortController | null>(null);
+    const earningsQualityRequestRef = useRef<AbortController | null>(null);
+    const earningsAnalysisRequestRef = useRef<AbortController | null>(null);
     const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
 
     const loadStock = useCallback(async (
@@ -127,31 +189,94 @@ function AnalysisPage() {
         }
     }, [handlePersonalUnauthorized]);
 
+    const loadEarningsQuality = useCallback(async (symbol: string) => {
+        earningsQualityRequestRef.current?.abort();
+        const controller = new AbortController();
+        earningsQualityRequestRef.current = controller;
+        setEarningsQualityLoading(true);
+        setEarningsQualityError("");
+        try {
+            const result = await fetchEarningsQuality(symbol, controller.signal);
+            if (!controller.signal.aborted) setEarningsQuality(result);
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (!controller.signal.aborted) setEarningsQualityError(caught instanceof Error ? caught.message : "Earnings-quality evidence is unavailable.");
+        } finally {
+            if (!controller.signal.aborted) setEarningsQualityLoading(false);
+        }
+    }, []);
+
+    const cachedActiveEarningsAnalysisId = [
+        ...(earningsQuality?.quarterly ?? []),
+        ...(earningsQuality?.annual ?? []),
+    ].map((period) => period.analysis).find((analysis) => (
+        analysis?.ticker === requestedTicker
+        && (analysis.status === "queued" || analysis.status === "running")
+    ))?.id ?? null;
+
+    useEffect(() => {
+        if (!requestedTicker || !cachedActiveEarningsAnalysisId || earningsQualityBusyPeriod) return;
+        const controller = new AbortController();
+        const analysisId = cachedActiveEarningsAnalysisId;
+        const poll = async () => {
+            try {
+                let active = true;
+                while (!controller.signal.aborted && active) {
+                    await waitForPoll(1_500, controller.signal);
+                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, controller.signal);
+                    active = analysis.status === "queued" || analysis.status === "running";
+                    if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
+                }
+                if (!controller.signal.aborted) {
+                    await Promise.all([
+                        loadEarningsQuality(requestedTicker),
+                        loadDecision(requestedTicker, personal.adminKey),
+                    ]);
+                }
+            } catch (caught) {
+                if (caught instanceof DOMException && caught.name === "AbortError") return;
+                if (!controller.signal.aborted) setEarningsQualityError(caught instanceof Error ? caught.message : "Filing analysis status is unavailable.");
+            }
+        };
+        void poll();
+        return () => controller.abort();
+    }, [cachedActiveEarningsAnalysisId, earningsQualityBusyPeriod, loadDecision, loadEarningsQuality, personal.adminKey, requestedTicker]);
+
     useEffect(() => {
         if (!requestedTicker) {
             setTicker("");
             setStockData(null);
             setFactorSnapshot(null);
+            setEarningsQuality(null);
             setError("");
             return;
         }
         setTicker(requestedTicker);
         setStockData(null);
         setDecision(null);
+        setEarningsQuality(null);
+        setEarningsQualityBusyPeriod(null);
+        setEarningsQualityError("");
         setChartInterval("1d");
         setFinancialPeriod("annual");
         setFinancialMetric("overview");
         void loadStock(requestedTicker, "1d", "annual", true).then((loaded) => {
             // The stock endpoint can populate a cold local snapshot. Refresh the
             // cockpit after that read-through completes so it sees the new data.
-            if (loaded) setDecisionRefreshVersion((version) => version + 1);
+            if (loaded) {
+                setDecisionRefreshVersion((version) => version + 1);
+                void loadEarningsQuality(requestedTicker);
+            }
         });
         void loadFactors(requestedTicker);
+        void loadEarningsQuality(requestedTicker);
         return () => {
             stockRequestRef.current?.abort();
             factorRequestRef.current?.abort();
+            earningsQualityRequestRef.current?.abort();
+            earningsAnalysisRequestRef.current?.abort();
         };
-    }, [loadFactors, loadStock, requestedTicker]);
+    }, [loadEarningsQuality, loadFactors, loadStock, requestedTicker]);
 
     useEffect(() => {
         if (!requestedTicker) {
@@ -198,6 +323,51 @@ function AnalysisPage() {
         if (!ticker) return;
         await loadDecision(ticker, personal.adminKey);
     }, [loadDecision, personal.adminKey, ticker]);
+
+    const analyzeEarningsPeriod = useCallback(async (period: EarningsQualityPeriod) => {
+        if (!ticker) return;
+        if (!personal.adminKey) {
+            setUnlockOpen(true);
+            return;
+        }
+        earningsAnalysisRequestRef.current?.abort();
+        const controller = new AbortController();
+        earningsAnalysisRequestRef.current = controller;
+        const requestTicker = ticker;
+        const key = `${period.period_type}:${period.period_end}`;
+        setEarningsQualityBusyPeriod(key);
+        setEarningsQualityError("");
+        try {
+            let analysis = await startEarningsQualityAnalysis(
+                requestTicker,
+                period.period_end,
+                period.period_type,
+                personal.adminKey,
+                controller.signal,
+            );
+            if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
+            while (!controller.signal.aborted && (analysis.status === "queued" || analysis.status === "running")) {
+                await waitForPoll(1_500, controller.signal);
+                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, controller.signal);
+                if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
+            }
+            if (!controller.signal.aborted) {
+                await Promise.all([
+                    loadEarningsQuality(requestTicker),
+                    loadDecision(requestTicker, personal.adminKey),
+                ]);
+            }
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (caught instanceof ApiError && caught.status === 401) {
+                handlePersonalUnauthorized();
+                return;
+            }
+            if (!controller.signal.aborted) setEarningsQualityError(caught instanceof Error ? caught.message : "Filing analysis could not be completed.");
+        } finally {
+            if (!controller.signal.aborted) setEarningsQualityBusyPeriod(null);
+        }
+    }, [handlePersonalUnauthorized, loadDecision, loadEarningsQuality, personal.adminKey, ticker]);
 
     const showFinancialEvidence = async (metric: DecisionWarning["evidence_metric"]) => {
         const metricMap: Record<DecisionWarning["evidence_metric"], FinancialEvidenceMetric> = {
@@ -300,6 +470,11 @@ function AnalysisPage() {
                                 onRetry={() => void refreshDecision()}
                                 onRefresh={refreshDecision}
                                 onShowEvidence={(metric) => void showFinancialEvidence(metric)}
+                                earningsQuality={earningsQuality}
+                                earningsQualityLoading={earningsQualityLoading}
+                                earningsQualityError={earningsQualityError}
+                                earningsQualityBusyPeriod={earningsQualityBusyPeriod}
+                                onAnalyzeEarningsPeriod={analyzeEarningsPeriod}
                             />
 
                             <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
@@ -313,7 +488,7 @@ function AnalysisPage() {
                             </section>
 
                             <div ref={financialEvidenceRef} className="scroll-mt-5">
-                                <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} selectedMetric={financialMetric} onMetricChange={setFinancialMetric} />
+                                <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} selectedMetric={financialMetric} onMetricChange={setFinancialMetric} earningsQuality={earningsQuality} dataQualityWarnings={stockData.valuation_metrics?.data_quality_warnings} />
                             </div>
 
                             <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>

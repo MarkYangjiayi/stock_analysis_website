@@ -104,6 +104,11 @@ export interface ValuationMetrics {
             perpetual_growth: number;
         };
     };
+    data_quality_warnings?: Array<{
+        code: string;
+        message: string;
+        [key: string]: unknown;
+    }>;
 }
 
 export interface HistoricalFinancialPoint {
@@ -237,6 +242,149 @@ export interface DecisionEvidenceItem {
     available: boolean;
 }
 
+export type EarningsQualityPeriodType = "annual" | "quarterly";
+
+export interface EarningsQualityFlag {
+    category: string;
+    label: string;
+    amount: number;
+    materiality_ratio: number;
+    severity: "warning" | "high";
+    source: string;
+    source_field: string;
+    detail: string;
+    treatment: "flag_only" | "recurring_flag_only";
+    recurring_adjustment: boolean;
+    reported_amount?: number;
+    comparison_amount?: number;
+}
+
+export interface EarningsQualitySourceSnapshot {
+    source_id: string;
+    accession: string;
+    form: string;
+    document_name: string;
+    source_url: string;
+    html_snapshot_id: number;
+    text_snapshot_id: number;
+    html_checksum: string;
+    text_checksum: string;
+}
+
+export interface EarningsQualityAnalysis {
+    id: number;
+    ticker: string;
+    period_end: string;
+    period_type: EarningsQualityPeriodType;
+    status: "queued" | "running" | "completed" | "failed";
+    stage: string;
+    model: string;
+    prompt_version: string;
+    source_accession: string | null;
+    source_snapshots: EarningsQualitySourceSnapshot[];
+    result: {
+        verification_status: "verified" | "flag_only";
+        reported_net_income: number;
+        normalized_net_income: number | null;
+        adjusted_eps: number | null;
+        company_adjusted: {
+            label: string;
+            adjusted_net_income: number | null;
+            adjusted_diluted_eps: number | null;
+        } | null;
+        adjustments: Array<{
+            category: string;
+            label: string;
+            pretax_earnings_effect: number | null;
+            tax_effect: number | null;
+            earnings_effect_after_tax: number;
+            include_in_normalized: boolean;
+            recurring: boolean;
+            cash_effect: "cash" | "non_cash" | "mixed" | "unknown";
+            citation: {
+                source_id: string;
+                accession: string;
+                document_name: string;
+                section: string;
+                excerpt: string;
+                source_amount: number;
+                source_unit_scale: number;
+            };
+        }>;
+        notes: string[];
+    } | null;
+    validation_report: {
+        verified: boolean;
+        eps_verified?: boolean;
+        checks: Array<Record<string, unknown>>;
+        failures: Array<{ code: string; message: string; adjustment_index?: number }>;
+        eps_failures?: Array<{ code: string; message: string }>;
+        sign_convention: string;
+        gains_and_charges_treated_symmetrically: boolean;
+    } | null;
+    error_message: string | null;
+    retryable: boolean;
+    created_at: string;
+    started_at: string | null;
+    finished_at: string | null;
+}
+
+export interface EarningsQualityPeriod {
+    period_end: string;
+    period_type: EarningsQualityPeriodType;
+    reported: {
+        revenue: number | null;
+        net_income: number | null;
+        income_before_tax: number | null;
+        net_income_from_continuing_operations: number | null;
+        income_tax_expense: number | null;
+        non_recurring: number | null;
+        extraordinary_items: number | null;
+        discontinued_operations: number | null;
+        non_operating_income_net_other: number | null;
+    };
+    materiality_base: number | null;
+    thresholds: { warning: number; high: number };
+    flags: EarningsQualityFlag[];
+    data_quality_warnings: Array<{ code: string; message: string }>;
+    assessment: "unavailable" | "material_candidates" | "data_quality_warning" | "no_material_candidates";
+    statement_fingerprint: string;
+    analysis: EarningsQualityAnalysis | null;
+    verified_normalized: {
+        net_income: number | null;
+        adjusted_eps: number | null;
+    } | null;
+}
+
+export interface EarningsQualityResponse {
+    ticker: string;
+    currency: string | null;
+    methodology: {
+        materiality_base: string;
+        warning_threshold: number;
+        high_threshold: number;
+        reported_remains_primary: boolean;
+        structured_flags_are_adjustments: boolean;
+    };
+    summary: {
+        verdict: "unavailable" | "flags_present" | "data_quality_warning" | "no_material_candidates_on_available_data";
+        evaluated_periods: number;
+        flagged_periods: number;
+        data_quality_periods: number;
+        financial_industry_exemption: boolean;
+        message: string;
+    };
+    annual: EarningsQualityPeriod[];
+    quarterly: EarningsQualityPeriod[];
+    sec_analysis: {
+        supported: boolean;
+        cik: string | null;
+        reason: string | null;
+        supported_forms: string[];
+        unsupported_forms: string[];
+    };
+}
+
 export interface DecisionSupportResponse {
     metadata: {
         ticker: string;
@@ -284,6 +432,7 @@ export interface DecisionSupportResponse {
         high_count: number;
         warning_count: number;
     };
+    earnings_quality?: EarningsQualityResponse;
     evidence: DecisionEvidenceItem[];
 }
 
@@ -503,6 +652,39 @@ export const fetchDecisionSupport = (
 ) => apiRequest<DecisionSupportResponse>(
     `/api/stocks/${encodeURIComponent(ticker)}/decision-support`,
     { headers: personalHeaders(adminKey), signal },
+);
+
+export const fetchEarningsQuality = (
+    ticker: string,
+    signal?: AbortSignal,
+) => apiRequest<EarningsQualityResponse>(
+    `/api/stocks/${encodeURIComponent(ticker)}/earnings-quality`,
+    { signal },
+);
+
+export const startEarningsQualityAnalysis = (
+    ticker: string,
+    periodEnd: string,
+    periodType: EarningsQualityPeriodType,
+    adminKey: string,
+    signal?: AbortSignal,
+) => apiRequest<EarningsQualityAnalysis>(
+    `/api/personal/stocks/${encodeURIComponent(ticker)}/earnings-quality/analyses`,
+    {
+        method: "POST",
+        headers: personalHeaders(adminKey, true),
+        body: JSON.stringify({ period_end: periodEnd, period_type: periodType }),
+        signal,
+    },
+);
+
+export const fetchEarningsQualityAnalysis = (
+    ticker: string,
+    analysisId: number,
+    signal?: AbortSignal,
+) => apiRequest<EarningsQualityAnalysis>(
+    `/api/stocks/${encodeURIComponent(ticker)}/earnings-quality/analyses/${analysisId}`,
+    { signal },
 );
 
 export const calculateDecisionValuation = (

@@ -31,6 +31,8 @@
     自研基本面财务分析引擎。内置经典的 DCF (现金流折现模型) 测算股票绝对内在价值 (`Intrinsic Value`) 与安全边际 (`Margin of Safety`)。创新的五维多因子雷达：覆盖 `Value (价值)`、`Quality (质量)`、`Growth (成长)`、`Health (健康)` 与 `Momentum (动量)` 维度，让优质公司显像化。
 *   **🧭 Personal Stock Decision Cockpit**
     个股页顶部提供无黑盒总分的决策驾驶舱：Bear/Base/Bull 三情景五年 FCF DCF、Base 5×5 敏感性矩阵、20 项行业/板块 midrank 分位、确定性基本面预警，以及价格、Screener、财报和因子的独立来源日期。缺失数据会给出明确原因，不会回填为零估值。
+*   **🧾 Earnings Quality / 一次性损益**
+    Analysis 页先用本地结构化财报生成可追溯的异常候选与数据质量提示；美国 SEC 公司可在解锁后按单个年度或季度点击分析对应 10-K/10-Q 与同期 earnings 8-K。页面浏览、同步和定时任务不会批量调用 SEC 或 AI。Reported 始终为默认口径，只有金额、税后勾稽和 SEC 引用全部通过验证时才并列显示 normalized Net Income / adjusted EPS，且 adjusted 结果不进入 DCF、ROE、P/E、peer benchmark 或 factor score。
 *   **🤖 Evidence-cited AI Brief**
     DeepSeek 简报仅按需生成，并且只能使用驾驶舱输出的稳定证据 ID。四个分析章节都必须包含 `[E#]` 引用；未知或缺失引用会被拒绝，只有校验通过的结果才会按证据哈希缓存。AI 不可用时不影响确定性驾驶舱。
 *   **📊 专业级沉浸交互图表**
@@ -125,6 +127,9 @@ DEEPSEEK_API_KEY=your_deepseek_api_key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_THINKING_ENABLED=false
+
+# Required only for user-triggered SEC filing analysis. Use a real organization/email identity.
+SEC_USER_AGENT="Your Company research@example.com"
 ```
 
 ### 3. 启动后端服务 (FastAPI)
@@ -157,6 +162,11 @@ python worker.py
 个人工作区的 watchlist 与估值情景读取、写入接口也使用同一个请求头；公开的
 `GET /api/stocks/{ticker}/decision-support` 在没有该请求头时只返回默认估值情景，
 不会暴露保存的个人假设。
+
+Earnings-quality 的 `GET /api/stocks/{ticker}/earnings-quality` 和任务状态 GET
+只读取本地数据；只有带 `X-API-Key` 的
+`POST /api/personal/stocks/{ticker}/earnings-quality/analyses` 才会创建一个单期 SEC/AI
+任务。相同报表指纹、模型与 prompt 版本的完成结果会直接命中缓存。
 
 首次建立可信数据集时运行：
 

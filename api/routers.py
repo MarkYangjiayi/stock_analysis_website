@@ -4,13 +4,14 @@ from datetime import date, timedelta
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import (
     AnomalyScanResponse,
     BacktestRequest,
+    EarningsQualityAnalysisRequest,
     PersonalWatchlistRequest,
     ValuationScenariosRequest,
     FactorComputeRequest,
@@ -30,6 +31,15 @@ from services.analyzer import (
     get_rrg_data_for_tickers
 )
 from services.ai_assistant import generate_stock_report, get_cached_stock_report
+from services.earnings_quality import get_earnings_quality, serialize_analysis_run
+from services.filing_analysis import (
+    FilingAnalysisError,
+    assert_filing_analysis_configured,
+    enqueue_filing_analysis,
+    find_reusable_analysis,
+    get_filing_analysis,
+    schedule_filing_analysis,
+)
 from services.decision_support import (
     DEFAULT_SCENARIOS,
     calculate_ticker_valuation,
@@ -52,7 +62,11 @@ from services.anomaly_scans import (
     schedule_anomaly_scan,
     serialize_anomaly_scan,
 )
-from core.security import limit_expensive_requests, require_admin_api_key
+from core.security import (
+    limit_expensive_requests,
+    require_admin_api_key,
+    require_configured_admin_api_key,
+)
 from services.security_master import canonicalize_ticker
 from services.quant.backtest import BacktestConfig, run_and_store_backtest
 from services.quant.factor_engine import compute_and_store_factors
@@ -238,6 +252,85 @@ async def read_decision_support(
         db,
         include_saved_scenarios=include_saved,
     )
+
+
+@router.get(
+    "/api/stocks/{ticker}/earnings-quality",
+    tags=["Stocks Decision Support"],
+)
+async def read_earnings_quality(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return deterministic flags and cached analyses without external work."""
+    return await get_earnings_quality(ticker, db)
+
+
+@router.post(
+    "/api/personal/stocks/{ticker}/earnings-quality/analyses",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_configured_admin_api_key)],
+)
+async def start_earnings_quality_analysis(
+    ticker: str,
+    payload: EarningsQualityAnalysisRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Queue one explicitly selected SEC period; never called by normal page reads."""
+    try:
+        reusable = await find_reusable_analysis(
+            db,
+            ticker,
+            payload.period_end,
+            payload.period_type,
+        )
+        if reusable is not None:
+            response.status_code = (
+                status.HTTP_200_OK
+                if reusable.status == "completed"
+                else status.HTTP_202_ACCEPTED
+            )
+            return serialize_analysis_run(reusable)
+
+        # Only a cache miss that can create external work consumes the budget.
+        assert_filing_analysis_configured()
+        await limit_expensive_requests(request)
+        run, created = await enqueue_filing_analysis(
+            db,
+            ticker,
+            payload.period_end,
+            payload.period_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FilingAnalysisError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if created:
+        schedule_filing_analysis(run.id)
+    response.status_code = (
+        status.HTTP_200_OK
+        if run.status == "completed"
+        else status.HTTP_202_ACCEPTED
+    )
+    return serialize_analysis_run(run)
+
+
+@router.get(
+    "/api/stocks/{ticker}/earnings-quality/analyses/{analysis_id}",
+    tags=["Stocks Decision Support"],
+)
+async def read_earnings_quality_analysis(
+    ticker: str,
+    analysis_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    run = await get_filing_analysis(db, ticker, analysis_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Earnings-quality analysis not found")
+    return serialize_analysis_run(run)
 
 
 @router.post(
