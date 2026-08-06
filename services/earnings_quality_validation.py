@@ -5,7 +5,7 @@ import json
 import math
 import re
 from datetime import date
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,7 @@ AdjustmentCategory = Literal[
     "derivative_fair_value",
     "other",
 ]
+ALLOWED_ADJUSTMENT_CATEGORIES = frozenset(get_args(AdjustmentCategory))
 
 
 class StrictModel(BaseModel):
@@ -295,9 +296,12 @@ def validate_filing_extraction(
     source_documents: dict[str, str],
     source_metadata: dict[str, dict[str, str]] | None = None,
     recurring_categories: set[str] | None = None,
+    prevalidation_failures: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Validate model output and expose adjusted values only after every gate passes."""
-    failures: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = [
+        dict(failure) for failure in (prevalidation_failures or [])
+    ]
     checks: list[dict[str, Any]] = []
     normalized_source_documents = {
         source_id: _normalized_text(source)
@@ -548,6 +552,11 @@ def validate_filing_extraction(
                 "label": adjustment.label,
                 "model_category": adjustment.category,
                 "policy_category": canonical_category,
+                "failure_codes": [
+                    failure["code"]
+                    for failure in failures
+                    if failure.get("adjustment_index") == index
+                ],
             })
 
     normalized_net_income = reported_net_income - sum(included_effects)

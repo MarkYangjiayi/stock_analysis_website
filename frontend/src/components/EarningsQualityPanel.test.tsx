@@ -170,6 +170,40 @@ describe("EarningsQualityPanel", () => {
         expect(screen.getByText("Adjusted diluted EPS is not source-reconciled.")).toBeInTheDocument();
     });
 
+    it("shows rejected filing candidates as amount-free red flags", async () => {
+        const user = userEvent.setup();
+        const data = response(true);
+        const analysis = data.quarterly[0].analysis;
+        if (!analysis?.result || !analysis.validation_report) throw new Error("invalid fixture");
+        analysis.result.verification_status = "flag_only";
+        analysis.result.normalized_net_income = null;
+        analysis.result.adjustments = [];
+        analysis.validation_report.verified = false;
+        analysis.validation_report.failures = [{
+            code: "citation_period_mismatch",
+            message: "The cited amount is not bound to the selected quarter or year.",
+            adjustment_index: 0,
+        }];
+        analysis.validation_report.rejected_adjustments = [{
+            adjustment_index: 0,
+            label: "Net gain on equity securities, net",
+            model_category: "other",
+            policy_category: "investment_fair_value",
+            failure_codes: ["citation_period_mismatch", "cited_amount_mismatch"],
+        }];
+        data.quarterly[0].verified_normalized = null;
+
+        render(<EarningsQualityPanel data={data} adminKey="secret" />);
+        await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
+
+        expect(screen.getByText("Unverified filing candidates")).toBeInTheDocument();
+        expect(screen.getByText("Net gain on equity securities, net")).toBeInTheDocument();
+        expect(screen.getByText(/amounts are hidden/i)).toBeInTheDocument();
+        expect(screen.getByText(/investment fair value · flag only/i)).toBeInTheDocument();
+        expect(screen.getByText(/citation_period_mismatch · cited_amount_mismatch/i)).toBeInTheDocument();
+        expect(screen.getByText("No source-validated adjustment amount is available.")).toBeInTheDocument();
+    });
+
     it("shows a retryable waiting state when the matching SEC filing is not filed", async () => {
         const user = userEvent.setup();
         const onAnalyze = vi.fn();

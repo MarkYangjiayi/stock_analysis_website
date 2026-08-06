@@ -31,6 +31,7 @@ from services.earnings_quality import (
     statement_fingerprint,
 )
 from services.earnings_quality_validation import (
+    ALLOWED_ADJUSTMENT_CATEGORIES,
     FilingEarningsQualityExtraction,
     canonical_adjustment_category,
     validate_filing_extraction,
@@ -825,6 +826,57 @@ def _omit_unquantified_adjustments(ai_payload: dict[str, Any]) -> dict[str, Any]
     return sanitized
 
 
+def _normalize_unknown_adjustment_categories(
+    ai_payload: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Conservatively retain unknown model categories as recurring flag-only items."""
+    adjustments = ai_payload.get("adjustments")
+    if not isinstance(adjustments, list):
+        return ai_payload, []
+
+    normalized: list[Any] = []
+    failures: list[dict[str, Any]] = []
+    unknown_labels: list[str] = []
+    for index, item in enumerate(adjustments):
+        category = item.get("category") if isinstance(item, dict) else None
+        if not isinstance(category, str) or category in ALLOWED_ADJUSTMENT_CATEGORIES:
+            normalized.append(item)
+            continue
+
+        label = str(item.get("label") or "unnamed candidate")
+        normalized.append({
+            **item,
+            "category": "other",
+            "include_in_normalized": False,
+            "recurring": True,
+        })
+        failures.append({
+            "code": "unknown_adjustment_category",
+            "message": (
+                f"The model category '{category}' for '{label}' is unsupported; "
+                "it was retained conservatively as a recurring flag-only item."
+            ),
+            "adjustment_index": index,
+        })
+        unknown_labels.append(label)
+
+    if not failures:
+        return ai_payload, []
+
+    sanitized = {**ai_payload, "adjustments": normalized}
+    existing_notes = ai_payload.get("notes")
+    if existing_notes is None or isinstance(existing_notes, list):
+        notes = existing_notes if isinstance(existing_notes, list) else []
+        preview = ", ".join(unknown_labels[:3])
+        suffix = "" if len(unknown_labels) <= 3 else ", …"
+        sanitized["notes"] = [
+            *notes[:49],
+            "Mapped unsupported model category candidate(s) to conservative "
+            f"flag-only other: {preview}{suffix}",
+        ]
+    return sanitized, failures
+
+
 async def _compatible_historical_runs(
     db: AsyncSession,
     run: EarningsQualityAnalysisRun,
@@ -1220,10 +1272,12 @@ async def _perform_analysis(run_id: int) -> None:
         ),
     )
     await _set_stage(run_id, "validating", ai_result=ai_payload)
+    prepared_payload = _omit_unquantified_adjustments(ai_payload)
+    prepared_payload, prevalidation_failures = (
+        _normalize_unknown_adjustment_categories(prepared_payload)
+    )
     try:
-        extraction = FilingEarningsQualityExtraction.model_validate(
-            _omit_unquantified_adjustments(ai_payload)
-        )
+        extraction = FilingEarningsQualityExtraction.model_validate(prepared_payload)
     except ValidationError as exc:
         raise FilingAnalysisError(f"AI output failed schema validation: {exc}") from exc
     extraction = _normalize_extraction_to_base_units(
@@ -1260,6 +1314,7 @@ async def _perform_analysis(run_id: int) -> None:
         source_metadata=source_metadata,
         recurring_categories=recurring_categories,
         expected_period_type=run.period_type,
+        prevalidation_failures=prevalidation_failures,
     )
 
     async with async_session_maker() as db:
