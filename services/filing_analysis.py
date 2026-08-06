@@ -377,9 +377,12 @@ def _fetch_sec_documents_sync(
     set_identity(settings.SEC_USER_AGENT)
     company = Company(cik, include_old_filings=False)
     primary_forms = ("10-K",) if period_type == "annual" else ("10-Q", "10-K")
+    # edgartools accepts date ranges as ``YYYY-MM-DD:YYYY-MM-DD`` strings.
+    # Passing a tuple reaches its regex-based date parser and fails before the
+    # SEC request is made.
     filing_window = (
-        (period_end - timedelta(days=10)).isoformat(),
-        (period_end + timedelta(days=120)).isoformat(),
+        f"{(period_end - timedelta(days=10)).isoformat()}:"
+        f"{(period_end + timedelta(days=120)).isoformat()}"
     )
     primary_filing = None
     for primary_form in primary_forms:
@@ -451,7 +454,8 @@ def _fetch_sec_documents_sync(
 _RELEVANT_TERMS = re.compile(
     r"(non[- ]?gaap|adjusted|restructur|impair|discontinued|litigation|settlement|"
     r"insurance|catastrophe|extinguish|divest|disposal|stock[- ]based|share[- ]based|"
-    r"foreign exchange|amortization|income tax|net income|diluted eps|earnings per share)",
+    r"foreign exchange|amortization|income tax|net income|diluted eps|earnings per share|"
+    r"unrealized|investment|equity securit|fair value|other income|oi&e|remeasur)",
     re.IGNORECASE,
 )
 

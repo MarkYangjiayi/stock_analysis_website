@@ -259,6 +259,27 @@ def test_relevant_context_honors_configured_character_cap(monkeypatch):
     assert sum(len(item["text"]) for item in context) == 30
 
 
+def test_relevant_context_keeps_unrealized_equity_gain_evidence():
+    import services.filing_analysis as filing_analysis
+
+    documents = [{
+        "source_id": "filing:primary",
+        "accession": "0001",
+        "form": "10-Q",
+        "document_name": "report.htm",
+        "source_url": "https://www.sec.gov/report.htm",
+        "text": "\n".join([
+            *[f"Unrelated filing line {index}" for index in range(220)],
+            "Other income included unrealized gains on equity securities of $99.0 billion.",
+            *[f"Trailing filing line {index}" for index in range(20)],
+        ]),
+    }]
+
+    context = filing_analysis._relevant_context(documents)
+
+    assert "unrealized gains on equity securities" in context[0]["text"]
+
+
 def extraction_payload(**overrides):
     payload = {
         "period_end": "2025-12-31",
@@ -888,7 +909,7 @@ def test_sec_fixture_selects_matching_primary_nearest_earnings_8k_and_exhibit(
 
     class FakeCompany:
         def get_filings(self, *, form, filing_date):
-            assert isinstance(filing_date, tuple)
+            assert filing_date == "2025-12-21:2026-04-30"
             return [primary] if form == "10-Q" else [farther, nearest]
 
     company_factory = Mock(return_value=FakeCompany())
@@ -937,7 +958,7 @@ def test_quarterly_sec_fixture_falls_back_to_matching_ten_k(monkeypatch):
 
     class FakeCompany:
         def get_filings(self, *, form, filing_date):
-            assert isinstance(filing_date, tuple)
+            assert filing_date == "2025-12-21:2026-04-30"
             requested_forms.append(form)
             if form == "10-K":
                 return [FakeFiling()]
