@@ -5,7 +5,7 @@ const scan = {
     id: 42,
     trigger: "manual",
     status: "queued",
-    requested_limit: 5,
+    requested_limit: 20,
     threshold_pct: 4,
     universe_as_of: null,
     quote_as_of: null,

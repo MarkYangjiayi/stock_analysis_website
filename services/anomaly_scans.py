@@ -14,6 +14,7 @@ from core.time_utils import utc_now
 from database import async_session_maker
 from models import AnomalyScanRun
 from services.anomaly_detector import (
+    ANOMALY_MAX_RESULT_LIMIT,
     AnomalyScanData,
     AnomalyScanError,
     scan_and_analyze_anomalies,
@@ -26,6 +27,10 @@ SCHEDULED_SCAN_TRIGGERS = ("morning_briefing", "post_market_summary")
 _PROCESS_OWNER_TOKEN = uuid.uuid4().hex
 _enqueue_lock = asyncio.Lock()
 _running_tasks: Dict[int, asyncio.Task[None]] = {}
+
+
+def _normalize_limit(limit_count: int) -> int:
+    return max(1, min(int(limit_count), ANOMALY_MAX_RESULT_LIMIT))
 
 
 def _iso_utc(value) -> Optional[str]:
@@ -142,7 +147,7 @@ async def enqueue_manual_anomaly_scan(
             active_key="market",
             owner_token=_PROCESS_OWNER_TOKEN,
             lease_expires_at=_lease_deadline(),
-            requested_limit=settings.ANOMALY_RESULT_LIMIT,
+            requested_limit=_normalize_limit(settings.ANOMALY_RESULT_LIMIT),
             threshold_pct=settings.ANOMALY_MOVE_THRESHOLD_PCT,
             results=[],
         )
@@ -194,7 +199,7 @@ async def _create_scan_run(
     trigger: str,
     limit_count: int,
 ) -> Tuple[int, bool, bool]:
-    normalized_limit = max(1, min(limit_count, 10))
+    normalized_limit = _normalize_limit(limit_count)
     threshold_pct = settings.ANOMALY_MOVE_THRESHOLD_PCT
     async with async_session_maker() as db:
         await _expire_stale_scans(db)
@@ -474,7 +479,7 @@ async def run_persisted_anomaly_scan(
     limit_count: int,
 ) -> list[dict]:
     """Run and persist a scheduled scan, returning results to the reporter."""
-    normalized_limit = max(1, min(limit_count, 10))
+    normalized_limit = _normalize_limit(limit_count)
     deadline = time.monotonic() + (
         (settings.ANOMALY_SCAN_TIMEOUT_SECONDS + 30) * 2
     )

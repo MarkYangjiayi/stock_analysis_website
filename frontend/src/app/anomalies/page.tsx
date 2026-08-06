@@ -144,6 +144,9 @@ export default function AnomaliesPage() {
     const threshold = activeScan?.threshold_pct
         ?? latestScan?.threshold_pct
         ?? 4;
+    const resultLimit = activeScan?.requested_limit
+        ?? latestScan?.requested_limit
+        ?? 20;
 
     return (
         <div className="app-page">
@@ -176,7 +179,8 @@ export default function AnomaliesPage() {
                             <h2 className="font-black">Run a fresh scan</h2>
                             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
                                 Checks the tracked universe for moves of at least {threshold.toFixed(1)}%.
-                                The scan runs in the background and this page updates when it finishes.
+                                Shows the {resultLimit} largest qualifying moves. The scan runs in the
+                                background and this page updates when it finishes.
                             </p>
                         </div>
                     </div>

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Keep the fan-out and individual provider calls bounded so one scan cannot
     # monopolize the web process or create unbounded third-party spend.
     ANOMALY_MOVE_THRESHOLD_PCT: float = 4.0
-    ANOMALY_RESULT_LIMIT: int = 5
+    ANOMALY_RESULT_LIMIT: int = 20
     ANOMALY_ATTRIBUTION_CONCURRENCY: int = 3
     ANOMALY_ATTRIBUTION_TIMEOUT_SECONDS: float = 30.0
     ANOMALY_SCAN_TIMEOUT_SECONDS: float = 90.0

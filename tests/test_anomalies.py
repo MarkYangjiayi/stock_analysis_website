@@ -178,6 +178,45 @@ async def test_anomaly_scan_uses_top_1000_market_cap_universe(
 
 
 @pytest.mark.asyncio
+async def test_anomaly_scan_caps_results_at_top_20(
+    db_session,
+    monkeypatch,
+):
+    from services import anomaly_detector
+
+    tickers = [f"T{index:02d}.US" for index in range(21)]
+    await _seed_universe(db_session, tickers)
+    quote_time = datetime.now(timezone.utc).replace(microsecond=0)
+
+    async def fake_quotes(*args, **kwargs):
+        return [
+            _quote(ticker, 25.0 - index, quote_time)
+            for index, ticker in enumerate(tickers)
+        ]
+
+    async def fake_news(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(anomaly_detector, "get_bulk_realtime_prices", fake_quotes)
+    monkeypatch.setattr(anomaly_detector, "fetch_yahoo_news", fake_news)
+
+    scan = await scan_and_analyze_anomalies(db_session, limit_count=100)
+
+    assert len(scan.results) == 20
+    assert [item["ticker"] for item in scan.results] == tickers[:20]
+
+
+@pytest.mark.parametrize(
+    ("requested", "normalized"),
+    [(-1, 1), (1, 1), (20, 20), (21, 20)],
+)
+def test_anomaly_scan_limit_normalization(requested, normalized):
+    from services.anomaly_scans import _normalize_limit
+
+    assert _normalize_limit(requested) == normalized
+
+
+@pytest.mark.asyncio
 async def test_anomaly_scan_excludes_prior_session_symbols_from_fresh_batch(
     db_session,
     monkeypatch,
@@ -721,6 +760,7 @@ async def test_anomaly_api_queues_single_flight_and_reads_latest(
     assert first.json()["id"] == second.json()["id"]
     assert scheduled == [first.json()["id"]]
     assert status_response.json()["status"] == "queued"
+    assert status_response.json()["requested_limit"] == 20
     assert latest_before.json() is None
 
     result = await db_session.execute(

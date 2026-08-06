@@ -22,6 +22,7 @@ services:
       - ./data:/app/data
     environment:
       - ENVIRONMENT=production
+      - ANOMALY_RESULT_LIMIT=20
       # 2. 注意这里！新镜像的默认 SOCKS5 端口是 9091
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
@@ -48,6 +49,7 @@ services:
       - ./data:/app/data
     environment:
       - ENVIRONMENT=production
+      - ANOMALY_RESULT_LIMIT=20
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
       - ALL_PROXY=socks5h://warp:9091

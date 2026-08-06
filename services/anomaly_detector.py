@@ -24,6 +24,7 @@ from services.news_fetcher import NewsFetchError, fetch_yahoo_news
 logger = logging.getLogger(__name__)
 _NEW_YORK = ZoneInfo("America/New_York")
 _ANOMALY_UNIVERSE_LIMIT = 1_000
+ANOMALY_MAX_RESULT_LIMIT = 20
 
 
 class AnomalyScanError(RuntimeError):
@@ -163,13 +164,13 @@ async def _analyze_candidate(
 
 async def scan_and_analyze_anomalies(
     db: AsyncSession,
-    limit_count: int = 5,
+    limit_count: int = ANOMALY_MAX_RESULT_LIMIT,
     *,
     threshold_pct: Optional[float] = None,
     require_current_session: bool = False,
 ) -> AnomalyScanData:
     """Scan current US quotes and attribute the largest moves with bounded fan-out."""
-    limit_count = max(1, min(int(limit_count), 10))
+    limit_count = max(1, min(int(limit_count), ANOMALY_MAX_RESULT_LIMIT))
     threshold = (
         settings.ANOMALY_MOVE_THRESHOLD_PCT
         if threshold_pct is None

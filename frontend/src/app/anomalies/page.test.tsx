@@ -18,7 +18,7 @@ const completedScan: AnomalyScan = {
     id: 7,
     trigger: "manual",
     status: "completed",
-    requested_limit: 5,
+    requested_limit: 20,
     threshold_pct: 4,
     universe_as_of: "2026-07-29",
     quote_as_of: "2026-07-30T15:30:00Z",
@@ -74,6 +74,9 @@ describe("AnomaliesPage", () => {
             await screen.findByText("Bloom Energy"),
         ).toBeInTheDocument();
         expect(screen.getByText("+25.73%")).toBeInTheDocument();
+        expect(
+            screen.getByText(/Shows the 20 largest qualifying moves/),
+        ).toBeInTheDocument();
         expect(
             screen.getByRole("link", { name: /Bloom Energy earnings/ }),
         ).toHaveAttribute("href", "https://finance.yahoo.com/bloom");
