@@ -24,6 +24,32 @@ test("scrolls the screener page to its results", async ({ page }) => {
     await expect(resultsFooter).toBeInViewport();
 });
 
+test("keeps filter controls inside their cards and closes enum dropdowns outside", async ({ page }, testInfo) => {
+    await page.goto("/screener");
+    await expect(page.getByText("120", { exact: true })).toBeVisible();
+
+    if (testInfo.project.name === "mobile") {
+        await page.getByRole("button", { name: /^Filters/ }).click();
+    }
+
+    const valueInput = page.getByLabel("Market Cap value", { exact: true });
+    await expect.poll(() => valueInput.evaluate((input) => {
+        const card = input.parentElement?.parentElement?.parentElement;
+        return card
+            ? input.getBoundingClientRect().right <= card.getBoundingClientRect().right
+            : false;
+    })).toBe(true);
+
+    const exchangeOptions = page.getByRole("button", { name: "Exchange options", exact: true });
+    await exchangeOptions.click();
+    await expect(exchangeOptions).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("group", { name: "Exchange choices", exact: true })).toBeVisible();
+
+    await valueInput.click();
+    await expect(exchangeOptions).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("group", { name: "Exchange choices", exact: true })).toHaveCount(0);
+});
+
 test("filters, sorts, paginates and restores URL state", async ({ page }, testInfo) => {
     await page.goto("/screener");
     await expect(page.getByRole("heading", { name: "Stock Screener" })).toBeVisible();
@@ -297,6 +323,6 @@ test("drops unavailable URL state and pins queries to metadata", async ({ page }
     await expect(page.locator("header").getByText("120", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/sort=ticker%3Aasc/);
     await expect(page).not.toHaveURL(/market_cap/);
-    await expect(page.getByRole("button", { name: "Sector" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sector", exact: true })).toBeVisible();
     expect(requestedSnapshot).toBe("2025-01-02");
 });

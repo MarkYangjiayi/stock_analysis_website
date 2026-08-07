@@ -129,8 +129,36 @@ describe("FieldControl", () => {
                 onChange={vi.fn()}
             />,
         );
+        fireEvent.click(screen.getByRole("button", { name: "Industry options" }));
         expect(screen.getByRole("checkbox", { name: "Industry 99" })).toBeEnabled();
         expect(screen.getByRole("checkbox", { name: "Industry 100" })).toBeDisabled();
+    });
+
+    it("closes an enum dropdown when the user clicks outside it", () => {
+        const field: ScreenerField = {
+            ...numericField,
+            id: "industry",
+            label: "Industry",
+            type: "enum",
+            unit: "text",
+            operators: ["in"],
+            options: [{ value: "software", label: "Software" }],
+        };
+        render(
+            <div>
+                <FieldControl field={field} onChange={vi.fn()} />
+                <button type="button">Outside</button>
+            </div>,
+        );
+
+        const toggle = screen.getByRole("button", { name: "Industry options" });
+        fireEvent.click(toggle);
+        expect(toggle).toHaveAttribute("aria-expanded", "true");
+        expect(screen.getByRole("group", { name: "Industry choices" })).toBeInTheDocument();
+
+        fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
+        expect(screen.queryByRole("group", { name: "Industry choices" })).not.toBeInTheDocument();
     });
 });
 
