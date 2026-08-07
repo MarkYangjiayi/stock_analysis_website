@@ -1101,6 +1101,89 @@ async def test_read_through_freshness_uses_completed_session_and_asset_type(db_s
 
 
 @pytest.mark.asyncio
+async def test_read_through_freshness_flags_incomplete_stock_profile(db_session):
+    db_session.add(Ticker(ticker="HONA.US", last_updated=datetime(2025, 7, 7, 12, 0)))
+    db_session.add(SecurityMaster(canonical_ticker="HONA.US", asset_type="Common Stock"))
+    db_session.add(DailyPrice(ticker="HONA.US", date=date(2025, 7, 3), close=200, adjusted_close=200))
+    await db_session.commit()
+
+    freshness = await assess_ticker_freshness(
+        db_session,
+        "HONA.US",
+        reference_date=date(2025, 7, 7),
+    )
+
+    assert freshness.needs_sync
+    assert freshness.reason == "profile_incomplete"
+
+
+@pytest.mark.asyncio
+async def test_bulk_fundamentals_carry_profile_fields(monkeypatch):
+    from services.screener_sync import fetch_target_universe_fundamentals
+
+    async def fake_fundamental_data(ticker, client=None):
+        return {
+            "General": {
+                "Code": "HONA",
+                "Name": "Honeywell Aerospace Inc",
+                "Exchange": "NASDAQ",
+                "Sector": "Industrials",
+                "Industry": "Aerospace & Defense",
+                "Description": "Aerospace and defense supplier.",
+                "CurrencyCode": "USD",
+            }
+        }
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_fundamental_data",
+        fake_fundamental_data,
+    )
+
+    rows = await fetch_target_universe_fundamentals({"HONA.US"}, client=object())
+
+    assert rows[0]["Exchange"] == "NASDAQ"
+    assert rows[0]["Description"] == "Aerospace and defense supplier."
+    assert rows[0]["CurrencyCode"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_bulk_ticker_profiles_store_and_preserve_descriptive_fields(db_session):
+    from services.screener_sync import _upsert_ticker_profiles
+
+    db_session.add(Ticker(ticker="HONA.US"))
+    await db_session.commit()
+
+    await _upsert_ticker_profiles(
+        db_session,
+        [
+            {
+                "ticker": "HONA.US",
+                "name": "Honeywell Aerospace Inc",
+                "exchange": "NASDAQ",
+                "sector": "Industrials",
+                "industry": "Aerospace & Defense",
+                "description": "Aerospace and defense supplier.",
+                "currency": "USD",
+            }
+        ],
+    )
+    await db_session.commit()
+
+    profile = await db_session.get(Ticker, "HONA.US")
+    assert profile is not None
+    assert profile.exchange == "NASDAQ"
+    assert profile.description == "Aerospace and defense supplier."
+
+    await _upsert_ticker_profiles(db_session, [{"ticker": "HONA.US"}])
+    await db_session.commit()
+
+    profile = await db_session.get(Ticker, "HONA.US")
+    assert profile is not None
+    assert profile.exchange == "NASDAQ"
+    assert profile.description == "Aerospace and defense supplier."
+
+
+@pytest.mark.asyncio
 async def test_security_master_deduplicates_bare_and_vendor_symbol(db_session):
     first = await upsert_security(db_session, "AAPL", "NASDAQ", "Apple")
     second = await upsert_security(db_session, "AAPL.US", "NASDAQ", "Apple")

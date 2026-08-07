@@ -126,8 +126,11 @@ async def fetch_target_universe_fundamentals(
                     "code": gen.get("Code", ticker.split('.')[0]),
                     "ticker": ticker,
                     "Name": gen.get("Name"),
+                    "Exchange": gen.get("Exchange"),
                     "Sector": gen.get("Sector"),
                     "Industry": gen.get("Industry"),
+                    "Description": gen.get("Description"),
+                    "CurrencyCode": gen.get("CurrencyCode"),
                     **metrics,
                 })
 
@@ -378,6 +381,46 @@ async def fetch_and_merge_bulk_data(
     
     return df_merged
 
+
+async def _upsert_ticker_profiles(
+    db: AsyncSession,
+    records: list[dict[str, Any]],
+) -> None:
+    """Persist descriptive profile fields without erasing richer existing data."""
+    ticker_profiles = [
+        {
+            "ticker": record["ticker"],
+            "name": record.get("name"),
+            "exchange": record.get("exchange"),
+            "sector": record.get("sector"),
+            "industry": record.get("industry"),
+            "description": record.get("description"),
+            "currency": record.get("currency") or "USD",
+            "last_updated": utc_now(),
+        }
+        for record in records
+        if record.get("ticker")
+    ]
+    for i in range(0, len(ticker_profiles), 500):
+        profile_stmt = insert(Ticker).values(ticker_profiles[i:i + 500])
+        profile_stmt = profile_stmt.on_conflict_do_update(
+            index_elements=["ticker"],
+            set_={
+                "name": func.coalesce(profile_stmt.excluded.name, Ticker.name),
+                "exchange": func.coalesce(profile_stmt.excluded.exchange, Ticker.exchange),
+                "sector": func.coalesce(profile_stmt.excluded.sector, Ticker.sector),
+                "industry": func.coalesce(profile_stmt.excluded.industry, Ticker.industry),
+                "description": func.coalesce(
+                    profile_stmt.excluded.description,
+                    Ticker.description,
+                ),
+                "currency": func.coalesce(profile_stmt.excluded.currency, Ticker.currency),
+                "last_updated": profile_stmt.excluded.last_updated,
+            },
+        )
+        await db.execute(profile_stmt)
+
+
 async def calculate_technicals_locally(
     db: AsyncSession,
     tickers: List[str],
@@ -541,6 +584,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             return str(val).strip() or None
 
         records_to_upsert = []
+        profile_records: dict[str, dict[str, Any]] = {}
         daily_price_inserts = []
         for row in merged_rows:
             # Safely unpack row
@@ -570,8 +614,20 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             
             # Fundamentals Fields
             name = _safe_str(row.get('name')) or _safe_str(row.get('Name')) or _safe_str(row.get('Company'))
+            exchange = _safe_str(row.get("exchange")) or _safe_str(row.get("Exchange"))
             sector = _safe_str(row.get('Sector')) or _safe_str(row.get('sector'))
             industry = _safe_str(row.get('Industry')) or _safe_str(row.get('industry'))
+            description = _safe_str(row.get("description")) or _safe_str(row.get("Description"))
+            currency = _safe_str(row.get("currency")) or _safe_str(row.get("CurrencyCode")) or "USD"
+            profile_records[ticker] = {
+                "ticker": ticker,
+                "name": name,
+                "exchange": exchange,
+                "sector": sector,
+                "industry": industry,
+                "description": description,
+                "currency": currency,
+            }
             numeric_fundamental_fields = (
                 "market_cap", "pe_ratio", "pb_ratio", "dividend_yield", "short_float",
                 "analyst_recommendation", "target_price", "roe", "debt_to_equity",
@@ -599,7 +655,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 "ticker": ticker,
                 "date": dt_val,
                 "name": name,
-                "exchange": _safe_str(row.get("exchange")),
+                "exchange": exchange,
                 "sector": sector,
                 "industry": industry,
                 "country": _safe_str(row.get("country")),
@@ -707,30 +763,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 for i in range(0, len(missing_inserts), 1000):
                     await db.execute(insert(Ticker).values(missing_inserts[i:i+1000]).on_conflict_do_nothing())
 
-            ticker_profiles = [
-                {
-                    "ticker": record["ticker"],
-                    "name": record.get("name"),
-                    "sector": record.get("sector"),
-                    "industry": record.get("industry"),
-                    "currency": "USD",
-                    "last_updated": utc_now(),
-                }
-                for record in records_to_upsert
-            ]
-            for i in range(0, len(ticker_profiles), 500):
-                profile_stmt = insert(Ticker).values(ticker_profiles[i:i + 500])
-                profile_stmt = profile_stmt.on_conflict_do_update(
-                    index_elements=["ticker"],
-                    set_={
-                        "name": profile_stmt.excluded.name,
-                        "sector": profile_stmt.excluded.sector,
-                        "industry": profile_stmt.excluded.industry,
-                        "currency": profile_stmt.excluded.currency,
-                        "last_updated": profile_stmt.excluded.last_updated,
-                    },
-                )
-                await db.execute(profile_stmt)
+            await _upsert_ticker_profiles(db, list(profile_records.values()))
 
             await bulk_upsert_securities(db, records_to_upsert, snapshot_date)
             # 2a. Sync the provider's adjusted OHLCV fields before technicals.

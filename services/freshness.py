@@ -64,6 +64,11 @@ async def assess_ticker_freshness(
         reason = "price_stale"
     elif ticker_obj.last_updated is None or ticker_obj.last_updated < profile_cutoff:
         reason = "profile_stale"
+    elif expects_fundamentals and (
+        not str(ticker_obj.description or "").strip()
+        or not str(ticker_obj.exchange or "").strip()
+    ):
+        reason = "profile_incomplete"
     elif expects_fundamentals and not has_quarterly:
         reason = "fundamentals_missing"
     else:
