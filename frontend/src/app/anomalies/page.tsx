@@ -98,7 +98,7 @@ function TickerProfileHoverCard({ item }: { item: AnomalyReport }) {
                         Market cap {formatMarketCap(item.market_cap)}
                     </span>
                 </span>
-                <span className="mt-3 block line-clamp-6 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                <span className="mt-3 line-clamp-6 text-xs leading-5 text-slate-600 dark:text-slate-300">
                     {item.company_description || "Company profile is not available yet."}
                 </span>
             </span>
