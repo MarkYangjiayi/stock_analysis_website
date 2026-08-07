@@ -20,6 +20,24 @@ const numericField: ScreenerField = {
 };
 
 describe("FieldControl", () => {
+    it("shows human-readable comparison labels while preserving API operator values", () => {
+        render(
+            <FieldControl
+                field={{
+                    ...numericField,
+                    operators: ["lt", "lte", "gt", "gte", "between"],
+                }}
+                onChange={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByRole("option", { name: "< Less than" })).toHaveValue("lt");
+        expect(screen.getByRole("option", { name: "≤ At most" })).toHaveValue("lte");
+        expect(screen.getByRole("option", { name: "> Greater than" })).toHaveValue("gt");
+        expect(screen.getByRole("option", { name: "≥ At least" })).toHaveValue("gte");
+        expect(screen.getByRole("option", { name: "↔ Between" })).toHaveValue("between");
+    });
+
     it("converts displayed percentages to decimal API values", () => {
         const onChange = vi.fn();
         render(<FieldControl field={numericField} onChange={onChange} />);

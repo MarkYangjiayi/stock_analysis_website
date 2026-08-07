@@ -45,6 +45,20 @@ export interface ScreenerQueryResponse {
     freshness: ScreenerMetadata["freshness"];
 }
 
+const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
+    eq: "= Equal to",
+    in: "In",
+    lt: "< Less than",
+    lte: "≤ At most",
+    gt: "> Greater than",
+    gte: "≥ At least",
+    between: "↔ Between",
+};
+
+export function filterOperatorLabel(operator: FilterOperator): string {
+    return FILTER_OPERATOR_LABELS[operator];
+}
+
 export function decodeFilters(value: string | null): ScreenerFilter[] {
     if (!value) return [];
     try {

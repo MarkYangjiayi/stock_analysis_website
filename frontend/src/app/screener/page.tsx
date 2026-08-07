@@ -21,6 +21,7 @@ import {
     decodeFilters,
     encodeFilters,
     filterLabel,
+    filterOperatorLabel,
     formatScreenerValue,
     MAX_FILTER_VALUES,
     MAX_SCREENER_FILTERS,
@@ -187,10 +188,10 @@ export function FieldControl({
                     setDraftValues(values);
                     commit(next, values);
                 }}
-                className="w-[76px] rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                className="w-[128px] shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
             >
                 {field.operators.map((value) => (
-                    <option value={value} key={value}>{value}</option>
+                    <option value={value} key={value}>{filterOperatorLabel(value)}</option>
                 ))}
             </select>
             <input
