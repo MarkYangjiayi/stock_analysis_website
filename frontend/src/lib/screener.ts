@@ -19,6 +19,7 @@ export interface ScreenerField {
     finviz_field?: string;
     presets: Array<{ label: string; operator: FilterOperator; value: string | number | number[] }>;
     options: Array<{ value: string; label: string }>;
+    description?: string | null;
     coverage: number;
     available: boolean;
     default_column: boolean;

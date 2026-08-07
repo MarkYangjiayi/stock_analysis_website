@@ -57,6 +57,100 @@ async def test_schema_enables_sqlite_foreign_keys(db_session):
     assert result.scalar_one() == 1
 
 
+def test_peg_migration_preserves_raw_values_and_normalizes_public_values(tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    database_path = tmp_path / "peg-migration.db"
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{database_path}",
+        "ENVIRONMENT": "test",
+    }
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "upgrade",
+            "0011_earnings_quality_analysis",
+        ],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO stock_screener_snapshot (ticker, date, peg_ratio)
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("NEG.US", "2025-01-02", -0.5),
+                ("ZERO.US", "2025-01-02", 0),
+                ("POS.US", "2025-01-02", 1.5),
+            ],
+        )
+        connection.commit()
+
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        upgraded_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(stock_screener_snapshot)")
+        }
+        rows = connection.execute(
+            """
+            SELECT ticker, peg_ratio, peg_ratio_raw
+            FROM stock_screener_snapshot
+            ORDER BY ticker
+            """
+        ).fetchall()
+    assert "technical_quality" in upgraded_columns
+    assert rows == [
+        ("NEG.US", None, -0.5),
+        ("POS.US", 1.5, 1.5),
+        ("ZERO.US", None, 0),
+    ]
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "downgrade",
+            "0011_earnings_quality_analysis",
+        ],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(stock_screener_snapshot)")
+        }
+        restored = connection.execute(
+            "SELECT ticker, peg_ratio FROM stock_screener_snapshot ORDER BY ticker"
+        ).fetchall()
+    assert "peg_ratio_raw" not in columns
+    assert "technical_quality" not in columns
+    assert restored == [
+        ("NEG.US", -0.5),
+        ("POS.US", 1.5),
+        ("ZERO.US", 0),
+    ]
+
+
 def test_alembic_upgrade_adds_rrg_snapshot_table(tmp_path):
     project_root = Path(__file__).resolve().parents[1]
     database_path = tmp_path / "migration.db"
@@ -435,8 +529,16 @@ async def test_bulk_screener_filters_delisted_index_components(monkeypatch):
     async def empty_actions(*args, **kwargs):
         return []
 
-    async def no_fundamentals(*args, **kwargs):
-        return []
+    async def primary_fundamentals(tickers, *args, **kwargs):
+        return [
+            {
+                "ticker": ticker,
+                "Name": ticker,
+                "Exchange": "NASDAQ",
+                "exchange": "NASDAQ",
+            }
+            for ticker in tickers
+        ]
 
     monkeypatch.setattr(
         "services.screener_sync.eodhd_client.create_http_client",
@@ -460,7 +562,7 @@ async def test_bulk_screener_filters_delisted_index_components(monkeypatch):
     )
     monkeypatch.setattr(
         "services.screener_sync.fetch_target_universe_fundamentals",
-        no_fundamentals,
+        primary_fundamentals,
     )
 
     frame = await fetch_and_merge_bulk_data("2025-01-02")
@@ -481,6 +583,82 @@ async def test_bulk_screener_filters_delisted_index_components(monkeypatch):
     assert set(frame.attrs["known_exits"]) == {"STALE.US"}
     assert set(frame.attrs["sp500_known_exits"]) == {"STALE.US"}
     assert set(frame.attrs["russell2000_known_exits"]) == set()
+    assert frame.attrs["universe_coverage"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_bulk_screener_filters_priced_otc_components(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_components(index_ticker, client=None):
+        if index_ticker == "GSPC.INDX":
+            return ["AAA.US", "BBB.US"]
+        return ["CCC.US", "VAXX.US", "DDD.US"]
+
+    async def no_delisted_symbols(*args, **kwargs):
+        return []
+
+    async def full_bulk(*args, **kwargs):
+        return [
+            {
+                "code": ticker,
+                "exchange_short_name": "US",
+                "date": "2025-01-02",
+                "close": 100,
+            }
+            for ticker in ["AAA", "BBB", "CCC", "VAXX", "DDD", "SPY"]
+        ]
+
+    async def empty_actions(*args, **kwargs):
+        return []
+
+    async def fundamentals(tickers, *args, **kwargs):
+        return [
+            {
+                "ticker": ticker,
+                "Name": ticker,
+                "Exchange": "PINK" if ticker == "VAXX.US" else "NASDAQ",
+                "exchange": "PINK" if ticker == "VAXX.US" else "NASDAQ",
+            }
+            for ticker in tickers
+        ]
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_index_components",
+        fake_components,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_exchange_symbol_list",
+        no_delisted_symbols,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_eod_prices",
+        full_bulk,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_corporate_actions",
+        empty_actions,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.fetch_target_universe_fundamentals",
+        fundamentals,
+    )
+
+    frame = await fetch_and_merge_bulk_data("2025-01-02")
+
+    assert "VAXX.US" not in set(frame["ticker"])
+    assert "VAXX.US" not in set(frame.attrs["target_tickers"])
+    assert "VAXX.US" not in set(frame.attrs["russell2000_tickers"])
+    assert "VAXX.US" in set(frame.attrs["known_exits"])
+    assert "VAXX.US" in set(frame.attrs["russell2000_known_exits"])
     assert frame.attrs["universe_coverage"] == pytest.approx(1.0)
 
 
@@ -1022,6 +1200,53 @@ def test_quality_gate_detects_duplicates_and_low_coverage():
         {"ticker": "BBB.US", "close": 20, "market_cap": 200},
     ])
     assert passed.passed
+
+
+def test_quality_gate_rejects_invalid_business_values_and_non_primary_listings():
+    report = validate_screener_records([
+        {
+            "ticker": "AAA.US",
+            "exchange": "NASDAQ",
+            "close": 10,
+            "market_cap": 100,
+            "pe_ratio": 0,
+        },
+        {
+            "ticker": "VAXX.US",
+            "exchange": "PINK",
+            "close": 1,
+            "market_cap": 10,
+        },
+    ])
+
+    assert not report.passed
+    assert report.metrics["invalid_business_values"] == {"pe_ratio": 1}
+    assert report.metrics["non_primary_listings"] == ["VAXX.US"]
+
+
+def test_quality_gate_warns_but_does_not_fail_for_quarantined_technicals():
+    report = validate_screener_records([
+        {
+            "ticker": "AAA.US",
+            "exchange": "NASDAQ",
+            "close": 10,
+            "market_cap": 100,
+            "technical_quality": "extreme_adjusted_return",
+        },
+        {
+            "ticker": "BBB.US",
+            "exchange": "NYSE",
+            "close": 20,
+            "market_cap": 200,
+            "technical_quality": "ok",
+        },
+    ])
+
+    assert report.passed
+    assert report.metrics["technical_quarantines"] == {
+        "AAA.US": "extreme_adjusted_return"
+    }
+    assert any("technical metrics quarantined" in warning for warning in report.warnings)
 
 
 def test_canonical_ticker_policy():

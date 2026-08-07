@@ -179,7 +179,7 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         ("RUSSELL2000", "BBB.US", LIVE_UNIVERSE_SOURCE),
         ("SP500", "AAA.US", LIVE_UNIVERSE_SOURCE),
     ]
-    assert revision == "0011_earnings_quality_analysis"
+    assert revision == "0012_normalize_screener_values"
 
 
 def test_historical_membership_parser_supports_duplicates_and_reentry():

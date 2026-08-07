@@ -3,6 +3,16 @@ import math
 from typing import Any, Dict, List
 
 from core.config import settings
+from services.screener_normalization import (
+    HIGH_DISTANCE_FIELDS,
+    LOW_DISTANCE_FIELDS,
+    NONNEGATIVE_VALUE_FIELDS,
+    POSITIVE_MULTIPLE_FIELDS,
+    POSITIVE_VALUE_FIELDS,
+    RETURN_FIELDS,
+    is_non_primary_exchange,
+    is_valid_public_screener_value,
+)
 
 
 @dataclass
@@ -36,7 +46,18 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
         "market_cap_coverage": market_cap_count / count if count else 0.0,
         "ma50_coverage": technical_count / count if count else 0.0,
     }
-    excluded = {"ticker", "date", "name", "sector", "industry", "exchange", "country", "ipo_date", "candlestick"}
+    excluded = {
+        "ticker",
+        "date",
+        "name",
+        "sector",
+        "industry",
+        "exchange",
+        "country",
+        "ipo_date",
+        "candlestick",
+        "technical_quality",
+    }
     numeric_fields = sorted(
         {
             key
@@ -63,6 +84,42 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
             invalid_numeric_values[field_name] = invalid
     metrics["field_coverage"] = field_coverage
     metrics["invalid_numeric_values"] = invalid_numeric_values
+    constrained_fields = (
+        POSITIVE_MULTIPLE_FIELDS
+        | POSITIVE_VALUE_FIELDS
+        | NONNEGATIVE_VALUE_FIELDS
+        | RETURN_FIELDS
+        | HIGH_DISTANCE_FIELDS
+        | LOW_DISTANCE_FIELDS
+        | {"analyst_recommendation", "rsi_14"}
+    )
+    invalid_business_values = {
+        field_name: sum(
+            not is_valid_public_screener_value(field_name, record.get(field_name))
+            for record in records
+            if record.get(field_name) is not None
+        )
+        for field_name in constrained_fields
+    }
+    invalid_business_values = {
+        field_name: invalid
+        for field_name, invalid in invalid_business_values.items()
+        if invalid
+    }
+    non_primary_listings = sorted({
+        str(record.get("ticker"))
+        for record in records
+        if record.get("ticker") and is_non_primary_exchange(record.get("exchange"))
+    })
+    technical_quarantines = {
+        str(record.get("ticker")): str(record.get("technical_quality"))
+        for record in records
+        if record.get("ticker")
+        and record.get("technical_quality") not in (None, "ok")
+    }
+    metrics["invalid_business_values"] = invalid_business_values
+    metrics["non_primary_listings"] = non_primary_listings
+    metrics["technical_quarantines"] = technical_quarantines
     errors: List[str] = []
     warnings: List[str] = []
     if count < settings.PIPELINE_MIN_UNIVERSE_SIZE:
@@ -86,4 +143,20 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
         )
     if invalid_numeric_values:
         errors.append("non-finite numeric values present: " + ", ".join(invalid_numeric_values))
+    if invalid_business_values:
+        errors.append(
+            "invalid screener values present: "
+            + ", ".join(
+                f"{field_name}={count}"
+                for field_name, count in sorted(invalid_business_values.items())
+            )
+        )
+    if non_primary_listings:
+        errors.append(
+            "non-primary listings present: " + ", ".join(non_primary_listings)
+        )
+    if technical_quarantines:
+        warnings.append(
+            f"technical metrics quarantined for {len(technical_quarantines)} symbol(s)"
+        )
     return QualityReport(passed=not errors, metrics=metrics, errors=errors, warnings=warnings)

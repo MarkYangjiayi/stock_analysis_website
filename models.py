@@ -224,6 +224,8 @@ class StockScreenerSnapshot(Base):
     gross_margin: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     sales_growth_5yr: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     forward_pe: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    # Canonical PEG is positive-only; retain the provider value for audit/debugging.
+    peg_ratio_raw: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     peg_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     ps_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     price_cash: Mapped[Optional[Decimal]] = mapped_column(Numeric)
@@ -254,6 +256,7 @@ class StockScreenerSnapshot(Base):
     institutional_ownership: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     
     # 技术面指标 (通过近60天K线运算)
+    technical_quality: Mapped[Optional[str]] = mapped_column(String)
     close: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     volume: Mapped[Optional[int]] = mapped_column(BigInteger)
     average_volume_3m: Mapped[Optional[Decimal]] = mapped_column(Numeric)
