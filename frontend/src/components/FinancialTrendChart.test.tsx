@@ -74,6 +74,7 @@ const chartData = [{
     revenue: 1_000,
     net_income: 100,
     gross_margin: 0.5,
+    debt_to_equity: 2.5,
 }];
 
 describe("FinancialTrendChart earnings-quality overlay", () => {
@@ -96,5 +97,15 @@ describe("FinancialTrendChart earnings-quality overlay", () => {
         act(() => events.click({ seriesName: "Earnings-quality flag", data: { periodEnd: "2025-12-31" } }));
         expect(screen.getByRole("complementary", { name: /2025-12-31/i })).toBeInTheDocument();
         expect(screen.getByText("Impairment")).toBeInTheDocument();
+    });
+
+    it("hides earnings-quality markers and details for non-earnings metrics", () => {
+        render(<FinancialTrendChart data={chartData} timePeriod="annual" onTimePeriodChange={vi.fn()} selectedMetric="debt_to_equity" earningsQuality={earningsQuality(false)} />);
+        const option = chartState.props?.option as { series: Array<{ name: string }> };
+        expect(option.series.some((series) => series.name === "Earnings-quality flag")).toBe(false);
+
+        const events = chartState.props?.onEvents as { click: (params: Record<string, unknown>) => void };
+        act(() => events.click({ seriesName: "Earnings-quality flag", data: { periodEnd: "2025-12-31" } }));
+        expect(screen.queryByRole("complementary", { name: /2025-12-31/i })).not.toBeInTheDocument();
     });
 });
