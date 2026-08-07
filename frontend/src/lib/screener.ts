@@ -127,6 +127,10 @@ export function sanitizeFilters(
 export function formatScreenerValue(value: unknown, field?: ScreenerField): string {
     if (value === null || value === undefined || value === "") return "—";
     if (!field) return String(value);
+    if (field.type === "enum") {
+        const rawValue = String(value);
+        return field.options.find((option) => option.value === rawValue)?.label ?? rawValue;
+    }
     if (field.unit === "date" || field.unit === "text") return String(value);
     const number = Number(value);
     if (!Number.isFinite(number)) return "—";

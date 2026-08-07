@@ -1231,9 +1231,10 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
             "high": 51,
             "low": 48,
             "close": 50,
-            "adjusted_close": 100 + index,
+            "adjusted_close": 100 if index == 0 else 0,
             "volume": 1_000,
             "Name": ticker,
+            "Exchange": "NASDAQ",
             "Sector": "Tech",
             "Industry": "Software",
             "MarketCapitalization": 1_000_000,
@@ -1314,10 +1315,18 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
     )
 
     async def partial_technicals(*args, **kwargs):
-        return pd.DataFrame([{
-            "ticker": "AAA.US",
-            "performance_1d": 0.1,
-        }])
+        return pd.DataFrame([
+            {
+                "ticker": "AAA.US",
+                "technical_quality": "ok",
+                "performance_1d": 0.1,
+            },
+            {
+                "ticker": "BBB.US",
+                "technical_quality": "ok",
+                "relative_volume": 2.0,
+            },
+        ])
 
     monkeypatch.setattr(
         "services.screener_sync.calculate_technicals_locally",
@@ -1338,12 +1347,17 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         select(DailyPrice).order_by(DailyPrice.ticker)
     )).scalars().all()
     assert [price.ticker for price in prices] == ["AAA.US", "BBB.US", "SPY.US"]
-    assert [float(price.adjusted_close) for price in prices] == [100.0, 101.0, 200.0]
+    assert [
+        float(price.adjusted_close) if price.adjusted_close is not None else None
+        for price in prices
+    ] == [100.0, None, 200.0]
     snapshots = (await db_session.execute(
         select(StockScreenerSnapshot).order_by(StockScreenerSnapshot.ticker)
     )).scalars().all()
     assert float(snapshots[0].performance_1d) == pytest.approx(0.1)
     assert snapshots[1].performance_1d is None
+    assert snapshots[1].relative_volume is None
+    assert snapshots[1].technical_quality == "invalid_adjustment_factor"
     assert (await db_session.execute(select(func.count(CorporateAction.id)))).scalar_one() == 2
     publications = set((await db_session.execute(
         select(DataPublication.dataset).where(DataPublication.as_of_date == target)

@@ -78,6 +78,22 @@ def normalize_peg_ratio(value: Any) -> Optional[float]:
     return normalize_multiple("peg_ratio", value)
 
 
+def validated_adjusted_returns(adjusted_close: pd.Series) -> Optional[pd.Series]:
+    """Return adjusted-price returns unless the source series is unsafe for beta."""
+    prices = pd.to_numeric(adjusted_close, errors="coerce")
+    populated = prices.dropna()
+    if prices.isna().any() or populated.empty or (populated <= 0).any():
+        return None
+    returns = prices.pct_change(fill_method=None)
+    populated_returns = returns.dropna()
+    if (
+        (populated_returns > MAX_ADJUSTED_DAILY_RETURN).any()
+        or (populated_returns < -1).any()
+    ):
+        return None
+    return populated_returns
+
+
 def safe_ratio(numerator: Any, denominator: Any, *, positive_denominator: bool = True) -> Optional[float]:
     num = safe_float(numerator)
     den = safe_float(denominator)

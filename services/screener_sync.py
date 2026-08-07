@@ -35,6 +35,7 @@ from services.screener_metrics import (
     calculate_price_metrics,
     extract_fundamental_metrics,
     normalize_peg_ratio,
+    validated_adjusted_returns,
 )
 from services.screener_normalization import (
     is_non_primary_exchange,
@@ -366,11 +367,11 @@ async def fetch_and_merge_bulk_data(
                     return str(value).strip()
             return None
 
-        non_primary_tickers = {
-            str(row["ticker"]).upper()
-            for _, row in df_merged.iterrows()
-            if is_non_primary_exchange(provider_exchange(row))
-        }
+        non_primary_tickers = set()
+        for _, row in df_merged.iterrows():
+            exchange = provider_exchange(row)
+            if exchange is None or is_non_primary_exchange(exchange):
+                non_primary_tickers.add(str(row["ticker"]).upper())
         if non_primary_tickers:
             original_sp500 = set(sp500_tickers)
             original_russell = set(russell_tickers)
@@ -410,7 +411,8 @@ async def fetch_and_merge_bulk_data(
                 settings.PIPELINE_MIN_RUSSELL2000_SIZE,
             )
             logger.warning(
-                "Excluded %s OTC/Pink/Grey listings from the live index universe: %s",
+                "Excluded %s non-primary or unknown-venue listings from the live "
+                "index universe: %s",
                 len(non_primary_tickers),
                 ", ".join(sorted(non_primary_tickers)),
             )
@@ -561,10 +563,16 @@ async def calculate_technicals_locally(
         benchmark["adjusted_close"] = pd.to_numeric(
             benchmark["adjusted_close"], errors="coerce"
         )
-        benchmark_returns = pd.Series(
-            benchmark["adjusted_close"].pct_change(fill_method=None).values,
+        benchmark_returns = validated_adjusted_returns(pd.Series(
+            benchmark["adjusted_close"].values,
             index=pd.to_datetime(benchmark["date"]),
-        ).dropna()
+        ))
+        if benchmark_returns is None:
+            logger.warning(
+                "SPY adjusted-price history failed return validation; beta will "
+                "be unavailable for the %s screener snapshot.",
+                benchmark_as_of,
+            )
 
     logger.info("Calculating expanded screener technicals locally...")
     output = []
@@ -662,6 +670,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         records_to_upsert = []
         profile_records: dict[str, dict[str, Any]] = {}
         daily_price_inserts = []
+        invalid_adjusted_close_tickers: set[str] = set()
         for row in merged_rows:
             # Safely unpack row
             ticker = row.get('ticker')
@@ -676,7 +685,10 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             close_price = normalize_positive(row.get('close'))
             volume_value = normalize_nonnegative(row.get('volume'))
             volume_num = int(volume_value) if volume_value is not None else None
-            adjusted_close = normalize_positive(row.get('adjusted_close'))
+            raw_adjusted_close = _safe_float(row.get('adjusted_close'))
+            adjusted_close = normalize_positive(raw_adjusted_close)
+            if raw_adjusted_close is not None and raw_adjusted_close <= 0:
+                invalid_adjusted_close_tickers.add(ticker)
             if close_price is not None:
                 daily_price_inserts.append({
                     "ticker": ticker,
@@ -931,6 +943,12 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                                 r[field_name] = _safe_str(value)
                             else:
                                 r[field_name] = _safe_float(value)
+            for record in records_to_upsert:
+                if record["ticker"] not in invalid_adjusted_close_tickers:
+                    continue
+                for field_name in TECHNICAL_SNAPSHOT_FIELDS:
+                    record[field_name] = None
+                record["technical_quality"] = "invalid_adjustment_factor"
 
             dividend_result = await db.execute(
                 select(
@@ -1086,9 +1104,13 @@ async def refresh_screener_technicals(snapshot_date: date) -> int:
 
     async with async_session_maker() as db:
         result = await db.execute(
-            select(StockScreenerSnapshot.ticker).where(StockScreenerSnapshot.date == snapshot_date)
+            select(
+                StockScreenerSnapshot.ticker,
+                StockScreenerSnapshot.technical_quality,
+            ).where(StockScreenerSnapshot.date == snapshot_date)
         )
-        tickers = list(result.scalars().all())
+        existing_quality = dict(result.all())
+        tickers = list(existing_quality)
         technicals = await calculate_technicals_locally(db, tickers, as_of_date=snapshot_date)
         technical_by_ticker = (
             technicals.drop_duplicates(subset=["ticker"]).set_index("ticker").to_dict("index")
@@ -1118,15 +1140,19 @@ async def refresh_screener_technicals(snapshot_date: date) -> int:
                     dividends_by_security.get(ticker, []),
                     snapshot_date,
                 )
-                for field_name, value in technical_by_ticker.get(ticker, {}).items():
-                    if not hasattr(StockScreenerSnapshot, field_name):
-                        continue
-                    if pd.isna(value):
-                        values[field_name] = None
-                    elif field_name in {"candlestick", "technical_quality"}:
-                        values[field_name] = str(value)
-                    else:
-                        values[field_name] = float(value)
+                if existing_quality.get(ticker) == "invalid_adjustment_factor":
+                    values.update({field_name: None for field_name in TECHNICAL_SNAPSHOT_FIELDS})
+                    values["technical_quality"] = "invalid_adjustment_factor"
+                else:
+                    for field_name, value in technical_by_ticker.get(ticker, {}).items():
+                        if not hasattr(StockScreenerSnapshot, field_name):
+                            continue
+                        if pd.isna(value):
+                            values[field_name] = None
+                        elif field_name in {"candlestick", "technical_quality"}:
+                            values[field_name] = str(value)
+                        else:
+                            values[field_name] = float(value)
                 await db.execute(
                     update(StockScreenerSnapshot)
                     .where(

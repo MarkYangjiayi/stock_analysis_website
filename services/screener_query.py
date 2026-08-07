@@ -35,8 +35,10 @@ from services.universe import LIVE_UNIVERSE_SOURCE
 
 
 def _primary_listing_condition() -> Any:
-    exchange = func.upper(func.coalesce(StockScreenerSnapshot.exchange, ""))
+    exchange = func.upper(func.trim(StockScreenerSnapshot.exchange))
     return and_(
+        exchange.is_not(None),
+        exchange != "",
         exchange.not_in(NON_PRIMARY_EXCHANGES),
         *(~exchange.like(f"{prefix}%") for prefix in NON_PRIMARY_EXCHANGE_PREFIXES),
     )
@@ -143,12 +145,14 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                     ).label(definition.id)
                 )
             elif definition.id.startswith("price_vs_ma"):
-                ma_column = getattr(StockScreenerSnapshot, definition.id.removeprefix("price_vs_"))
+                close_expression, ma_expression = _price_vs_ma_expressions(
+                    definition.id
+                )
                 aggregate_expressions.append(
                     func.count(case((
                         and_(
-                            StockScreenerSnapshot.close.is_not(None),
-                            ma_column.is_not(None),
+                            close_expression.is_not(None),
+                            ma_expression.is_not(None),
                         ),
                         1,
                     ))).label(definition.id)
@@ -340,16 +344,27 @@ def _index_condition(selected_date: date, operator: str, value: Any) -> Any:
     )
 
 
+def _price_vs_ma_expressions(field_id: str) -> tuple[Any, Any]:
+    ma_field_id = field_id.removeprefix("price_vs_")
+    return (
+        _canonical_field_expression("close", StockScreenerSnapshot.close),
+        _canonical_field_expression(
+            ma_field_id,
+            getattr(StockScreenerSnapshot, ma_field_id),
+        ),
+    )
+
+
 def _price_vs_ma_condition(field_id: str, operator: str, value: Any) -> Any:
     values = value if operator == "in" else [value]
     if operator not in {"eq", "in"}:
         raise ValueError("price-versus-SMA filters only support eq/in")
     if not values or any(item not in {"above", "below"} for item in values):
         raise ValueError("unsupported price-versus-SMA value")
-    ma_column = getattr(StockScreenerSnapshot, field_id.removeprefix("price_vs_"))
+    close_expression, ma_expression = _price_vs_ma_expressions(field_id)
     comparisons = [
-        StockScreenerSnapshot.close > ma_column if item == "above"
-        else StockScreenerSnapshot.close < ma_column
+        close_expression > ma_expression if item == "above"
+        else close_expression < ma_expression
         for item in values
     ]
     return or_(*comparisons)

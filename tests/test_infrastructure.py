@@ -587,7 +587,11 @@ async def test_bulk_screener_filters_delisted_index_components(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_bulk_screener_filters_priced_otc_components(monkeypatch):
+@pytest.mark.parametrize("excluded_exchange", ["PINK", None])
+async def test_bulk_screener_filters_non_primary_or_unknown_venue_components(
+    monkeypatch,
+    excluded_exchange,
+):
     from services.screener_sync import fetch_and_merge_bulk_data
 
     @asynccontextmanager
@@ -621,10 +625,11 @@ async def test_bulk_screener_filters_priced_otc_components(monkeypatch):
             {
                 "ticker": ticker,
                 "Name": ticker,
-                "Exchange": "PINK" if ticker == "VAXX.US" else "NASDAQ",
-                "exchange": "PINK" if ticker == "VAXX.US" else "NASDAQ",
+                "Exchange": excluded_exchange if ticker == "VAXX.US" else "NASDAQ",
+                "exchange": excluded_exchange if ticker == "VAXX.US" else "NASDAQ",
             }
             for ticker in tickers
+            if excluded_exchange is not None or ticker != "VAXX.US"
         ]
 
     monkeypatch.setattr(
@@ -756,8 +761,20 @@ async def test_bulk_screener_preserves_raw_batches_and_filters_actions(monkeypat
 async def test_screener_defaults_to_latest_published_snapshot(db_session):
     db_session.add(Ticker(ticker="AAA.US"))
     db_session.add_all([
-        StockScreenerSnapshot(ticker="AAA.US", date=date(2025, 1, 1), close=10, market_cap=100),
-        StockScreenerSnapshot(ticker="AAA.US", date=date(2025, 1, 2), close=20, market_cap=200),
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            date=date(2025, 1, 1),
+            exchange="NASDAQ",
+            close=10,
+            market_cap=100,
+        ),
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            date=date(2025, 1, 2),
+            exchange="NASDAQ",
+            close=20,
+            market_cap=200,
+        ),
     ])
     run = PipelineRun(pipeline_name="test", target_date=date(2025, 1, 2), status="published")
     db_session.add(run)
@@ -778,6 +795,7 @@ async def test_screener_does_not_expose_unpublished_requested_snapshot(db_sessio
         StockScreenerSnapshot(
             ticker="AAA.US",
             date=date(2025, 1, 3),
+            exchange="NASDAQ",
             close=30,
             market_cap=300,
         )
@@ -808,6 +826,7 @@ async def test_screener_keeps_published_snapshot_point_in_time(db_session, monke
         StockScreenerSnapshot(
             ticker="AAA.US",
             date=date(2025, 1, 2),
+            exchange="NASDAQ",
             close=20,
             market_cap=None,
             pe_ratio=None,
@@ -833,6 +852,71 @@ async def test_screener_keeps_published_snapshot_point_in_time(db_session, monke
     assert result["total"] == 1
     assert result["items"][0]["market_cap"] is None
     assert result["items"][0]["pe_ratio"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_screener_uses_canonical_values_and_primary_listings(db_session):
+    as_of = date(2025, 1, 2)
+    run = PipelineRun(
+        pipeline_name="test",
+        target_date=as_of,
+        status="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset="screener",
+        as_of_date=as_of,
+        pipeline_run_id=run.id,
+    ))
+    db_session.add_all([
+        StockScreenerSnapshot(
+            ticker="ZERO.US",
+            date=as_of,
+            exchange="NASDAQ",
+            market_cap=100,
+            close=0,
+            pe_ratio=0,
+        ),
+        StockScreenerSnapshot(
+            ticker="VALID.US",
+            date=as_of,
+            exchange="NYSE",
+            market_cap=200,
+            close=20,
+            pe_ratio=10,
+        ),
+        StockScreenerSnapshot(
+            ticker="OTC.US",
+            date=as_of,
+            exchange="PINK",
+            market_cap=300,
+            close=1,
+            pe_ratio=1,
+        ),
+        StockScreenerSnapshot(
+            ticker="UNKNOWN.US",
+            date=as_of,
+            exchange=None,
+            market_cap=400,
+            close=2,
+            pe_ratio=2,
+        ),
+    ])
+    await db_session.commit()
+
+    result = await filter_screener_stocks({"limit": 50, "offset": 0}, db_session)
+    assert result["total"] == 2
+    assert [item["ticker"] for item in result["items"]] == ["VALID.US", "ZERO.US"]
+    zero = next(item for item in result["items"] if item["ticker"] == "ZERO.US")
+    assert zero["close"] is None
+    assert zero["pe_ratio"] is None
+
+    cheap = await filter_screener_stocks(
+        {"pe_max": 1, "limit": 50, "offset": 0},
+        db_session,
+    )
+    assert cheap["total"] == 0
 
 
 @pytest.mark.asyncio

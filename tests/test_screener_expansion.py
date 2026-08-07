@@ -818,6 +818,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             ticker="AAA.US",
             name="Alpha",
             date=as_of,
+            exchange="NASDAQ",
             sector="Technology",
             market_cap=10_000,
             pe_ratio=10,
@@ -831,6 +832,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             ticker="BBB.US",
             name="Beta",
             date=as_of,
+            exchange="NYSE",
             sector="Healthcare",
             market_cap=5_000,
             pe_ratio=30,
@@ -1047,6 +1049,15 @@ async def test_query_defensively_normalizes_legacy_values_and_hides_otc_rows(db_
             close=1,
             pe_ratio=5,
         ),
+        StockScreenerSnapshot(
+            ticker="UNKNOWN.US",
+            name="Unknown venue",
+            date=as_of,
+            exchange=None,
+            market_cap=400,
+            close=2,
+            pe_ratio=4,
+        ),
     ])
     await db_session.commit()
 
@@ -1084,6 +1095,54 @@ async def test_query_defensively_normalizes_legacy_values_and_hides_otc_rows(db_
         "columns": ["pe_ratio"],
     }, db_session)
     assert cheap["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_price_vs_sma_filters_and_coverage_use_canonical_operands(db_session):
+    as_of = date.today() - timedelta(days=1)
+    db_session.add_all([
+        StockScreenerSnapshot(
+            ticker="VALID.US",
+            name="Valid",
+            date=as_of,
+            exchange="NASDAQ",
+            market_cap=300,
+            close=20,
+            ma50=10,
+        ),
+        StockScreenerSnapshot(
+            ticker="BAD-CLOSE.US",
+            name="Bad close",
+            date=as_of,
+            exchange="NYSE",
+            market_cap=200,
+            close=-1,
+            ma50=-2,
+        ),
+        StockScreenerSnapshot(
+            ticker="BAD-MA.US",
+            name="Bad moving average",
+            date=as_of,
+            exchange="NYSE",
+            market_cap=100,
+            close=10,
+            ma50=0,
+        ),
+    ])
+    await db_session.commit()
+
+    metadata = await get_screener_metadata(db_session)
+    comparison = next(
+        field for field in metadata["fields"] if field["id"] == "price_vs_ma50"
+    )
+    assert comparison["coverage"] == pytest.approx(1 / 3)
+
+    result = await query_screener({
+        "filters": [{"field": "price_vs_ma50", "operator": "eq", "value": "above"}],
+        "columns": ["close", "ma50"],
+    }, db_session)
+    assert result["total"] == 1
+    assert result["items"][0]["ticker"] == "VALID.US"
 
 
 @pytest.mark.asyncio
@@ -1141,6 +1200,50 @@ async def test_technicals_do_not_replace_missing_adjusted_closes(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_adjusted_close", [None, 0, 1_200])
+async def test_technicals_reject_contaminated_benchmark_returns_for_beta(
+    db_session,
+    bad_adjusted_close,
+):
+    dates = [value.date() for value in pd.bdate_range("2025-01-02", periods=130)]
+    db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="SPY.US")])
+    db_session.add_all([
+        DailyPrice(
+            ticker="AAA.US",
+            date=price_date,
+            open=100 + index / 10,
+            high=101 + index / 10,
+            low=99 + index / 10,
+            close=100 + index / 10,
+            adjusted_close=100 + index / 10,
+            volume=1_000,
+        )
+        for index, price_date in enumerate(dates)
+    ])
+    db_session.add_all([
+        DailyPrice(
+            ticker="SPY.US",
+            date=price_date,
+            close=100,
+            adjusted_close=bad_adjusted_close if index == len(dates) - 1 else 100,
+        )
+        for index, price_date in enumerate(dates)
+    ])
+    await db_session.commit()
+
+    technicals = await calculate_technicals_locally(
+        db_session,
+        ["AAA.US"],
+        as_of_date=dates[-1],
+    )
+
+    assert len(technicals) == 1
+    assert technicals.iloc[0]["technical_quality"] == "ok"
+    assert pd.isna(technicals.iloc[0]["beta_1yr"])
+    assert technicals.iloc[0]["ma50"] > 0
+
+
+@pytest.mark.asyncio
 async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db_session):
     as_of = date.today() - timedelta(days=1)
     run = PipelineRun(
@@ -1162,6 +1265,7 @@ async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db
             ticker="AAA.US",
             name="Alpha",
             date=as_of,
+            exchange="NASDAQ",
             close=100,
             volume=1_000,
         ),
@@ -1203,6 +1307,7 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
             ticker="AAA.US",
             name="Alpha",
             date=as_of,
+            exchange="NASDAQ",
             close=100,
             volume=1_000,
         ),
@@ -1210,6 +1315,7 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
             ticker="STALE.US",
             name="Stale historical member",
             date=as_of,
+            exchange="NYSE",
             close=50,
             volume=1_000,
         ),
@@ -1251,6 +1357,7 @@ async def test_pinned_latest_legacy_snapshot_remains_queryable(db_session):
         ticker="AAA.US",
         name="Alpha",
         date=snapshot_date,
+        exchange="NASDAQ",
         close=100,
         volume=1_000,
     ))

@@ -857,14 +857,12 @@ async def batch_get_factor_scores(tickers: list[str], db: AsyncSession) -> list[
     ]
 
 async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
-    """
-    Dynamically filters the `StockScreenerSnapshot` table based on a variety of parameters.
-    Supports min/max conditions, exact match for sector/industry, sorting, and pagination.
-    """
-    limit = request_data.get("limit", 50)
-    offset = request_data.get("offset", 0)
+    """Adapt the legacy request shape to the canonical screener query engine."""
+    from services.screener_fields import MODEL_FIELD_MAP
+    from services.screener_query import query_screener
+
     requested_date = request_data.get("as_of_date")
-    if requested_date:
+    if requested_date is not None:
         try:
             selected_date = pd.Timestamp(requested_date).date()
         except (TypeError, ValueError) as exc:
@@ -880,155 +878,89 @@ async def filter_screener_stocks(request_data: dict, db: AsyncSession) -> dict:
             )
         )
         if publication_result.scalar_one_or_none() is None:
-            # A snapshot may exist while its quality gate is still pending or
-            # failed. Never expose those rows through a historical request.
             return {
                 "total": 0,
                 "items": [],
-                "limit": limit,
-                "offset": offset,
+                "limit": request_data.get("limit", 50),
+                "offset": request_data.get("offset", 0),
                 "as_of_date": selected_date.isoformat(),
             }
-    else:
-        publication_result = await db.execute(
-            select(DataPublication.as_of_date)
-            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
-            .where(DataPublication.dataset == "screener", DataPublication.status == "published")
-            .where(PipelineRun.status == "published")
-            .order_by(DataPublication.as_of_date.desc())
-            .limit(1)
-        )
-        selected_date = publication_result.scalar_one_or_none()
-        if selected_date is None:
-            # Backward-compatible fallback for databases created before publication tracking.
-            date_result = await db.execute(select(func.max(StockScreenerSnapshot.date)))
-            selected_date = date_result.scalar_one_or_none()
 
-    if selected_date is None:
-        return {"total": 0, "items": [], "limit": limit, "offset": offset, "as_of_date": None}
-
-    stmt = select(StockScreenerSnapshot)
-    count_stmt = select(func.count(StockScreenerSnapshot.id))
-    conditions = [StockScreenerSnapshot.date == selected_date]
-    
-    if request_data.get("market_cap_min") is not None:
-        conditions.append(StockScreenerSnapshot.market_cap >= request_data["market_cap_min"])
-    if request_data.get("market_cap_max") is not None:
-        conditions.append(StockScreenerSnapshot.market_cap <= request_data["market_cap_max"])
-        
-    if request_data.get("pe_min") is not None:
-        conditions.append(StockScreenerSnapshot.pe_ratio >= request_data["pe_min"])
-    if request_data.get("pe_max") is not None:
-        conditions.append(StockScreenerSnapshot.pe_ratio <= request_data["pe_max"])
-        
-    if request_data.get("pb_min") is not None:
-        conditions.append(StockScreenerSnapshot.pb_ratio >= request_data["pb_min"])
-    if request_data.get("pb_max") is not None:
-        conditions.append(StockScreenerSnapshot.pb_ratio <= request_data["pb_max"])
-        
-    if request_data.get("sector") is not None and request_data.get("sector"):
-        conditions.append(StockScreenerSnapshot.sector == request_data["sector"])
-    if request_data.get("industry") is not None and request_data.get("industry"):
-        conditions.append(StockScreenerSnapshot.industry == request_data["industry"])
-        
-    if request_data.get("rsi_14_min") is not None:
-        conditions.append(StockScreenerSnapshot.rsi_14 >= request_data["rsi_14_min"])
-    if request_data.get("rsi_14_max") is not None:
-        conditions.append(StockScreenerSnapshot.rsi_14 <= request_data["rsi_14_max"])
-        
-    if request_data.get("volume_min") is not None:
-        conditions.append(StockScreenerSnapshot.volume >= request_data["volume_min"])
-        
-    if request_data.get("price_min") is not None:
-        conditions.append(StockScreenerSnapshot.close >= request_data["price_min"])
-    if request_data.get("price_max") is not None:
-        conditions.append(StockScreenerSnapshot.close <= request_data["price_max"])
-        
-    if request_data.get("dividend_yield_min") is not None:
-        conditions.append(StockScreenerSnapshot.dividend_yield >= request_data["dividend_yield_min"])
-        
+    filter_specs = (
+        ("market_cap_min", "market_cap", "gte"),
+        ("market_cap_max", "market_cap", "lte"),
+        ("pe_min", "pe_ratio", "gte"),
+        ("pe_max", "pe_ratio", "lte"),
+        ("pb_min", "pb_ratio", "gte"),
+        ("pb_max", "pb_ratio", "lte"),
+        ("rsi_14_min", "rsi_14", "gte"),
+        ("rsi_14_max", "rsi_14", "lte"),
+        ("volume_min", "volume", "gte"),
+        ("price_min", "close", "gte"),
+        ("price_max", "close", "lte"),
+        ("dividend_yield_min", "dividend_yield", "gte"),
+        ("roe_min", "roe", "gte"),
+        ("debt_to_equity_max", "debt_to_equity", "lte"),
+        ("fcf_min", "fcf", "gte"),
+        ("gross_margin_min", "gross_margin", "gte"),
+        ("sales_growth_5yr_min", "sales_growth_5yr", "gte"),
+    )
+    filters = [
+        {"field": field, "operator": operator, "value": request_data[key]}
+        for key, field, operator in filter_specs
+        if request_data.get(key) is not None
+    ]
+    for key, field in (("sector", "sector"), ("industry", "industry")):
+        if request_data.get(key):
+            filters.append({"field": field, "operator": "eq", "value": request_data[key]})
     if request_data.get("price_above_ma50"):
-        conditions.append(StockScreenerSnapshot.close > StockScreenerSnapshot.ma50)
-        
+        filters.append({"field": "price_vs_ma50", "operator": "eq", "value": "above"})
     if request_data.get("price_below_ma50"):
-        conditions.append(StockScreenerSnapshot.close < StockScreenerSnapshot.ma50)
-        
-    if request_data.get("roe_min") is not None:
-        conditions.append(StockScreenerSnapshot.roe >= request_data["roe_min"])
-        
-    if request_data.get("debt_to_equity_max") is not None:
-        conditions.append(StockScreenerSnapshot.debt_to_equity <= request_data["debt_to_equity_max"])
-        
-    if request_data.get("fcf_min") is not None:
-        conditions.append(StockScreenerSnapshot.fcf >= request_data["fcf_min"])
-        
-    if request_data.get("gross_margin_min") is not None:
-        conditions.append(StockScreenerSnapshot.gross_margin >= request_data["gross_margin_min"])
-        
-    if request_data.get("sales_growth_5yr_min") is not None:
-        conditions.append(StockScreenerSnapshot.sales_growth_5yr >= request_data["sales_growth_5yr_min"])
+        filters.append({"field": "price_vs_ma50", "operator": "eq", "value": "below"})
 
-    if conditions:
-        stmt = stmt.where(*conditions)
-        count_stmt = count_stmt.where(*conditions)
-        
-    # getting total count
-    total_count_res = await db.execute(count_stmt)
-    total_count = total_count_res.scalar_one_or_none() or 0
-    
-    # sorting
-    sort_col_name = request_data.get("sort_by", "market_cap")
-    # prevent injection or arbitrary column names by checking if column exists
-    if hasattr(StockScreenerSnapshot, sort_col_name):
-        sort_column = getattr(StockScreenerSnapshot, sort_col_name)
-    else:
-        sort_column = StockScreenerSnapshot.market_cap
-        
-    if request_data.get("sort_desc", True):
-        stmt = stmt.order_by(desc(sort_column).nulls_last())
-    else:
-        stmt = stmt.order_by(asc(sort_column).nulls_last())
-        
-    # pagination
-    stmt = stmt.limit(limit).offset(offset)
-    
-    # execute
-    result = await db.execute(stmt)
-    records = result.scalars().all()
-    
-    items = []
-    for r in records:
-        market_cap = float(r.market_cap) if r.market_cap is not None else None
-        pe_ratio = float(r.pe_ratio) if r.pe_ratio is not None else None
-        
-        items.append({
-            "ticker": r.ticker,
-            "name": r.name,
-            "sector": r.sector,
-            "industry": r.industry,
-            "market_cap": market_cap,
-            "pe_ratio": pe_ratio,
-            "pb_ratio": float(r.pb_ratio) if r.pb_ratio is not None else None,
-            "dividend_yield": float(r.dividend_yield) if r.dividend_yield is not None else None,
-            "roe": float(r.roe) if r.roe is not None else None,
-            "debt_to_equity": float(r.debt_to_equity) if r.debt_to_equity is not None else None,
-            "fcf": float(r.fcf) if r.fcf is not None else None,
-            "gross_margin": float(r.gross_margin) if r.gross_margin is not None else None,
-            "sales_growth_5yr": float(r.sales_growth_5yr) if r.sales_growth_5yr is not None else None,
-            "close": float(r.close) if r.close is not None else None,
-            "volume": r.volume,
-            "ma20": float(r.ma20) if r.ma20 is not None else None,
-            "ma50": float(r.ma50) if r.ma50 is not None else None,
-            "rsi_14": float(r.rsi_14) if r.rsi_14 is not None else None,
-            "date": str(r.date)
-        })
-        
+    legacy_columns = [
+        "sector",
+        "industry",
+        "market_cap",
+        "pe_ratio",
+        "pb_ratio",
+        "dividend_yield",
+        "roe",
+        "debt_to_equity",
+        "fcf",
+        "gross_margin",
+        "sales_growth_5yr",
+        "close",
+        "volume",
+        "ma20",
+        "ma50",
+        "rsi_14",
+    ]
+    requested_sort = request_data.get("sort_by") or "market_cap"
+    sort_field = (
+        requested_sort
+        if requested_sort in MODEL_FIELD_MAP or requested_sort in {"ticker", "name"}
+        else "market_cap"
+    )
+    canonical_request = {
+        "filters": filters,
+        "sort": {
+            "field": sort_field,
+            "direction": "asc" if request_data.get("sort_desc") is False else "desc",
+        },
+        "columns": legacy_columns,
+        "limit": request_data.get("limit", 50),
+        "offset": request_data.get("offset", 0),
+    }
+    if requested_date is not None:
+        canonical_request["as_of_date"] = selected_date
+
+    result = await query_screener(canonical_request, db)
+    for item in result["items"]:
+        item["date"] = result["as_of_date"]
     return {
-        "total": total_count,
-        "items": items,
-        "limit": limit,
-        "offset": offset,
-        "as_of_date": selected_date.isoformat(),
+        key: result[key]
+        for key in ("total", "items", "limit", "offset", "as_of_date")
     }
 
 def calculate_rrg(ticker_df: pd.DataFrame, benchmark_df: pd.DataFrame, window: int = 14) -> list[dict]:

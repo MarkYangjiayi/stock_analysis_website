@@ -72,4 +72,28 @@ describe("screener formatting", () => {
         expect(filterLabel({ field: "roe", operator: "gte", value: 0.105 }, percentField))
             .toBe("Return on Equity ≥ 10.5%");
     });
+
+    it("renders enum option labels in result cells", () => {
+        const qualityField: ScreenerField = {
+            id: "technical_quality",
+            label: "Technical Data Quality",
+            category: "Technical",
+            type: "enum",
+            unit: "text",
+            operators: ["eq", "in"],
+            presets: [],
+            options: [
+                { value: "ok", label: "OK" },
+                { value: "invalid_adjustment_factor", label: "Invalid adjustment factor" },
+            ],
+            coverage: 1,
+            available: true,
+            default_column: false,
+            result_column: true,
+        };
+
+        expect(formatScreenerValue("ok", qualityField)).toBe("OK");
+        expect(formatScreenerValue("invalid_adjustment_factor", qualityField))
+            .toBe("Invalid adjustment factor");
+    });
 });
