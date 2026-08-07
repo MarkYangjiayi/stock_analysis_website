@@ -31,7 +31,12 @@ from services.screener_normalization import (
     RETURN_FIELDS,
     SENTINEL_CAPPED_MULTIPLE_FIELDS,
 )
-from services.universe import LIVE_UNIVERSE_SOURCE
+from services.universe import (
+    LIVE_UNIVERSE_SOURCE,
+    SCREENER_INDEX_OPTIONS,
+    SCREENER_MEMBERSHIP_UNIVERSES,
+    SCREENER_UNIVERSE,
+)
 
 
 def _primary_listing_condition() -> Any:
@@ -172,7 +177,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                 elif definition.id != "index":
                     coverage[definition.id] = 0.0
             membership_filter = (
-                UniverseMembership.universe.in_(("SP500", "RUSSELL2000")),
+                UniverseMembership.universe.in_(SCREENER_MEMBERSHIP_UNIVERSES),
                 UniverseMembership.source == LIVE_UNIVERSE_SOURCE,
                 UniverseMembership.effective_from <= selected_date,
                 or_(
@@ -201,7 +206,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
             coverage["index"] = (index_ticker_count_result.scalar_one() or 0) / total
             enum_options["index"] = [
                 {"value": universe, "label": label}
-                for universe, label in (("SP500", "S&P 500"), ("RUSSELL2000", "Russell 2000"))
+                for universe, label in SCREENER_INDEX_OPTIONS
                 if membership_counts.get(universe, 0) > 0
             ]
             for field_id in ("exchange", "sector", "industry", "country", "candlestick"):
@@ -235,7 +240,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
     return {
         "as_of_date": selected_date.isoformat() if selected_date else None,
         "freshness": _freshness(selected_date) if selected_date else None,
-        "universe": "SP500_RUSSELL2000",
+        "universe": SCREENER_UNIVERSE,
         "record_count": total,
         "supported_finviz_fields": SUPPORTED_FINVIZ_FIELDS,
         "fields": fields,
@@ -328,7 +333,7 @@ def _index_condition(selected_date: date, operator: str, value: Any) -> Any:
     universes = value if operator == "in" else [value]
     if operator not in {"eq", "in"}:
         raise ValueError("index only supports eq/in")
-    if not universes or any(universe not in {"SP500", "RUSSELL2000"} for universe in universes):
+    if not universes or any(universe not in SCREENER_MEMBERSHIP_UNIVERSES for universe in universes):
         raise ValueError("unsupported index value")
     return exists(
         select(UniverseMembership.id).where(

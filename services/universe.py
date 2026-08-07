@@ -26,17 +26,37 @@ HISTORICAL_UNIVERSE_DATASET = "universe_history"
 HISTORICAL_UNIVERSE_SOURCE = "EODHD HistoricalTickerComponents"
 LIVE_UNIVERSE_SOURCE = "EODHD Live Index Components"
 HISTORICAL_UNIVERSE_REQUIRED_SESSIONS = 252
+# Strict point-in-time history is still limited to the indexes below. The live
+# screener uses the broader Russell 3000 constituent union defined separately.
 INDEX_UNIVERSES = {
     "SP500": "GSPC.INDX",
     "RUSSELL2000": "RUT.INDX",
 }
 # EODHD currently returns strict HistoricalTickerComponents intervals for GSPC
-# but not for RUT. Keep the full mapping above for validation and an eventual
-# Russell re-enable, while publishing Market Overview only from histories that
-# are actually available. Current-component observations are never substituted.
+# but not for Russell indexes. Current-component observations are never
+# substituted for point-in-time history.
 MARKET_OVERVIEW_HISTORY_INDEXES = {
     "SP500": INDEX_UNIVERSES["SP500"],
 }
+
+# The Screener is a current cross-sectional product, so it can use EODHD's
+# live index component payload. Russell 1000 + Russell 2000 is the Russell
+# 3000 broad-market universe; S&P 500 is retained as a source label/filter.
+SCREENER_INDEXES = {
+    "SP500": "GSPC.INDX",
+    "RUSSELL1000": "RUI.INDX",
+    "RUSSELL2000": "RUT.INDX",
+}
+SCREENER_INDEX_UNIVERSES = tuple(SCREENER_INDEXES)
+SCREENER_UNIVERSE = "RUSSELL3000"
+SCREENER_MEMBERSHIP_UNIVERSES = (*SCREENER_INDEX_UNIVERSES, SCREENER_UNIVERSE)
+SCREENER_INDEX_OPTIONS = (
+    ("SP500", "S&P 500"),
+    ("RUSSELL1000", "Russell 1000"),
+    ("RUSSELL2000", "Russell 2000"),
+    (SCREENER_UNIVERSE, "Russell 3000"),
+)
+SCREENER_INDEX_LABELS = dict(SCREENER_INDEX_OPTIONS)
 
 
 def _parse_date(value: Any, field_name: str) -> date:

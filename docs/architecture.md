@@ -47,7 +47,7 @@ Legacy `financial_statements` and `stock_screener_snapshot` remain for dashboard
 
 The daily screener pipeline performs these stages:
 
-1. Resolve the observed S&P 500/Russell 2000 universe.
+1. Resolve the observed Russell 3000 universe (Russell 1000 + Russell 2000), retaining S&P 500 membership as a live filter label.
 2. Fetch EOD prices and fundamentals; store the immutable source batch.
 3. Record security identity, universe intervals and fundamental availability/revisions.
 4. Upsert prices and current screener rows idempotently.

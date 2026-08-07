@@ -1327,6 +1327,20 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
             source_run_id=run.id,
         ),
         UniverseMembership(
+            universe="RUSSELL1000",
+            ticker="AAA.US",
+            effective_from=as_of,
+            source=LIVE_UNIVERSE_SOURCE,
+            source_run_id=run.id,
+        ),
+        UniverseMembership(
+            universe="RUSSELL3000",
+            ticker="AAA.US",
+            effective_from=as_of,
+            source=LIVE_UNIVERSE_SOURCE,
+            source_run_id=run.id,
+        ),
+        UniverseMembership(
             universe="SP500",
             ticker="STALE.US",
             effective_from=as_of,
@@ -1340,7 +1354,11 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
     index_field = next(field for field in metadata["fields"] if field["id"] == "index")
     assert index_field["available"] is True
     assert index_field["coverage"] == 0.5
-    assert index_field["options"] == [{"value": "SP500", "label": "S&P 500"}]
+    assert index_field["options"] == [
+        {"value": "SP500", "label": "S&P 500"},
+        {"value": "RUSSELL1000", "label": "Russell 1000"},
+        {"value": "RUSSELL3000", "label": "Russell 3000"},
+    ]
 
     result = await query_screener({
         "filters": [{"field": "index", "operator": "eq", "value": "SP500"}],
@@ -1348,6 +1366,14 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
     }, db_session)
     assert result["total"] == 1
     assert result["items"][0]["ticker"] == "AAA.US"
+
+    for universe in ("RUSSELL1000", "RUSSELL3000"):
+        result = await query_screener({
+            "filters": [{"field": "index", "operator": "eq", "value": universe}],
+            "columns": [],
+        }, db_session)
+        assert result["total"] == 1
+        assert result["items"][0]["ticker"] == "AAA.US"
 
 
 @pytest.mark.asyncio

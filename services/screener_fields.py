@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from models import StockScreenerSnapshot
+from services.universe import SCREENER_INDEX_OPTIONS
 
 
 NUMERIC_OPERATORS = ("lt", "lte", "gt", "gte", "between")
@@ -111,7 +112,7 @@ FIELD_DEFINITIONS = [
         "index",
         "Index",
         "Descriptive",
-        (("SP500", "S&P 500"), ("RUSSELL2000", "Russell 2000")),
+        SCREENER_INDEX_OPTIONS,
         column=None,
         result_column=False,
     ),

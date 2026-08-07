@@ -497,6 +497,88 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bulk_screener_includes_russell1000_in_russell3000_target(monkeypatch):
+    from services.screener_sync import fetch_and_merge_bulk_data
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_components(index_ticker, client=None):
+        return {
+            "GSPC.INDX": ["SP0.US", "SP1.US"],
+            "RUI.INDX": ["NET.US", "R10.US"],
+            "RUT.INDX": ["R20.US", "R21.US"],
+        }[index_ticker]
+
+    tickers = ["SP0", "SP1", "NET", "R10", "R20", "R21", "SPY"]
+
+    async def full_bulk(*args, **kwargs):
+        return [
+            {
+                "code": ticker,
+                "exchange_short_name": "US",
+                "date": "2025-01-02",
+                "close": 100,
+            }
+            for ticker in tickers
+        ]
+
+    async def empty_actions(*args, **kwargs):
+        return []
+
+    async def no_delisted_symbols(*args, **kwargs):
+        return []
+
+    async def primary_fundamentals(tickers, *args, **kwargs):
+        return [
+            {
+                "ticker": ticker,
+                "Name": ticker,
+                "Exchange": "NYSE",
+                "exchange": "NYSE",
+            }
+            for ticker in tickers
+        ]
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.create_http_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_index_components",
+        fake_components,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_exchange_symbol_list",
+        no_delisted_symbols,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_eod_prices",
+        full_bulk,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_bulk_corporate_actions",
+        empty_actions,
+    )
+    monkeypatch.setattr(
+        "services.screener_sync.fetch_target_universe_fundamentals",
+        primary_fundamentals,
+    )
+
+    frame = await fetch_and_merge_bulk_data("2025-01-02")
+
+    assert "NET.US" in set(frame.attrs["target_tickers"])
+    assert set(frame.attrs["russell1000_tickers"]) == {"NET.US", "R10.US"}
+    assert set(frame.attrs["russell3000_tickers"]) == {
+        "NET.US",
+        "R10.US",
+        "R20.US",
+        "R21.US",
+    }
+
+
+@pytest.mark.asyncio
 async def test_bulk_screener_filters_delisted_index_components(monkeypatch):
     from services.screener_sync import fetch_and_merge_bulk_data
 
@@ -678,6 +760,8 @@ async def test_bulk_screener_rejects_an_incomplete_index_feed(monkeypatch):
     async def fake_components(index_ticker, client=None):
         if index_ticker == "GSPC.INDX":
             return ["SP0.US", "SP1.US"]
+        if index_ticker == "RUI.INDX":
+            return ["R10.US", "R11.US"]
         return []
 
     monkeypatch.setattr(
