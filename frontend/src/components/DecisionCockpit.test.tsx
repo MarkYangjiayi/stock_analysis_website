@@ -61,6 +61,30 @@ const metric = {
     summary_percentile: 80,
 };
 
+const lowerIsBetterMetric = {
+    ...metric,
+    key: "debt_to_equity",
+    label: "Debt / equity",
+    direction: "lower_better" as const,
+    format: "ratio" as const,
+    evidence_id: "E26",
+    value: 2.30,
+    industry: { ...metric.industry, raw_percentile: 90, desirability_percentile: 10 },
+    sector: { ...metric.sector, raw_percentile: 90, desirability_percentile: 10 },
+    summary_percentile: 10,
+};
+
+const unavailableMetric = {
+    ...metric,
+    key: "roic",
+    label: "Return on invested capital",
+    format: "percent" as const,
+    value: null,
+    industry: { ...metric.industry, available: false, raw_percentile: null, desirability_percentile: null, reason: "The ticker does not have a valid value for this metric." },
+    sector: { ...metric.sector, available: false, raw_percentile: null, desirability_percentile: null, reason: "The ticker does not have a valid value for this metric." },
+    summary_percentile: null,
+};
+
 const summaryMetric = {
     key: metric.key,
     label: metric.label,
@@ -408,5 +432,24 @@ describe("DecisionCockpit", () => {
         await user.click(screen.getByRole("button", { name: "Risks" }));
         await user.click(screen.getByRole("button", { name: /Show evidence/ }));
         expect(componentProps.onShowEvidence).toHaveBeenCalledWith("fcf");
+    });
+
+    it("colors better-positioned percentiles and keeps unavailable metrics neutral", async () => {
+        const user = userEvent.setup();
+        const componentProps = props();
+        componentProps.decision = {
+            ...decision,
+            peer_comparison: {
+                ...decision.peer_comparison,
+                metrics: [metric, lowerIsBetterMetric, unavailableMetric],
+            },
+        };
+        render(<DecisionCockpit {...componentProps} />);
+        await user.click(screen.getByRole("button", { name: "Peer Benchmarks" }));
+
+        expect(screen.getByTitle("Strong Better-positioned percentile")).toHaveClass("text-emerald-800");
+        expect(screen.getByTitle("Weak Better-positioned percentile")).toHaveClass("text-rose-800");
+        expect(screen.getByTitle("Unavailable Better-positioned percentile")).toHaveClass("text-slate-500");
+        expect(screen.getByRole("group", { name: "Better-positioned legend" })).toHaveTextContent("75–100 strong");
     });
 });

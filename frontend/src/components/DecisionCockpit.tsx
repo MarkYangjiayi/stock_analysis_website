@@ -127,6 +127,44 @@ const peerValue = (metric: Pick<PeerMetric, "value" | "format"> | DecisionSummar
     return metric.value.toFixed(2);
 };
 
+const betterPositionedTone = (percentile: number | null, available: boolean) => {
+    if (!available || percentile == null) {
+        return {
+            label: "Unavailable",
+            className: "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400",
+        };
+    }
+    if (percentile >= 75) {
+        return {
+            label: "Strong",
+            className: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+        };
+    }
+    if (percentile >= 50) {
+        return {
+            label: "Above median",
+            className: "border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-300",
+        };
+    }
+    if (percentile >= 25) {
+        return {
+            label: "Below median",
+            className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300",
+        };
+    }
+    return {
+        label: "Weak",
+        className: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300",
+    };
+};
+
+const betterPositionedLegend = [
+    { label: "75–100 strong", className: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" },
+    { label: "50–75 above median", className: "border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-300" },
+    { label: "25–50 below median", className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300" },
+    { label: "0–25 weak", className: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" },
+];
+
 function SummaryMetricCard({ metric, tone }: { metric: DecisionSummaryMetric; tone: "strong" | "weak" }) {
     return (
         <article className={`rounded-xl border p-3.5 ${tone === "strong" ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/20" : "border-rose-200 bg-rose-50/70 dark:border-rose-900 dark:bg-rose-950/20"}`}>
@@ -493,7 +531,8 @@ export default function DecisionCockpit({
                     {activeTab === "peers" && <div className="space-y-4">
                         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h3 className="text-sm font-black">Published cross-sectional benchmarks</h3><p className="mt-1 text-xs text-slate-500">Midrank percentiles; invalid valuation multiples and negative debt/equity are excluded.</p></div><div className="flex rounded-lg border bg-slate-100 p-1 dark:bg-slate-900">{(["industry", "sector"] as const).map((scope) => <button key={scope} type="button" onClick={() => setPeerScope(scope)} className={`rounded-md px-3 py-1.5 text-xs font-bold capitalize ${peerScope === scope ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300" : "text-slate-500"}`}>{scope}</button>)}</div></div>
                         <p className="text-xs text-slate-500">{peerScope === "industry" ? decision.peer_comparison.industry || "Unknown industry" : decision.peer_comparison.sector || "Unknown sector"} · {selectedPeerAvailable}/20 metrics meet the {peerScope === "industry" ? "10" : "20"}-observation threshold.</p>
-                        <div className="overflow-x-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs"><thead className="surface-subtle"><tr><th className="px-4 py-3">Metric</th><th className="px-4 py-3">Value</th><th className="px-4 py-3">Direction</th><th className="px-4 py-3">Raw percentile</th><th className="px-4 py-3">Better-positioned</th><th className="px-4 py-3">Coverage</th></tr></thead><tbody className="divide-y">{decision.peer_comparison.metrics.map((metric) => { const scope = metric[peerScope]; return <tr key={metric.key}><td className="px-4 py-3"><span className="font-bold">{metric.label}</span><span className="ml-2 font-mono text-[10px] text-slate-400">{metric.evidence_id}</span></td><td className="px-4 py-3 font-mono font-bold">{peerValue(metric)}</td><td className="px-4 py-3 text-slate-500">{metric.direction.replace("_", " ")}</td><td className="px-4 py-3 font-mono">{scope.raw_percentile == null ? "—" : `${scope.raw_percentile.toFixed(1)}th`}</td><td className="px-4 py-3 font-mono font-bold">{scope.desirability_percentile == null ? "—" : `${scope.desirability_percentile.toFixed(1)}th`}</td><td className="px-4 py-3"><span className={scope.available ? "text-emerald-600" : "text-slate-500"}>{scope.observation_count} valid</span>{!scope.available && <p className="mt-1 max-w-xs text-[10px] leading-4 text-slate-500">{scope.reason}</p>}</td></tr>; })}</tbody></table></div>
+                        <div className="overflow-x-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs"><thead className="surface-subtle"><tr><th className="px-4 py-3">Metric</th><th className="px-4 py-3">Value</th><th className="px-4 py-3">Direction</th><th className="px-4 py-3">Raw percentile</th><th className="px-4 py-3">Better-positioned</th><th className="px-4 py-3">Coverage</th></tr></thead><tbody className="divide-y">{decision.peer_comparison.metrics.map((metric) => { const scope = metric[peerScope]; const tone = betterPositionedTone(scope.desirability_percentile, scope.available); return <tr key={metric.key}><td className="px-4 py-3"><span className="font-bold">{metric.label}</span><span className="ml-2 font-mono text-[10px] text-slate-400">{metric.evidence_id}</span></td><td className="px-4 py-3 font-mono font-bold">{peerValue(metric)}</td><td className="px-4 py-3 text-slate-500">{metric.direction.replace("_", " ")}</td><td className="px-4 py-3 font-mono text-slate-500">{scope.raw_percentile == null ? "—" : `${scope.raw_percentile.toFixed(1)}th`}</td><td className="px-4 py-3 font-mono font-bold"><span className={`inline-flex min-w-[4.5rem] items-center justify-center rounded-full border px-2 py-1 text-[11px] ${tone.className}`} title={`${tone.label} Better-positioned percentile`}>{scope.desirability_percentile == null ? "—" : `${scope.desirability_percentile.toFixed(1)}th`}</span></td><td className="px-4 py-3"><span className={scope.available ? "text-emerald-600" : "text-slate-500"}>{scope.observation_count} valid</span>{!scope.available && <p className="mt-1 max-w-xs text-[10px] leading-4 text-slate-500">{scope.reason}</p>}</td></tr>; })}</tbody></table></div>
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500" role="group" aria-label="Better-positioned legend"><span className="mr-1 font-bold">Better-positioned:</span>{betterPositionedLegend.map((item) => <span key={item.label} className={`rounded-full border px-2 py-1 font-semibold ${item.className}`}>{item.label}</span>)}<span className="ml-1">Higher is better after direction adjustment.</span></div>
                     </div>}
 
                     {activeTab === "risks" && <div className="space-y-5">
