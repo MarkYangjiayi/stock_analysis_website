@@ -196,6 +196,8 @@ class AnomalyNewsSource(BaseModel):
 class AnomalyReportModel(BaseModel):
     ticker: str
     company_name: str
+    company_description: Optional[str] = None
+    market_cap: Optional[float] = None
     date: date
     quote_timestamp: datetime
     price_change: float

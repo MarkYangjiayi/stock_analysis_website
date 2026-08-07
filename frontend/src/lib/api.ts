@@ -533,6 +533,8 @@ export interface NewsItem {
 export interface AnomalyReport {
     ticker: string;
     company_name: string;
+    company_description?: string | null;
+    market_cap?: number | null;
     date: string;
     quote_timestamp: string;
     price_change: number;

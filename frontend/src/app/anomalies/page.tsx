@@ -18,7 +18,7 @@ import {
     fetchLatestAnomalyScan,
     startAnomalyScan,
 } from "@/lib/api";
-import type { AnomalyScan } from "@/lib/api";
+import type { AnomalyReport, AnomalyScan } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 
 const POLL_INTERVAL_MS = 1_200;
@@ -57,6 +57,54 @@ const attributionLabel = (status: string) => {
             return "";
     }
 };
+
+const marketCapFormatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+});
+
+const formatMarketCap = (marketCap?: number | null) => {
+    if (marketCap == null || !Number.isFinite(marketCap)) return "Unavailable";
+    return marketCapFormatter.format(marketCap);
+};
+
+function TickerProfileHoverCard({ item }: { item: AnomalyReport }) {
+    const tooltipId = `ticker-profile-${item.ticker.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
+    return (
+        <span className="group relative inline-flex shrink-0">
+            <Link
+                href={`/?ticker=${encodeURIComponent(item.ticker)}`}
+                aria-describedby={tooltipId}
+                className="rounded-sm font-mono text-sm font-black text-emerald-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:text-emerald-400 dark:focus-visible:ring-offset-slate-900"
+            >
+                {item.ticker.replace(/\.US$/, "")}
+            </Link>
+            <span
+                id={tooltipId}
+                role="tooltip"
+                className="pointer-events-none invisible absolute left-0 top-full z-50 mt-2 w-72 translate-y-1 rounded-xl border border-slate-200 bg-white p-4 text-left opacity-0 shadow-xl transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 sm:w-96 dark:border-slate-700 dark:bg-slate-900"
+            >
+                <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                    Company snapshot
+                </span>
+                <span className="mt-1.5 flex items-start justify-between gap-4">
+                    <span className="text-sm font-black text-slate-900 dark:text-slate-100">
+                        {item.company_name}
+                    </span>
+                    <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        Market cap {formatMarketCap(item.market_cap)}
+                    </span>
+                </span>
+                <span className="mt-3 block line-clamp-6 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                    {item.company_description || "Company profile is not available yet."}
+                </span>
+            </span>
+        </span>
+    );
+}
 
 export default function AnomaliesPage() {
     const {
@@ -245,17 +293,12 @@ export default function AnomaliesPage() {
                             return (
                                 <article
                                     key={`${item.ticker}-${item.quote_timestamp}`}
-                                    className="surface-panel overflow-hidden"
+                                    className="surface-panel overflow-visible"
                                 >
-                                    <header className="surface-subtle flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center sm:px-5">
+                                    <header className="surface-subtle flex flex-col justify-between gap-3 rounded-t-2xl border-b p-4 sm:flex-row sm:items-center sm:px-5">
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-3">
-                                                <Link
-                                                    href={`/?ticker=${encodeURIComponent(item.ticker)}`}
-                                                    className="font-mono text-sm font-black text-emerald-600 hover:underline dark:text-emerald-400"
-                                                >
-                                                    {item.ticker.replace(/\.US$/, "")}
-                                                </Link>
+                                                <TickerProfileHoverCard item={item} />
                                                 <span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">
                                                     {item.company_name}
                                                 </span>

@@ -25,6 +25,8 @@ const completedScan: AnomalyScan = {
     results: [{
         ticker: "BE.US",
         company_name: "Bloom Energy",
+        company_description: "Bloom Energy develops solid oxide fuel-cell systems.",
+        market_cap: 6_750_000_000,
         date: "2026-07-30",
         quote_timestamp: "2026-07-30T15:30:00Z",
         price_change: 25.73,
@@ -71,9 +73,19 @@ describe("AnomaliesPage", () => {
         fireEvent.click(button);
 
         expect(
-            await screen.findByText("Bloom Energy"),
+            await screen.findByRole("link", { name: "BE" }),
         ).toBeInTheDocument();
         expect(screen.getByText("+25.73%")).toBeInTheDocument();
+        expect(screen.getByRole("tooltip")).toHaveTextContent(
+            "Bloom Energy develops solid oxide fuel-cell systems.",
+        );
+        expect(screen.getByRole("tooltip")).toHaveTextContent(
+            "Market cap $6.75B",
+        );
+        expect(screen.getByRole("link", { name: "BE" })).toHaveAttribute(
+            "aria-describedby",
+            "ticker-profile-BE-US",
+        );
         expect(
             screen.getByText(/Shows the 20 largest qualifying moves/),
         ).toBeInTheDocument();

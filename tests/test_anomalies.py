@@ -16,7 +16,7 @@ from starlette.requests import Request
 
 from core.config import settings
 from core.security import _client_identifier
-from models import AnomalyScanRun, StockScreenerSnapshot
+from models import AnomalyScanRun, StockScreenerSnapshot, Ticker
 from services.ai_assistant import AttributionGenerationError
 from services.anomaly_detector import (
     AnomalyDataUnavailable,
@@ -781,6 +781,63 @@ async def test_anomaly_api_queues_single_flight_and_reads_latest(
     assert latest_after.status_code == 200
     assert latest_after.json()["id"] == run.id
     assert latest_after.json()["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_anomaly_api_enriches_cached_results_with_company_snapshot(
+    db_session,
+):
+    from main import app
+
+    universe_date = date(2026, 7, 30)
+    quote_time = datetime(2026, 7, 31, 15, 30)
+    db_session.add_all([
+        Ticker(
+            ticker="AAA.US",
+            name="Alpha Analytics",
+            description="Alpha Analytics builds market intelligence software.",
+        ),
+        StockScreenerSnapshot(
+            ticker="AAA.US",
+            date=universe_date,
+            name="Alpha Analytics",
+            market_cap=Decimal("6750000000"),
+        ),
+        AnomalyScanRun(
+            trigger="manual",
+            status="completed",
+            requested_limit=20,
+            threshold_pct=4.0,
+            universe_as_of=universe_date,
+            quote_as_of=quote_time,
+            results=[{
+                "ticker": "AAA.US",
+                "company_name": "Alpha Analytics",
+                "date": "2026-07-31",
+                "quote_timestamp": "2026-07-31T15:30:00Z",
+                "price_change": 8.0,
+                "ai_analysis": "Source-backed explanation [1]",
+                "attribution_status": "completed",
+                "news": [],
+                "top_news_links": [],
+            }],
+            finished_at=quote_time,
+        ),
+    ])
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/market/anomalies")
+
+    assert response.status_code == 200
+    report = response.json()["results"][0]
+    assert report["company_description"] == (
+        "Alpha Analytics builds market intelligence software."
+    )
+    assert report["market_cap"] == 6_750_000_000
 
 
 @pytest.mark.asyncio

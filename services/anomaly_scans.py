@@ -5,14 +5,14 @@ import uuid
 from datetime import timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.time_utils import utc_now
 from database import async_session_maker
-from models import AnomalyScanRun
+from models import AnomalyScanRun, StockScreenerSnapshot, Ticker
 from services.anomaly_detector import (
     ANOMALY_MAX_RESULT_LIMIT,
     AnomalyScanData,
@@ -44,7 +44,71 @@ def _iso_utc(value) -> Optional[str]:
     return normalized.isoformat().replace("+00:00", "Z")
 
 
-def serialize_anomaly_scan(scan: AnomalyScanRun) -> Dict[str, Any]:
+async def _enrich_anomaly_results(
+    db: AsyncSession,
+    scan: AnomalyScanRun,
+) -> list[Dict[str, Any]]:
+    results = [dict(item) for item in (scan.results or [])]
+    tickers = sorted({
+        str(item.get("ticker") or "").strip().upper()
+        for item in results
+        if item.get("ticker")
+    })
+    if not tickers:
+        return results
+
+    description_result = await db.execute(
+        select(Ticker.ticker, Ticker.description)
+        .where(Ticker.ticker.in_(tickers))
+    )
+    descriptions = {
+        row.ticker.upper(): row.description
+        for row in description_result.all()
+    }
+
+    market_cap_as_of = scan.universe_as_of
+    if market_cap_as_of is None:
+        market_cap_date_result = await db.execute(
+            select(func.max(StockScreenerSnapshot.date))
+            .where(StockScreenerSnapshot.ticker.in_(tickers))
+        )
+        market_cap_as_of = market_cap_date_result.scalar()
+
+    market_caps: Dict[str, float] = {}
+    if market_cap_as_of is not None:
+        market_cap_result = await db.execute(
+            select(
+                StockScreenerSnapshot.ticker,
+                StockScreenerSnapshot.market_cap,
+            )
+            .where(
+                StockScreenerSnapshot.date == market_cap_as_of,
+                StockScreenerSnapshot.ticker.in_(tickers),
+            )
+        )
+        market_caps = {
+            row.ticker.upper(): float(row.market_cap)
+            for row in market_cap_result.all()
+            if row.market_cap is not None
+        }
+
+    for item in results:
+        ticker = str(item.get("ticker") or "").strip().upper()
+        item["company_description"] = (
+            descriptions.get(ticker)
+            or item.get("company_description")
+        )
+        item["market_cap"] = market_caps.get(
+            ticker,
+            item.get("market_cap"),
+        )
+    return results
+
+
+async def serialize_anomaly_scan(
+    db: AsyncSession,
+    scan: AnomalyScanRun,
+) -> Dict[str, Any]:
     return {
         "id": scan.id,
         "trigger": scan.trigger,
@@ -57,7 +121,7 @@ def serialize_anomaly_scan(scan: AnomalyScanRun) -> Dict[str, Any]:
             else None
         ),
         "quote_as_of": _iso_utc(scan.quote_as_of),
-        "results": scan.results or [],
+        "results": await _enrich_anomaly_results(db, scan),
         "error_message": scan.error_message,
         "created_at": _iso_utc(scan.created_at),
         "started_at": _iso_utc(scan.started_at),

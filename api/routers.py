@@ -582,7 +582,7 @@ async def get_stock_news(ticker: str):
 async def get_market_anomalies(db: AsyncSession = Depends(get_db)):
     """Return the latest successfully completed anomaly scan without external work."""
     scan = await get_latest_completed_anomaly_scan(db)
-    return serialize_anomaly_scan(scan) if scan else None
+    return await serialize_anomaly_scan(db, scan) if scan else None
 
 
 @router.post(
@@ -596,7 +596,7 @@ async def start_market_anomaly_scan(db: AsyncSession = Depends(get_db)):
     scan, created = await enqueue_manual_anomaly_scan(db)
     if created:
         schedule_anomaly_scan(scan.id)
-    return serialize_anomaly_scan(scan)
+    return await serialize_anomaly_scan(db, scan)
 
 
 @router.get(
@@ -610,7 +610,7 @@ async def get_market_anomaly_scan(
     scan = await get_anomaly_scan(db, scan_id)
     if scan is None:
         raise HTTPException(status_code=404, detail="Anomaly scan not found")
-    return serialize_anomaly_scan(scan)
+    return await serialize_anomaly_scan(db, scan)
 
 @router.get("/api/v1/rrg", tags=["Stocks Analysis Read"])
 async def get_rrg(
