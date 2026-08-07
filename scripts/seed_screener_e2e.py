@@ -40,6 +40,7 @@ async def seed() -> None:
         for index in range(120):
             ticker = f"T{index:03d}.US"
             sector = "Technology" if index % 2 == 0 else "Healthcare"
+            peg_ratio_raw = -0.5 if index == 0 else 0 if index == 1 else 0.4 + index / 10
             db.add(StockScreenerSnapshot(
                 ticker=ticker,
                 name=f"Fixture Company {index:03d}",
@@ -50,6 +51,8 @@ async def seed() -> None:
                 country="USA",
                 market_cap=500_000_000 + index * 1_000_000_000,
                 pe_ratio=8 + index / 2,
+                peg_ratio_raw=peg_ratio_raw,
+                peg_ratio=peg_ratio_raw if peg_ratio_raw > 0 else None,
                 pb_ratio=1 + index / 20,
                 dividend_yield=0.01 + (index % 5) / 100,
                 roe=0.05 + index / 1000,
@@ -57,6 +60,7 @@ async def seed() -> None:
                 gross_margin=0.25 + index / 1000,
                 sales_growth_5yr=0.02 + index / 1000,
                 fcf=10_000_000 + index * 1_000_000,
+                technical_quality="ok",
                 close=20 + index,
                 volume=100_000 + index * 10_000,
                 ma20=19 + index,

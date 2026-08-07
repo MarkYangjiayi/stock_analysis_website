@@ -36,6 +36,7 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
         "Highlights": {
             "MarketCapitalization": 1_000,
             "PERatio": 10,
+            "PEGRatio": 1.25,
             "RevenueTTM": 500,
             "GrossProfitTTM": 200,
             "OperatingMarginTTM": 0.25,
@@ -125,13 +126,15 @@ def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
     assert metrics["current_ratio"] == pytest.approx(2)
     assert metrics["quick_ratio"] == pytest.approx(275 / 150)
     assert metrics["short_float"] == pytest.approx(0.05)
+    assert metrics["peg_ratio_raw"] == pytest.approx(1.25)
+    assert metrics["peg_ratio"] == pytest.approx(1.25)
     assert metrics["insider_ownership"] == pytest.approx(0.10)
     assert metrics["institutional_ownership"] == pytest.approx(0.70)
     assert metrics["eps_growth_ttm"] == pytest.approx(1)
     assert metrics["roic"] == pytest.approx(0.192)
 
 
-def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs():
+def test_fundamental_extractor_preserves_meaningful_zeroes_and_rejects_zero_pe():
     metrics = extract_fundamental_metrics({
         "Highlights": {
             "MarketCapitalization": 100,
@@ -151,7 +154,7 @@ def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs
             },
         },
     })
-    assert metrics["pe_ratio"] == 0
+    assert metrics["pe_ratio"] is None
     assert metrics["operating_margin"] == 0
     assert metrics["sales_growth_qoq"] == 0
     assert metrics["price_cash"] is None
@@ -171,6 +174,126 @@ def test_fundamental_extractor_preserves_zero_and_does_not_invent_formula_inputs
         },
     })
     assert net_debt_only["debt_to_equity"] is None
+
+
+def test_fundamental_extractor_normalizes_invalid_ratios_without_clipping_valid_outliers():
+    metrics = extract_fundamental_metrics({
+        "Highlights": {
+            "MarketCapitalization": 1_000,
+            "PERatio": -4,
+            "ReturnOnEquityTTM": 12,
+            "RevenueTTM": 0,
+            "OperatingMarginTTM": -500,
+            "ProfitMargin": -600,
+            "EarningsShare": -1,
+            "QuarterlyRevenueGrowthYOY": 99,
+        },
+        "Valuation": {
+            "ForwardPE": 0,
+            "PriceSalesTTM": 999_999.9999,
+            "PriceBookMRQ": 3,
+            "EnterpriseValueEbitda": -2,
+            "EnterpriseValueRevenue": 999_999.9999,
+        },
+        "SharesStats": {
+            "ShortPercentFloat": -0.1,
+            "PercentInstitutions": 146.875,
+        },
+        "SplitsDividends": {"PayoutRatio": 0.5},
+        "AnalystRatings": {"Rating": 6, "TargetPrice": 0},
+        "Financials": {
+            "Balance_Sheet": {
+                "quarterly": {
+                    "2025-12-31": {
+                        "totalCurrentAssets": 50,
+                        "totalCurrentLiabilities": 25,
+                        "inventory": 75,
+                        "totalStockholderEquity": -10,
+                    },
+                },
+            },
+        },
+    })
+
+    for field_name in (
+        "pe_ratio",
+        "forward_pe",
+        "ps_ratio",
+        "pb_ratio",
+        "ev_ebitda",
+        "ev_sales",
+        "quick_ratio",
+        "roe",
+        "payout_ratio",
+        "short_float",
+        "analyst_recommendation",
+        "target_price",
+        "operating_margin",
+        "net_profit_margin",
+    ):
+        assert metrics[field_name] is None
+    assert metrics["current_ratio"] == pytest.approx(2)
+    assert metrics["institutional_ownership"] == pytest.approx(1.46875)
+
+
+def test_fundamental_extractor_preserves_negative_margins_and_zero_payout_with_valid_bases():
+    metrics = extract_fundamental_metrics({
+        "Highlights": {
+            "RevenueTTM": 100,
+            "GrossProfitTTM": -50,
+            "OperatingMarginTTM": -2,
+            "ProfitMargin": -3,
+        },
+        "SplitsDividends": {"PayoutRatio": 0},
+        "Financials": {
+            "Income_Statement": {
+                "yearly": {
+                    "2025-12-31": {
+                        "totalRevenue": 100,
+                        "netIncome": 10,
+                    },
+                },
+            },
+        },
+    })
+
+    assert metrics["gross_margin"] == pytest.approx(-0.5)
+    assert metrics["operating_margin"] == pytest.approx(-2)
+    assert metrics["net_profit_margin"] == pytest.approx(-3)
+    assert metrics["payout_ratio"] == 0
+
+
+def test_sales_growth_requires_a_positive_comparison_base():
+    current_dates = ("2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31")
+    prior_dates = ("2024-12-31", "2024-09-30", "2024-06-30", "2024-03-31")
+    metrics = extract_fundamental_metrics({
+        "Highlights": {"RevenueTTM": 400, "QuarterlyRevenueGrowthYOY": 99},
+        "Financials": {
+            "Income_Statement": {
+                "quarterly": {
+                    **{report_date: {"totalRevenue": 100} for report_date in current_dates},
+                    **{report_date: {"totalRevenue": -1} for report_date in prior_dates},
+                },
+            },
+        },
+    })
+
+    assert metrics["sales_growth_qoq"] is None
+    assert metrics["sales_growth_ttm"] is None
+
+
+@pytest.mark.parametrize(
+    ("provider_value", "expected_canonical"),
+    [(-1.5, None), (0, None), (1.5, 1.5), (None, None)],
+)
+def test_fundamental_extractor_keeps_raw_peg_but_only_exposes_positive_values(
+    provider_value,
+    expected_canonical,
+):
+    metrics = extract_fundamental_metrics({"Highlights": {"PEGRatio": provider_value}})
+
+    assert metrics["peg_ratio_raw"] == provider_value
+    assert metrics["peg_ratio"] == expected_canonical
 
 
 def test_quarterly_growth_does_not_compare_different_fiscal_quarters():
@@ -469,6 +592,7 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
         "volume": [100_000 + index for index in range(260)],
     })
     metrics = calculate_price_metrics(rows)
+    assert metrics["technical_quality"] == "ok"
     assert metrics["ma200"] is not None
     assert metrics["performance_1yr"] is not None
     assert metrics["volatility_1m"] is not None
@@ -489,6 +613,44 @@ def test_price_metrics_are_adjusted_and_cover_primary_technicals():
     short_history = calculate_price_metrics(rows.tail(10))
     assert short_history["average_volume_3m"] is None
     assert short_history["relative_volume"] is None
+
+
+def test_price_metrics_quarantine_impossible_adjusted_returns():
+    rows = pd.DataFrame({
+        "date": [value.date() for value in pd.bdate_range("2025-01-01", periods=30)],
+        "open": [100] * 29 + [1_200],
+        "high": [101] * 29 + [1_210],
+        "low": [99] * 29 + [1_190],
+        "close": [100] * 29 + [1_200],
+        "adjusted_close": [100] * 29 + [1_200],
+        "volume": [1_000] * 30,
+    })
+
+    metrics = calculate_price_metrics(rows)
+
+    assert metrics["technical_quality"] == "extreme_adjusted_return"
+    assert all(
+        value is None
+        for field_name, value in metrics.items()
+        if field_name != "technical_quality"
+    )
+
+
+def test_price_metrics_quarantine_invalid_ohlc_instead_of_emitting_outliers():
+    rows = pd.DataFrame({
+        "date": [date(2025, 1, 1), date(2025, 1, 2)],
+        "open": [100, 100],
+        "high": [101, 90],
+        "low": [99, 80],
+        "close": [100, 100],
+        "adjusted_close": [100, 100],
+        "volume": [1_000, 1_000],
+    })
+
+    metrics = calculate_price_metrics(rows)
+
+    assert metrics["technical_quality"] == "invalid_ohlc"
+    assert metrics["performance_1d"] is None
 
 
 def test_beta_does_not_forward_fill_missing_closes():
@@ -656,6 +818,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             ticker="AAA.US",
             name="Alpha",
             date=as_of,
+            exchange="NASDAQ",
             sector="Technology",
             market_cap=10_000,
             pe_ratio=10,
@@ -669,6 +832,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
             ticker="BBB.US",
             name="Beta",
             date=as_of,
+            exchange="NYSE",
             sector="Healthcare",
             market_cap=5_000,
             pe_ratio=30,
@@ -712,6 +876,14 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     assert fcf_metadata["finviz_field"] is None
     assert metadata["record_count"] == 2
     assert any(field["id"] == "pe_ratio" and field["available"] for field in metadata["fields"])
+    peg_metadata = next(field for field in metadata["fields"] if field["id"] == "peg_ratio")
+    assert peg_metadata["label"] == "PEG (5Y Expected)"
+    assert peg_metadata["presets"] == [
+        {"label": "Below 1", "operator": "lt", "value": 1},
+        {"label": "Below 2", "operator": "lt", "value": 2},
+        {"label": "3 or more", "operator": "gte", "value": 3},
+    ]
+    assert "at or below 0" in peg_metadata["description"]
     index_metadata = next(field for field in metadata["fields"] if field["id"] == "index")
     assert index_metadata["result_column"] is False
     assert index_metadata["coverage"] == pytest.approx(0.5)
@@ -839,6 +1011,141 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
 
 
 @pytest.mark.asyncio
+async def test_query_defensively_normalizes_legacy_values_and_hides_otc_rows(db_session):
+    as_of = date.today() - timedelta(days=1)
+    db_session.add_all([
+        StockScreenerSnapshot(
+            ticker="ZERO.US",
+            name="Zero Sentinel",
+            date=as_of,
+            exchange="NASDAQ",
+            market_cap=100,
+            close=10,
+            pe_ratio=0,
+            target_price=0,
+            quick_ratio=-1,
+            ps_ratio=999_999.9999,
+            ev_ebitda=-2,
+        ),
+        StockScreenerSnapshot(
+            ticker="VALID.US",
+            name="Valid",
+            date=as_of,
+            exchange="NYSE",
+            market_cap=200,
+            close=20,
+            pe_ratio=10,
+            target_price=25,
+            quick_ratio=1.5,
+            ps_ratio=2,
+            ev_ebitda=8,
+        ),
+        StockScreenerSnapshot(
+            ticker="OTC.US",
+            name="OTC",
+            date=as_of,
+            exchange="PINK",
+            market_cap=300,
+            close=1,
+            pe_ratio=5,
+        ),
+        StockScreenerSnapshot(
+            ticker="UNKNOWN.US",
+            name="Unknown venue",
+            date=as_of,
+            exchange=None,
+            market_cap=400,
+            close=2,
+            pe_ratio=4,
+        ),
+    ])
+    await db_session.commit()
+
+    metadata = await get_screener_metadata(db_session)
+    pe_metadata = next(field for field in metadata["fields"] if field["id"] == "pe_ratio")
+    assert metadata["record_count"] == 2
+    assert pe_metadata["coverage"] == pytest.approx(0.5)
+
+    result = await query_screener({
+        "columns": [
+            "pe_ratio",
+            "target_price",
+            "quick_ratio",
+            "ps_ratio",
+            "ev_ebitda",
+        ],
+        "sort": {"field": "market_cap", "direction": "asc"},
+    }, db_session)
+
+    assert result["total"] == 2
+    assert [item["ticker"] for item in result["items"]] == ["ZERO.US", "VALID.US"]
+    assert all(
+        result["items"][0][field_name] is None
+        for field_name in (
+            "pe_ratio",
+            "target_price",
+            "quick_ratio",
+            "ps_ratio",
+            "ev_ebitda",
+        )
+    )
+
+    cheap = await query_screener({
+        "filters": [{"field": "pe_ratio", "operator": "lte", "value": 1}],
+        "columns": ["pe_ratio"],
+    }, db_session)
+    assert cheap["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_price_vs_sma_filters_and_coverage_use_canonical_operands(db_session):
+    as_of = date.today() - timedelta(days=1)
+    db_session.add_all([
+        StockScreenerSnapshot(
+            ticker="VALID.US",
+            name="Valid",
+            date=as_of,
+            exchange="NASDAQ",
+            market_cap=300,
+            close=20,
+            ma50=10,
+        ),
+        StockScreenerSnapshot(
+            ticker="BAD-CLOSE.US",
+            name="Bad close",
+            date=as_of,
+            exchange="NYSE",
+            market_cap=200,
+            close=-1,
+            ma50=-2,
+        ),
+        StockScreenerSnapshot(
+            ticker="BAD-MA.US",
+            name="Bad moving average",
+            date=as_of,
+            exchange="NYSE",
+            market_cap=100,
+            close=10,
+            ma50=0,
+        ),
+    ])
+    await db_session.commit()
+
+    metadata = await get_screener_metadata(db_session)
+    comparison = next(
+        field for field in metadata["fields"] if field["id"] == "price_vs_ma50"
+    )
+    assert comparison["coverage"] == pytest.approx(1 / 3)
+
+    result = await query_screener({
+        "filters": [{"field": "price_vs_ma50", "operator": "eq", "value": "above"}],
+        "columns": ["close", "ma50"],
+    }, db_session)
+    assert result["total"] == 1
+    assert result["items"][0]["ticker"] == "VALID.US"
+
+
+@pytest.mark.asyncio
 async def test_technicals_skip_price_history_that_does_not_reach_snapshot(db_session):
     snapshot_date = date(2025, 1, 10)
     db_session.add(Ticker(ticker="AAA.US"))
@@ -893,6 +1200,50 @@ async def test_technicals_do_not_replace_missing_adjusted_closes(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_adjusted_close", [None, 0, 1_200])
+async def test_technicals_reject_contaminated_benchmark_returns_for_beta(
+    db_session,
+    bad_adjusted_close,
+):
+    dates = [value.date() for value in pd.bdate_range("2025-01-02", periods=130)]
+    db_session.add_all([Ticker(ticker="AAA.US"), Ticker(ticker="SPY.US")])
+    db_session.add_all([
+        DailyPrice(
+            ticker="AAA.US",
+            date=price_date,
+            open=100 + index / 10,
+            high=101 + index / 10,
+            low=99 + index / 10,
+            close=100 + index / 10,
+            adjusted_close=100 + index / 10,
+            volume=1_000,
+        )
+        for index, price_date in enumerate(dates)
+    ])
+    db_session.add_all([
+        DailyPrice(
+            ticker="SPY.US",
+            date=price_date,
+            close=100,
+            adjusted_close=bad_adjusted_close if index == len(dates) - 1 else 100,
+        )
+        for index, price_date in enumerate(dates)
+    ])
+    await db_session.commit()
+
+    technicals = await calculate_technicals_locally(
+        db_session,
+        ["AAA.US"],
+        as_of_date=dates[-1],
+    )
+
+    assert len(technicals) == 1
+    assert technicals.iloc[0]["technical_quality"] == "ok"
+    assert pd.isna(technicals.iloc[0]["beta_1yr"])
+    assert technicals.iloc[0]["ma50"] > 0
+
+
+@pytest.mark.asyncio
 async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db_session):
     as_of = date.today() - timedelta(days=1)
     run = PipelineRun(
@@ -914,6 +1265,7 @@ async def test_index_metadata_stays_disabled_until_separate_memberships_exist(db
             ticker="AAA.US",
             name="Alpha",
             date=as_of,
+            exchange="NASDAQ",
             close=100,
             volume=1_000,
         ),
@@ -955,6 +1307,7 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
             ticker="AAA.US",
             name="Alpha",
             date=as_of,
+            exchange="NASDAQ",
             close=100,
             volume=1_000,
         ),
@@ -962,6 +1315,7 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
             ticker="STALE.US",
             name="Stale historical member",
             date=as_of,
+            exchange="NYSE",
             close=50,
             volume=1_000,
         ),
@@ -1003,6 +1357,7 @@ async def test_pinned_latest_legacy_snapshot_remains_queryable(db_session):
         ticker="AAA.US",
         name="Alpha",
         date=snapshot_date,
+        exchange="NASDAQ",
         close=100,
         volume=1_000,
     ))

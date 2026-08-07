@@ -19,7 +19,72 @@ from services.screener_fields import (
     MODEL_FIELD_MAP,
     SUPPORTED_FINVIZ_FIELDS,
 )
+from services.screener_normalization import (
+    HIGH_DISTANCE_FIELDS,
+    LOW_DISTANCE_FIELDS,
+    NONNEGATIVE_VALUE_FIELDS,
+    NON_PRIMARY_EXCHANGES,
+    NON_PRIMARY_EXCHANGE_PREFIXES,
+    POSITIVE_MULTIPLE_FIELDS,
+    POSITIVE_VALUE_FIELDS,
+    PROVIDER_MULTIPLE_SENTINEL,
+    RETURN_FIELDS,
+    SENTINEL_CAPPED_MULTIPLE_FIELDS,
+)
 from services.universe import LIVE_UNIVERSE_SOURCE
+
+
+def _primary_listing_condition() -> Any:
+    exchange = func.upper(func.trim(StockScreenerSnapshot.exchange))
+    return and_(
+        exchange.is_not(None),
+        exchange != "",
+        exchange.not_in(NON_PRIMARY_EXCHANGES),
+        *(~exchange.like(f"{prefix}%") for prefix in NON_PRIMARY_EXCHANGE_PREFIXES),
+    )
+
+
+def _canonical_field_expression(field_id: str, column: Any) -> Any:
+    conditions = []
+    if field_id in POSITIVE_MULTIPLE_FIELDS or field_id in POSITIVE_VALUE_FIELDS:
+        conditions.append(column > 0)
+    if field_id in SENTINEL_CAPPED_MULTIPLE_FIELDS:
+        conditions.append(column < PROVIDER_MULTIPLE_SENTINEL)
+    if field_id in NONNEGATIVE_VALUE_FIELDS or field_id in LOW_DISTANCE_FIELDS:
+        conditions.append(column >= 0)
+    if field_id in RETURN_FIELDS:
+        conditions.append(column >= -1)
+    if field_id in HIGH_DISTANCE_FIELDS:
+        conditions.extend((column >= -1, column <= 0))
+    if field_id == "analyst_recommendation":
+        conditions.extend((column >= 1, column <= 5))
+    if field_id == "rsi_14":
+        conditions.extend((column >= 0, column <= 100))
+    if field_id == "roe":
+        conditions.append(
+            or_(
+                StockScreenerSnapshot.pb_ratio.is_(None),
+                StockScreenerSnapshot.pb_ratio > 0,
+            )
+        )
+    if field_id == "payout_ratio":
+        conditions.append(
+            or_(
+                StockScreenerSnapshot.pe_ratio.is_(None),
+                StockScreenerSnapshot.pe_ratio > 0,
+            )
+        )
+    if field_id in {"gross_margin", "operating_margin", "net_profit_margin"}:
+        conditions.append(
+            or_(
+                StockScreenerSnapshot.ps_ratio.is_(None),
+                and_(
+                    StockScreenerSnapshot.ps_ratio > 0,
+                    StockScreenerSnapshot.ps_ratio < PROVIDER_MULTIPLE_SENTINEL,
+                ),
+            )
+        )
+    return case((and_(*conditions), column), else_=None) if conditions else column
 
 
 def _serialize(value: Any) -> Any:
@@ -74,21 +139,28 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
         for definition in FIELD_DEFINITIONS:
             column = MODEL_FIELD_MAP.get(definition.id)
             if column is not None:
-                aggregate_expressions.append(func.count(column).label(definition.id))
+                aggregate_expressions.append(
+                    func.count(
+                        _canonical_field_expression(definition.id, column)
+                    ).label(definition.id)
+                )
             elif definition.id.startswith("price_vs_ma"):
-                ma_column = getattr(StockScreenerSnapshot, definition.id.removeprefix("price_vs_"))
+                close_expression, ma_expression = _price_vs_ma_expressions(
+                    definition.id
+                )
                 aggregate_expressions.append(
                     func.count(case((
                         and_(
-                            StockScreenerSnapshot.close.is_not(None),
-                            ma_column.is_not(None),
+                            close_expression.is_not(None),
+                            ma_expression.is_not(None),
                         ),
                         1,
                     ))).label(definition.id)
                 )
         aggregate_result = await db.execute(
             select(*aggregate_expressions).where(
-                StockScreenerSnapshot.date == selected_date
+                StockScreenerSnapshot.date == selected_date,
+                _primary_listing_condition(),
             )
         )
         aggregate_row = aggregate_result.one()._mapping
@@ -109,7 +181,8 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                 ),
                 UniverseMembership.ticker.in_(
                     select(StockScreenerSnapshot.ticker).where(
-                        StockScreenerSnapshot.date == selected_date
+                        StockScreenerSnapshot.date == selected_date,
+                        _primary_listing_condition(),
                     )
                 ),
             )
@@ -137,7 +210,11 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                     continue
                 values_result = await db.execute(
                     select(column)
-                    .where(StockScreenerSnapshot.date == selected_date, column.is_not(None))
+                    .where(
+                        StockScreenerSnapshot.date == selected_date,
+                        _primary_listing_condition(),
+                        column.is_not(None),
+                    )
                     .distinct()
                     .order_by(column.asc())
                 )
@@ -267,16 +344,27 @@ def _index_condition(selected_date: date, operator: str, value: Any) -> Any:
     )
 
 
+def _price_vs_ma_expressions(field_id: str) -> tuple[Any, Any]:
+    ma_field_id = field_id.removeprefix("price_vs_")
+    return (
+        _canonical_field_expression("close", StockScreenerSnapshot.close),
+        _canonical_field_expression(
+            ma_field_id,
+            getattr(StockScreenerSnapshot, ma_field_id),
+        ),
+    )
+
+
 def _price_vs_ma_condition(field_id: str, operator: str, value: Any) -> Any:
     values = value if operator == "in" else [value]
     if operator not in {"eq", "in"}:
         raise ValueError("price-versus-SMA filters only support eq/in")
     if not values or any(item not in {"above", "below"} for item in values):
         raise ValueError("unsupported price-versus-SMA value")
-    ma_column = getattr(StockScreenerSnapshot, field_id.removeprefix("price_vs_"))
+    close_expression, ma_expression = _price_vs_ma_expressions(field_id)
     comparisons = [
-        StockScreenerSnapshot.close > ma_column if item == "above"
-        else StockScreenerSnapshot.close < ma_column
+        close_expression > ma_expression if item == "above"
+        else close_expression < ma_expression
         for item in values
     ]
     return or_(*comparisons)
@@ -336,13 +424,19 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
     selectable = {
         "ticker": StockScreenerSnapshot.ticker,
         "name": StockScreenerSnapshot.name,
-        **MODEL_FIELD_MAP,
+        **{
+            field_id: _canonical_field_expression(field_id, column)
+            for field_id, column in MODEL_FIELD_MAP.items()
+        },
     }
     invalid_columns = [column for column in columns if column not in selectable]
     if invalid_columns:
         raise ValueError("unsupported result columns: " + ", ".join(invalid_columns))
 
-    conditions = [StockScreenerSnapshot.date == selected_date]
+    conditions = [
+        StockScreenerSnapshot.date == selected_date,
+        _primary_listing_condition(),
+    ]
     for clause in request_data.get("filters") or []:
         field_id = clause["field"]
         operator = clause["operator"]
@@ -357,7 +451,7 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
         if field_id.startswith("price_vs_ma"):
             conditions.append(_price_vs_ma_condition(field_id, operator, value))
             continue
-        column = MODEL_FIELD_MAP.get(field_id)
+        column = selectable.get(field_id)
         if column is None:
             raise ValueError(f"field is not queryable: {field_id}")
         conditions.append(

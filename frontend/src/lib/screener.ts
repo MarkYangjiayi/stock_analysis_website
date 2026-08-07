@@ -19,6 +19,7 @@ export interface ScreenerField {
     finviz_field?: string;
     presets: Array<{ label: string; operator: FilterOperator; value: string | number | number[] }>;
     options: Array<{ value: string; label: string }>;
+    description?: string | null;
     coverage: number;
     available: boolean;
     default_column: boolean;
@@ -126,6 +127,10 @@ export function sanitizeFilters(
 export function formatScreenerValue(value: unknown, field?: ScreenerField): string {
     if (value === null || value === undefined || value === "") return "—";
     if (!field) return String(value);
+    if (field.type === "enum") {
+        const rawValue = String(value);
+        return field.options.find((option) => option.value === rawValue)?.label ?? rawValue;
+    }
     if (field.unit === "date" || field.unit === "text") return String(value);
     const number = Number(value);
     if (!Number.isFinite(number)) return "—";

@@ -25,6 +25,7 @@ class ScreenerField:
     finviz_field: Optional[str] = None
     presets: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     options: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    description: Optional[str] = None
     default_column: bool = False
     result_column: bool = True
 
@@ -45,6 +46,7 @@ def _number(
     unit: str = "number",
     finviz: Any = _DEFAULT_FINVIZ_FIELD,
     presets: tuple[dict[str, Any], ...] = (),
+    description: Optional[str] = None,
     default: bool = False,
 ) -> ScreenerField:
     return ScreenerField(
@@ -55,6 +57,7 @@ def _number(
         column=field_id,
         finviz_field=label if finviz is _DEFAULT_FINVIZ_FIELD else finviz,
         presets=presets,
+        description=description,
         default_column=default,
     )
 
@@ -67,6 +70,7 @@ def _enum(
     *,
     column: Optional[str] = None,
     finviz: Any = _DEFAULT_FINVIZ_FIELD,
+    description: Optional[str] = None,
     result_column: bool = True,
 ) -> ScreenerField:
     return ScreenerField(
@@ -79,6 +83,7 @@ def _enum(
         column=column or field_id,
         finviz_field=label if finviz is _DEFAULT_FINVIZ_FIELD else finviz,
         options=tuple({"value": value, "label": option_label} for value, option_label in options),
+        description=description,
         result_column=result_column,
     )
 
@@ -92,6 +97,11 @@ RATIO_PRESETS = (
     {"label": "Under 1", "operator": "lte", "value": 1},
     {"label": "Under 2", "operator": "lte", "value": 2},
     {"label": "Over 3", "operator": "gte", "value": 3},
+)
+PEG_PRESETS = (
+    {"label": "Below 1", "operator": "lt", "value": 1},
+    {"label": "Below 2", "operator": "lt", "value": 2},
+    {"label": "3 or more", "operator": "gte", "value": 3},
 )
 
 
@@ -121,14 +131,40 @@ FIELD_DEFINITIONS = [
         ),
         default=True,
     ),
-    _number("dividend_yield", "Dividend Yield", "Descriptive", unit="percent", presets=PERCENT_PRESETS),
-    _number("short_float", "Short Float", "Descriptive", unit="percent", presets=PERCENT_PRESETS),
-    _number("analyst_recommendation", "Analyst Recommendation", "Descriptive", presets=RATIO_PRESETS),
+    _number(
+        "dividend_yield",
+        "Dividend Yield",
+        "Descriptive",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Zero is retained for companies that do not currently pay a dividend.",
+    ),
+    _number(
+        "short_float",
+        "Short Float",
+        "Descriptive",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Values above 100% can be valid when short interest exceeds the reported float.",
+    ),
+    _number(
+        "analyst_recommendation",
+        "Analyst Recommendation",
+        "Descriptive",
+        presets=RATIO_PRESETS,
+        description="Finviz-style scale from 1 (Strong Buy) to 5 (Strong Sell); values outside that range are unavailable.",
+    ),
     _number("average_volume_3m", "Average Volume (3M)", "Descriptive", unit="integer"),
     _number("relative_volume", "Relative Volume", "Descriptive", presets=RATIO_PRESETS),
     _number("volume", "Current Volume", "Descriptive", unit="integer", default=True),
     _number("close", "Price", "Descriptive", unit="currency", finviz="Price", default=True),
-    _number("target_price", "Target Price", "Descriptive", unit="currency"),
+    _number(
+        "target_price",
+        "Target Price",
+        "Descriptive",
+        unit="currency",
+        description="Zero or negative provider targets are treated as unavailable.",
+    ),
     ScreenerField(
         id="ipo_date",
         label="IPO Date",
@@ -142,15 +178,75 @@ FIELD_DEFINITIONS = [
     _number("shares_outstanding", "Shares Outstanding", "Descriptive", unit="integer"),
     _number("shares_float", "Float", "Descriptive", unit="integer"),
 
-    _number("pe_ratio", "P/E", "Fundamental", presets=RATIO_PRESETS, default=True),
-    _number("forward_pe", "Forward P/E", "Fundamental", presets=RATIO_PRESETS),
-    _number("peg_ratio", "PEG", "Fundamental", presets=RATIO_PRESETS),
-    _number("ps_ratio", "P/S", "Fundamental", presets=RATIO_PRESETS),
-    _number("pb_ratio", "P/B", "Fundamental", presets=RATIO_PRESETS),
-    _number("price_cash", "Price/Cash", "Fundamental", presets=RATIO_PRESETS),
-    _number("price_fcf", "Price/Free Cash Flow", "Fundamental", presets=RATIO_PRESETS),
-    _number("ev_ebitda", "EV/EBITDA", "Fundamental", presets=RATIO_PRESETS),
-    _number("ev_sales", "EV/Sales", "Fundamental", presets=RATIO_PRESETS),
+    _number(
+        "pe_ratio",
+        "P/E",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Only positive earnings multiples are comparable; loss-making or zero values display as unavailable.",
+        default=True,
+    ),
+    _number(
+        "forward_pe",
+        "Forward P/E",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Only positive forecast earnings multiples are exposed for screening.",
+    ),
+    _number(
+        "peg_ratio",
+        "PEG (5Y Expected)",
+        "Fundamental",
+        finviz="PEG",
+        presets=PEG_PRESETS,
+        description=(
+            "Provider-supplied PEG using five-year expected earnings growth. "
+            "Values at or below 0 are treated as unavailable because PEG is not "
+            "meaningful when earnings or expected growth is non-positive."
+        ),
+    ),
+    _number(
+        "ps_ratio",
+        "P/S",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires positive revenue; zero and provider sentinel values display as unavailable.",
+    ),
+    _number(
+        "pb_ratio",
+        "P/B",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires positive book equity; non-positive multiples display as unavailable.",
+    ),
+    _number(
+        "price_cash",
+        "Price/Cash",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires a positive cash balance and a positive multiple.",
+    ),
+    _number(
+        "price_fcf",
+        "Price/Free Cash Flow",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires positive free cash flow; cash-burning companies display as unavailable.",
+    ),
+    _number(
+        "ev_ebitda",
+        "EV/EBITDA",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Only positive EV/EBITDA values are exposed for peer comparison.",
+    ),
+    _number(
+        "ev_sales",
+        "EV/Sales",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires positive sales and a positive multiple; provider sentinel values are unavailable.",
+    ),
     _number("dividend_growth_1yr", "Dividend Growth (1Y)", "Fundamental", unit="percent", finviz="Dividend Growth", presets=PERCENT_PRESETS),
     _number("dividend_growth_3yr", "Dividend Growth (3Y)", "Fundamental", unit="percent", finviz="Dividend Growth", presets=PERCENT_PRESETS),
     _number("dividend_growth_5yr", "Dividend Growth (5Y)", "Fundamental", unit="percent", finviz="Dividend Growth", presets=PERCENT_PRESETS),
@@ -160,25 +256,121 @@ FIELD_DEFINITIONS = [
     _number("eps_growth_ttm", "EPS Growth TTM", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
     _number("eps_growth_3yr", "EPS Growth Past 3Y", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
     _number("eps_growth_5yr", "EPS Growth Past 5Y", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("sales_growth_qoq", "Sales Growth QoQ", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("sales_growth_ttm", "Sales Growth TTM", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
+    _number(
+        "sales_growth_qoq",
+        "Sales Growth QoQ",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Growth is unavailable when the comparison-period revenue is non-positive.",
+    ),
+    _number(
+        "sales_growth_ttm",
+        "Sales Growth TTM",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Growth is unavailable when the prior TTM revenue base is non-positive.",
+    ),
     _number("sales_growth_3yr", "Sales Growth Past 3Y", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
     _number("sales_growth_5yr", "Sales Growth Past 5Y", "Fundamental", unit="percent", presets=PERCENT_PRESETS, default=True),
     _number("roa", "Return on Assets", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("roe", "Return on Equity", "Fundamental", unit="percent", presets=PERCENT_PRESETS, default=True),
+    _number(
+        "roe",
+        "Return on Equity",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Negative ROE is retained when equity is positive; non-positive equity makes ROE unavailable.",
+        default=True,
+    ),
     _number("roic", "Return on Invested Capital", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("current_ratio", "Current Ratio", "Fundamental", presets=RATIO_PRESETS),
-    _number("quick_ratio", "Quick Ratio", "Fundamental", presets=RATIO_PRESETS),
-    _number("lt_debt_to_equity", "LT Debt/Equity", "Fundamental", presets=RATIO_PRESETS),
-    _number("debt_to_equity", "Debt/Equity", "Fundamental", presets=RATIO_PRESETS, default=True),
-    _number("gross_margin", "Gross Margin", "Fundamental", unit="percent", presets=PERCENT_PRESETS, default=True),
-    _number("operating_margin", "Operating Margin", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("net_profit_margin", "Net Profit Margin", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("payout_ratio", "Payout Ratio", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
+    _number(
+        "current_ratio",
+        "Current Ratio",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Negative ratios violate the liquidity-ratio definition and display as unavailable.",
+    ),
+    _number(
+        "quick_ratio",
+        "Quick Ratio",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Negative ratios violate the liquidity-ratio definition and display as unavailable.",
+    ),
+    _number(
+        "lt_debt_to_equity",
+        "LT Debt/Equity",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires positive shareholder equity; negative ratios are unavailable.",
+    ),
+    _number(
+        "debt_to_equity",
+        "Debt/Equity",
+        "Fundamental",
+        presets=RATIO_PRESETS,
+        description="Requires positive shareholder equity; negative ratios are unavailable.",
+        default=True,
+    ),
+    _number(
+        "gross_margin",
+        "Gross Margin",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Negative margins are retained when revenue is positive; zero or negative revenue makes the margin unavailable.",
+        default=True,
+    ),
+    _number(
+        "operating_margin",
+        "Operating Margin",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Negative margins are valid; the field is unavailable when revenue is non-positive.",
+    ),
+    _number(
+        "net_profit_margin",
+        "Net Profit Margin",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Negative margins are valid; the field is unavailable when revenue is non-positive.",
+    ),
+    _number(
+        "payout_ratio",
+        "Payout Ratio",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Zero is valid for profitable non-payers; the ratio is unavailable with non-positive earnings.",
+    ),
     _number("insider_ownership", "Insider Ownership", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
-    _number("institutional_ownership", "Institutional Ownership", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
+    _number(
+        "institutional_ownership",
+        "Institutional Ownership",
+        "Fundamental",
+        unit="percent",
+        presets=PERCENT_PRESETS,
+        description="Values above 100% can occur because filings use different report dates and are not automatically capped.",
+    ),
     _number("fcf", "Free Cash Flow", "Fundamental", unit="currency", finviz=None),
 
+    _enum(
+        "technical_quality",
+        "Technical Data Quality",
+        "Technical",
+        (
+            ("ok", "OK"),
+            ("invalid_ohlc", "Invalid OHLC"),
+            ("invalid_adjustment_factor", "Invalid adjustment factor"),
+            ("extreme_adjusted_return", "Extreme adjusted return"),
+        ),
+        finviz=None,
+        description="Price-derived fields are blank when adjusted-price validation quarantines the symbol.",
+    ),
     _number("performance_1d", "Performance (Day)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),
     _number("performance_1w", "Performance (Week)", "Technical", unit="percent", finviz="Performance 2", presets=PERCENT_PRESETS),
     _number("performance_1m", "Performance (Month)", "Technical", unit="percent", finviz="Performance", presets=PERCENT_PRESETS),

@@ -6,6 +6,7 @@ import {
     ChevronRight,
     Columns3,
     Filter,
+    Info,
     RefreshCw,
     Search,
     SlidersHorizontal,
@@ -492,7 +493,26 @@ export function ScreenerContent() {
                                     <div key={field.id} className={`rounded-xl border p-3 transition ${active ? "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-slate-200 dark:border-slate-800"} ${!field.available ? "opacity-50" : ""}`}>
                                         <div className="mb-2 flex items-start justify-between gap-2">
                                             <div>
-                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">{field.label}</label>
+                                                <div className="flex items-center gap-1">
+                                                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">{field.label}</label>
+                                                    {field.description && (
+                                                        <span className="group/help relative">
+                                                            <button
+                                                                type="button"
+                                                                aria-label={`About ${field.label}`}
+                                                                className="grid size-4 place-items-center rounded-full text-slate-400 hover:text-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                                                            >
+                                                                <Info size={12} />
+                                                            </button>
+                                                            <span
+                                                                role="tooltip"
+                                                                className="pointer-events-none absolute left-0 top-5 z-[60] hidden w-72 rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-normal leading-relaxed text-white shadow-xl group-hover/help:block group-focus-within/help:block dark:bg-slate-100 dark:text-slate-900"
+                                                            >
+                                                                {field.description}
+                                                            </span>
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <span className={`text-[10px] ${field.coverage < 0.5 ? "text-amber-500" : "text-slate-400"}`}>{Math.round(field.coverage * 100)}% coverage</span>
                                             </div>
                                             {field.presets.length > 0 && (
@@ -572,6 +592,7 @@ export function ScreenerContent() {
                                             return (
                                                 <th key={column} className="px-4 py-3 font-semibold">
                                                     <button
+                                                        title={field?.description ?? undefined}
                                                         onClick={() => {
                                                             if (column === "name" || column === "ticker" || field) {
                                                                 setSort((current) => ({ field: column, direction: current.field === column && current.direction === "desc" ? "asc" : "desc" }));

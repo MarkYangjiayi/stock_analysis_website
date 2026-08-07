@@ -10,6 +10,44 @@ import pandas as pd
 import pandas_ta_classic as ta
 
 from core.trading_calendar import is_us_market_session
+from services.screener_normalization import (
+    normalize_multiple,
+    normalize_public_screener_values,
+)
+
+
+# An 11x close-to-close move in an adjusted series is overwhelmingly a stale
+# constituent or missed corporate action, not a comparable index-stock return.
+# Quarantine the derived technical set instead of clipping the observation.
+MAX_ADJUSTED_DAILY_RETURN = 10.0
+PRICE_METRIC_FIELDS = (
+    "ma20",
+    "ma50",
+    "ma200",
+    "rsi_14",
+    "average_volume_3m",
+    "relative_volume",
+    "performance_1d",
+    "performance_1w",
+    "performance_1m",
+    "performance_3m",
+    "performance_6m",
+    "performance_ytd",
+    "performance_1yr",
+    "volatility_1w",
+    "volatility_1m",
+    "gap",
+    "change_from_open",
+    "high_20d_rel",
+    "low_20d_rel",
+    "high_50d_rel",
+    "low_50d_rel",
+    "high_52w_rel",
+    "low_52w_rel",
+    "beta_1yr",
+    "atr_14",
+    "candlestick",
+)
 
 
 def safe_float(value: Any) -> Optional[float]:
@@ -29,6 +67,31 @@ def safe_percentage_points(value: Any) -> Optional[float]:
     """Normalize provider fields documented in percentage points."""
     result = safe_float(value)
     return result / 100.0 if result is not None else None
+
+
+def normalize_peg_ratio(value: Any) -> Optional[float]:
+    """Return an economically meaningful PEG value for screening.
+
+    A non-positive provider PEG generally reflects non-positive earnings or
+    expected growth, so it must not rank as a deceptively cheap valuation.
+    """
+    return normalize_multiple("peg_ratio", value)
+
+
+def validated_adjusted_returns(adjusted_close: pd.Series) -> Optional[pd.Series]:
+    """Return adjusted-price returns unless the source series is unsafe for beta."""
+    prices = pd.to_numeric(adjusted_close, errors="coerce")
+    populated = prices.dropna()
+    if prices.isna().any() or populated.empty or (populated <= 0).any():
+        return None
+    returns = prices.pct_change(fill_method=None)
+    populated_returns = returns.dropna()
+    if (
+        (populated_returns > MAX_ADJUSTED_DAILY_RETURN).any()
+        or (populated_returns < -1).any()
+    ):
+        return None
+    return populated_returns
 
 
 def safe_ratio(numerator: Any, denominator: Any, *, positive_denominator: bool = True) -> Optional[float]:
@@ -114,7 +177,7 @@ def _annual_change(
         return None
     if cagr:
         return _cagr(rows[0].get(key), comparison.get(key), years)
-    return _growth(rows[0].get(key), comparison.get(key))
+    return _growth_with_positive_base(rows[0].get(key), comparison.get(key))
 
 
 def _sum_metric(rows: list[dict], key: str, start: int, count: int) -> Optional[float]:
@@ -227,26 +290,23 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         safe_ratio(
             quarterly_operating_income_ttm,
             quarterly_revenue_ttm,
-            positive_denominator=False,
         ),
         safe_ratio(
             annual_operating_income,
             annual_revenue,
-            positive_denominator=False,
         ),
     )
     net_margin_fallback = _first_present(
         safe_ratio(
             quarterly_net_income_ttm,
             quarterly_revenue_ttm,
-            positive_denominator=False,
         ),
         safe_ratio(
             annual_net_income,
             annual_revenue,
-            positive_denominator=False,
         ),
     )
+    net_income_ttm = _first_present(quarterly_net_income_ttm, annual_net_income)
     fcf_ttm = _sum_metric(quarterly_cash, "freeCashFlow", 0, 4)
     if fcf_ttm is None:
         fcf_ttm = safe_float(latest_annual_cash.get("freeCashFlow"))
@@ -292,7 +352,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
 
     prior_year_revenue_quarter = _prior_year_quarter(quarterly_income)
     revenue_qoq = (
-        _growth(
+        _growth_with_positive_base(
             quarterly_income[0].get("totalRevenue"),
             prior_year_revenue_quarter.get("totalRevenue"),
         )
@@ -301,9 +361,15 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     )
     revenue_ttm_previous = _sum_metric(quarterly_income, "totalRevenue", 4, 4)
     if provider_revenue_ttm is not None and revenue_ttm_previous is not None:
-        sales_growth_ttm = _growth(provider_revenue_ttm, revenue_ttm_previous)
+        sales_growth_ttm = _growth_with_positive_base(
+            provider_revenue_ttm,
+            revenue_ttm_previous,
+        )
     elif quarterly_revenue_ttm is not None and revenue_ttm_previous is not None:
-        sales_growth_ttm = _growth(quarterly_revenue_ttm, revenue_ttm_previous)
+        sales_growth_ttm = _growth_with_positive_base(
+            quarterly_revenue_ttm,
+            revenue_ttm_previous,
+        )
     else:
         sales_growth_ttm = _annual_change(
             yearly_income,
@@ -366,25 +432,63 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     except (TypeError, ValueError):
         ipo_date = None
 
-    return {
+    peg_ratio_raw = safe_float(highlights.get("PEGRatio"))
+    nonpositive_revenue = revenue_ttm is not None and revenue_ttm <= 0
+    provider_operating_margin = safe_decimal_rate(highlights.get("OperatingMarginTTM"))
+    provider_net_margin = safe_decimal_rate(highlights.get("ProfitMargin"))
+    if nonpositive_revenue:
+        provider_operating_margin = None
+        provider_net_margin = None
+
+    comparison_revenue = (
+        safe_float(prior_year_revenue_quarter.get("totalRevenue"))
+        if prior_year_revenue_quarter is not None
+        else None
+    )
+    provider_sales_qoq = safe_decimal_rate(highlights.get("QuarterlyRevenueGrowthYOY"))
+    if comparison_revenue is not None and comparison_revenue <= 0:
+        provider_sales_qoq = None
+
+    payout_ratio = safe_decimal_rate(dividends.get("PayoutRatio"))
+    earnings_basis = _first_present(
+        net_income_ttm,
+        safe_float(highlights.get("EarningsShare")),
+    )
+    if earnings_basis is not None and earnings_basis <= 0:
+        payout_ratio = None
+
+    provider_roe = safe_decimal_rate(highlights.get("ReturnOnEquityTTM"))
+    if equity is not None and equity <= 0:
+        provider_roe = None
+
+    result = {
         "exchange": general.get("Exchange"),
         "country": general.get("CountryName") or general.get("CountryISO"),
         "ipo_date": ipo_date,
         "market_cap": market_cap,
         "pe_ratio": safe_float(_first_present(highlights.get("PERatio"), valuation.get("TrailingPE"))),
         "forward_pe": safe_float(valuation.get("ForwardPE")),
-        "peg_ratio": safe_float(highlights.get("PEGRatio")),
-        "ps_ratio": safe_float(valuation.get("PriceSalesTTM")),
-        "pb_ratio": safe_float(valuation.get("PriceBookMRQ")),
+        "peg_ratio_raw": peg_ratio_raw,
+        "peg_ratio": normalize_peg_ratio(peg_ratio_raw),
+        "ps_ratio": None if nonpositive_revenue else safe_float(valuation.get("PriceSalesTTM")),
+        "pb_ratio": (
+            None
+            if equity is not None and equity <= 0
+            else safe_float(valuation.get("PriceBookMRQ"))
+        ),
         "price_cash": safe_ratio(market_cap, cash),
         "price_fcf": safe_ratio(market_cap, fcf_ttm),
         "ev_ebitda": safe_float(valuation.get("EnterpriseValueEbitda")),
-        "ev_sales": safe_float(valuation.get("EnterpriseValueRevenue")),
+        "ev_sales": (
+            None
+            if nonpositive_revenue
+            else safe_float(valuation.get("EnterpriseValueRevenue"))
+        ),
         "dividend_yield": safe_decimal_rate(_first_present(
             highlights.get("DividendYield"),
             dividends.get("ForwardAnnualDividendYield"),
         )),
-        "payout_ratio": safe_decimal_rate(dividends.get("PayoutRatio")),
+        "payout_ratio": payout_ratio,
         "short_float": safe_decimal_rate(shares.get("ShortPercentFloat")),
         "analyst_recommendation": safe_float(ratings.get("Rating")),
         "target_price": safe_float(_first_present(
@@ -393,7 +497,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         )),
         "shares_outstanding": int(value) if (value := safe_float(shares.get("SharesOutstanding"))) is not None else None,
         "shares_float": int(value) if (value := safe_float(shares.get("SharesFloat"))) is not None else None,
-        "roe": safe_decimal_rate(highlights.get("ReturnOnEquityTTM")),
+        "roe": provider_roe,
         "roa": safe_decimal_rate(highlights.get("ReturnOnAssetsTTM")),
         "roic": safe_ratio(
             ebit * (1.0 - tax_rate) if ebit is not None and tax_rate is not None else None,
@@ -409,15 +513,15 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "fcf": fcf_ttm,
         "gross_margin": gross_margin,
         "operating_margin": _first_present(
-            safe_decimal_rate(highlights.get("OperatingMarginTTM")),
+            provider_operating_margin,
             operating_margin_fallback,
         ),
         "net_profit_margin": _first_present(
-            safe_decimal_rate(highlights.get("ProfitMargin")),
+            provider_net_margin,
             net_margin_fallback,
         ),
         "sales_growth_qoq": _first_present(
-            safe_decimal_rate(highlights.get("QuarterlyRevenueGrowthYOY")),
+            provider_sales_qoq,
             revenue_qoq,
         ),
         "sales_growth_ttm": sales_growth_ttm,
@@ -432,6 +536,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "insider_ownership": safe_percentage_points(shares.get("PercentInsiders")),
         "institutional_ownership": safe_percentage_points(shares.get("PercentInstitutions")),
     }
+    return dict(normalize_public_screener_values(result))
 
 
 def classify_candlestick(rows: pd.DataFrame) -> Optional[str]:
@@ -484,16 +589,51 @@ def classify_candlestick(rows: pd.DataFrame) -> Optional[str]:
     return None
 
 
+def _unavailable_price_metrics(reason: str) -> dict[str, Any]:
+    return {
+        **{field_name: None for field_name in PRICE_METRIC_FIELDS},
+        "technical_quality": reason,
+    }
+
+
 def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.Series] = None) -> dict[str, Any]:
     rows = group.sort_values("date").copy()
     if rows.empty:
         return {}
+    required_columns = {"open", "high", "low", "close", "adjusted_close", "volume"}
+    if not required_columns.issubset(rows.columns):
+        return _unavailable_price_metrics("invalid_ohlc")
+    for column in required_columns:
+        rows[column] = pd.to_numeric(rows[column], errors="coerce")
+
+    complete_ohlc = rows[["open", "high", "low", "close"]].notna().all(axis=1)
+    populated_ohlc = rows.loc[complete_ohlc, ["open", "high", "low", "close"]]
+    if not populated_ohlc.empty:
+        invalid_ohlc = (
+            (populated_ohlc <= 0).any(axis=1)
+            | (populated_ohlc["high"] < populated_ohlc[["open", "close", "low"]].max(axis=1))
+            | (populated_ohlc["low"] > populated_ohlc[["open", "close", "high"]].min(axis=1))
+        )
+        if invalid_ohlc.any():
+            return _unavailable_price_metrics("invalid_ohlc")
+
+    paired_closes = rows[["close", "adjusted_close"]].notna().all(axis=1)
+    if (
+        (rows.loc[paired_closes, "close"] <= 0).any()
+        or (rows.loc[paired_closes, "adjusted_close"] <= 0).any()
+    ):
+        return _unavailable_price_metrics("invalid_adjustment_factor")
+
     factor = rows["adjusted_close"] / rows["close"].replace(0, np.nan)
     factor = factor.replace([np.inf, -np.inf], np.nan)
+    if (factor.dropna() <= 0).any():
+        return _unavailable_price_metrics("invalid_adjustment_factor")
     for column in ("open", "high", "low", "close"):
         rows[f"{column}_adj"] = pd.to_numeric(rows[column], errors="coerce") * factor
     close = rows["close_adj"]
     returns = close.pct_change(fill_method=None)
+    if (returns.dropna() > MAX_ADJUSTED_DAILY_RETURN).any() or (returns.dropna() < -1).any():
+        return _unavailable_price_metrics("extreme_adjusted_return")
 
     def perf(periods: int) -> Optional[float]:
         if len(close.dropna()) <= periods:
@@ -562,6 +702,7 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
             beta = safe_float(aligned.cov().loc["asset", "benchmark"] / aligned["benchmark"].var())
 
     result: dict[str, Any] = {
+        "technical_quality": "ok",
         "ma20": ma20,
         "ma50": ma50,
         "ma200": ma200,
@@ -599,7 +740,7 @@ def calculate_price_metrics(group: pd.DataFrame, benchmark_returns: Optional[pd.
         else:
             result[f"high_{suffix}_rel"] = None
             result[f"low_{suffix}_rel"] = None
-    return result
+    return dict(normalize_public_screener_values(result))
 
 
 def calculate_dividend_growth(actions: Iterable[tuple[date, Any]], as_of_date: date) -> dict[str, Optional[float]]:
