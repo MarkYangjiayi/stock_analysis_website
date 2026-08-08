@@ -211,6 +211,50 @@ async function mockTicker(
             });
             return;
         }
+        if (url.pathname.endsWith("/events-expectations")) {
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    ticker,
+                    source: "fixture",
+                    as_of: "2026-01-02T00:00:00",
+                    available: true,
+                    next_event: {
+                        id: "earnings-2026-03-31",
+                        kind: "earnings",
+                        status: "upcoming",
+                        title: "Upcoming earnings",
+                        event_date: "2026-04-21",
+                        period_end: "2026-03-31",
+                        timing: "AfterMarket",
+                        eps_estimate: 1.5,
+                    },
+                    upcoming_events: [],
+                    recent_earnings: [],
+                    expectations: [{
+                        period: "+1q",
+                        label: "Next quarter",
+                        period_end: "2026-06-30",
+                        eps_average: 1.5,
+                        eps_growth: 0.12,
+                        revenue_average: 1_000_000_000,
+                        revenue_growth: 0.1,
+                        eps_analyst_count: 12,
+                        revenue_analyst_count: 10,
+                        eps_revisions_up_30d: 4,
+                        eps_revisions_down_30d: 1,
+                        eps_trend_current: 1.5,
+                        eps_trend_30d: 1.45,
+                    }],
+                    wall_street_target_price: 140.5,
+                    dividend_yield: 0.02,
+                    annual_dividend_per_share: 1.2,
+                    data_quality_notes: [],
+                }),
+            });
+            return;
+        }
         await lifecycle.beforeStockResponse?.();
         await route.fulfill({
             status: 200,
@@ -264,6 +308,9 @@ for (const fixture of [
 
         if (fixture.kind === "complete") {
             await expect(page.getByText("Price is between the Bear- and Base-case intrinsic values.")).toBeVisible();
+            await expect(page.getByRole("heading", { name: "What could move the stock next" })).toBeVisible();
+            await page.getByRole("button", { name: "Evidence Brief" }).click();
+            await expect(page.getByText("Forward consensus")).toBeVisible();
             await expect(page.getByRole("button", { name: "Unlock personal workspace" }).last()).toBeVisible();
         } else if (fixture.kind === "sparse") {
             await expect(page.getByText("2/8")).toBeVisible();

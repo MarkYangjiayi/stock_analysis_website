@@ -16,6 +16,7 @@ from api.schemas import (
     ValuationScenariosRequest,
     FactorComputeRequest,
     FactorResearchRequest,
+    EventsExpectationsResponse,
     MarketOverviewResponse,
     StockDataResponse,
 )
@@ -32,6 +33,7 @@ from services.analyzer import (
 )
 from services.ai_assistant import generate_stock_report, get_cached_stock_report
 from services.earnings_quality import get_earnings_quality, serialize_analysis_run
+from services.events_expectations import get_events_expectations
 from services.filing_analysis import (
     FilingAnalysisError,
     assert_filing_analysis_configured,
@@ -503,6 +505,16 @@ async def read_stock_analysis(ticker: str, request: Request, interval: str = "1d
     data["valuation_metrics"] = valuation
     
     return data
+
+
+@router.get(
+    "/api/stocks/{ticker}/events-expectations",
+    response_model=EventsExpectationsResponse,
+    tags=["Stocks Analysis Read"],
+)
+async def read_events_expectations(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Return cached corporate events and forward consensus evidence."""
+    return await get_events_expectations(canonicalize_ticker(ticker), db)
 
 @router.get(
     "/api/stocks/{ticker}/report",

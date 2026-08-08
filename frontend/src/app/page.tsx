@@ -11,7 +11,9 @@ import {
     EarningsQualityAnalysis,
     EarningsQualityPeriod,
     EarningsQualityResponse,
+    EventsExpectationsResponse,
     fetchDecisionSupport,
+    fetchEventsExpectations,
     fetchEarningsQuality,
     fetchEarningsQualityAnalysis,
     fetchLatestTickerFactors,
@@ -88,6 +90,7 @@ function AnalysisPage() {
     const [factorSnapshot, setFactorSnapshot] = useState<PublishedFactorSnapshot | null>(null);
     const [decision, setDecision] = useState<DecisionSupportResponse | null>(null);
     const [earningsQuality, setEarningsQuality] = useState<EarningsQualityResponse | null>(null);
+    const [eventsExpectations, setEventsExpectations] = useState<EventsExpectationsResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [factorLoading, setFactorLoading] = useState(false);
     const [decisionLoading, setDecisionLoading] = useState(false);
@@ -99,6 +102,8 @@ function AnalysisPage() {
     const [factorError, setFactorError] = useState("");
     const [decisionError, setDecisionError] = useState("");
     const [earningsQualityError, setEarningsQualityError] = useState("");
+    const [eventsExpectationsLoading, setEventsExpectationsLoading] = useState(false);
+    const [eventsExpectationsError, setEventsExpectationsError] = useState("");
     const [chartInterval, setChartInterval] = useState("1d");
     const [financialPeriod, setFinancialPeriod] = useState<"annual" | "ttm" | "quarterly">("annual");
     const [financialMetric, setFinancialMetric] = useState<FinancialEvidenceMetric>("overview");
@@ -110,6 +115,7 @@ function AnalysisPage() {
     const factorRequestRef = useRef<AbortController | null>(null);
     const decisionRequestRef = useRef<AbortController | null>(null);
     const earningsQualityRequestRef = useRef<AbortController | null>(null);
+    const eventsExpectationsRequestRef = useRef<AbortController | null>(null);
     const earningsAnalysisRequestRef = useRef<AbortController | null>(null);
     const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
 
@@ -206,6 +212,23 @@ function AnalysisPage() {
         }
     }, []);
 
+    const loadEventsExpectations = useCallback(async (symbol: string) => {
+        eventsExpectationsRequestRef.current?.abort();
+        const controller = new AbortController();
+        eventsExpectationsRequestRef.current = controller;
+        setEventsExpectationsLoading(true);
+        setEventsExpectationsError("");
+        try {
+            const result = await fetchEventsExpectations(symbol, controller.signal);
+            if (!controller.signal.aborted) setEventsExpectations(result);
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (!controller.signal.aborted) setEventsExpectationsError(caught instanceof Error ? caught.message : "Events and expectations are unavailable.");
+        } finally {
+            if (!controller.signal.aborted) setEventsExpectationsLoading(false);
+        }
+    }, []);
+
     const cachedActiveEarningsAnalysisId = [
         ...(earningsQuality?.quarterly ?? []),
         ...(earningsQuality?.annual ?? []),
@@ -249,6 +272,7 @@ function AnalysisPage() {
             setStockData(null);
             setFactorSnapshot(null);
             setEarningsQuality(null);
+            setEventsExpectations(null);
             setError("");
             return;
         }
@@ -256,8 +280,10 @@ function AnalysisPage() {
         setStockData(null);
         setDecision(null);
         setEarningsQuality(null);
+        setEventsExpectations(null);
         setEarningsQualityBusyPeriod(null);
         setEarningsQualityError("");
+        setEventsExpectationsError("");
         setChartInterval("1d");
         setFinancialPeriod("annual");
         setFinancialMetric("overview");
@@ -267,6 +293,7 @@ function AnalysisPage() {
             if (loaded) {
                 setDecisionRefreshVersion((version) => version + 1);
                 void loadEarningsQuality(requestedTicker);
+                void loadEventsExpectations(requestedTicker);
             }
         });
         void loadFactors(requestedTicker);
@@ -275,9 +302,10 @@ function AnalysisPage() {
             stockRequestRef.current?.abort();
             factorRequestRef.current?.abort();
             earningsQualityRequestRef.current?.abort();
+            eventsExpectationsRequestRef.current?.abort();
             earningsAnalysisRequestRef.current?.abort();
         };
-    }, [loadEarningsQuality, loadFactors, loadStock, requestedTicker]);
+    }, [loadEarningsQuality, loadEventsExpectations, loadFactors, loadStock, requestedTicker]);
 
     useEffect(() => {
         if (!requestedTicker) {
@@ -477,6 +505,9 @@ function AnalysisPage() {
                                 earningsQualityError={earningsQualityError}
                                 earningsQualityBusyPeriod={earningsQualityBusyPeriod}
                                 onAnalyzeEarningsPeriod={analyzeEarningsPeriod}
+                                eventsExpectations={eventsExpectations}
+                                eventsExpectationsLoading={eventsExpectationsLoading}
+                                eventsExpectationsError={eventsExpectationsError}
                             />
 
                             <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
