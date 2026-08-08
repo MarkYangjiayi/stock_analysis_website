@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("scrolls the screener page to its results", async ({ page }) => {
     await page.goto("/screener");
     await expect(page.getByRole("heading", { name: "Stock Screener" })).toBeVisible();
-    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    await expect(page.getByText("Matches", { exact: true }).locator("..").getByText("120", { exact: true })).toBeVisible();
 
     const screener = page.locator("#main-content > main");
     await expect.poll(() => screener.evaluate((element) => element.scrollHeight > element.clientHeight))
@@ -26,7 +26,7 @@ test("scrolls the screener page to its results", async ({ page }) => {
 
 test("keeps filter controls inside their cards and closes enum dropdowns outside", async ({ page }, testInfo) => {
     await page.goto("/screener");
-    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    await expect(page.getByText("Matches", { exact: true }).locator("..").getByText("120", { exact: true })).toBeVisible();
 
     if (testInfo.project.name === "mobile") {
         await page.getByRole("button", { name: /^Filters/ }).click();
@@ -53,7 +53,7 @@ test("keeps filter controls inside their cards and closes enum dropdowns outside
 test("filters, sorts, paginates and restores URL state", async ({ page }, testInfo) => {
     await page.goto("/screener");
     await expect(page.getByRole("heading", { name: "Stock Screener" })).toBeVisible();
-    await expect(page.getByText("120", { exact: true })).toBeVisible();
+    await expect(page.getByText("Matches", { exact: true }).locator("..").getByText("120", { exact: true })).toBeVisible();
     await expect(page.getByText(/market sessions behind/)).toBeVisible();
 
     if (testInfo.project.name === "mobile") {

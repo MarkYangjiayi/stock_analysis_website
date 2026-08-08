@@ -74,12 +74,13 @@ test("queues, polls and renders a source-backed anomaly scan", async ({ page }) 
 
     await page.getByRole("button", { name: "Run scan" }).click();
     await expect(page.getByRole("button", { name: "Scanning…" })).toBeDisabled();
+    const result = page.locator("article").filter({ hasText: "Bloom Energy" });
     await expect(
-        page.getByText("Bloom Energy", { exact: true }),
+        result.getByText("Bloom Energy", { exact: true }).last(),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("+25.73%")).toBeVisible();
+    await expect(result.getByText("+25.73%")).toBeVisible();
     await expect(
-        page.getByRole("link", { name: /Bloom Energy earnings/ }),
+        result.getByRole("link", { name: /Bloom Energy earnings/ }),
     ).toHaveAttribute("href", "https://finance.yahoo.com/bloom");
     await expect(page.getByRole("button", { name: "Refresh scan" })).toBeEnabled();
     expect(statusPolls).toBe(2);

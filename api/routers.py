@@ -85,7 +85,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 class BatchFactorsRequest(BaseModel):
-    tickers: List[str]
+    tickers: List[str] = Field(min_length=1, max_length=100)
 
 class ScreenerRequest(BaseModel):
     as_of_date: Optional[date] = None
@@ -321,6 +321,7 @@ async def start_earnings_quality_analysis(
 @router.get(
     "/api/stocks/{ticker}/earnings-quality/analyses/{analysis_id}",
     tags=["Stocks Decision Support"],
+    dependencies=[Depends(require_admin_api_key)],
 )
 async def read_earnings_quality_analysis(
     ticker: str,
@@ -562,7 +563,10 @@ async def read_ai_stock_report(
     
     return StreamingResponse(report_generator(), media_type="text/event-stream")
 
-@router.get("/api/stocks/{ticker}/news")
+@router.get(
+    "/api/stocks/{ticker}/news",
+    dependencies=[Depends(limit_expensive_requests)],
+)
 async def get_stock_news(ticker: str):
     """
     Returns the latest news for a given stock ticker from the past 72 hours.
@@ -626,9 +630,13 @@ async def get_rrg(
     if not tickers or not tickers.strip():
         raise HTTPException(status_code=400, detail="Parameter 'tickers' cannot be empty.")
         
-    ticker_list = [canonicalize_ticker(t) for t in tickers.split(",") if t.strip()]
+    ticker_list = list(dict.fromkeys(
+        canonicalize_ticker(t) for t in tickers.split(",") if t.strip()
+    ))
     if not ticker_list:
         raise HTTPException(status_code=400, detail="No valid tickers extracted from input.")
+    if len(ticker_list) > 50:
+        raise HTTPException(status_code=422, detail="At most 50 tickers may be requested at once.")
         
     try:
         data = await get_rrg_data_for_tickers(
@@ -638,8 +646,9 @@ async def get_rrg(
             history_days=history_days
         )
         return data  # FastAPI会自动序列化为JSONResponse
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to calculate RRG data: {str(e)}")
+    except Exception:
+        logger.exception("Failed to calculate RRG data")
+        raise HTTPException(status_code=500, detail="Failed to calculate RRG data")
 
 
 @router.get(
@@ -904,7 +913,11 @@ async def create_backtest(request: BacktestRequest, db: AsyncSession = Depends(g
     return {"id": run.id, "status": run.status, "metrics": run.metrics, "diagnostics": run.diagnostics}
 
 
-@router.get("/api/quant/backtests/{run_id}", tags=["Quant Research"])
+@router.get(
+    "/api/quant/backtests/{run_id}",
+    tags=["Quant Research"],
+    dependencies=[Depends(require_admin_api_key)],
+)
 async def read_backtest(run_id: int, db: AsyncSession = Depends(get_db)):
     run = await db.get(BacktestRun, run_id)
     if not run:

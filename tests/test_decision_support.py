@@ -496,6 +496,26 @@ async def test_financial_history_chart_uses_cash_fallback_and_split_adjusted_sha
 
 
 @pytest.mark.asyncio
+async def test_analyzer_uses_raw_close_when_adjusted_close_is_missing(db_session):
+    db_session.add(Ticker(ticker="FALLBACK.US", name="Fallback Price"))
+    db_session.add(DailyPrice(
+        ticker="FALLBACK.US",
+        date=date(2026, 1, 2),
+        open=99,
+        high=101,
+        low=98,
+        close=100,
+        adjusted_close=None,
+        volume=1_000,
+    ))
+    await db_session.commit()
+
+    result = await get_analyzed_stock_data("FALLBACK.US", db_session)
+
+    assert result["historical_data"][0]["close"] == pytest.approx(100)
+
+
+@pytest.mark.asyncio
 async def test_decision_support_uses_latest_usable_positive_price(db_session):
     ticker = "PRICE.US"
     db_session.add(Ticker(ticker=ticker, name="Price Fixture"))

@@ -127,7 +127,7 @@ export default function ResearchPage() {
                 require_point_in_time_universe: true,
                 missing_price_policy: "fail",
             }, adminKey, controller.signal);
-            if (!controller.signal.aborted) setBacktest(await fetchBacktest(summary.id, controller.signal));
+            if (!controller.signal.aborted) setBacktest(await fetchBacktest(summary.id, adminKey, controller.signal));
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
             setError(caught instanceof Error ? caught.message : "Backtest failed.");

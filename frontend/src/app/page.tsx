@@ -215,7 +215,8 @@ function AnalysisPage() {
     ))?.id ?? null;
 
     useEffect(() => {
-        if (!requestedTicker || !cachedActiveEarningsAnalysisId || earningsQualityBusyPeriod) return;
+        const adminKey = personal.adminKey;
+        if (!requestedTicker || !cachedActiveEarningsAnalysisId || earningsQualityBusyPeriod || !adminKey) return;
         const controller = new AbortController();
         const analysisId = cachedActiveEarningsAnalysisId;
         const poll = async () => {
@@ -223,7 +224,7 @@ function AnalysisPage() {
                 let active = true;
                 while (!controller.signal.aborted && active) {
                     await waitForPoll(1_500, controller.signal);
-                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, controller.signal);
+                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, adminKey, controller.signal);
                     active = analysis.status === "queued" || analysis.status === "running";
                     if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
                 }
@@ -334,6 +335,7 @@ function AnalysisPage() {
         const controller = new AbortController();
         earningsAnalysisRequestRef.current = controller;
         const requestTicker = ticker;
+        const adminKey = personal.adminKey;
         const key = `${period.period_type}:${period.period_end}`;
         setEarningsQualityBusyPeriod(key);
         setEarningsQualityError("");
@@ -342,13 +344,13 @@ function AnalysisPage() {
                 requestTicker,
                 period.period_end,
                 period.period_type,
-                personal.adminKey,
+                adminKey,
                 controller.signal,
             );
             if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
             while (!controller.signal.aborted && (analysis.status === "queued" || analysis.status === "running")) {
                 await waitForPoll(1_500, controller.signal);
-                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, controller.signal);
+                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, adminKey, controller.signal);
                 if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
             }
             if (!controller.signal.aborted) {

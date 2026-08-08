@@ -698,10 +698,11 @@ export const startEarningsQualityAnalysis = (
 export const fetchEarningsQualityAnalysis = (
     ticker: string,
     analysisId: number,
+    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<EarningsQualityAnalysis>(
     `/api/stocks/${encodeURIComponent(ticker)}/earnings-quality/analyses/${analysisId}`,
-    { signal },
+    { headers: personalHeaders(adminKey), signal },
 );
 
 export const calculateDecisionValuation = (
@@ -827,5 +828,8 @@ export const createBacktest = (
     signal,
 }, 180_000);
 
-export const fetchBacktest = (runId: number, signal?: AbortSignal) =>
-    apiRequest<BacktestDetails>(`/api/quant/backtests/${runId}`, { signal });
+export const fetchBacktest = (runId: number, adminKey: string, signal?: AbortSignal) =>
+    apiRequest<BacktestDetails>(`/api/quant/backtests/${runId}`, {
+        headers: personalHeaders(adminKey),
+        signal,
+    });

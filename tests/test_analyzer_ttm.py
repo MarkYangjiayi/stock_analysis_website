@@ -128,7 +128,13 @@ async def test_ttm_gross_margin_anomaly_preserves_reported_value_and_warns(db_se
             ticker=ticker,
             date=date(2026, 1, 2),
             close=10,
-            adjusted_close=10,
+            adjusted_close=None,
+        ),
+        DailyPrice(
+            ticker=ticker,
+            date=date(2026, 1, 3),
+            close=0,
+            adjusted_close=None,
         ),
     ])
     await db_session.commit()
@@ -138,3 +144,4 @@ async def test_ttm_gross_margin_anomaly_preserves_reported_value_and_warns(db_se
     assert result["ttm"]["gross_profit"] == 40
     assert result["ttm"]["gross_profit"] != 200
     assert result["data_quality_warnings"][0]["code"] == "ttm_gross_margin_deviation"
+    assert result["valuation"]["current_price"] == pytest.approx(10)

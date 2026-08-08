@@ -163,8 +163,8 @@ python worker.py
 `GET /api/stocks/{ticker}/decision-support` 在没有该请求头时只返回默认估值情景，
 不会暴露保存的个人假设。
 
-Earnings-quality 的 `GET /api/stocks/{ticker}/earnings-quality` 和任务状态 GET
-只读取本地数据；只有带 `X-API-Key` 的
+Earnings-quality 的 `GET /api/stocks/{ticker}/earnings-quality` 只读取本地数据；任务状态 GET
+也需要同一个 `X-API-Key`，只有带 `X-API-Key` 的
 `POST /api/personal/stocks/{ticker}/earnings-quality/analyses` 才会创建一个单期 SEC/AI
 任务。相同报表指纹、模型与 prompt 版本的完成结果会直接命中缓存。
 

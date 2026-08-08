@@ -176,6 +176,41 @@ async function mockTicker(
             await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
             return;
         }
+        if (url.pathname.endsWith("/earnings-quality")) {
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    ticker,
+                    currency: "USD",
+                    methodology: {
+                        materiality_base: "income before tax",
+                        warning_threshold: 0.1,
+                        high_threshold: 0.25,
+                        reported_remains_primary: true,
+                        structured_flags_are_adjustments: false,
+                    },
+                    summary: {
+                        verdict: "no_material_candidates_on_available_data",
+                        evaluated_periods: 0,
+                        flagged_periods: 0,
+                        data_quality_periods: 0,
+                        financial_industry_exemption: false,
+                        message: "No filing candidates were found in the available fixture data.",
+                    },
+                    annual: [],
+                    quarterly: [],
+                    sec_analysis: {
+                        supported: false,
+                        cik: null,
+                        reason: "Fixture does not include SEC documents.",
+                        supported_forms: [],
+                        unsupported_forms: [],
+                    },
+                }),
+            });
+            return;
+        }
         await lifecycle.beforeStockResponse?.();
         await route.fulfill({
             status: 200,
@@ -240,7 +275,7 @@ for (const fixture of [
             await expect(page.getByText("Negative free cash flow", { exact: true })).toBeVisible();
             await page.getByRole("button", { name: "Show evidence" }).click();
             await expect(page.getByLabel("Financial evidence metric")).toHaveValue("free_cash_flow");
-            await expect(page.getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
+            await expect(page.getByLabel("Financial evidence", { exact: true }).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
         }
     });
 }

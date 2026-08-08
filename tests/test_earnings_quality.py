@@ -1345,13 +1345,18 @@ async def test_analysis_post_requires_admin_and_is_single_flight_with_free_cache
             json=body,
             headers={"X-API-Key": "test-secret"},
         )
-        public_status = await client.get(
+        unauthorized_status = await client.get(
             f"/api/stocks/API.US/earnings-quality/analyses/{run.id}"
+        )
+        private_status = await client.get(
+            f"/api/stocks/API.US/earnings-quality/analyses/{run.id}",
+            headers={"X-API-Key": "test-secret"},
         )
 
     assert cached.status_code == 200
-    assert public_status.status_code == 200
-    assert public_status.json()["status"] == "completed"
+    assert unauthorized_status.status_code == 401
+    assert private_status.status_code == 200
+    assert private_status.json()["status"] == "completed"
     limiter.assert_awaited_once()
     scheduler.assert_called_once()
 

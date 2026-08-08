@@ -289,6 +289,30 @@ def test_rrg_history_days_are_bounded_before_execution():
     assert too_large.status_code == 422
 
 
+def test_public_query_limits_and_private_backtest_status_are_enforced():
+    from main import app
+
+    with TestClient(app) as client:
+        too_many_rrg_tickers = client.get(
+            "/api/v1/rrg",
+            params={"tickers": ",".join(f"T{index}.US" for index in range(51))},
+        )
+        too_many_batch_tickers = client.post(
+            "/api/stocks/batch-factors",
+            json={"tickers": [f"T{index}.US" for index in range(101)]},
+        )
+        unauthorized_backtest = client.get("/api/quant/backtests/1")
+        missing_backtest = client.get(
+            "/api/quant/backtests/1",
+            headers={"X-API-Key": "test-secret"},
+        )
+
+    assert too_many_rrg_tickers.status_code == 422
+    assert too_many_batch_tickers.status_code == 422
+    assert unauthorized_backtest.status_code == 401
+    assert missing_backtest.status_code == 404
+
+
 def test_e2e_seed_refuses_non_test_databases():
     with pytest.raises(RuntimeError, match="refusing to reset"):
         assert_safe_e2e_database(
