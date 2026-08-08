@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { FieldControl, parseColumns, parsePage, updateScreenerFilters } from "./page";
+import { FieldControl, parseColumns, parsePage, updateScreenerFilters } from "./screener-controls";
 import { ScreenerField, ScreenerFilter } from "@/lib/screener";
 
 const numericField: ScreenerField = {

@@ -27,6 +27,20 @@ from services.rrg_prices import (
 
 logger = logging.getLogger(__name__)
 
+
+def _positive_float(value) -> Optional[float]:
+    try:
+        parsed = float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed is not None and math.isfinite(parsed) and parsed > 0 else None
+
+
+def _effective_close(adjusted_close, close) -> Optional[float]:
+    """Use a valid adjusted close and fall back to the raw close when absent."""
+    return _positive_float(adjusted_close) or _positive_float(close)
+
+
 # ------------------------------------------------------------------------
 # 定量分析与读取服务
 # ------------------------------------------------------------------------
@@ -78,13 +92,10 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             "open": float(rec.open) if rec.open else None,
             "high": float(rec.high) if rec.high else None,
             "low": float(rec.low) if rec.low else None,
-            "close": float(rec.close) if rec.close else None,
-            "adjusted_close": float(rec.adjusted_close) if rec.adjusted_close else None,
+            "close": _positive_float(rec.close),
+            "adjusted_close": _positive_float(rec.adjusted_close),
             "volume": float(rec.volume) if rec.volume is not None else 0.0
         } for rec in price_records])
-
-        # 在应用前复权前，剔除完全没有收盘价的无效/停牌数据行 (防止后续为 None 导致前端挂掉)
-        df.dropna(subset=['close'], inplace=True)
 
         # 应用前复权逻辑 (Backward Adjustment for Splits/Dividends)
         df['adj_factor'] = df.apply(
@@ -95,8 +106,16 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         df['open'] = df['open'] * df['adj_factor']
         df['high'] = df['high'] * df['adj_factor']
         df['low'] = df['low'] * df['adj_factor']
-        df['close'] = df['adjusted_close']  # or df['close'] * df['adj_factor']
+        # adjusted_close is optional in older/imported rows. Do not overwrite a
+        # usable raw close with null when the adjustment is unavailable.
+        df['close'] = df['adjusted_close'].where(
+            df['adjusted_close'].notna(),
+            df['close'] * df['adj_factor'],
+        )
         df['volume'] = df['volume'] / df['adj_factor']
+
+        # Drop rows only after the effective close has been selected.
+        df.dropna(subset=['close'], inplace=True)
 
         # 丢弃中间列
         df.drop(columns=['adjusted_close', 'adj_factor'], inplace=True)
@@ -327,14 +346,11 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         # A. 将历史行情转化为以 datetime 为基准的 DataFrame 
         df_prices_raw = pd.DataFrame([{
             "date": rec.date,
-            "close": float(rec.close) if rec.close else None,
-            "adjusted_close": float(rec.adjusted_close) if rec.adjusted_close else None
-        } for rec in price_records if rec.date and (rec.close or rec.adjusted_close)])
+            "price": _effective_close(rec.adjusted_close, rec.close),
+        } for rec in price_records if rec.date and _effective_close(rec.adjusted_close, rec.close) is not None])
 
         if not df_prices_raw.empty:
             df_prices_raw['date'] = pd.to_datetime(df_prices_raw['date'])
-            # 优先使用 adjusted_close，如果没有则用 close
-            df_prices_raw['price'] = df_prices_raw['adjusted_close'].fillna(df_prices_raw['close'])
             df_prices_raw = df_prices_raw.dropna(subset=['price'])
             df_prices_raw = df_prices_raw.sort_values('date')
             df_prices_raw = df_prices_raw[['date', 'price']]
@@ -507,7 +523,11 @@ def _calculate_factor_scores(
     yearly_records: list[FinancialStatement],
     price_records: list[DailyPrice],
 ) -> Dict[str, int]:
-    current_price = _float_or_zero(price_records[0].close) if price_records else 0.0
+    current_price = _effective_close(
+        price_records[0].adjusted_close,
+        price_records[0].close,
+    ) if price_records else None
+    current_price = current_price or 0.0
     shares_out = ttm_data["shares_out"]
     ttm_net_income = ttm_data["ttm_net_income"]
     total_equity = ttm_data["total_equity"]
@@ -586,7 +606,11 @@ def _calculate_factor_scores(
             health_score = 10
 
     momentum_score = 50
-    closes = [float(record.close) for record in reversed(price_records) if record.close is not None]
+    closes = [
+        effective
+        for record in reversed(price_records)
+        if (effective := _effective_close(record.adjusted_close, record.close)) is not None
+    ]
     if len(closes) >= 50:
         try:
             close_series = pd.Series(closes)
@@ -745,7 +769,11 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     price_records = list(price_result.scalars().all())
     latest_price_rec = price_records[0] if price_records else None
     
-    current_price = _safe_float(latest_price_rec.close) if latest_price_rec else 0.0
+    current_price = _effective_close(
+        latest_price_rec.adjusted_close,
+        latest_price_rec.close,
+    ) if latest_price_rec else None
+    current_price = current_price or 0.0
     margin_of_safety = 0.0
     
     if intrinsic_value_per_share > 0 and current_price > 0:

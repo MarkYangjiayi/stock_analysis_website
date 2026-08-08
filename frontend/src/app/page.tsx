@@ -223,7 +223,7 @@ function AnalysisPage() {
                 let active = true;
                 while (!controller.signal.aborted && active) {
                     await waitForPoll(1_500, controller.signal);
-                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, controller.signal);
+                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, personal.adminKey || undefined, controller.signal);
                     active = analysis.status === "queued" || analysis.status === "running";
                     if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
                 }
@@ -348,7 +348,7 @@ function AnalysisPage() {
             if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
             while (!controller.signal.aborted && (analysis.status === "queued" || analysis.status === "running")) {
                 await waitForPoll(1_500, controller.signal);
-                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, controller.signal);
+                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, personal.adminKey || undefined, controller.signal);
                 if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
             }
             if (!controller.signal.aborted) {

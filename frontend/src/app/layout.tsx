@@ -1,18 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import TopNavBar from "@/components/TopNavBar";
 import { ThemeProvider } from "@/components/ThemeProvider";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Quantify — Low Frequency Quant Research",
@@ -27,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} flex h-screen w-full flex-col overflow-hidden antialiased transition-colors duration-300`}
+        className="flex h-screen w-full flex-col overflow-hidden antialiased transition-colors duration-300"
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <a
