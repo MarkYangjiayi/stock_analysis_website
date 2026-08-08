@@ -41,6 +41,16 @@ def _effective_close(adjusted_close, close) -> Optional[float]:
     return _positive_float(adjusted_close) or _positive_float(close)
 
 
+def _latest_effective_price(
+    price_records: list[DailyPrice],
+) -> tuple[Optional[DailyPrice], float]:
+    for record in price_records:
+        effective = _effective_close(record.adjusted_close, record.close)
+        if effective is not None:
+            return record, effective
+    return None, 0.0
+
+
 # ------------------------------------------------------------------------
 # 定量分析与读取服务
 # ------------------------------------------------------------------------
@@ -523,11 +533,7 @@ def _calculate_factor_scores(
     yearly_records: list[FinancialStatement],
     price_records: list[DailyPrice],
 ) -> Dict[str, int]:
-    current_price = _effective_close(
-        price_records[0].adjusted_close,
-        price_records[0].close,
-    ) if price_records else None
-    current_price = current_price or 0.0
+    _, current_price = _latest_effective_price(price_records)
     shares_out = ttm_data["shares_out"]
     ttm_net_income = ttm_data["ttm_net_income"]
     total_equity = ttm_data["total_equity"]
@@ -767,13 +773,7 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     price_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(60)
     price_result = await db.execute(price_stmt)
     price_records = list(price_result.scalars().all())
-    latest_price_rec = price_records[0] if price_records else None
-    
-    current_price = _effective_close(
-        latest_price_rec.adjusted_close,
-        latest_price_rec.close,
-    ) if latest_price_rec else None
-    current_price = current_price or 0.0
+    _, current_price = _latest_effective_price(price_records)
     margin_of_safety = 0.0
     
     if intrinsic_value_per_share > 0 and current_price > 0:

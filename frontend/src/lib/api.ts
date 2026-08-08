@@ -698,7 +698,7 @@ export const startEarningsQualityAnalysis = (
 export const fetchEarningsQualityAnalysis = (
     ticker: string,
     analysisId: number,
-    adminKey?: string,
+    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<EarningsQualityAnalysis>(
     `/api/stocks/${encodeURIComponent(ticker)}/earnings-quality/analyses/${analysisId}`,

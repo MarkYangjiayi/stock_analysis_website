@@ -130,6 +130,12 @@ async def test_ttm_gross_margin_anomaly_preserves_reported_value_and_warns(db_se
             close=10,
             adjusted_close=None,
         ),
+        DailyPrice(
+            ticker=ticker,
+            date=date(2026, 1, 3),
+            close=0,
+            adjusted_close=None,
+        ),
     ])
     await db_session.commit()
 
