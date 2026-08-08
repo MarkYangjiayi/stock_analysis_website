@@ -98,4 +98,16 @@ describe("EventsExpectationsPanel", () => {
 
         expect(screen.getByText("No event or forward-consensus data is available for this ticker yet.")).toBeInTheDocument();
     });
+
+    it("surfaces provider freshness notes in both cockpit views", () => {
+        const staleData = {
+            ...data,
+            data_quality_notes: ["Provider snapshot is 9 days old; verify event and consensus data before relying on it."],
+        };
+        const { rerender } = render(<EventsExpectationsPanel data={staleData} />);
+        expect(screen.getByRole("note")).toHaveTextContent("Provider snapshot is 9 days old");
+
+        rerender(<EventsExpectationsPanel data={staleData} detail />);
+        expect(screen.getByRole("note")).toHaveTextContent("Provider snapshot is 9 days old");
+    });
 });

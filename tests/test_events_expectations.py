@@ -1,9 +1,19 @@
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 
-from services.events_expectations import get_events_expectations
+from services.events_expectations import _snapshot_staleness_note, get_events_expectations
 from services.raw_store import persist_snapshot
+
+
+def test_snapshot_staleness_note_is_emitted_after_the_documented_threshold():
+    snapshot = SimpleNamespace(fetched_at=datetime(2026, 1, 1))
+
+    assert _snapshot_staleness_note(snapshot, date(2026, 1, 8)) is None
+    assert _snapshot_staleness_note(snapshot, date(2026, 1, 10)) == (
+        "Provider snapshot is 9 days old; verify event and consensus data before relying on it."
+    )
 
 
 @pytest.mark.asyncio

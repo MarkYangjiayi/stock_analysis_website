@@ -23,6 +23,7 @@ _PERIOD_LABELS = {
     "0y": ("Current fiscal year", 2),
     "+1y": ("Next fiscal year", 3),
 }
+_SNAPSHOT_STALE_AFTER_DAYS = 7
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -57,6 +58,25 @@ def _read_json(path: str) -> dict[str, Any]:
     with opener(file_path, "rt", encoding="utf-8") as handle:
         payload = json.load(handle)
     return payload if isinstance(payload, dict) else {}
+
+
+def _snapshot_staleness_note(
+    snapshot: RawDataSnapshot,
+    reference_date: date,
+) -> Optional[str]:
+    fetched_at = snapshot.fetched_at
+    if fetched_at is None:
+        return None
+    fetched_date = fetched_at.date() if isinstance(fetched_at, datetime) else _parse_date(fetched_at)
+    if fetched_date is None:
+        return None
+    age_days = (reference_date - fetched_date).days
+    if age_days <= _SNAPSHOT_STALE_AFTER_DAYS:
+        return None
+    return (
+        f"Provider snapshot is {age_days} days old; verify event and consensus data "
+        "before relying on it."
+    )
 
 
 async def _latest_fundamentals_snapshot(
@@ -279,6 +299,9 @@ async def get_events_expectations(
     expectations = _expectations(earnings.get("Trend"), today)
     highlights = payload.get("Highlights") or {}
     notes: list[str] = []
+    staleness_note = _snapshot_staleness_note(snapshot, today)
+    if staleness_note:
+        notes.append(staleness_note)
     if not upcoming:
         notes.append("No upcoming event date was published by the provider.")
     if not expectations:

@@ -228,6 +228,12 @@ export default function EventsExpectationsPanel({
                         </article>
                     </div>
 
+                    {data.data_quality_notes.length > 0 && (
+                        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300" role="note">
+                            {data.data_quality_notes.map((note) => <p key={note}>{note}</p>)}
+                        </div>
+                    )}
+
                     {detail && (
                         <div className="mt-5 space-y-5">
                             <div className="grid gap-5 xl:grid-cols-2">
@@ -244,7 +250,7 @@ export default function EventsExpectationsPanel({
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-black">Forward consensus</h4><span className="text-[10px] text-slate-500">Point-in-time estimates, not a recommendation</span></div>
                                 {data.expectations.length ? <ExpectationTable expectations={data.expectations} currency={currency} /> : <p className="rounded-xl border p-4 text-sm text-slate-500">No forward consensus estimates are available.</p>}
                             </section>
-                            {(data.annual_dividend_per_share != null || data.dividend_yield != null || data.data_quality_notes.length > 0) && <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"><span>Annual dividend {formatNumber(data.annual_dividend_per_share)}</span><span>Dividend yield {formatPercent(data.dividend_yield)}</span>{data.data_quality_notes.map((note) => <span key={note}>{note}</span>)}</div>}
+                            {(data.annual_dividend_per_share != null || data.dividend_yield != null) && <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"><span>Annual dividend {formatNumber(data.annual_dividend_per_share)}</span><span>Dividend yield {formatPercent(data.dividend_yield)}</span></div>}
                         </div>
                     )}
                 </>
