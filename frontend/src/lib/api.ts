@@ -135,6 +135,59 @@ export interface StockDataResponse {
     valuation_metrics?: ValuationMetrics | null;
 }
 
+export interface StockEvent {
+    id: string;
+    kind: "earnings" | "dividend";
+    status: "upcoming" | "reported";
+    title: string;
+    event_date: string;
+    period_end?: string | null;
+    payment_date?: string | null;
+    timing?: string | null;
+    eps_actual?: number | null;
+    eps_estimate?: number | null;
+    eps_difference?: number | null;
+    eps_surprise_percent?: number | null;
+}
+
+export interface EarningsExpectation {
+    period: string;
+    label: string;
+    period_end: string;
+    eps_average?: number | null;
+    eps_low?: number | null;
+    eps_high?: number | null;
+    eps_growth?: number | null;
+    revenue_average?: number | null;
+    revenue_low?: number | null;
+    revenue_high?: number | null;
+    revenue_growth?: number | null;
+    eps_analyst_count?: number | null;
+    revenue_analyst_count?: number | null;
+    eps_revisions_up_7d?: number | null;
+    eps_revisions_down_7d?: number | null;
+    eps_revisions_up_30d?: number | null;
+    eps_revisions_down_30d?: number | null;
+    eps_trend_current?: number | null;
+    eps_trend_7d?: number | null;
+    eps_trend_30d?: number | null;
+}
+
+export interface EventsExpectationsResponse {
+    ticker: string;
+    source: string;
+    as_of?: string | null;
+    available: boolean;
+    next_event?: StockEvent | null;
+    upcoming_events: StockEvent[];
+    recent_earnings: StockEvent[];
+    expectations: EarningsExpectation[];
+    wall_street_target_price?: number | null;
+    dividend_yield?: number | null;
+    annual_dividend_per_share?: number | null;
+    data_quality_notes: string[];
+}
+
 export type ValuationScenarioName = "bear" | "base" | "bull";
 
 export interface DecisionValuationScenarioInput {
@@ -651,6 +704,12 @@ export const fetchStockData = (
     { signal },
     90_000,
 );
+
+export const fetchEventsExpectations = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<EventsExpectationsResponse>(
+        `/api/stocks/${encodeURIComponent(ticker)}/events-expectations`,
+        { signal },
+    );
 
 export const fetchLatestTickerFactors = (ticker: string, signal?: AbortSignal) =>
     apiRequest<PublishedFactorSnapshot>(`/api/quant/factors/${encodeURIComponent(ticker)}/latest`, { signal });

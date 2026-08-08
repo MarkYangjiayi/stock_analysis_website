@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import AIReport from "@/components/AIReport";
 import EarningsQualityPanel from "@/components/EarningsQualityPanel";
+import EventsExpectationsPanel from "@/components/EventsExpectationsPanel";
 import {
     ApiError,
     calculateDecisionValuation,
@@ -29,6 +30,7 @@ import {
     DecisionWarning,
     EarningsQualityPeriod,
     EarningsQualityResponse,
+    EventsExpectationsResponse,
     PeerMetric,
     resetPersonalValuationScenarios,
     savePersonalValuationScenarios,
@@ -52,6 +54,9 @@ interface DecisionCockpitProps {
     earningsQualityError?: string;
     earningsQualityBusyPeriod?: string | null;
     onAnalyzeEarningsPeriod?: (period: EarningsQualityPeriod) => Promise<void> | void;
+    eventsExpectations?: EventsExpectationsResponse | null;
+    eventsExpectationsLoading?: boolean;
+    eventsExpectationsError?: string;
 }
 
 const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
@@ -230,6 +235,9 @@ export default function DecisionCockpit({
     earningsQualityError = "",
     earningsQualityBusyPeriod = null,
     onAnalyzeEarningsPeriod,
+    eventsExpectations = null,
+    eventsExpectationsLoading = false,
+    eventsExpectationsError = "",
 }: DecisionCockpitProps) {
     const [activeTab, setActiveTab] = useState<CockpitTab>("overview");
     const [peerScope, setPeerScope] = useState<"industry" | "sector">("industry");
@@ -498,6 +506,13 @@ export default function DecisionCockpit({
                             </article>
                         </div>
 
+                        <EventsExpectationsPanel
+                            data={eventsExpectations}
+                            loading={eventsExpectationsLoading}
+                            error={eventsExpectationsError}
+                            currency={decision.metadata.currency}
+                        />
+
                         <div className="grid gap-5 xl:grid-cols-2">
                             <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black">Strongest peer positions</h3><span className="text-[10px] text-slate-500">Top three with valid coverage</span></div><div className="grid gap-3 sm:grid-cols-3">{decision.summary.strongest_peer_metrics.length ? decision.summary.strongest_peer_metrics.map((metric) => <SummaryMetricCard key={metric.key} metric={metric} tone="strong" />) : <p className="col-span-full rounded-xl border p-4 text-sm text-slate-500">No peer metric has sufficient coverage.</p>}</div></section>
                             <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-black">Weakest peer positions</h3><span className="text-[10px] text-slate-500">Bottom three with valid coverage</span></div><div className="grid gap-3 sm:grid-cols-3">{decision.summary.weakest_peer_metrics.length ? decision.summary.weakest_peer_metrics.map((metric) => <SummaryMetricCard key={metric.key} metric={metric} tone="weak" />) : <p className="col-span-full rounded-xl border p-4 text-sm text-slate-500">No peer metric has sufficient coverage.</p>}</div></section>
@@ -550,7 +565,7 @@ export default function DecisionCockpit({
                         <section className="rounded-xl border p-4"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500"><Database size={14} /> Data-quality notes</h3>{decision.risks.data_quality_notes.length ? <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">{decision.risks.data_quality_notes.map((note) => <li key={`${note.code}-${note.message}`} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50"><span className="font-mono text-[10px] text-slate-400">{note.code}</span><p className="mt-1">{note.message}</p></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No data-quality limitation was recorded for these checks.</p>}</section>
                     </div>}
 
-                    {activeTab === "brief" && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded disabledReason={briefIsOutOfSync ? "The displayed valuation uses working assumptions that are not in the server evidence yet. Save the scenarios, or reset them to the server-backed values, before generating a brief." : undefined} /><aside className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-slate-500">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900/50"><span className={`font-mono font-black ${item.available ? "text-emerald-600" : "text-slate-400"}`}>{item.id}</span><div><p className="font-bold">{item.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div>}
+                    {activeTab === "brief" && <div className="space-y-5"><EventsExpectationsPanel data={eventsExpectations} loading={eventsExpectationsLoading} error={eventsExpectationsError} currency={decision.metadata.currency} detail /><div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded disabledReason={briefIsOutOfSync ? "The displayed valuation uses working assumptions that are not in the server evidence yet. Save the scenarios, or reset them to the server-backed values, before generating a brief." : undefined} /><aside className="rounded-xl border p-4"><h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-slate-500">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900/50"><span className={`font-mono font-black ${item.available ? "text-emerald-600" : "text-slate-400"}`}>{item.id}</span><div><p className="font-bold">{item.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div></div>}
                 </div>
             )}
         </section>

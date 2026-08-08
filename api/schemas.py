@@ -85,6 +85,59 @@ class StockDataResponse(BaseModel):
     valuation_metrics: Optional[ValuationMetricsModel] = None
 
 
+class StockEventModel(BaseModel):
+    id: str
+    kind: Literal["earnings", "dividend"]
+    status: Literal["upcoming", "reported"]
+    title: str
+    event_date: date
+    period_end: Optional[date] = None
+    payment_date: Optional[date] = None
+    timing: Optional[str] = None
+    eps_actual: Optional[float] = None
+    eps_estimate: Optional[float] = None
+    eps_difference: Optional[float] = None
+    eps_surprise_percent: Optional[float] = None
+
+
+class EarningsExpectationModel(BaseModel):
+    period: str
+    label: str
+    period_end: date
+    eps_average: Optional[float] = None
+    eps_low: Optional[float] = None
+    eps_high: Optional[float] = None
+    eps_growth: Optional[float] = None
+    revenue_average: Optional[float] = None
+    revenue_low: Optional[float] = None
+    revenue_high: Optional[float] = None
+    revenue_growth: Optional[float] = None
+    eps_analyst_count: Optional[int] = None
+    revenue_analyst_count: Optional[int] = None
+    eps_revisions_up_7d: Optional[int] = None
+    eps_revisions_down_7d: Optional[int] = None
+    eps_revisions_up_30d: Optional[int] = None
+    eps_revisions_down_30d: Optional[int] = None
+    eps_trend_current: Optional[float] = None
+    eps_trend_7d: Optional[float] = None
+    eps_trend_30d: Optional[float] = None
+
+
+class EventsExpectationsResponse(BaseModel):
+    ticker: str
+    source: str
+    as_of: Optional[datetime] = None
+    available: bool
+    next_event: Optional[StockEventModel] = None
+    upcoming_events: List[StockEventModel] = Field(default_factory=list)
+    recent_earnings: List[StockEventModel] = Field(default_factory=list)
+    expectations: List[EarningsExpectationModel] = Field(default_factory=list)
+    wall_street_target_price: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    annual_dividend_per_share: Optional[float] = None
+    data_quality_notes: List[str] = Field(default_factory=list)
+
+
 class DecisionValuationScenarioInput(BaseModel):
     scenario: Literal["bear", "base", "bull"]
     fcf_growth_rate: float
