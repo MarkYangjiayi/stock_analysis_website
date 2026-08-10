@@ -290,13 +290,17 @@ export default function StockSnapshotPanel({
     onRetry: () => void;
 }) {
     const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["overview"]));
+    const [isDesktop, setIsDesktop] = useState(false);
 
     useEffect(() => {
         if (typeof window.matchMedia !== "function") return;
         const media = window.matchMedia("(min-width: 768px)");
-        const synchronize = () => setExpanded(
-            media.matches ? new Set(GROUPS.map((group) => group.id)) : new Set(["overview"]),
-        );
+        const synchronize = () => {
+            setIsDesktop(media.matches);
+            setExpanded(
+                media.matches ? new Set(GROUPS.map((group) => group.id)) : new Set(["overview"]),
+            );
+        };
         synchronize();
         media.addEventListener("change", synchronize);
         return () => media.removeEventListener("change", synchronize);
@@ -340,17 +344,24 @@ export default function StockSnapshotPanel({
                     {dates.map(([label, value]) => <span key={label} className="rounded-lg border bg-[var(--surface)] px-2.5 py-1">{label} {value}</span>)}
                 </div>
             </header>
-            {error && <div className="mx-4 mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">{error} The previous snapshot remains visible.</div>}
+            {error && (
+                <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                    <span>{error} The previous snapshot remains visible.</span>
+                    <button type="button" className="secondary-button" onClick={onRetry}><RefreshCw size={14} /> Retry</button>
+                </div>
+            )}
             <div className="grid items-start gap-3 p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-3">
                 {GROUPS.map((group) => {
                     const Icon = group.icon;
                     const isExpanded = expanded.has(group.id);
+                    const isVisible = isDesktop || isExpanded;
                     return (
                         <article key={group.id} className="overflow-hidden rounded-xl border bg-[var(--surface)]">
                             <button
                                 type="button"
-                                className="surface-subtle flex w-full items-center justify-between gap-3 px-3 py-3 text-left md:pointer-events-none"
-                                aria-expanded={isExpanded}
+                                className="surface-subtle flex w-full items-center justify-between gap-3 px-3 py-3 text-left disabled:cursor-default"
+                                aria-expanded={isVisible}
+                                disabled={isDesktop}
                                 onClick={() => toggle(group.id)}
                             >
                                 <span className="flex min-w-0 items-center gap-2.5">
@@ -359,7 +370,7 @@ export default function StockSnapshotPanel({
                                 </span>
                                 <ChevronDown size={16} className={`shrink-0 transition-transform md:hidden ${isExpanded ? "rotate-180" : ""}`} />
                             </button>
-                            <div className={`${isExpanded ? "block" : "hidden"} md:block`}>
+                            <div className={isVisible ? "block" : "hidden"}>
                                 {group.fields.map((definition) => (
                                     <MetricRow key={definition.key} definition={definition} metric={data.metrics[definition.key]} currency={data.currency} />
                                 ))}

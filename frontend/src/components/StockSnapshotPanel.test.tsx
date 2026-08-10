@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import StockSnapshotPanel, { formatSnapshotValue } from "@/components/StockSnapshotPanel";
 import type { MarketSnapshotMetric, MarketSnapshotResponse } from "@/lib/api";
 
@@ -40,6 +40,8 @@ const data: MarketSnapshotResponse = {
     },
 };
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe("StockSnapshotPanel", () => {
     it("formats compact financial values and ratios", () => {
         expect(formatSnapshotValue(107_060_000_000, "currency", "USD")).toBe("$107.06B");
@@ -78,12 +80,40 @@ describe("StockSnapshotPanel", () => {
         expect(growth).toHaveAttribute("aria-expanded", "true");
     });
 
+    it("disables disclosure controls when desktop content is forced open", () => {
+        vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+            matches: true,
+            media: "(min-width: 768px)",
+            onchange: null,
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+        }));
+        render(<StockSnapshotPanel data={data} loading={false} error="" onRetry={vi.fn()} />);
+
+        const growth = screen.getByRole("button", { name: /Growth/ });
+        expect(growth).toBeDisabled();
+        expect(growth).toHaveAttribute("aria-expanded", "true");
+    });
+
     it("keeps snapshot failures isolated and retryable", async () => {
         const user = userEvent.setup();
         const onRetry = vi.fn();
         render(<StockSnapshotPanel data={null} loading={false} error="Snapshot failed." onRetry={onRetry} />);
 
         expect(screen.getByRole("alert")).toHaveTextContent("Snapshot failed.");
+        await user.click(screen.getByRole("button", { name: /Retry/ }));
+        expect(onRetry).toHaveBeenCalledOnce();
+    });
+
+    it("keeps a retry action when stale snapshot data remains visible", async () => {
+        const user = userEvent.setup();
+        const onRetry = vi.fn();
+        render(<StockSnapshotPanel data={data} loading={false} error="Refresh failed." onRetry={onRetry} />);
+
+        expect(screen.getByText(/previous snapshot remains visible/i)).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: /Retry/ }));
         expect(onRetry).toHaveBeenCalledOnce();
     });

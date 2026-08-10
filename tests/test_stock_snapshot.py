@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from main import app
 from models import (
@@ -224,6 +225,8 @@ async def test_market_snapshot_aggregates_local_sources(db_session):
     assert result["metrics"]["sma20_distance"]["value"] == pytest.approx(latest_price / 120 - 1)
     assert result["metrics"]["high_52w"]["value"] == pytest.approx(latest_price + 1)
     assert result["metrics"]["high_52w"]["secondary_value"] == pytest.approx(latest_price / (latest_price + 1) - 1)
+    assert result["metrics"]["change"]["value"] == pytest.approx(latest_price / (latest_price - 0.1) - 1)
+    assert result["metrics"]["change"]["source_date"] == as_of
     assert result["metrics"]["eps_next_quarter"]["value"] == pytest.approx(0.8)
     assert result["metrics"]["eps_growth_this_year"]["unavailable_reason"] == "The latest published Screener snapshot does not contain this value."
     assert result["coverage"]["available"] > 40
@@ -235,6 +238,27 @@ async def test_market_snapshot_aggregates_local_sources(db_session):
         response = await client.get("/api/stocks/AAA/market-snapshot")
     assert response.status_code == 200
     assert response.json()["metrics"]["forward_pe"]["value"] == pytest.approx(18)
+
+
+@pytest.mark.asyncio
+async def test_market_snapshot_normalizes_legacy_screener_values(db_session):
+    await _seed_complete_snapshot(db_session)
+    snapshot = (
+        await db_session.execute(
+            select(StockScreenerSnapshot).where(StockScreenerSnapshot.ticker == "AAA.US")
+        )
+    ).scalar_one()
+    snapshot.pe_ratio = 0
+    snapshot.quick_ratio = -1
+    snapshot.ps_ratio = 999_999.9999
+    snapshot.target_price = 0
+    snapshot.rsi_14 = 101
+    await db_session.commit()
+
+    result = await get_market_snapshot("AAA", db_session)
+
+    for key in ("pe_ratio", "quick_ratio", "ps_ratio", "target_price", "rsi_14"):
+        assert result["metrics"][key]["value"] is None
 
 
 @pytest.mark.asyncio
