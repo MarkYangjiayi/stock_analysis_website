@@ -135,6 +135,44 @@ export interface StockDataResponse {
     valuation_metrics?: ValuationMetrics | null;
 }
 
+export type MarketSnapshotUnit =
+    | "currency"
+    | "integer"
+    | "multiple"
+    | "number"
+    | "percent"
+    | "ratio"
+    | "date"
+    | "text";
+
+export interface MarketSnapshotMetric {
+    value: number | string | string[] | null;
+    unit: MarketSnapshotUnit;
+    source_date: string | null;
+    unavailable_reason: string | null;
+    secondary_value: number | null;
+    secondary_unit: "currency" | "percent" | "number" | null;
+    percentile: number | null;
+    percentile_scope: "industry" | "sector" | null;
+}
+
+export interface MarketSnapshotResponse {
+    ticker: string;
+    currency: string | null;
+    source_dates: {
+        price: string | null;
+        screener: string | null;
+        financials: string | null;
+        provider: string | null;
+    };
+    coverage: {
+        available: number;
+        total: number;
+        ratio: number;
+    };
+    metrics: Record<string, MarketSnapshotMetric>;
+}
+
 export interface StockEvent {
     id: string;
     kind: "earnings" | "dividend";
@@ -704,6 +742,12 @@ export const fetchStockData = (
     { signal },
     90_000,
 );
+
+export const fetchMarketSnapshot = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<MarketSnapshotResponse>(
+        `/api/stocks/${encodeURIComponent(ticker)}/market-snapshot`,
+        { signal },
+    );
 
 export const fetchEventsExpectations = (ticker: string, signal?: AbortSignal) =>
     apiRequest<EventsExpectationsResponse>(

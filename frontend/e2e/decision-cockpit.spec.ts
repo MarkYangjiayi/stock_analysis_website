@@ -149,6 +149,36 @@ function decisionFixture(ticker: string, kind: "complete" | "sparse" | "outside"
     };
 }
 
+function marketSnapshotFixture(ticker: string) {
+    const metric = (value: number | string | string[] | null, unit: string, extra = {}) => ({
+        value,
+        unit,
+        source_date: "2026-01-02",
+        unavailable_reason: value == null ? "Fixture value is unavailable." : null,
+        secondary_value: null,
+        secondary_unit: null,
+        percentile: null,
+        percentile_scope: null,
+        ...extra,
+    });
+    return {
+        ticker,
+        currency: "USD",
+        source_dates: { price: "2026-01-02", screener: "2025-12-31", financials: "2025-12-31", provider: "2026-01-02" },
+        coverage: { available: 8, total: 73, ratio: 8 / 73 },
+        metrics: {
+            index_membership: metric(["S&P 500"], "text"),
+            market_cap: metric(10_000_000_000, "currency"),
+            forward_pe: metric(20, "multiple", { percentile: 60, percentile_scope: "industry" }),
+            sales_growth_ttm: metric(0.2, "percent"),
+            operating_margin: metric(0.25, "percent"),
+            sma20_distance: metric(0.05, "percent", { secondary_value: 95, secondary_unit: "currency" }),
+            rsi_14: metric(62, "number"),
+            performance_1w: metric(0.03, "percent"),
+        },
+    };
+}
+
 type MockLifecycle = {
     onDecisionRequest?: () => void;
     beforeStockResponse?: () => Promise<void> | void;
@@ -170,6 +200,10 @@ async function mockTicker(
         if (url.pathname.endsWith("/decision-support")) {
             lifecycle.onDecisionRequest?.();
             await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(decisionFixture(ticker, kind)) });
+            return;
+        }
+        if (url.pathname.endsWith("/market-snapshot")) {
+            await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(marketSnapshotFixture(ticker)) });
             return;
         }
         if (url.pathname.endsWith("/news")) {
@@ -303,6 +337,9 @@ for (const fixture of [
         await mockTicker(page, fixture.ticker, fixture.kind);
         await page.goto(`/?ticker=${fixture.ticker}`);
         await expect(page.getByRole("heading", { name: "Decision Cockpit" })).toBeVisible();
+        await expect(page.getByTestId("market-snapshot-panel")).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Market Snapshot" })).toBeVisible();
+        await expect(page.getByTestId("snapshot-metric-forward_pe")).toContainText("20×");
         await expect(page.getByRole("heading", { name: `${fixture.kind} fixture`, exact: true })).toBeVisible();
         await expect(page.getByRole("heading", { name: "Price & volume" })).toBeVisible();
 
@@ -326,3 +363,15 @@ for (const fixture of [
         }
     });
 }
+
+test("keeps market snapshot groups usable on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockTicker(page, "MOBILE.US", "complete");
+    await page.goto("/?ticker=MOBILE.US");
+
+    const growth = page.getByRole("button", { name: /Growth/ });
+    await expect(growth).toHaveAttribute("aria-expanded", "false");
+    await growth.click();
+    await expect(growth).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByTestId("snapshot-metric-sales_growth_ttm")).toBeVisible();
+});

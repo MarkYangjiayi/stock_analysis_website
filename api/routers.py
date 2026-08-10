@@ -17,6 +17,7 @@ from api.schemas import (
     FactorComputeRequest,
     FactorResearchRequest,
     EventsExpectationsResponse,
+    MarketSnapshotResponse,
     MarketOverviewResponse,
     StockDataResponse,
 )
@@ -81,6 +82,7 @@ from services.market_breadth import (
     MarketOverviewUniverseUnavailable,
     get_market_overview,
 )
+from services.stock_snapshot import get_market_snapshot
 import pandas as pd
 
 router = APIRouter()
@@ -505,6 +507,19 @@ async def read_stock_analysis(ticker: str, request: Request, interval: str = "1d
     data["valuation_metrics"] = valuation
     
     return data
+
+
+@router.get(
+    "/api/stocks/{ticker}/market-snapshot",
+    response_model=MarketSnapshotResponse,
+    tags=["Stocks Analysis Read"],
+)
+async def read_market_snapshot(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a local-only, point-in-time market snapshot for one security."""
+    return await get_market_snapshot(ticker, db)
 
 
 @router.get(

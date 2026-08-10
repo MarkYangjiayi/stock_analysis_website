@@ -17,7 +17,9 @@ import {
     fetchEarningsQuality,
     fetchEarningsQualityAnalysis,
     fetchLatestTickerFactors,
+    fetchMarketSnapshot,
     fetchStockData,
+    MarketSnapshotResponse,
     PublishedFactorSnapshot,
     startEarningsQualityAnalysis,
     StockDataResponse,
@@ -26,6 +28,7 @@ import DecisionCockpit from "@/components/DecisionCockpit";
 import NewsFeed from "@/components/NewsFeed";
 import PersonalUnlockDialog from "@/components/PersonalUnlockDialog";
 import PointInTimeFactorPanel from "@/components/PointInTimeFactorPanel";
+import StockSnapshotPanel from "@/components/StockSnapshotPanel";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
 import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
@@ -91,6 +94,7 @@ function AnalysisPage() {
     const [decision, setDecision] = useState<DecisionSupportResponse | null>(null);
     const [earningsQuality, setEarningsQuality] = useState<EarningsQualityResponse | null>(null);
     const [eventsExpectations, setEventsExpectations] = useState<EventsExpectationsResponse | null>(null);
+    const [marketSnapshot, setMarketSnapshot] = useState<MarketSnapshotResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [factorLoading, setFactorLoading] = useState(false);
     const [decisionLoading, setDecisionLoading] = useState(false);
@@ -104,6 +108,8 @@ function AnalysisPage() {
     const [earningsQualityError, setEarningsQualityError] = useState("");
     const [eventsExpectationsLoading, setEventsExpectationsLoading] = useState(false);
     const [eventsExpectationsError, setEventsExpectationsError] = useState("");
+    const [marketSnapshotLoading, setMarketSnapshotLoading] = useState(false);
+    const [marketSnapshotError, setMarketSnapshotError] = useState("");
     const [chartInterval, setChartInterval] = useState("1d");
     const [financialPeriod, setFinancialPeriod] = useState<"annual" | "ttm" | "quarterly">("annual");
     const [financialMetric, setFinancialMetric] = useState<FinancialEvidenceMetric>("overview");
@@ -116,6 +122,7 @@ function AnalysisPage() {
     const decisionRequestRef = useRef<AbortController | null>(null);
     const earningsQualityRequestRef = useRef<AbortController | null>(null);
     const eventsExpectationsRequestRef = useRef<AbortController | null>(null);
+    const marketSnapshotRequestRef = useRef<AbortController | null>(null);
     const earningsAnalysisRequestRef = useRef<AbortController | null>(null);
     const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
 
@@ -229,6 +236,23 @@ function AnalysisPage() {
         }
     }, []);
 
+    const loadMarketSnapshot = useCallback(async (symbol: string) => {
+        marketSnapshotRequestRef.current?.abort();
+        const controller = new AbortController();
+        marketSnapshotRequestRef.current = controller;
+        setMarketSnapshotLoading(true);
+        setMarketSnapshotError("");
+        try {
+            const result = await fetchMarketSnapshot(symbol, controller.signal);
+            if (!controller.signal.aborted) setMarketSnapshot(result);
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (!controller.signal.aborted) setMarketSnapshotError(caught instanceof Error ? caught.message : "Market snapshot is unavailable.");
+        } finally {
+            if (!controller.signal.aborted) setMarketSnapshotLoading(false);
+        }
+    }, []);
+
     const cachedActiveEarningsAnalysisId = [
         ...(earningsQuality?.quarterly ?? []),
         ...(earningsQuality?.annual ?? []),
@@ -273,6 +297,8 @@ function AnalysisPage() {
             setFactorSnapshot(null);
             setEarningsQuality(null);
             setEventsExpectations(null);
+            setMarketSnapshot(null);
+            setMarketSnapshotError("");
             setError("");
             return;
         }
@@ -281,6 +307,8 @@ function AnalysisPage() {
         setDecision(null);
         setEarningsQuality(null);
         setEventsExpectations(null);
+        setMarketSnapshot(null);
+        setMarketSnapshotError("");
         setEarningsQualityBusyPeriod(null);
         setEarningsQualityError("");
         setEventsExpectationsError("");
@@ -294,18 +322,21 @@ function AnalysisPage() {
                 setDecisionRefreshVersion((version) => version + 1);
                 void loadEarningsQuality(requestedTicker);
                 void loadEventsExpectations(requestedTicker);
+                void loadMarketSnapshot(requestedTicker);
             }
         });
         void loadFactors(requestedTicker);
         void loadEarningsQuality(requestedTicker);
+        void loadMarketSnapshot(requestedTicker);
         return () => {
             stockRequestRef.current?.abort();
             factorRequestRef.current?.abort();
             earningsQualityRequestRef.current?.abort();
             eventsExpectationsRequestRef.current?.abort();
+            marketSnapshotRequestRef.current?.abort();
             earningsAnalysisRequestRef.current?.abort();
         };
-    }, [loadEarningsQuality, loadEventsExpectations, loadFactors, loadStock, requestedTicker]);
+    }, [loadEarningsQuality, loadEventsExpectations, loadFactors, loadMarketSnapshot, loadStock, requestedTicker]);
 
     useEffect(() => {
         if (!requestedTicker) {
@@ -488,6 +519,13 @@ function AnalysisPage() {
                                 </div>
                                 {stockData.profile.description && <p className="mt-6 border-t pt-5 text-sm leading-6 text-slate-600 line-clamp-3 hover:line-clamp-none dark:text-slate-400">{stockData.profile.description}</p>}
                             </section>
+
+                            <StockSnapshotPanel
+                                data={marketSnapshot}
+                                loading={marketSnapshotLoading}
+                                error={marketSnapshotError}
+                                onRetry={() => void loadMarketSnapshot(stockData.profile.ticker)}
+                            />
 
                             <DecisionCockpit
                                 ticker={stockData.profile.ticker}
