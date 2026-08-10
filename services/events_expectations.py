@@ -79,7 +79,7 @@ def _snapshot_staleness_note(
     )
 
 
-async def _latest_fundamentals_snapshot(
+async def load_latest_fundamentals_snapshot(
     ticker: str,
     db: AsyncSession,
 ) -> tuple[Optional[RawDataSnapshot], Optional[dict[str, Any]]]:
@@ -248,15 +248,14 @@ def _expectations(trend: Any, reference_date: date) -> list[dict[str, Any]]:
     return [item[2] for item in rows[:6]]
 
 
-async def get_events_expectations(
+def build_events_expectations_from_snapshot(
     ticker: str,
-    db: AsyncSession,
+    snapshot: Optional[RawDataSnapshot],
+    payload: Optional[dict[str, Any]],
     reference_date: Optional[date] = None,
 ) -> dict[str, Any]:
-    """Return provider-published events and consensus estimates without external work."""
     ticker = ticker.upper()
     today = reference_date or utc_now().date()
-    snapshot, payload = await _latest_fundamentals_snapshot(ticker, db)
     if snapshot is None:
         return {
             "ticker": ticker,
@@ -321,3 +320,18 @@ async def get_events_expectations(
         "annual_dividend_per_share": _safe_float(highlights.get("DividendShare")),
         "data_quality_notes": notes,
     }
+
+
+async def get_events_expectations(
+    ticker: str,
+    db: AsyncSession,
+    reference_date: Optional[date] = None,
+) -> dict[str, Any]:
+    """Return provider-published events and consensus estimates without external work."""
+    snapshot, payload = await load_latest_fundamentals_snapshot(ticker.upper(), db)
+    return build_events_expectations_from_snapshot(
+        ticker,
+        snapshot,
+        payload,
+        reference_date,
+    )

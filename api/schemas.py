@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 
@@ -83,6 +83,47 @@ class StockDataResponse(BaseModel):
     historical_data: List[HistoricalDataPointModel]
     historical_financials: List[HistoricalFinancialPointModel]
     valuation_metrics: Optional[ValuationMetricsModel] = None
+
+
+class MarketSnapshotMetricModel(BaseModel):
+    value: Optional[Any] = None
+    unit: Literal[
+        "currency",
+        "integer",
+        "multiple",
+        "number",
+        "percent",
+        "ratio",
+        "date",
+        "text",
+    ]
+    source_date: Optional[date] = None
+    unavailable_reason: Optional[str] = None
+    secondary_value: Optional[float] = None
+    secondary_unit: Optional[Literal["currency", "percent", "number"]] = None
+    percentile: Optional[float] = None
+    percentile_scope: Optional[Literal["industry", "sector"]] = None
+
+
+class MarketSnapshotSourceDatesModel(BaseModel):
+    price: Optional[date] = None
+    screener: Optional[date] = None
+    financials: Optional[date] = None
+    provider: Optional[date] = None
+
+
+class MarketSnapshotCoverageModel(BaseModel):
+    available: int
+    total: int
+    ratio: float
+
+
+class MarketSnapshotResponse(BaseModel):
+    ticker: str
+    currency: Optional[str] = None
+    source_dates: MarketSnapshotSourceDatesModel
+    coverage: MarketSnapshotCoverageModel
+    metrics: Dict[str, MarketSnapshotMetricModel]
 
 
 class StockEventModel(BaseModel):
