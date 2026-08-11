@@ -203,6 +203,13 @@ const formatCompact = (value: number) => new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
 }).format(value);
 
+const parseSnapshotNumber = (value: MarketSnapshotMetric["value"]): number | null => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value !== "string" || value.trim() === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
 export const formatSnapshotValue = (
     value: MarketSnapshotMetric["value"],
     unit: MarketSnapshotMetric["unit"],
@@ -210,16 +217,18 @@ export const formatSnapshotValue = (
 ) => {
     if (value == null || value === "") return "—";
     if (Array.isArray(value)) return value.length ? value.join(" · ") : "—";
-    if (typeof value === "string") return value;
-    if (unit === "percent") return `${value >= 0 ? "" : "−"}${formatNumber(Math.abs(value) * 100, 2)}%`;
-    if (unit === "multiple") return `${formatNumber(value, 2)}×`;
-    if (unit === "ratio") return formatNumber(value, 2);
-    if (unit === "integer") return formatCompact(value);
+    if (unit === "text" || unit === "date") return String(value);
+    const numericValue = parseSnapshotNumber(value);
+    if (numericValue == null) return String(value);
+    if (unit === "percent") return `${numericValue >= 0 ? "" : "−"}${formatNumber(Math.abs(numericValue) * 100, 2)}%`;
+    if (unit === "multiple") return `${formatNumber(numericValue, 2)}×`;
+    if (unit === "ratio") return formatNumber(numericValue, 2);
+    if (unit === "integer") return formatCompact(numericValue);
     if (unit === "currency") {
-        const formatted = Math.abs(value) >= 1_000_000 ? formatCompact(Math.abs(value)) : formatNumber(Math.abs(value), 2);
-        return `${value < 0 ? "−" : ""}${currencySymbol(currency)}${formatted}`;
+        const formatted = Math.abs(numericValue) >= 1_000_000 ? formatCompact(Math.abs(numericValue)) : formatNumber(Math.abs(numericValue), 2);
+        return `${numericValue < 0 ? "−" : ""}${currencySymbol(currency)}${formatted}`;
     }
-    return formatNumber(value, 2);
+    return formatNumber(numericValue, 2);
 };
 
 const formatSecondary = (metric: MarketSnapshotMetric, currency: string | null) => {
@@ -237,7 +246,7 @@ const MetricRow = ({
     currency: string | null;
 }) => {
     const value = metric?.value ?? null;
-    const numericValue = typeof value === "number" ? value : null;
+    const numericValue = parseSnapshotNumber(value);
     const signed = SIGNED_FIELDS.has(definition.key) && numericValue != null && numericValue !== 0;
     const valueClass = signed
         ? numericValue > 0

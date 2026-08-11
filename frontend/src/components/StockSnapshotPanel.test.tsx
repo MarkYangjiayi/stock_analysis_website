@@ -33,6 +33,7 @@ const data: MarketSnapshotResponse = {
     metrics: {
         market_cap: metric(107_060_000_000, "currency"),
         forward_pe: metric(180.57, "multiple", { percentile: 4, percentile_scope: "industry" }),
+        eps_growth_next_year: metric("0.4534000000", "percent"),
         operating_margin: metric(-0.0788, "percent"),
         performance_1w: metric(0.0763, "percent"),
         pe_ratio: metric(null, "multiple"),
@@ -47,6 +48,10 @@ describe("StockSnapshotPanel", () => {
         expect(formatSnapshotValue(107_060_000_000, "currency", "USD")).toBe("$107.06B");
         expect(formatSnapshotValue(42.61, "multiple", "USD")).toBe("42.61×");
         expect(formatSnapshotValue(-0.0788, "percent", "USD")).toBe("−7.88%");
+        expect(formatSnapshotValue("0.4534000000", "percent", "USD")).toBe("45.34%");
+        expect(formatSnapshotValue("0.1360915781", "percent", "USD")).toBe("13.61%");
+        expect(formatSnapshotValue("35.3400000000", "multiple", "USD")).toBe("35.34×");
+        expect(formatSnapshotValue("Nasdaq-100", "text", "USD")).toBe("Nasdaq-100");
         expect(formatSnapshotValue(null, "number", "USD")).toBe("—");
     });
 
@@ -68,6 +73,7 @@ describe("StockSnapshotPanel", () => {
         expect(screen.getByText("7.63%")).toHaveClass("text-emerald-600");
         expect(screen.getByText("−7.88%")).toHaveClass("text-rose-500");
         expect(screen.getByText("180.57×")).not.toHaveClass("text-rose-500");
+        expect(screen.getByText("45.34%")).toHaveClass("text-emerald-600");
     });
 
     it("allows mobile groups to expand and keeps desktop content mounted", async () => {
