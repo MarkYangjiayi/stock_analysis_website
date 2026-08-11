@@ -191,7 +191,11 @@ async def _seed_complete_snapshot(db_session):
         "EODHD",
         "fundamentals",
         {
-            "Highlights": {"EarningsShare": 2.5, "DividendShare": 1.0},
+            "Highlights": {
+                "MarketCapitalization": 9_999,
+                "EarningsShare": 2.5,
+                "DividendShare": 1.0,
+            },
             "SplitsDividends": {"ExDividendDate": as_of.isoformat()},
             "Earnings": {
                 "Trend": {
@@ -216,6 +220,8 @@ async def test_market_snapshot_aggregates_local_sources(db_session):
     assert result["ticker"] == "AAA.US"
     assert result["source_dates"]["screener"] == as_of
     assert result["metrics"]["index_membership"]["value"] == ["S&P 500"]
+    assert result["metrics"]["market_cap"]["value"] == pytest.approx(1_000)
+    assert result["metrics"]["market_cap"]["source_date"] == as_of
     assert result["metrics"]["sales_ttm"]["value"] == pytest.approx(400)
     assert result["metrics"]["net_income_ttm"]["value"] == pytest.approx(40)
     assert result["metrics"]["enterprise_value"]["value"] == pytest.approx(950)
@@ -228,7 +234,7 @@ async def test_market_snapshot_aggregates_local_sources(db_session):
     assert result["metrics"]["change"]["value"] == pytest.approx(latest_price / (latest_price - 0.1) - 1)
     assert result["metrics"]["change"]["source_date"] == as_of
     assert result["metrics"]["eps_next_quarter"]["value"] == pytest.approx(0.8)
-    assert result["metrics"]["eps_growth_this_year"]["unavailable_reason"] == "The latest published Screener snapshot does not contain this value."
+    assert "local provider fundamentals" in result["metrics"]["eps_growth_this_year"]["unavailable_reason"]
     assert result["coverage"]["available"] > 40
 
     async with AsyncClient(
@@ -257,8 +263,202 @@ async def test_market_snapshot_normalizes_legacy_screener_values(db_session):
 
     result = await get_market_snapshot("AAA", db_session)
 
-    for key in ("pe_ratio", "quick_ratio", "ps_ratio", "target_price", "rsi_14"):
+    for key in ("pe_ratio", "quick_ratio", "ps_ratio", "target_price"):
         assert result["metrics"][key]["value"] is None
+    assert result["metrics"]["rsi_14"]["value"] == pytest.approx(100)
+
+
+@pytest.mark.asyncio
+async def test_market_snapshot_fills_off_universe_ticker_from_local_sources(db_session):
+    as_of = date(2026, 1, 2)
+    run = PipelineRun(
+        pipeline_name="screener",
+        target_date=as_of,
+        status="published",
+        stage="published",
+        version="v1",
+    )
+    db_session.add_all([
+        Ticker(
+            ticker="MELI.US",
+            name="MercadoLibre",
+            exchange="NASDAQ",
+            sector="Consumer Cyclical",
+            industry="Internet Retail",
+            currency="USD",
+        ),
+        Ticker(ticker="SPY.US", name="SPDR S&P 500 ETF", currency="USD"),
+        run,
+    ])
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset="screener",
+        as_of_date=as_of,
+        pipeline_run_id=run.id,
+        status="published",
+    ))
+    for index in range(20):
+        db_session.add(StockScreenerSnapshot(
+            ticker=f"PEER{index}.US",
+            name=f"Peer {index}",
+            date=as_of,
+            exchange="NASDAQ",
+            sector="Consumer Cyclical",
+            industry="Internet Retail",
+            pe_ratio=10 + index,
+            close=100,
+            volume=1_000,
+        ))
+
+    start = as_of - timedelta(days=259)
+    for index in range(260):
+        observed = start + timedelta(days=index)
+        close = 1_500 + index
+        db_session.add_all([
+            DailyPrice(
+                ticker="MELI.US",
+                date=observed,
+                open=close - 1,
+                high=close + 2,
+                low=close - 2,
+                close=close,
+                adjusted_close=close,
+                volume=1_000_000 + index,
+            ),
+            DailyPrice(
+                ticker="SPY.US",
+                date=observed,
+                open=500 + index / 10,
+                high=501 + index / 10,
+                low=499 + index / 10,
+                close=500 + index / 10,
+                adjusted_close=500 + index / 10,
+                volume=10_000_000,
+            ),
+        ])
+
+    for fiscal_date in (
+        date(2025, 12, 31),
+        date(2025, 9, 30),
+        date(2025, 6, 30),
+        date(2025, 3, 31),
+    ):
+        db_session.add(FinancialStatement(
+            ticker="MELI.US",
+            fiscal_date=fiscal_date,
+            period="Quarterly",
+            revenue=5_000,
+            net_income=500,
+            income_statement={
+                "totalRevenue": 5_000,
+                "grossProfit": 2_500,
+                "operatingIncome": 800,
+                "netIncome": 500,
+            },
+            balance_sheet={
+                "cashAndShortTermInvestments": 8_000,
+                "shortLongTermDebtTotal": 4_000,
+                "totalStockholderEquity": 20_000,
+                "commonStockSharesOutstanding": 50,
+            },
+            cash_flow={"freeCashFlow": 400},
+        ))
+
+    await persist_snapshot(
+        db_session,
+        "EODHD",
+        "fundamentals",
+        {
+            "General": {
+                "Exchange": "NASDAQ",
+                "CountryName": "Uruguay",
+                "IPODate": "2007-08-10",
+            },
+            "Highlights": {
+                "MarketCapitalization": 100_000,
+                "PERatio": 20,
+                "PEGRatio": 1.5,
+                "RevenueTTM": 20_000,
+                "GrossProfitTTM": 10_000,
+                "OperatingMarginTTM": 0.16,
+                "ProfitMargin": 0.10,
+                "ReturnOnAssetsTTM": 0.12,
+                "ReturnOnEquityTTM": 0.25,
+                "EarningsShare": 50,
+                "QuarterlyRevenueGrowthYOY": 0.30,
+            },
+            "Valuation": {
+                "ForwardPE": 18,
+                "PriceBookMRQ": 5,
+                "PriceSalesTTM": 5,
+                "EnterpriseValueEbitda": 15,
+                "EnterpriseValueRevenue": 4.8,
+            },
+            "SharesStats": {
+                "SharesOutstanding": 50,
+                "SharesFloat": 45,
+                "ShortPercentFloat": 0.02,
+                "PercentInsiders": 8,
+                "PercentInstitutions": 75,
+            },
+            "AnalystRatings": {"Rating": 1.7, "TargetPrice": 2_100},
+            "Financials": {
+                "Balance_Sheet": {"quarterly": {"2025-12-31": {
+                    "cashAndShortTermInvestments": 8_000,
+                    "totalCurrentAssets": 12_000,
+                    "totalCurrentLiabilities": 6_000,
+                    "inventory": 1_000,
+                    "totalStockholderEquity": 20_000,
+                    "longTermDebtTotal": 3_000,
+                    "shortLongTermDebtTotal": 4_000,
+                    "netInvestedCapital": 25_000,
+                }}},
+                "Income_Statement": {"quarterly": {
+                    fiscal_date.isoformat(): {
+                        "totalRevenue": 5_000,
+                        "grossProfit": 2_500,
+                        "operatingIncome": 800,
+                        "netIncome": 500,
+                        "ebit": 800,
+                        "incomeTaxExpense": 200,
+                        "incomeBeforeTax": 1_000,
+                    }
+                    for fiscal_date in (
+                        date(2025, 12, 31),
+                        date(2025, 9, 30),
+                        date(2025, 6, 30),
+                        date(2025, 3, 31),
+                    )
+                }},
+                "Cash_Flow": {"quarterly": {
+                    fiscal_date.isoformat(): {"freeCashFlow": 400}
+                    for fiscal_date in (
+                        date(2025, 12, 31),
+                        date(2025, 9, 30),
+                        date(2025, 6, 30),
+                        date(2025, 3, 31),
+                    )
+                }},
+            },
+        },
+        as_of_date=as_of,
+        details={"ticker": "MELI.US"},
+    )
+    await db_session.commit()
+
+    result = await get_market_snapshot("MELI", db_session)
+
+    assert result["metrics"]["index_membership"]["value"] is None
+    assert result["metrics"]["market_cap"]["value"] == pytest.approx(100_000)
+    assert result["metrics"]["market_cap"]["source_date"] == result["source_dates"]["provider"]
+    assert result["metrics"]["forward_pe"]["value"] == pytest.approx(18)
+    assert result["metrics"]["operating_margin"]["value"] == pytest.approx(0.16)
+    assert result["metrics"]["shares_float"]["value"] == 45
+    assert result["metrics"]["sales_ttm"]["value"] == pytest.approx(20_000)
+    assert result["metrics"]["performance_1m"]["value"] is not None
+    assert result["metrics"]["rsi_14"]["value"] is not None
+    assert result["metrics"]["pe_ratio"]["percentile_scope"] == "industry"
+    assert result["coverage"]["available"] > 35
 
 
 @pytest.mark.asyncio

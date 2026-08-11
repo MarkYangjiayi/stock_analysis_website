@@ -521,7 +521,7 @@ async def test_bulk_screener_rejects_partial_target_universe(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_bulk_screener_includes_russell1000_in_russell3000_target(monkeypatch):
+async def test_bulk_screener_unions_russell3000_and_nasdaq100_without_duplicates(monkeypatch):
     from services.screener_sync import fetch_and_merge_bulk_data
 
     @asynccontextmanager
@@ -533,9 +533,10 @@ async def test_bulk_screener_includes_russell1000_in_russell3000_target(monkeypa
             "GSPC.INDX": ["SP0.US", "SP1.US"],
             "RUI.INDX": ["NET.US", "R10.US"],
             "RUT.INDX": ["R20.US", "R21.US"],
+            "NDX.INDX": ["MELI.US", "NET.US"],
         }[index_ticker]
 
-    tickers = ["SP0", "SP1", "NET", "R10", "R20", "R21", "SPY"]
+    tickers = ["SP0", "SP1", "NET", "R10", "R20", "R21", "MELI", "SPY"]
 
     async def full_bulk(*args, **kwargs):
         return [
@@ -593,6 +594,8 @@ async def test_bulk_screener_includes_russell1000_in_russell3000_target(monkeypa
     frame = await fetch_and_merge_bulk_data("2025-01-02")
 
     assert "NET.US" in set(frame.attrs["target_tickers"])
+    assert "MELI.US" in set(frame.attrs["target_tickers"])
+    assert frame["ticker"].is_unique
     assert set(frame.attrs["russell1000_tickers"]) == {"NET.US", "R10.US"}
     assert set(frame.attrs["russell3000_tickers"]) == {
         "NET.US",
@@ -600,6 +603,8 @@ async def test_bulk_screener_includes_russell1000_in_russell3000_target(monkeypa
         "R20.US",
         "R21.US",
     }
+    assert set(frame.attrs["nasdaq100_tickers"]) == {"MELI.US", "NET.US"}
+    assert "MELI.US" not in set(frame.attrs["russell3000_tickers"])
 
 
 @pytest.mark.asyncio

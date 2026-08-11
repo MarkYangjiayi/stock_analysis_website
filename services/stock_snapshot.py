@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 from typing import Any, Iterable, Sequence
 
+import pandas as pd
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,12 @@ from services.events_expectations import (
     load_latest_fundamentals_snapshot,
 )
 from services.screener_query import latest_published_screener_date
+from services.screener_metrics import (
+    calculate_dividend_growth,
+    calculate_price_metrics,
+    extract_fundamental_metrics,
+    validated_adjusted_returns,
+)
 from services.screener_normalization import normalize_public_screener_values
 from services.security_master import canonicalize_ticker
 from services.universe import (
@@ -173,6 +180,41 @@ def _normalized_screener_snapshot(
     return SimpleNamespace(**values)
 
 
+def _price_frame(rows: Sequence[DailyPrice]) -> pd.DataFrame:
+    return pd.DataFrame([
+        {
+            "date": row.date,
+            "open": row.open,
+            "high": row.high,
+            "low": row.low,
+            "close": row.close,
+            "adjusted_close": row.adjusted_close,
+            "volume": row.volume,
+        }
+        for row in rows
+    ])
+
+
+def _local_price_metrics(
+    price_rows: Sequence[DailyPrice],
+    benchmark_rows: Sequence[DailyPrice],
+) -> dict[str, Any]:
+    if not price_rows:
+        return {}
+    benchmark_returns = None
+    if benchmark_rows and benchmark_rows[-1].date == price_rows[-1].date:
+        benchmark = pd.Series(
+            [_effective_close(row) for row in benchmark_rows],
+            index=pd.to_datetime([row.date for row in benchmark_rows]),
+            dtype="float64",
+        )
+        benchmark_returns = validated_adjusted_returns(benchmark)
+    return calculate_price_metrics(
+        _price_frame(price_rows[-400:]),
+        benchmark_returns,
+    )
+
+
 async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     ticker = canonicalize_ticker(ticker)
 
@@ -207,6 +249,23 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     previous_close = prices[-2][1] if len(prices) >= 2 else None
     change_ratio = _ratio(current_price, previous_close)
     latest_change = change_ratio - 1.0 if change_ratio is not None else None
+
+    benchmark_rows: list[DailyPrice] = []
+    if price_date is not None:
+        if ticker == "SPY.US":
+            benchmark_rows = price_rows[-400:]
+        else:
+            benchmark_result = await db.execute(
+                select(DailyPrice)
+                .where(
+                    DailyPrice.ticker == "SPY.US",
+                    DailyPrice.date <= price_date,
+                    DailyPrice.date >= price_date - timedelta(days=400),
+                )
+                .order_by(DailyPrice.date.asc())
+            )
+            benchmark_rows = list(benchmark_result.scalars().all())
+    local_price_metrics = _local_price_metrics(price_rows, benchmark_rows)
 
     statement_result = await db.execute(
         select(FinancialStatement)
@@ -247,6 +306,57 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     )
     expectations = expectations_data.get("expectations") or []
 
+    provider_fundamentals = extract_fundamental_metrics(payload) if payload else {}
+    fallback_values: dict[str, Any] = dict(provider_fundamentals)
+    fallback_source_dates: dict[str, date | None] = {
+        key: provider_date for key in provider_fundamentals
+    }
+    for key, value in local_price_metrics.items():
+        fallback_values[key] = value
+        fallback_source_dates[key] = price_date
+    if price_rows:
+        fallback_values.update({
+            "close": current_price,
+            "volume": _safe_float(price_rows[-1].volume),
+        })
+        fallback_source_dates.update({"close": price_date, "volume": price_date})
+
+    dividend_actions = [
+        action
+        for action in actions
+        if action.action_type == "dividend" and action.cash_amount is not None
+    ]
+    if price_date is not None:
+        dividend_growth = calculate_dividend_growth(
+            [(action.ex_date, action.cash_amount) for action in dividend_actions],
+            price_date,
+        )
+        for key, value in dividend_growth.items():
+            fallback_values[key] = value
+            fallback_source_dates[key] = price_date
+
+    effective_values: dict[str, Any] = {}
+    metric_source_dates: dict[str, date | None] = {}
+    snapshot_values = {
+        column.name: getattr(public_snapshot, column.name, None)
+        for column in StockScreenerSnapshot.__table__.columns
+    }
+    for key in set(snapshot_values) | set(fallback_values):
+        snapshot_value = snapshot_values.get(key)
+        if snapshot_value is not None and snapshot_value != "":
+            effective_values[key] = snapshot_value
+            metric_source_dates[key] = screener_date
+        else:
+            effective_values[key] = fallback_values.get(key)
+            metric_source_dates[key] = fallback_source_dates.get(key)
+    effective_values["sector"] = effective_values.get("sector") or (
+        profile.sector if profile else None
+    )
+    effective_values["industry"] = effective_values.get("industry") or (
+        profile.industry if profile else None
+    )
+    effective_snapshot = SimpleNamespace(**effective_values)
+
     membership_labels: list[str] = []
     if screener_date is not None:
         membership_result = await db.execute(
@@ -271,13 +381,17 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
         ]
 
     peer_percentiles: dict[str, tuple[float, str]] = {}
-    if snapshot is not None:
+    if screener_date is not None:
         cohort_filters = []
-        if snapshot.industry:
-            cohort_filters.append(StockScreenerSnapshot.industry == snapshot.industry)
-        if snapshot.sector:
-            cohort_filters.append(StockScreenerSnapshot.sector == snapshot.sector)
-        peers: list[StockScreenerSnapshot] = [snapshot]
+        if effective_values.get("industry"):
+            cohort_filters.append(
+                StockScreenerSnapshot.industry == effective_values["industry"]
+            )
+        if effective_values.get("sector"):
+            cohort_filters.append(
+                StockScreenerSnapshot.sector == effective_values["sector"]
+            )
+        peers: list[StockScreenerSnapshot] = []
         if cohort_filters:
             peer_result = await db.execute(
                 select(StockScreenerSnapshot).where(
@@ -287,7 +401,7 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
             )
             peers = list(peer_result.scalars().all())
         comparison = build_peer_comparison(
-            public_snapshot,
+            effective_snapshot,
             [
                 normalized
                 for peer in peers
@@ -306,18 +420,13 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     debt = _safe_float(balance.get("debt"))
     equity = _safe_float(balance.get("equity"))
     shares = _safe_float(balance.get("shares"))
-    market_cap = _snapshot_value(public_snapshot, "market_cap")
+    market_cap = _snapshot_value(effective_snapshot, "market_cap")
     enterprise_value = (
         market_cap + debt - cash
         if market_cap is not None and debt is not None and cash is not None
         else None
     )
 
-    dividend_actions = [
-        action
-        for action in actions
-        if action.action_type == "dividend" and action.cash_amount is not None
-    ]
     dividend_ttm: float | None = None
     if price_date is not None:
         recent_dividends = [
@@ -327,7 +436,7 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
         ]
         if recent_dividends:
             dividend_ttm = sum(value for value in recent_dividends if value is not None)
-        elif _snapshot_value(public_snapshot, "dividend_yield") == 0:
+        elif _snapshot_value(effective_snapshot, "dividend_yield") == 0:
             dividend_ttm = 0.0
 
     high_low_window = [
@@ -347,76 +456,102 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
         if snapshot is not None
         else "Ticker is not present in the latest published Screener snapshot."
     )
+    fundamental_missing = (
+        "Neither the latest Screener nor the local provider fundamentals "
+        "contain this value."
+    )
     financial_missing = "A complete latest financial statement value is unavailable."
     ttm_missing = "Four contiguous quarterly statements are required for this TTM value."
     provider_missing = "The local provider snapshot does not publish this value."
     price_missing = "Adjusted price history is unavailable."
     history_missing = "The required adjusted price history is not long enough."
 
+    def resolved_value(key: str) -> Any:
+        return getattr(effective_snapshot, key, None)
+
+    def resolved_metric(
+        key: str,
+        unit: str,
+        unavailable_reason: str = fundamental_missing,
+    ) -> Metric:
+        return _metric(
+            resolved_value(key),
+            unit,
+            metric_source_dates.get(key),
+            unavailable_reason,
+        )
+
+    enterprise_dates = [
+        value
+        for value in (metric_source_dates.get("market_cap"), financial_date)
+        if value is not None
+    ]
+    enterprise_date = max(enterprise_dates) if enterprise_dates else None
+
     metrics: dict[str, Metric] = {
         "index_membership": _metric(membership_labels, "text", screener_date, screener_missing),
-        "market_cap": _metric(market_cap, "currency", screener_date, screener_missing),
-        "enterprise_value": _metric(enterprise_value, "currency", financial_date, financial_missing),
+        "market_cap": resolved_metric("market_cap", "currency"),
+        "enterprise_value": _metric(enterprise_value, "currency", enterprise_date, financial_missing),
         "sales_ttm": _metric(ttm.get("revenue"), "currency", financial_date, ttm_missing),
         "net_income_ttm": _metric(ttm.get("net_income"), "currency", financial_date, ttm_missing),
         "book_per_share": _metric(_ratio(equity, shares), "currency", financial_date, financial_missing),
         "cash_per_share": _metric(_ratio(cash, shares), "currency", financial_date, financial_missing),
-        "shares_outstanding": _metric(_snapshot_value(public_snapshot, "shares_outstanding"), "integer", screener_date, screener_missing),
-        "shares_float": _metric(_snapshot_value(public_snapshot, "shares_float"), "integer", screener_date, screener_missing),
-        "short_float": _metric(_snapshot_value(public_snapshot, "short_float"), "percent", screener_date, screener_missing),
-        "ipo_date": _metric(public_snapshot.ipo_date if public_snapshot else None, "date", screener_date, screener_missing),
+        "shares_outstanding": resolved_metric("shares_outstanding", "integer"),
+        "shares_float": resolved_metric("shares_float", "integer"),
+        "short_float": resolved_metric("short_float", "percent"),
+        "ipo_date": resolved_metric("ipo_date", "date"),
         "dividend_estimate": _metric(
             expectations_data.get("annual_dividend_per_share")
             if expectations_data.get("annual_dividend_per_share") is not None
-            else (0.0 if _snapshot_value(public_snapshot, "dividend_yield") == 0 else None),
+            else (0.0 if _snapshot_value(effective_snapshot, "dividend_yield") == 0 else None),
             "currency",
             provider_date,
             provider_missing,
         ),
-        "dividend_ttm": _metric(dividend_ttm, "currency", price_date, provider_missing),
+        "dividend_ttm": _metric(dividend_ttm, "currency", price_date, history_missing),
         "dividend_ex_date": _metric(_parse_date(splits_dividends.get("ExDividendDate")), "date", provider_date, provider_missing),
-        "dividend_growth_3yr": _metric(_snapshot_value(public_snapshot, "dividend_growth_3yr"), "percent", screener_date, screener_missing),
-        "dividend_growth_5yr": _metric(_snapshot_value(public_snapshot, "dividend_growth_5yr"), "percent", screener_date, screener_missing),
-        "payout_ratio": _metric(_snapshot_value(public_snapshot, "payout_ratio"), "percent", screener_date, screener_missing),
-        "current_ratio": _metric(_snapshot_value(public_snapshot, "current_ratio"), "ratio", screener_date, screener_missing),
-        "quick_ratio": _metric(_snapshot_value(public_snapshot, "quick_ratio"), "ratio", screener_date, screener_missing),
-        "debt_to_equity": _metric(_snapshot_value(public_snapshot, "debt_to_equity"), "ratio", screener_date, screener_missing),
-        "lt_debt_to_equity": _metric(_snapshot_value(public_snapshot, "lt_debt_to_equity"), "ratio", screener_date, screener_missing),
-        "pe_ratio": _metric(_snapshot_value(public_snapshot, "pe_ratio"), "multiple", screener_date, "P/E is unavailable when trailing earnings are non-positive or missing."),
-        "forward_pe": _metric(_snapshot_value(public_snapshot, "forward_pe"), "multiple", screener_date, screener_missing),
-        "peg_ratio": _metric(_snapshot_value(public_snapshot, "peg_ratio"), "multiple", screener_date, "PEG requires positive earnings and expected growth."),
-        "ps_ratio": _metric(_snapshot_value(public_snapshot, "ps_ratio"), "multiple", screener_date, screener_missing),
-        "pb_ratio": _metric(_snapshot_value(public_snapshot, "pb_ratio"), "multiple", screener_date, "P/B requires positive book equity."),
-        "price_cash": _metric(_snapshot_value(public_snapshot, "price_cash"), "multiple", screener_date, screener_missing),
-        "price_fcf": _metric(_snapshot_value(public_snapshot, "price_fcf"), "multiple", screener_date, "Price/FCF requires positive free cash flow."),
-        "ev_sales": _metric(_snapshot_value(public_snapshot, "ev_sales"), "multiple", screener_date, screener_missing),
-        "ev_ebitda": _metric(_snapshot_value(public_snapshot, "ev_ebitda"), "multiple", screener_date, "EV/EBITDA requires positive EBITDA."),
+        "dividend_growth_3yr": resolved_metric("dividend_growth_3yr", "percent"),
+        "dividend_growth_5yr": resolved_metric("dividend_growth_5yr", "percent"),
+        "payout_ratio": resolved_metric("payout_ratio", "percent"),
+        "current_ratio": resolved_metric("current_ratio", "ratio"),
+        "quick_ratio": resolved_metric("quick_ratio", "ratio"),
+        "debt_to_equity": resolved_metric("debt_to_equity", "ratio"),
+        "lt_debt_to_equity": resolved_metric("lt_debt_to_equity", "ratio"),
+        "pe_ratio": resolved_metric("pe_ratio", "multiple", "P/E is unavailable when trailing earnings are non-positive or missing."),
+        "forward_pe": resolved_metric("forward_pe", "multiple"),
+        "peg_ratio": resolved_metric("peg_ratio", "multiple", "PEG requires positive earnings and expected growth."),
+        "ps_ratio": resolved_metric("ps_ratio", "multiple"),
+        "pb_ratio": resolved_metric("pb_ratio", "multiple", "P/B requires positive book equity."),
+        "price_cash": resolved_metric("price_cash", "multiple"),
+        "price_fcf": resolved_metric("price_fcf", "multiple", "Price/FCF requires positive free cash flow."),
+        "ev_sales": resolved_metric("ev_sales", "multiple"),
+        "ev_ebitda": resolved_metric("ev_ebitda", "multiple", "EV/EBITDA requires positive EBITDA."),
         "eps_ttm": _metric(_first_value(highlights, "EarningsShare", "DilutedEpsTTM"), "currency", provider_date, provider_missing),
         "eps_next_quarter": _metric(_expectation_value(expectations, ("0q", "+1q")), "currency", provider_date, provider_missing),
         "eps_next_year": _metric(_expectation_value(expectations, ("+1y",)), "currency", provider_date, provider_missing),
-        "eps_growth_this_year": _metric(_snapshot_value(public_snapshot, "eps_growth_this_year"), "percent", screener_date, screener_missing),
-        "eps_growth_next_year": _metric(_snapshot_value(public_snapshot, "eps_growth_next_year"), "percent", screener_date, screener_missing),
-        "eps_growth_qoq": _metric(_snapshot_value(public_snapshot, "eps_growth_qoq"), "percent", screener_date, screener_missing),
-        "eps_growth_ttm": _metric(_snapshot_value(public_snapshot, "eps_growth_ttm"), "percent", screener_date, screener_missing),
-        "eps_growth_3yr": _metric(_snapshot_value(public_snapshot, "eps_growth_3yr"), "percent", screener_date, screener_missing),
-        "eps_growth_5yr": _metric(_snapshot_value(public_snapshot, "eps_growth_5yr"), "percent", screener_date, screener_missing),
-        "sales_growth_qoq": _metric(_snapshot_value(public_snapshot, "sales_growth_qoq"), "percent", screener_date, screener_missing),
-        "sales_growth_ttm": _metric(_snapshot_value(public_snapshot, "sales_growth_ttm"), "percent", screener_date, screener_missing),
-        "sales_growth_3yr": _metric(_snapshot_value(public_snapshot, "sales_growth_3yr"), "percent", screener_date, screener_missing),
-        "sales_growth_5yr": _metric(_snapshot_value(public_snapshot, "sales_growth_5yr"), "percent", screener_date, screener_missing),
-        "roa": _metric(_snapshot_value(public_snapshot, "roa"), "percent", screener_date, screener_missing),
-        "roe": _metric(_snapshot_value(public_snapshot, "roe"), "percent", screener_date, screener_missing),
-        "roic": _metric(_snapshot_value(public_snapshot, "roic"), "percent", screener_date, screener_missing),
-        "gross_margin": _metric(_snapshot_value(public_snapshot, "gross_margin"), "percent", screener_date, screener_missing),
-        "operating_margin": _metric(_snapshot_value(public_snapshot, "operating_margin"), "percent", screener_date, screener_missing),
-        "net_profit_margin": _metric(_snapshot_value(public_snapshot, "net_profit_margin"), "percent", screener_date, screener_missing),
-        "insider_ownership": _metric(_snapshot_value(public_snapshot, "insider_ownership"), "percent", screener_date, screener_missing),
-        "institutional_ownership": _metric(_snapshot_value(public_snapshot, "institutional_ownership"), "percent", screener_date, screener_missing),
+        "eps_growth_this_year": resolved_metric("eps_growth_this_year", "percent"),
+        "eps_growth_next_year": resolved_metric("eps_growth_next_year", "percent"),
+        "eps_growth_qoq": resolved_metric("eps_growth_qoq", "percent"),
+        "eps_growth_ttm": resolved_metric("eps_growth_ttm", "percent"),
+        "eps_growth_3yr": resolved_metric("eps_growth_3yr", "percent"),
+        "eps_growth_5yr": resolved_metric("eps_growth_5yr", "percent"),
+        "sales_growth_qoq": resolved_metric("sales_growth_qoq", "percent"),
+        "sales_growth_ttm": resolved_metric("sales_growth_ttm", "percent"),
+        "sales_growth_3yr": resolved_metric("sales_growth_3yr", "percent"),
+        "sales_growth_5yr": resolved_metric("sales_growth_5yr", "percent"),
+        "roa": resolved_metric("roa", "percent"),
+        "roe": resolved_metric("roe", "percent"),
+        "roic": resolved_metric("roic", "percent"),
+        "gross_margin": resolved_metric("gross_margin", "percent"),
+        "operating_margin": resolved_metric("operating_margin", "percent"),
+        "net_profit_margin": resolved_metric("net_profit_margin", "percent"),
+        "insider_ownership": resolved_metric("insider_ownership", "percent"),
+        "institutional_ownership": resolved_metric("institutional_ownership", "percent"),
     }
 
     for period in ("1w", "1m", "3m", "6m", "ytd", "1yr"):
         key = f"performance_{period}"
-        metrics[key] = _metric(_snapshot_value(public_snapshot, key), "percent", screener_date, history_missing)
+        metrics[key] = resolved_metric(key, "percent", history_missing)
     for years in (3, 5, 10):
         metrics[f"performance_{years}yr"] = _metric(
             _performance_for_years(prices, years),
@@ -425,16 +560,17 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
             history_missing,
         )
 
-    technical_price = _snapshot_value(public_snapshot, "close")
+    technical_price = _snapshot_value(effective_snapshot, "close")
     if technical_price is None:
         technical_price = current_price
     for period in (20, 50, 200):
-        ma_value = _snapshot_value(public_snapshot, f"ma{period}")
+        ma_key = f"ma{period}"
+        ma_value = _snapshot_value(effective_snapshot, ma_key)
         distance = _ratio(technical_price, ma_value)
         metrics[f"sma{period}_distance"] = _metric(
             distance - 1.0 if distance is not None else None,
             "percent",
-            screener_date,
+            metric_source_dates.get(ma_key),
             history_missing,
             secondary_value=ma_value,
             secondary_unit="currency",
@@ -443,19 +579,19 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     metrics.update({
         "high_52w": _metric(high_52w, "currency", price_date, history_missing, secondary_value=high_52w_distance, secondary_unit="percent"),
         "low_52w": _metric(low_52w, "currency", price_date, history_missing, secondary_value=low_52w_distance, secondary_unit="percent"),
-        "volatility_1w": _metric(_snapshot_value(public_snapshot, "volatility_1w"), "percent", screener_date, history_missing),
-        "volatility_1m": _metric(_snapshot_value(public_snapshot, "volatility_1m"), "percent", screener_date, history_missing),
-        "atr_14": _metric(_snapshot_value(public_snapshot, "atr_14"), "currency", screener_date, history_missing),
-        "rsi_14": _metric(_snapshot_value(public_snapshot, "rsi_14"), "number", screener_date, history_missing),
-        "beta_1yr": _metric(_snapshot_value(public_snapshot, "beta_1yr"), "number", screener_date, history_missing),
-        "relative_volume": _metric(_snapshot_value(public_snapshot, "relative_volume"), "ratio", screener_date, history_missing),
-        "average_volume_3m": _metric(_snapshot_value(public_snapshot, "average_volume_3m"), "integer", screener_date, history_missing),
-        "volume": _metric(_snapshot_value(public_snapshot, "volume"), "integer", screener_date, history_missing),
+        "volatility_1w": resolved_metric("volatility_1w", "percent", history_missing),
+        "volatility_1m": resolved_metric("volatility_1m", "percent", history_missing),
+        "atr_14": resolved_metric("atr_14", "currency", history_missing),
+        "rsi_14": resolved_metric("rsi_14", "number", history_missing),
+        "beta_1yr": resolved_metric("beta_1yr", "number", history_missing),
+        "relative_volume": resolved_metric("relative_volume", "ratio", history_missing),
+        "average_volume_3m": resolved_metric("average_volume_3m", "integer", history_missing),
+        "volume": resolved_metric("volume", "integer", history_missing),
         "prev_close": _metric(previous_close, "currency", price_date, price_missing),
         "price": _metric(current_price, "currency", price_date, price_missing),
         "change": _metric(latest_change, "percent", price_date, price_missing),
-        "analyst_recommendation": _metric(_snapshot_value(public_snapshot, "analyst_recommendation"), "number", screener_date, screener_missing),
-        "target_price": _metric(_snapshot_value(public_snapshot, "target_price"), "currency", screener_date, screener_missing),
+        "analyst_recommendation": resolved_metric("analyst_recommendation", "number"),
+        "target_price": resolved_metric("target_price", "currency"),
     })
 
     for key, (percentile, scope) in peer_percentiles.items():

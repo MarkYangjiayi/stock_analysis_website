@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     PIPELINE_MIN_SP500_SIZE: int = 400
     PIPELINE_MIN_RUSSELL1000_SIZE: int = 800
     PIPELINE_MIN_RUSSELL2000_SIZE: int = 1500
+    PIPELINE_MIN_NASDAQ100_SIZE: int = 90
     PROFILE_MAX_STALENESS_DAYS: int = 7
 
     @property

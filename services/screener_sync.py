@@ -28,6 +28,7 @@ from services.universe import (
     SCREENER_INDEX_LABELS,
     SCREENER_INDEX_UNIVERSES,
     SCREENER_UNIVERSE,
+    RUSSELL3000_UNIVERSE,
     record_universe_membership,
 )
 from services.raw_store import persist_snapshot
@@ -154,7 +155,7 @@ async def fetch_target_universe_fundamentals(
     symbols = sorted(tickers)
     total_tasks = len(symbols)
     # Fundamental payloads are large. Bound the retained raw batch so a full
-    # Russell 3000 run cannot grow into multi-gigabyte process memory.
+    # The broad screener run cannot grow into multi-gigabyte process memory.
     chunk_size = 100
     for i in range(0, total_tasks, chunk_size):
         await asyncio.gather(*(fetch_single(ticker) for ticker in symbols[i:i+chunk_size]))
@@ -203,13 +204,16 @@ async def fetch_and_merge_bulk_data(
     ] = None,
 ) -> pd.DataFrame:
     """
-    1. Fetch Index Constituents for S&P 500, Russell 1000 and Russell 2000.
+    1. Fetch Index Constituents for S&P 500, Russell 1000, Russell 2000 and Nasdaq-100.
     2. Concurrently fetch bulk EOD closing prices for all US stocks.
-    3. Filter bulk prices to the deduplicated Russell 3000 target universe.
+    3. Filter bulk prices to the deduplicated Russell 3000 + Nasdaq-100 universe.
     4. Concurrently fetch detailed fundamentals for the target constituents INDIVIDUALLY to save costs.
     5. Merge and return.
     """
-    logger.info("Fetching target index universes (S&P 500, Russell 1000 and Russell 2000)...")
+    logger.info(
+        "Fetching target index universes (S&P 500, Russell 1000, "
+        "Russell 2000 and Nasdaq-100)..."
+    )
 
     async with eodhd_client.create_http_client() as client:
         index_tickers: dict[str, list[str]] = {
@@ -234,6 +238,7 @@ async def fetch_and_merge_bulk_data(
                 "SP500": settings.PIPELINE_MIN_SP500_SIZE,
                 "RUSSELL1000": settings.PIPELINE_MIN_RUSSELL1000_SIZE,
                 "RUSSELL2000": settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+                "NASDAQ100": settings.PIPELINE_MIN_NASDAQ100_SIZE,
             }
             for universe, tickers in index_tickers.items():
                 _validate_index_components(
@@ -250,7 +255,11 @@ async def fetch_and_merge_bulk_data(
             delisted_codes = _extract_delisted_codes(delisted_rows)
             target_tickers = set().union(*(set(tickers) for tickers in index_tickers.values()))
         target_tickers = {ticker.upper() for ticker in target_tickers}
-        logger.info(f"Total unique target tickers from the Russell 3000 universe: {len(target_tickers)}")
+        logger.info(
+            "Total unique target tickers from the Russell 3000 + Nasdaq-100 "
+            "universe: %s",
+            len(target_tickers),
+        )
 
         # Fetch the daily market batch and matching corporate actions. Each is
         # one exchange-wide request, avoiding thousands of per-symbol calls.
@@ -302,6 +311,7 @@ async def fetch_and_merge_bulk_data(
                 "SP500": settings.PIPELINE_MIN_SP500_SIZE,
                 "RUSSELL1000": settings.PIPELINE_MIN_RUSSELL1000_SIZE,
                 "RUSSELL2000": settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+                "NASDAQ100": settings.PIPELINE_MIN_NASDAQ100_SIZE,
             }
             for universe, tickers in index_tickers.items():
                 _validate_index_components(
@@ -403,6 +413,7 @@ async def fetch_and_merge_bulk_data(
                 "SP500": settings.PIPELINE_MIN_SP500_SIZE,
                 "RUSSELL1000": settings.PIPELINE_MIN_RUSSELL1000_SIZE,
                 "RUSSELL2000": settings.PIPELINE_MIN_RUSSELL2000_SIZE,
+                "NASDAQ100": settings.PIPELINE_MIN_NASDAQ100_SIZE,
             }
             for universe, tickers in index_tickers.items():
                 _validate_index_components(
@@ -431,7 +442,8 @@ async def fetch_and_merge_bulk_data(
             {ticker.upper() for ticker in known_exits_by_index[universe]}
         )
     df_merged.attrs["russell3000_known_exits"] = sorted(
-        {ticker.upper() for ticker in known_exits}
+        set(df_merged.attrs["russell1000_known_exits"])
+        | set(df_merged.attrs["russell2000_known_exits"])
     )
     df_merged.attrs["priced_tickers"] = sorted(priced_tickers)
     df_merged.attrs["universe_coverage"] = universe_coverage
@@ -642,6 +654,8 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         sp500_universe = set(df_merged.attrs.get("sp500_tickers", []))
         russell1000_universe = set(df_merged.attrs.get("russell1000_tickers", []))
         russell2000_universe = set(df_merged.attrs.get("russell2000_tickers", []))
+        russell3000_universe = set(df_merged.attrs.get("russell3000_tickers", []))
+        nasdaq100_universe = set(df_merged.attrs.get("nasdaq100_tickers", []))
         known_exits = set(df_merged.attrs.get("known_exits", []))
         sp500_known_exits = set(df_merged.attrs.get("sp500_known_exits", []))
         russell1000_known_exits = set(
@@ -649,6 +663,12 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         )
         russell2000_known_exits = set(
             df_merged.attrs.get("russell2000_known_exits", [])
+        )
+        russell3000_known_exits = set(
+            df_merged.attrs.get("russell3000_known_exits", [])
+        )
+        nasdaq100_known_exits = set(
+            df_merged.attrs.get("nasdaq100_known_exits", [])
         )
         bulk_splits = list(df_merged.attrs.get("bulk_splits", []))
         bulk_dividends = list(df_merged.attrs.get("bulk_dividends", []))
@@ -997,6 +1017,17 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 known_exits=known_exits,
                 source=LIVE_UNIVERSE_SOURCE,
             )
+            if russell3000_universe:
+                await record_universe_membership(
+                    db,
+                    universe=RUSSELL3000_UNIVERSE,
+                    tickers=russell3000_universe,
+                    effective_date=snapshot_date,
+                    source_run_id=run_id,
+                    minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                    known_exits=russell3000_known_exits,
+                    source=LIVE_UNIVERSE_SOURCE,
+                )
             # Preserve the provider's live index sets for Screener filters under
             # a separate source. Market breadth and historical backtests select
             # only HISTORICAL_UNIVERSE_SOURCE, so these observations can never
@@ -1032,6 +1063,17 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                     source_run_id=run_id,
                     minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
                     known_exits=russell2000_known_exits,
+                    source=LIVE_UNIVERSE_SOURCE,
+                )
+            if nasdaq100_universe:
+                await record_universe_membership(
+                    db,
+                    universe="NASDAQ100",
+                    tickers=nasdaq100_universe,
+                    effective_date=snapshot_date,
+                    source_run_id=run_id,
+                    minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,
+                    known_exits=nasdaq100_known_exits,
                     source=LIVE_UNIVERSE_SOURCE,
                 )
             
