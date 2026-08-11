@@ -1436,6 +1436,7 @@ async def test_pinned_latest_legacy_snapshot_remains_queryable(db_session):
 
     metadata = await get_screener_metadata(db_session)
     assert metadata["as_of_date"] == snapshot_date.isoformat()
+    assert metadata["universe"] == "RUSSELL3000"
     result = await query_screener({
         "as_of_date": snapshot_date.isoformat(),
         "columns": [],

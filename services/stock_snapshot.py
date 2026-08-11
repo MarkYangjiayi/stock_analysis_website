@@ -297,6 +297,7 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     raw_snapshot, payload = await load_latest_fundamentals_snapshot(ticker, db)
     payload = payload or {}
     highlights = payload.get("Highlights") or {}
+    valuation = payload.get("Valuation") or {}
     splits_dividends = payload.get("SplitsDividends") or {}
     provider_date = raw_snapshot.fetched_at.date() if raw_snapshot and raw_snapshot.fetched_at else None
     expectations_data = build_events_expectations_from_snapshot(
@@ -417,15 +418,12 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
     cash = _safe_float(balance.get("cash_and_short_term_investments"))
     if cash is None:
         cash = _safe_float(balance.get("cash"))
-    debt = _safe_float(balance.get("debt"))
     equity = _safe_float(balance.get("equity"))
     shares = _safe_float(balance.get("shares"))
-    market_cap = _snapshot_value(effective_snapshot, "market_cap")
-    enterprise_value = (
-        market_cap + debt - cash
-        if market_cap is not None and debt is not None and cash is not None
-        else None
-    )
+    # Provider EV is already currency-consistent. Do not combine a US trading
+    # currency market cap with statement balances whose reporting currency is
+    # not retained in FinancialStatement (a common ADR failure mode).
+    enterprise_value = _first_value(valuation, "EnterpriseValue")
 
     dividend_ttm: float | None = None
     if price_date is not None:
@@ -481,17 +479,15 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
             unavailable_reason,
         )
 
-    enterprise_dates = [
-        value
-        for value in (metric_source_dates.get("market_cap"), financial_date)
-        if value is not None
-    ]
-    enterprise_date = max(enterprise_dates) if enterprise_dates else None
+    enterprise_missing = (
+        "Provider enterprise value is unavailable; it is not derived from "
+        "statement balances without a known reporting currency."
+    )
 
     metrics: dict[str, Metric] = {
         "index_membership": _metric(membership_labels, "text", screener_date, screener_missing),
         "market_cap": resolved_metric("market_cap", "currency"),
-        "enterprise_value": _metric(enterprise_value, "currency", enterprise_date, financial_missing),
+        "enterprise_value": _metric(enterprise_value, "currency", provider_date, enterprise_missing),
         "sales_ttm": _metric(ttm.get("revenue"), "currency", financial_date, ttm_missing),
         "net_income_ttm": _metric(ttm.get("net_income"), "currency", financial_date, ttm_missing),
         "book_per_share": _metric(_ratio(equity, shares), "currency", financial_date, financial_missing),
@@ -560,17 +556,22 @@ async def get_market_snapshot(ticker: str, db: AsyncSession) -> dict[str, Any]:
             history_missing,
         )
 
-    technical_price = _snapshot_value(effective_snapshot, "close")
-    if technical_price is None:
-        technical_price = current_price
     for period in (20, 50, 200):
         ma_key = f"ma{period}"
         ma_value = _snapshot_value(effective_snapshot, ma_key)
+        ma_source_date = metric_source_dates.get(ma_key)
+        close_source_date = metric_source_dates.get("close")
+        if ma_source_date == price_date:
+            technical_price = current_price
+        elif ma_source_date == close_source_date:
+            technical_price = _snapshot_value(effective_snapshot, "close")
+        else:
+            technical_price = None
         distance = _ratio(technical_price, ma_value)
         metrics[f"sma{period}_distance"] = _metric(
             distance - 1.0 if distance is not None else None,
             "percent",
-            metric_source_dates.get(ma_key),
+            ma_source_date,
             history_missing,
             secondary_value=ma_value,
             secondary_unit="currency",

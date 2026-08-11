@@ -196,6 +196,7 @@ async def _seed_complete_snapshot(db_session):
                 "EarningsShare": 2.5,
                 "DividendShare": 1.0,
             },
+            "Valuation": {"EnterpriseValue": 950},
             "SplitsDividends": {"ExDividendDate": as_of.isoformat()},
             "Earnings": {
                 "Trend": {
@@ -248,7 +249,7 @@ async def test_market_snapshot_aggregates_local_sources(db_session):
 
 @pytest.mark.asyncio
 async def test_market_snapshot_normalizes_legacy_screener_values(db_session):
-    await _seed_complete_snapshot(db_session)
+    as_of, latest_price = await _seed_complete_snapshot(db_session)
     snapshot = (
         await db_session.execute(
             select(StockScreenerSnapshot).where(StockScreenerSnapshot.ticker == "AAA.US")
@@ -259,6 +260,7 @@ async def test_market_snapshot_normalizes_legacy_screener_values(db_session):
     snapshot.ps_ratio = 999_999.9999
     snapshot.target_price = 0
     snapshot.rsi_14 = 101
+    snapshot.ma20 = None
     await db_session.commit()
 
     result = await get_market_snapshot("AAA", db_session)
@@ -266,6 +268,11 @@ async def test_market_snapshot_normalizes_legacy_screener_values(db_session):
     for key in ("pe_ratio", "quick_ratio", "ps_ratio", "target_price"):
         assert result["metrics"][key]["value"] is None
     assert result["metrics"]["rsi_14"]["value"] == pytest.approx(100)
+    local_ma20 = sum(100 + index / 10 for index in range(232, 252)) / 20
+    assert result["metrics"]["sma20_distance"]["value"] == pytest.approx(
+        latest_price / local_ma20 - 1
+    )
+    assert result["metrics"]["sma20_distance"]["source_date"] == as_of
 
 
 @pytest.mark.asyncio
@@ -388,6 +395,7 @@ async def test_market_snapshot_fills_off_universe_ticker_from_local_sources(db_s
                 "QuarterlyRevenueGrowthYOY": 0.30,
             },
             "Valuation": {
+                "EnterpriseValue": 104_000,
                 "ForwardPE": 18,
                 "PriceBookMRQ": 5,
                 "PriceSalesTTM": 5,
@@ -452,6 +460,7 @@ async def test_market_snapshot_fills_off_universe_ticker_from_local_sources(db_s
     assert result["metrics"]["market_cap"]["value"] == pytest.approx(100_000)
     assert result["metrics"]["market_cap"]["source_date"] == result["source_dates"]["provider"]
     assert result["metrics"]["forward_pe"]["value"] == pytest.approx(18)
+    assert result["metrics"]["enterprise_value"]["value"] == pytest.approx(104_000)
     assert result["metrics"]["operating_margin"]["value"] == pytest.approx(0.16)
     assert result["metrics"]["shares_float"]["value"] == 45
     assert result["metrics"]["sales_ttm"]["value"] == pytest.approx(20_000)
@@ -459,6 +468,41 @@ async def test_market_snapshot_fills_off_universe_ticker_from_local_sources(db_s
     assert result["metrics"]["rsi_14"]["value"] is not None
     assert result["metrics"]["pe_ratio"]["percentile_scope"] == "industry"
     assert result["coverage"]["available"] > 35
+
+
+@pytest.mark.asyncio
+async def test_market_snapshot_does_not_mix_unknown_statement_currency_into_ev(db_session):
+    as_of = date(2026, 1, 2)
+    db_session.add(Ticker(
+        ticker="FOREIGN.US",
+        name="Foreign ADR",
+        currency="USD",
+    ))
+    db_session.add(FinancialStatement(
+        ticker="FOREIGN.US",
+        fiscal_date=date(2025, 12, 31),
+        period="Quarterly",
+        balance_sheet={
+            "cashAndShortTermInvestments": 1_000_000,
+            "shortLongTermDebtTotal": 2_000_000,
+            "totalStockholderEquity": 3_000_000,
+        },
+    ))
+    await persist_snapshot(
+        db_session,
+        "EODHD",
+        "fundamentals",
+        {"Highlights": {"MarketCapitalization": 100_000}},
+        as_of_date=as_of,
+        details={"ticker": "FOREIGN.US"},
+    )
+    await db_session.commit()
+
+    result = await get_market_snapshot("FOREIGN", db_session)
+
+    assert result["metrics"]["market_cap"]["value"] == pytest.approx(100_000)
+    assert result["metrics"]["enterprise_value"]["value"] is None
+    assert "reporting currency" in result["metrics"]["enterprise_value"]["unavailable_reason"]
 
 
 @pytest.mark.asyncio
