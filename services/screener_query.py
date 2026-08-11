@@ -36,6 +36,7 @@ from services.universe import (
     SCREENER_INDEX_OPTIONS,
     SCREENER_MEMBERSHIP_UNIVERSES,
     SCREENER_UNIVERSE,
+    RUSSELL3000_UNIVERSE,
 )
 
 
@@ -137,6 +138,7 @@ async def latest_published_screener_date(db: AsyncSession) -> date | None:
 async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
     selected_date = await latest_published_screener_date(db)
     total = 0
+    served_universe = RUSSELL3000_UNIVERSE
     coverage: dict[str, float] = {}
     enum_options: dict[str, list[dict[str, str]]] = {}
     if selected_date is not None:
@@ -200,6 +202,8 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                 .group_by(UniverseMembership.universe)
             )
             membership_counts = dict(membership_counts_result.all())
+            if membership_counts.get("NASDAQ100", 0) > 0:
+                served_universe = SCREENER_UNIVERSE
             index_ticker_count_result = await db.execute(
                 select(func.count(func.distinct(UniverseMembership.ticker))).where(*membership_filter)
             )
@@ -240,7 +244,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
     return {
         "as_of_date": selected_date.isoformat() if selected_date else None,
         "freshness": _freshness(selected_date) if selected_date else None,
-        "universe": SCREENER_UNIVERSE,
+        "universe": served_universe,
         "record_count": total,
         "supported_finviz_fields": SUPPORTED_FINVIZ_FIELDS,
         "fields": fields,

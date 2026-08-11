@@ -22,8 +22,24 @@ from services.screener_metrics import (
     extract_fundamental_metrics,
 )
 from services.screener_query import get_screener_metadata, query_screener
-from services.screener_sync import calculate_technicals_locally, refresh_screener_technicals
-from services.universe import HISTORICAL_UNIVERSE_SOURCE, LIVE_UNIVERSE_SOURCE
+from services.screener_sync import (
+    _validate_index_components,
+    calculate_technicals_locally,
+    refresh_screener_technicals,
+)
+from services.universe import (
+    HISTORICAL_UNIVERSE_SOURCE,
+    LIVE_UNIVERSE_SOURCE,
+    SCREENER_INDEXES,
+    SCREENER_UNIVERSE,
+)
+
+
+def test_nasdaq100_is_a_quality_gated_screener_source():
+    assert SCREENER_INDEXES["NASDAQ100"] == "NDX.INDX"
+    assert SCREENER_UNIVERSE == "RUSSELL3000_NASDAQ100"
+    with pytest.raises(ValueError, match="Nasdaq-100 component universe is too small"):
+        _validate_index_components("Nasdaq-100", ["MELI.US"], 2)
 
 
 def test_fundamental_extractor_uses_provider_fields_and_safe_fallbacks():
@@ -1319,9 +1335,24 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
             close=50,
             volume=1_000,
         ),
+        StockScreenerSnapshot(
+            ticker="MELI.US",
+            name="MercadoLibre",
+            date=as_of,
+            exchange="NASDAQ",
+            close=2_000,
+            volume=1_000,
+        ),
         UniverseMembership(
             universe="SP500",
             ticker="AAA.US",
+            effective_from=as_of,
+            source=LIVE_UNIVERSE_SOURCE,
+            source_run_id=run.id,
+        ),
+        UniverseMembership(
+            universe="NASDAQ100",
+            ticker="MELI.US",
             effective_from=as_of,
             source=LIVE_UNIVERSE_SOURCE,
             source_run_id=run.id,
@@ -1351,13 +1382,15 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
     await db_session.commit()
 
     metadata = await get_screener_metadata(db_session)
+    assert metadata["universe"] == "RUSSELL3000_NASDAQ100"
     index_field = next(field for field in metadata["fields"] if field["id"] == "index")
     assert index_field["available"] is True
-    assert index_field["coverage"] == 0.5
+    assert index_field["coverage"] == pytest.approx(2 / 3)
     assert index_field["options"] == [
         {"value": "SP500", "label": "S&P 500"},
         {"value": "RUSSELL1000", "label": "Russell 1000"},
         {"value": "RUSSELL3000", "label": "Russell 3000"},
+        {"value": "NASDAQ100", "label": "Nasdaq-100"},
     ]
 
     result = await query_screener({
@@ -1375,6 +1408,18 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
         assert result["total"] == 1
         assert result["items"][0]["ticker"] == "AAA.US"
 
+    nasdaq_result = await query_screener({
+        "filters": [{"field": "index", "operator": "eq", "value": "NASDAQ100"}],
+        "columns": [],
+    }, db_session)
+    assert nasdaq_result["items"] == [{"ticker": "MELI.US", "name": "MercadoLibre"}]
+
+    russell_result = await query_screener({
+        "filters": [{"field": "index", "operator": "eq", "value": "RUSSELL3000"}],
+        "columns": [],
+    }, db_session)
+    assert all(item["ticker"] != "MELI.US" for item in russell_result["items"])
+
 
 @pytest.mark.asyncio
 async def test_pinned_latest_legacy_snapshot_remains_queryable(db_session):
@@ -1391,6 +1436,7 @@ async def test_pinned_latest_legacy_snapshot_remains_queryable(db_session):
 
     metadata = await get_screener_metadata(db_session)
     assert metadata["as_of_date"] == snapshot_date.isoformat()
+    assert metadata["universe"] == "RUSSELL3000"
     result = await query_screener({
         "as_of_date": snapshot_date.isoformat(),
         "columns": [],

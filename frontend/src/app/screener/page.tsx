@@ -226,7 +226,9 @@ function ScreenerContent() {
                             </div>
                             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Stock Screener</h1>
                             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                Russell 3000 · {metadata?.supported_finviz_fields ?? "—"} Finviz-aligned fields
+                                {metadata?.universe === "RUSSELL3000_NASDAQ100"
+                                    ? "Russell 3000 + Nasdaq-100"
+                                    : "Russell 3000"} · {metadata?.supported_finviz_fields ?? "—"} Finviz-aligned fields
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">

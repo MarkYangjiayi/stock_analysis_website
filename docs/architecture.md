@@ -47,7 +47,7 @@ Legacy `financial_statements` and `stock_screener_snapshot` remain for dashboard
 
 The daily screener pipeline performs these stages:
 
-1. Resolve the observed Russell 3000 universe (Russell 1000 + Russell 2000), retaining S&P 500 membership as a live filter label.
+1. Resolve the observed Russell 3000 + Nasdaq-100 union, retaining each source index (including the derived Russell 3000) as a distinct live filter label.
 2. Fetch EOD prices and fundamentals; store the immutable source batch.
 3. Record security identity, universe intervals and fundamental availability/revisions.
 4. Upsert prices and current screener rows idempotently.
@@ -57,6 +57,8 @@ The daily screener pipeline performs these stages:
 8. Compute and publish the `lfq-v1` factor cross-section in a separate tracked run.
 
 Failures are persisted and re-raised so APScheduler does not report false success. API reads prefer the latest `data_publications` row. Historical Screener reconstruction is refused unless an archived point-in-time source payload is explicitly imported; current fundamentals are never relabeled as historical.
+
+The single-security Market Snapshot uses the published Screener row when present, then fills missing values from the latest local fundamentals, financial statements, corporate actions and adjusted price history. A ticker does not need to belong to the Screener universe; membership is required only for index labels and cross-sectional peer context.
 
 The market-overview pipeline currently imports EODHD `HistoricalTickerComponents` for GSPC, validates complete non-overlapping intervals, and transactionally replaces only provider-owned index history. It publishes S&P 500 breadth from each date's active members. Russell 2000 and the deduplicated combined universe remain explicitly disabled until a reliable strict historical membership source is available; live constituents are never substituted. A publication requires matching `price_history`, `universe_history`, and `rrg_price_history` dates; a failed quality gate leaves the prior complete market snapshot available as stale. RRG snapshots referenced by retained market publications are protected from independent RRG retention cleanup.
 

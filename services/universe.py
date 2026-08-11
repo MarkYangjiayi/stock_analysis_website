@@ -27,7 +27,7 @@ HISTORICAL_UNIVERSE_SOURCE = "EODHD HistoricalTickerComponents"
 LIVE_UNIVERSE_SOURCE = "EODHD Live Index Components"
 HISTORICAL_UNIVERSE_REQUIRED_SESSIONS = 252
 # Strict point-in-time history is still limited to the indexes below. The live
-# screener uses the broader Russell 3000 constituent union defined separately.
+# screener uses a broader live Russell 3000 + Nasdaq-100 union defined separately.
 INDEX_UNIVERSES = {
     "SP500": "GSPC.INDX",
     "RUSSELL2000": "RUT.INDX",
@@ -40,21 +40,27 @@ MARKET_OVERVIEW_HISTORY_INDEXES = {
 }
 
 # The Screener is a current cross-sectional product, so it can use EODHD's
-# live index component payload. Russell 1000 + Russell 2000 is the Russell
-# 3000 broad-market universe; S&P 500 is retained as a source label/filter.
+# live index component payload. Its serving universe is the union of the
+# Russell 3000 and Nasdaq-100; the underlying indexes remain separate labels.
 SCREENER_INDEXES = {
     "SP500": "GSPC.INDX",
     "RUSSELL1000": "RUI.INDX",
     "RUSSELL2000": "RUT.INDX",
+    "NASDAQ100": "NDX.INDX",
 }
 SCREENER_INDEX_UNIVERSES = tuple(SCREENER_INDEXES)
-SCREENER_UNIVERSE = "RUSSELL3000"
-SCREENER_MEMBERSHIP_UNIVERSES = (*SCREENER_INDEX_UNIVERSES, SCREENER_UNIVERSE)
+RUSSELL3000_UNIVERSE = "RUSSELL3000"
+SCREENER_UNIVERSE = "RUSSELL3000_NASDAQ100"
+SCREENER_MEMBERSHIP_UNIVERSES = (
+    *SCREENER_INDEX_UNIVERSES,
+    RUSSELL3000_UNIVERSE,
+)
 SCREENER_INDEX_OPTIONS = (
     ("SP500", "S&P 500"),
     ("RUSSELL1000", "Russell 1000"),
     ("RUSSELL2000", "Russell 2000"),
-    (SCREENER_UNIVERSE, "Russell 3000"),
+    (RUSSELL3000_UNIVERSE, "Russell 3000"),
+    ("NASDAQ100", "Nasdaq-100"),
 )
 SCREENER_INDEX_LABELS = dict(SCREENER_INDEX_OPTIONS)
 
