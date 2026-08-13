@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy import select, and_, func
 
-from models import StockScreenerSnapshot, DailyPrice, Ticker, CorporateAction
+from models import StockScreenerSnapshot, DailyPrice, Ticker, CorporateAction, SecurityMaster
 from database import engine, async_session_maker
 from services import eodhd_client
 from services.data_quality import DataQualityError, validate_screener_records
@@ -199,6 +199,7 @@ def _materialize_screener_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
 async def fetch_and_merge_bulk_data(
     target_date: str = None,
     target_tickers: set = None,
+    supplemental_tickers: Optional[set[str]] = None,
     fundamental_chunk_handler: Optional[
         Callable[[Dict[str, dict], date], Awaitable[None]]
     ] = None,
@@ -225,6 +226,11 @@ async def fetch_and_merge_bulk_data(
         delisted_codes: set[str] = set()
         known_exits: set[str] = set()
         loaded_index_components = target_tickers is None
+        supplemental_tickers = {
+            str(ticker).strip().upper()
+            for ticker in (supplemental_tickers or set())
+            if str(ticker).strip()
+        }
         if loaded_index_components:
             component_rows = await asyncio.gather(*(
                 eodhd_client.get_index_components(
@@ -254,6 +260,7 @@ async def fetch_and_merge_bulk_data(
             )
             delisted_codes = _extract_delisted_codes(delisted_rows)
             target_tickers = set().union(*(set(tickers) for tickers in index_tickers.values()))
+            target_tickers.update(supplemental_tickers)
         target_tickers = {ticker.upper() for ticker in target_tickers}
         logger.info(
             "Total unique target tickers from the Russell 3000 + Nasdaq-100 "
@@ -320,6 +327,11 @@ async def fetch_and_merge_bulk_data(
                     minimum_sizes[universe],
                 )
             target_tickers = set().union(*(set(tickers) for tickers in index_tickers.values()))
+            target_tickers.update(
+                ticker
+                for ticker in supplemental_tickers
+                if _ticker_code(ticker) not in inactive_delisted_codes
+            )
             logger.info(
                 "Excluded %s delisted index components absent from the current "
                 "price batch; %s active candidates remain.",
@@ -401,6 +413,11 @@ async def fetch_and_merge_bulk_data(
                 known_exits_by_index[universe].update(removed_tickers)
             known_exits.update(non_primary_tickers)
             target_tickers = set().union(*(set(tickers) for tickers in index_tickers.values()))
+            target_tickers.update(
+                ticker
+                for ticker in supplemental_tickers - non_primary_tickers
+                if _ticker_code(ticker) not in inactive_delisted_codes
+            )
             df_merged = df_merged[
                 ~df_merged["ticker"].str.upper().isin(non_primary_tickers)
             ].copy()
@@ -618,6 +635,16 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 "Load an archived point-in-time source payload instead."
             )
 
+        async with async_session_maker() as tracking_db:
+            tracked_result = await tracking_db.execute(
+                select(SecurityMaster.canonical_ticker).where(
+                    SecurityMaster.is_active.is_(True),
+                    SecurityMaster.asset_type == "Common Stock",
+                    SecurityMaster.canonical_ticker.like("%.US"),
+                )
+            )
+            supplemental_tickers = set(tracked_result.scalars().all())
+
         # 1. Fetch cross-sectional daily bulk
         await update_pipeline_run(run_id, "fetching_source_data")
         async def persist_fundamental_chunk(raw_batch: Dict[str, dict], observed_date: date) -> None:
@@ -646,6 +673,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         df_merged = await fetch_and_merge_bulk_data(
             target_date,
             target_tickers=historical_universe,
+            supplemental_tickers=supplemental_tickers,
             fundamental_chunk_handler=persist_fundamental_chunk,
         )
         if df_merged.empty:
@@ -656,6 +684,9 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         russell2000_universe = set(df_merged.attrs.get("russell2000_tickers", []))
         russell3000_universe = set(df_merged.attrs.get("russell3000_tickers", []))
         nasdaq100_universe = set(df_merged.attrs.get("nasdaq100_tickers", []))
+        served_index_universe = russell3000_universe | nasdaq100_universe
+        if not served_index_universe:
+            served_index_universe = target_universe
         known_exits = set(df_merged.attrs.get("known_exits", []))
         sp500_known_exits = set(df_merged.attrs.get("sp500_known_exits", []))
         russell1000_known_exits = set(
@@ -1010,7 +1041,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             await record_universe_membership(
                 db,
                 universe=SCREENER_UNIVERSE,
-                tickers=target_universe,
+                tickers=served_index_universe,
                 effective_date=snapshot_date,
                 source_run_id=run_id,
                 minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,

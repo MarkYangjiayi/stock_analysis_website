@@ -37,10 +37,12 @@ from services.decision_support import (
     _earnings_analysis_evidence,
     build_financial_context,
     build_peer_comparison,
+    build_peer_multiple_distribution,
     calculate_dcf_value,
     calculate_valuation,
     evaluate_fundamental_warnings,
     get_decision_support,
+    get_peer_multiple_distribution,
     midrank_percentile,
     validate_scenarios,
 )
@@ -127,15 +129,18 @@ def test_midrank_percentile_handles_ties():
 def _peer_row(index: int, *, industry: str = "Software", sector: str = "Technology"):
     return StockScreenerSnapshot(
         ticker=f"P{index:02d}.US",
+        name=f"Peer {index:02d}",
         date=date(2025, 6, 30),
         industry=industry,
         sector=sector,
+        market_cap=1_000_000_000 * (index + 1),
         pe_ratio=index + 1,
         forward_pe=index + 2,
         peg_ratio=index / 10 + 0.5,
         ps_ratio=index / 10 + 1,
         pb_ratio=index / 10 + 1,
         price_fcf=index + 3,
+        ev_sales=index / 10 + 1.5,
         ev_ebitda=index + 4,
         debt_to_equity=index / 10,
         sales_growth_ttm=index / 100,
@@ -185,6 +190,158 @@ def test_peer_invalid_multiples_are_excluded_and_sector_fallback_is_used():
     assert pe["sector"]["observation_count"] == 23
     assert pe["summary_scope"] == "sector"
     assert debt["sector"]["observation_count"] == 24
+
+
+def test_peer_multiple_distribution_excludes_target_and_calculates_statistics():
+    rows = [_peer_row(index) for index in range(11)]
+    target = rows[5]
+    result = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ps_ratio",
+        as_of_date=target.date,
+    )
+
+    expected_values = sorted(float(row.ps_ratio) for row in rows if row is not target)
+    assert result["available"] is True
+    assert result["cohort"]["scope"] == "industry"
+    assert result["cohort"]["valid_count"] == 10
+    assert result["distribution"]["mean"] == pytest.approx(sum(expected_values) / 10)
+    assert result["distribution"]["median"] == pytest.approx(1.5)
+    assert result["target"]["raw_percentile"] == pytest.approx(50)
+    assert result["target"]["premium_to_median"] == pytest.approx(0)
+    assert target.ticker not in {peer["ticker"] for peer in result["peers"]}
+
+
+def test_peer_multiple_distribution_auto_fallback_and_explicit_scope():
+    rows = [
+        _peer_row(index, industry="Target" if index < 10 else "Other")
+        for index in range(25)
+    ]
+    target = rows[4]
+    automatic = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ev_sales",
+    )
+    explicit = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ev_sales",
+        scope="industry",
+    )
+
+    assert automatic["available"] is True
+    assert automatic["cohort"]["scope"] == "sector"
+    assert explicit["available"] is False
+    assert explicit["reason"] == "insufficient_industry_coverage"
+
+
+def test_peer_multiple_distribution_excludes_provider_sales_sentinels():
+    rows = [_peer_row(index) for index in range(12)]
+    target = rows[5]
+    rows[0].ps_ratio = 999_999
+    rows[1].ev_sales = 999_999
+
+    ps_result = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ps_ratio",
+    )
+    ev_sales_result = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ev_sales",
+    )
+
+    assert ps_result["cohort"]["valid_count"] == 10
+    assert ev_sales_result["cohort"]["valid_count"] == 10
+    assert all(peer["value"] < 999_999 for peer in ps_result["peers"])
+    target.ps_ratio = 999_999
+    unavailable = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ps_ratio",
+    )
+    assert unavailable["reason"] == "target_metric_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("target", "reason"),
+    [
+        (None, "target_not_in_snapshot"),
+        (_peer_row(1), "target_metric_unavailable"),
+    ],
+)
+def test_peer_multiple_distribution_returns_stable_unavailable_reasons(target, reason):
+    rows = [_peer_row(index) for index in range(25)]
+    if target is not None:
+        target.ps_ratio = 0
+        rows[1] = target
+    result = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker="P01.US",
+        metric_key="ps_ratio",
+    )
+    assert result["available"] is False
+    assert result["reason"] == reason
+
+
+@pytest.mark.asyncio
+async def test_peer_multiple_service_uses_latest_published_snapshot(db_session):
+    snapshot_date = date(2026, 1, 2)
+    run = PipelineRun(
+        pipeline_name="daily_screener",
+        target_date=snapshot_date,
+        status="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset="screener",
+        as_of_date=snapshot_date,
+        pipeline_run_id=run.id,
+        status="published",
+    ))
+    rows = [_peer_row(index) for index in range(12)]
+    for row in rows:
+        row.date = snapshot_date
+    target = rows[5]
+    db_session.add(Ticker(
+        ticker=target.ticker,
+        name=target.name,
+        sector=target.sector,
+        industry=target.industry,
+    ))
+    target.sector = None
+    target.industry = None
+    db_session.add_all(rows)
+    await db_session.commit()
+
+    result = await get_peer_multiple_distribution(
+        rows[5].ticker,
+        db_session,
+        metric_key="ps_ratio",
+    )
+    outside = await get_peer_multiple_distribution(
+        "OUTSIDE.US",
+        db_session,
+        metric_key="ps_ratio",
+    )
+
+    assert result["available"] is True
+    assert result["cohort"]["scope"] == "industry"
+    assert result["as_of_date"] == snapshot_date.isoformat()
+    assert outside["available"] is False
+    assert outside["reason"] == "target_not_in_snapshot"
+    assert outside["as_of_date"] == snapshot_date.isoformat()
 
 
 def _warning_context():
