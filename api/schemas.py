@@ -126,6 +126,72 @@ class MarketSnapshotResponse(BaseModel):
     metrics: Dict[str, MarketSnapshotMetricModel]
 
 
+class PeerMultipleMetricModel(BaseModel):
+    key: Literal[
+        "pe_ratio",
+        "forward_pe",
+        "ps_ratio",
+        "pb_ratio",
+        "price_fcf",
+        "ev_sales",
+        "ev_ebitda",
+    ]
+    label: str
+    format: Literal["multiple"]
+
+
+class PeerMultipleTargetModel(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    value: Optional[float] = None
+    market_cap: Optional[float] = None
+    sales_growth_ttm: Optional[float] = None
+    raw_percentile: Optional[float] = None
+    premium_to_median: Optional[float] = None
+
+
+class PeerMultipleCohortModel(BaseModel):
+    scope: Literal["industry", "sector"]
+    name: Optional[str] = None
+    member_count: int
+    valid_count: int
+    excluded_count: int
+    minimum_observations: int
+
+
+class PeerMultipleDistributionModel(BaseModel):
+    mean: float
+    median: float
+    p10: float
+    p25: float
+    p75: float
+    p90: float
+
+
+class PeerMultipleMemberModel(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    value: float
+    market_cap: Optional[float] = None
+    sales_growth_ttm: Optional[float] = None
+
+
+class PeerMultiplesResponse(BaseModel):
+    available: bool
+    reason: Optional[Literal[
+        "target_not_in_snapshot",
+        "target_metric_unavailable",
+        "insufficient_industry_coverage",
+        "insufficient_sector_coverage",
+    ]] = None
+    metric: PeerMultipleMetricModel
+    as_of_date: Optional[date] = None
+    target: PeerMultipleTargetModel
+    cohort: Optional[PeerMultipleCohortModel] = None
+    distribution: Optional[PeerMultipleDistributionModel] = None
+    peers: List[PeerMultipleMemberModel] = Field(default_factory=list)
+
+
 class StockEventModel(BaseModel):
     id: str
     kind: Literal["earnings", "dividend"]

@@ -15,6 +15,17 @@ from services.screener_normalization import (
 )
 
 
+CORE_VALUATION_MULTIPLES = (
+    "pe_ratio",
+    "forward_pe",
+    "ps_ratio",
+    "pb_ratio",
+    "price_fcf",
+    "ev_sales",
+    "ev_ebitda",
+)
+
+
 @dataclass
 class QualityReport:
     passed: bool
@@ -84,6 +95,15 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
             invalid_numeric_values[field_name] = invalid
     metrics["field_coverage"] = field_coverage
     metrics["invalid_numeric_values"] = invalid_numeric_values
+    multiple_coverage = {
+        field_name: {
+            "valid": sum(record.get(field_name) is not None for record in records),
+            "total": count,
+            "ratio": field_coverage.get(field_name, 0.0),
+        }
+        for field_name in CORE_VALUATION_MULTIPLES
+    }
+    metrics["valuation_multiple_coverage"] = multiple_coverage
     constrained_fields = (
         POSITIVE_MULTIPLE_FIELDS
         | POSITIVE_VALUE_FIELDS
@@ -130,6 +150,24 @@ def validate_screener_records(records: List[dict]) -> QualityReport:
         errors.append(f"price coverage below threshold: {price_coverage:.2%}")
     if metrics["market_cap_coverage"] < settings.PIPELINE_MIN_FUNDAMENTAL_COVERAGE:
         errors.append(f"fundamental coverage below threshold: {metrics['market_cap_coverage']:.2%}")
+    complete_multiple_schema = all(
+        any(field_name in record for record in records)
+        for field_name in CORE_VALUATION_MULTIPLES
+    )
+    empty_multiple_fields = [
+        field_name
+        for field_name, coverage in multiple_coverage.items()
+        if coverage["valid"] == 0
+    ]
+    if (
+        settings.PIPELINE_REQUIRE_MULTIPLE_COVERAGE
+        and complete_multiple_schema
+        and empty_multiple_fields
+    ):
+        errors.append(
+            "valuation multiple coverage is zero: "
+            + ", ".join(empty_multiple_fields)
+        )
     if metrics["ma50_coverage"] < 0.5:
         warnings.append("technical history is still warming up; MA50 coverage below 50%")
     sparse_fields = [

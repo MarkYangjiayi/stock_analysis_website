@@ -19,6 +19,7 @@ from api.schemas import (
     EventsExpectationsResponse,
     MarketSnapshotResponse,
     MarketOverviewResponse,
+    PeerMultiplesResponse,
     StockDataResponse,
 )
 from database import database_ready, get_db
@@ -47,6 +48,7 @@ from services.decision_support import (
     DEFAULT_SCENARIOS,
     calculate_ticker_valuation,
     get_decision_support,
+    get_peer_multiple_distribution,
     validate_scenarios,
 )
 from services.personal_workspace import (
@@ -255,6 +257,35 @@ async def read_decision_support(
         ticker,
         db,
         include_saved_scenarios=include_saved,
+    )
+
+
+@router.get(
+    "/api/stocks/{ticker}/peer-multiples",
+    response_model=PeerMultiplesResponse,
+    tags=["Stocks Decision Support"],
+)
+async def read_peer_multiples(
+    ticker: str,
+    metric: Literal[
+        "pe_ratio",
+        "forward_pe",
+        "ps_ratio",
+        "pb_ratio",
+        "price_fcf",
+        "ev_sales",
+        "ev_ebitda",
+    ] = "ps_ratio",
+    scope: Literal["auto", "industry", "sector"] = "auto",
+    limit: int = Query(10, ge=5, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_peer_multiple_distribution(
+        ticker,
+        db,
+        metric_key=metric,
+        scope=scope,
+        limit=limit,
     )
 
 

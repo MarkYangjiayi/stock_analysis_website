@@ -6,8 +6,13 @@ import type { DecisionSupportResponse, DecisionValuation } from "@/lib/api";
 
 const apiMocks = vi.hoisted(() => ({
     calculateDecisionValuation: vi.fn(),
+    fetchPeerMultiples: vi.fn(),
     savePersonalValuationScenarios: vi.fn(),
     resetPersonalValuationScenarios: vi.fn(),
+}));
+
+vi.mock("echarts-for-react", () => ({
+    default: ({ option }: { option: unknown }) => <div data-testid="peer-multiple-chart">{JSON.stringify(option)}</div>,
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -108,6 +113,17 @@ const warning = {
     evidence_id: "E30",
 };
 
+const peerMultiples = {
+    available: true,
+    reason: null,
+    metric: { key: "ps_ratio" as const, label: "Price / sales", format: "multiple" as const },
+    as_of_date: "2025-12-31",
+    target: { ticker: "AAA.US", name: "Alpha", value: 10, market_cap: 10_000_000_000, sales_growth_ttm: 0.2, raw_percentile: 80, premium_to_median: 1 },
+    cohort: { scope: "industry" as const, name: "Software", member_count: 12, valid_count: 11, excluded_count: 1, minimum_observations: 10 },
+    distribution: { mean: 6, median: 5, p10: 2, p25: 3, p75: 7, p90: 9 },
+    peers: [{ ticker: "BBB.US", name: "Beta", value: 8, market_cap: 9_000_000_000, sales_growth_ttm: 0.15 }],
+};
+
 const decision: DecisionSupportResponse = {
     metadata: {
         ticker: "AAA.US", company_name: "Alpha", currency: "USD", industry: "Software", sector: "Technology",
@@ -147,6 +163,7 @@ describe("DecisionCockpit", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         apiMocks.calculateDecisionValuation.mockResolvedValue(valuation);
+        apiMocks.fetchPeerMultiples.mockResolvedValue(peerMultiples);
         apiMocks.savePersonalValuationScenarios.mockResolvedValue({ ticker: "AAA.US", is_saved: true, scenarios });
         apiMocks.resetPersonalValuationScenarios.mockResolvedValue({ ticker: "AAA.US", is_saved: false, scenarios });
     });
@@ -426,6 +443,7 @@ describe("DecisionCockpit", () => {
         const componentProps = props();
         render(<DecisionCockpit {...componentProps} />);
         await user.click(screen.getByRole("button", { name: "Peer Benchmarks" }));
+        await user.click(screen.getByText("View all peer metrics"));
         await user.click(screen.getByRole("button", { name: "sector" }));
         expect(screen.getByText(/40 valid/)).toBeInTheDocument();
 
@@ -446,6 +464,7 @@ describe("DecisionCockpit", () => {
         };
         render(<DecisionCockpit {...componentProps} />);
         await user.click(screen.getByRole("button", { name: "Peer Benchmarks" }));
+        await user.click(screen.getByText("View all peer metrics"));
 
         expect(screen.getByTitle("Strong Better-positioned percentile")).toHaveClass("text-emerald-800");
         expect(screen.getByTitle("Weak Better-positioned percentile")).toHaveClass("text-rose-800");

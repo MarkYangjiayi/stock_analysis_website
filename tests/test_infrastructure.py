@@ -32,6 +32,7 @@ from services.analyzer import (
     get_rrg_data_for_tickers,
 )
 from services.data_quality import validate_screener_records
+from core.config import settings
 from services.raw_store import persist_snapshot
 from services.security_master import canonicalize_ticker, upsert_security
 from services.universe import record_universe_membership, universe_as_of
@@ -1444,6 +1445,27 @@ def test_quality_gate_warns_but_does_not_fail_for_quarantined_technicals():
         "AAA.US": "extreme_adjusted_return"
     }
     assert any("technical metrics quarantined" in warning for warning in report.warnings)
+
+
+def test_quality_gate_rejects_zero_coverage_for_core_valuation_multiples(monkeypatch):
+    monkeypatch.setattr(settings, "PIPELINE_REQUIRE_MULTIPLE_COVERAGE", True)
+    multiple_fields = {
+        "pe_ratio": None,
+        "forward_pe": None,
+        "ps_ratio": None,
+        "pb_ratio": None,
+        "price_fcf": None,
+        "ev_sales": None,
+        "ev_ebitda": None,
+    }
+    report = validate_screener_records([
+        {"ticker": "AAA.US", "close": 10, "market_cap": 100, **multiple_fields},
+        {"ticker": "BBB.US", "close": 20, "market_cap": 200, **multiple_fields},
+    ])
+
+    assert report.passed is False
+    assert report.metrics["valuation_multiple_coverage"]["ps_ratio"]["valid"] == 0
+    assert any("valuation multiple coverage is zero" in error for error in report.errors)
 
 
 def test_canonical_ticker_policy():

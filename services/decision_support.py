@@ -53,7 +53,19 @@ VALUATION_MULTIPLES = {
     "pb_ratio",
     "price_fcf",
     "ev_ebitda",
+    "ev_sales",
 }
+
+CORE_PEER_MULTIPLES: tuple[dict[str, str], ...] = (
+    {"key": "pe_ratio", "label": "P/E"},
+    {"key": "forward_pe", "label": "Forward P/E"},
+    {"key": "ps_ratio", "label": "Price / sales"},
+    {"key": "pb_ratio", "label": "Price / book"},
+    {"key": "price_fcf", "label": "Price / FCF"},
+    {"key": "ev_sales", "label": "EV / sales"},
+    {"key": "ev_ebitda", "label": "EV / EBITDA"},
+)
+CORE_PEER_MULTIPLE_KEYS = frozenset(item["key"] for item in CORE_PEER_MULTIPLES)
 
 PEER_METRICS: tuple[dict[str, str], ...] = (
     {"key": "sales_growth_ttm", "label": "Sales growth (TTM)", "direction": "higher_better", "format": "percent"},
@@ -514,6 +526,188 @@ def _summary_metric(metric: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _linear_quantile(sorted_values: Sequence[float], quantile: float) -> float:
+    if not sorted_values:
+        raise ValueError("A quantile requires at least one valid observation.")
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    position = (len(sorted_values) - 1) * quantile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return float(sorted_values[lower])
+    weight = position - lower
+    return float(sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight)
+
+
+def _peer_multiple_member(
+    row: StockScreenerSnapshot,
+    metric_key: str,
+) -> dict[str, Any] | None:
+    value = _valid_peer_value(metric_key, getattr(row, metric_key))
+    if value is None:
+        return None
+    return {
+        "ticker": row.ticker,
+        "name": row.name,
+        "value": value,
+        "market_cap": _safe_float(row.market_cap),
+        "sales_growth_ttm": _safe_float(row.sales_growth_ttm),
+    }
+
+
+def _representative_peers(
+    members: Sequence[dict[str, Any]],
+    *,
+    target_value: float,
+    target_market_cap: float | None,
+    target_sales_growth: float | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    def growth_distance(member: dict[str, Any]) -> float:
+        growth = member["sales_growth_ttm"]
+        if growth is None or target_sales_growth is None:
+            return math.inf
+        return abs(growth - target_sales_growth)
+
+    def similarity(member: dict[str, Any]) -> tuple[float, float, str]:
+        market_cap = member["market_cap"]
+        if (
+            target_market_cap is not None
+            and target_market_cap > 0
+            and market_cap is not None
+            and market_cap > 0
+        ):
+            primary_distance = abs(math.log(market_cap / target_market_cap))
+        elif target_market_cap is not None and target_market_cap > 0:
+            primary_distance = math.inf
+        else:
+            primary_distance = abs(member["value"] - target_value)
+        return (primary_distance, growth_distance(member), member["ticker"])
+
+    selected = sorted(members, key=similarity)[:limit]
+    return sorted(selected, key=lambda member: (-member["value"], member["ticker"]))
+
+
+def build_peer_multiple_distribution(
+    target: StockScreenerSnapshot | None,
+    snapshot_rows: Sequence[StockScreenerSnapshot],
+    *,
+    ticker: str,
+    metric_key: str,
+    scope: str = "auto",
+    limit: int = 10,
+    as_of_date: date | None = None,
+) -> dict[str, Any]:
+    """Build one same-date valuation-multiple distribution and peer shortlist."""
+    if metric_key not in CORE_PEER_MULTIPLE_KEYS:
+        raise ValueError(f"Unsupported peer multiple: {metric_key}")
+    if scope not in {"auto", "industry", "sector"}:
+        raise ValueError(f"Unsupported peer scope: {scope}")
+    if not 5 <= limit <= 20:
+        raise ValueError("Peer limit must be between 5 and 20.")
+
+    metric = next(item for item in CORE_PEER_MULTIPLES if item["key"] == metric_key)
+    response: dict[str, Any] = {
+        "available": False,
+        "reason": None,
+        "metric": {**metric, "format": "multiple"},
+        "as_of_date": _iso(as_of_date),
+        "target": {
+            "ticker": ticker,
+            "name": target.name if target else None,
+            "value": None,
+            "market_cap": _safe_float(target.market_cap) if target else None,
+            "sales_growth_ttm": _safe_float(target.sales_growth_ttm) if target else None,
+            "raw_percentile": None,
+            "premium_to_median": None,
+        },
+        "cohort": None,
+        "distribution": None,
+        "peers": [],
+    }
+    if target is None:
+        response["reason"] = "target_not_in_snapshot"
+        return response
+
+    target_value = _valid_peer_value(metric_key, getattr(target, metric_key))
+    response["target"]["value"] = target_value
+
+    cohort_definitions = {
+        "industry": (target.industry, 10),
+        "sector": (target.sector, 20),
+    }
+    cohort_results: dict[str, dict[str, Any]] = {}
+    for candidate_scope, (cohort_name, minimum) in cohort_definitions.items():
+        rows = [
+            row
+            for row in snapshot_rows
+            if row.ticker != target.ticker
+            and cohort_name
+            and getattr(row, candidate_scope) == cohort_name
+        ]
+        valid_members = [
+            member
+            for row in rows
+            if (member := _peer_multiple_member(row, metric_key)) is not None
+        ]
+        cohort_results[candidate_scope] = {
+            "scope": candidate_scope,
+            "name": cohort_name,
+            "member_count": len(rows),
+            "valid_count": len(valid_members),
+            "excluded_count": len(rows) - len(valid_members),
+            "minimum_observations": minimum,
+            "members": valid_members,
+        }
+
+    selected_scope = scope
+    if scope == "auto":
+        if cohort_results["industry"]["valid_count"] >= 10:
+            selected_scope = "industry"
+        else:
+            selected_scope = "sector"
+    selected = cohort_results[selected_scope]
+    response["cohort"] = {
+        key: value for key, value in selected.items() if key != "members"
+    }
+
+    if target_value is None:
+        response["reason"] = "target_metric_unavailable"
+        return response
+    if selected["valid_count"] < selected["minimum_observations"]:
+        response["reason"] = f"insufficient_{selected_scope}_coverage"
+        return response
+
+    members = selected["members"]
+    values = sorted(member["value"] for member in members)
+    median = _linear_quantile(values, 0.5)
+    raw_percentile = midrank_percentile(target_value, values)
+    response["target"].update(
+        {
+            "raw_percentile": raw_percentile,
+            "premium_to_median": target_value / median - 1 if median > 0 else None,
+        }
+    )
+    response["distribution"] = {
+        "mean": sum(values) / len(values),
+        "median": median,
+        "p10": _linear_quantile(values, 0.10),
+        "p25": _linear_quantile(values, 0.25),
+        "p75": _linear_quantile(values, 0.75),
+        "p90": _linear_quantile(values, 0.90),
+    }
+    response["peers"] = _representative_peers(
+        members,
+        target_value=target_value,
+        target_market_cap=response["target"]["market_cap"],
+        target_sales_growth=response["target"]["sales_growth_ttm"],
+        limit=limit,
+    )
+    response["available"] = True
+    return response
+
+
 def _first_value(mapping: dict[str, Any], *keys: str) -> float | None:
     for key in keys:
         value = _safe_float(mapping.get(key))
@@ -952,6 +1146,62 @@ async def _latest_publication(db: AsyncSession, dataset: str) -> DataPublication
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def get_peer_multiple_distribution(
+    ticker: str,
+    db: AsyncSession,
+    *,
+    metric_key: str = "ps_ratio",
+    scope: str = "auto",
+    limit: int = 10,
+) -> dict[str, Any]:
+    canonical_ticker = canonicalize_ticker(ticker)
+    publication = await _latest_publication(db, "screener")
+    if publication is None:
+        return build_peer_multiple_distribution(
+            None,
+            [],
+            ticker=canonical_ticker,
+            metric_key=metric_key,
+            scope=scope,
+            limit=limit,
+            as_of_date=None,
+        )
+
+    target_result = await db.execute(
+        select(StockScreenerSnapshot).where(
+            StockScreenerSnapshot.date == publication.as_of_date,
+            StockScreenerSnapshot.ticker == canonical_ticker,
+        )
+    )
+    target = target_result.scalar_one_or_none()
+    rows: list[StockScreenerSnapshot] = []
+    if target is not None:
+        cohort_filters = []
+        if target.industry:
+            cohort_filters.append(StockScreenerSnapshot.industry == target.industry)
+        if target.sector:
+            cohort_filters.append(StockScreenerSnapshot.sector == target.sector)
+        if cohort_filters:
+            rows_result = await db.execute(
+                select(StockScreenerSnapshot).where(
+                    StockScreenerSnapshot.date == publication.as_of_date,
+                    or_(*cohort_filters),
+                )
+            )
+            rows = list(rows_result.scalars().all())
+        else:
+            rows = [target]
+    return build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=canonical_ticker,
+        metric_key=metric_key,
+        scope=scope,
+        limit=limit,
+        as_of_date=publication.as_of_date,
+    )
 
 
 async def _load_factor_snapshot(

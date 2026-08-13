@@ -301,6 +301,60 @@ export interface PeerMetric {
     summary_percentile: number | null;
 }
 
+export type PeerMultipleKey =
+    | "pe_ratio"
+    | "forward_pe"
+    | "ps_ratio"
+    | "pb_ratio"
+    | "price_fcf"
+    | "ev_sales"
+    | "ev_ebitda";
+
+export type PeerMultipleScope = "auto" | "industry" | "sector";
+
+export interface PeerMultiplesResponse {
+    available: boolean;
+    reason: "target_not_in_snapshot"
+        | "target_metric_unavailable"
+        | "insufficient_industry_coverage"
+        | "insufficient_sector_coverage"
+        | null;
+    metric: { key: PeerMultipleKey; label: string; format: "multiple" };
+    as_of_date: string | null;
+    target: {
+        ticker: string;
+        name: string | null;
+        value: number | null;
+        market_cap: number | null;
+        sales_growth_ttm: number | null;
+        raw_percentile: number | null;
+        premium_to_median: number | null;
+    };
+    cohort: {
+        scope: "industry" | "sector";
+        name: string | null;
+        member_count: number;
+        valid_count: number;
+        excluded_count: number;
+        minimum_observations: number;
+    } | null;
+    distribution: {
+        mean: number;
+        median: number;
+        p10: number;
+        p25: number;
+        p75: number;
+        p90: number;
+    } | null;
+    peers: Array<{
+        ticker: string;
+        name: string | null;
+        value: number;
+        market_cap: number | null;
+        sales_growth_ttm: number | null;
+    }>;
+}
+
 export interface DecisionWarning {
     id: string;
     severity: "warning" | "high";
@@ -772,6 +826,16 @@ export const fetchDecisionSupport = (
 ) => apiRequest<DecisionSupportResponse>(
     `/api/stocks/${encodeURIComponent(ticker)}/decision-support`,
     { headers: personalHeaders(adminKey), signal },
+);
+
+export const fetchPeerMultiples = (
+    ticker: string,
+    metric: PeerMultipleKey = "ps_ratio",
+    scope: PeerMultipleScope = "auto",
+    signal?: AbortSignal,
+) => apiRequest<PeerMultiplesResponse>(
+    `/api/stocks/${encodeURIComponent(ticker)}/peer-multiples?metric=${encodeURIComponent(metric)}&scope=${encodeURIComponent(scope)}&limit=10`,
+    { signal },
 );
 
 export const fetchEarningsQuality = (

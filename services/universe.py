@@ -410,9 +410,11 @@ async def record_universe_membership(
     ]
     if new_rows:
         await db.execute(
-            insert(UniverseMembership).values(new_rows).on_conflict_do_nothing(
-                index_elements=["universe", "ticker", "effective_from", "source"]
-            )
+            # Older SQLite databases may still carry the pre-source unique
+            # constraint even after being stamped through the migration chain.
+            # Target-less DO NOTHING is valid for both schemas and preserves
+            # idempotent daily observations without weakening new databases.
+            insert(UniverseMembership).values(new_rows).on_conflict_do_nothing()
         )
 
 
