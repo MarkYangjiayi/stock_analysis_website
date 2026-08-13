@@ -67,7 +67,7 @@ describe("PeerMultipleDistribution", () => {
             expect.any(AbortSignal),
         ));
         expect(await screen.findByText("44.1×")).toBeInTheDocument();
-        expect(screen.getByText("Higher than 92.0% of valid peers")).toBeInTheDocument();
+        expect(screen.getByText("Raw percentile rank: 92.0 / 100 among valid peers")).toBeInTheDocument();
         expect(screen.getByText("+202.0%")).toBeInTheDocument();
         expect(screen.getByText(/32 valid peers/)).toBeInTheDocument();
         expect(screen.getByTestId("peer-bars")).toBeInTheDocument();

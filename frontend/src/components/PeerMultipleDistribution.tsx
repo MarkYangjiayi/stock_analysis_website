@@ -220,7 +220,7 @@ export default function PeerMultipleDistribution({ ticker }: { ticker: string })
 
     const percentileCopy = data?.target.raw_percentile == null
         ? "—"
-        : `Higher than ${data.target.raw_percentile.toFixed(1)}% of valid peers`;
+        : `Raw percentile rank: ${data.target.raw_percentile.toFixed(1)} / 100 among valid peers`;
 
     return (
         <section className="space-y-4" aria-labelledby="peer-multiple-title">

@@ -240,6 +240,38 @@ def test_peer_multiple_distribution_auto_fallback_and_explicit_scope():
     assert explicit["reason"] == "insufficient_industry_coverage"
 
 
+def test_peer_multiple_distribution_excludes_provider_sales_sentinels():
+    rows = [_peer_row(index) for index in range(12)]
+    target = rows[5]
+    rows[0].ps_ratio = 999_999
+    rows[1].ev_sales = 999_999
+
+    ps_result = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ps_ratio",
+    )
+    ev_sales_result = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ev_sales",
+    )
+
+    assert ps_result["cohort"]["valid_count"] == 10
+    assert ev_sales_result["cohort"]["valid_count"] == 10
+    assert all(peer["value"] < 999_999 for peer in ps_result["peers"])
+    target.ps_ratio = 999_999
+    unavailable = build_peer_multiple_distribution(
+        target,
+        rows,
+        ticker=target.ticker,
+        metric_key="ps_ratio",
+    )
+    assert unavailable["reason"] == "target_metric_unavailable"
+
+
 @pytest.mark.parametrize(
     ("target", "reason"),
     [
@@ -281,6 +313,15 @@ async def test_peer_multiple_service_uses_latest_published_snapshot(db_session):
     rows = [_peer_row(index) for index in range(12)]
     for row in rows:
         row.date = snapshot_date
+    target = rows[5]
+    db_session.add(Ticker(
+        ticker=target.ticker,
+        name=target.name,
+        sector=target.sector,
+        industry=target.industry,
+    ))
+    target.sector = None
+    target.industry = None
     db_session.add_all(rows)
     await db_session.commit()
 
@@ -296,6 +337,7 @@ async def test_peer_multiple_service_uses_latest_published_snapshot(db_session):
     )
 
     assert result["available"] is True
+    assert result["cohort"]["scope"] == "industry"
     assert result["as_of_date"] == snapshot_date.isoformat()
     assert outside["available"] is False
     assert outside["reason"] == "target_not_in_snapshot"

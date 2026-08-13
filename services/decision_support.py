@@ -20,6 +20,7 @@ from models import (
 )
 from services.personal_workspace import get_saved_valuation_scenarios
 from services.earnings_quality import get_earnings_quality
+from services.screener_normalization import normalize_multiple
 from services.security_master import canonicalize_ticker
 
 
@@ -395,10 +396,10 @@ def midrank_percentile(value: float, values: Iterable[float]) -> float:
 
 
 def _valid_peer_value(metric_key: str, value: Any) -> float | None:
+    if metric_key in VALUATION_MULTIPLES:
+        return normalize_multiple(metric_key, value)
     number = _safe_float(value)
     if number is None:
-        return None
-    if metric_key in VALUATION_MULTIPLES and number <= 0:
         return None
     if metric_key == "debt_to_equity" and number < 0:
         return None
@@ -598,6 +599,8 @@ def build_peer_multiple_distribution(
     scope: str = "auto",
     limit: int = 10,
     as_of_date: date | None = None,
+    fallback_sector: str | None = None,
+    fallback_industry: str | None = None,
 ) -> dict[str, Any]:
     """Build one same-date valuation-multiple distribution and peer shortlist."""
     if metric_key not in CORE_PEER_MULTIPLE_KEYS:
@@ -634,8 +637,8 @@ def build_peer_multiple_distribution(
     response["target"]["value"] = target_value
 
     cohort_definitions = {
-        "industry": (target.industry, 10),
-        "sector": (target.sector, 20),
+        "industry": (target.industry or fallback_industry, 10),
+        "sector": (target.sector or fallback_sector, 20),
     }
     cohort_results: dict[str, dict[str, Any]] = {}
     for candidate_scope, (cohort_name, minimum) in cohort_definitions.items():
@@ -1178,11 +1181,19 @@ async def get_peer_multiple_distribution(
     target = target_result.scalar_one_or_none()
     rows: list[StockScreenerSnapshot] = []
     if target is not None:
+        profile = None
+        if not target.industry or not target.sector:
+            profile_result = await db.execute(
+                select(Ticker).where(Ticker.ticker == canonical_ticker)
+            )
+            profile = profile_result.scalar_one_or_none()
+        target_industry = target.industry or (profile.industry if profile else None)
+        target_sector = target.sector or (profile.sector if profile else None)
         cohort_filters = []
-        if target.industry:
-            cohort_filters.append(StockScreenerSnapshot.industry == target.industry)
-        if target.sector:
-            cohort_filters.append(StockScreenerSnapshot.sector == target.sector)
+        if target_industry:
+            cohort_filters.append(StockScreenerSnapshot.industry == target_industry)
+        if target_sector:
+            cohort_filters.append(StockScreenerSnapshot.sector == target_sector)
         if cohort_filters:
             rows_result = await db.execute(
                 select(StockScreenerSnapshot).where(
@@ -1193,6 +1204,9 @@ async def get_peer_multiple_distribution(
             rows = list(rows_result.scalars().all())
         else:
             rows = [target]
+    else:
+        target_industry = None
+        target_sector = None
     return build_peer_multiple_distribution(
         target,
         rows,
@@ -1201,6 +1215,8 @@ async def get_peer_multiple_distribution(
         scope=scope,
         limit=limit,
         as_of_date=publication.as_of_date,
+        fallback_sector=target_sector,
+        fallback_industry=target_industry,
     )
 
 
