@@ -413,7 +413,11 @@ async def fetch_and_merge_bulk_data(
                 known_exits_by_index[universe].update(removed_tickers)
             known_exits.update(non_primary_tickers)
             target_tickers = set().union(*(set(tickers) for tickers in index_tickers.values()))
-            target_tickers.update(supplemental_tickers - non_primary_tickers)
+            target_tickers.update(
+                ticker
+                for ticker in supplemental_tickers - non_primary_tickers
+                if _ticker_code(ticker) not in inactive_delisted_codes
+            )
             df_merged = df_merged[
                 ~df_merged["ticker"].str.upper().isin(non_primary_tickers)
             ].copy()
@@ -680,6 +684,9 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         russell2000_universe = set(df_merged.attrs.get("russell2000_tickers", []))
         russell3000_universe = set(df_merged.attrs.get("russell3000_tickers", []))
         nasdaq100_universe = set(df_merged.attrs.get("nasdaq100_tickers", []))
+        served_index_universe = russell3000_universe | nasdaq100_universe
+        if not served_index_universe:
+            served_index_universe = target_universe
         known_exits = set(df_merged.attrs.get("known_exits", []))
         sp500_known_exits = set(df_merged.attrs.get("sp500_known_exits", []))
         russell1000_known_exits = set(
@@ -1034,7 +1041,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
             await record_universe_membership(
                 db,
                 universe=SCREENER_UNIVERSE,
-                tickers=target_universe,
+                tickers=served_index_universe,
                 effective_date=snapshot_date,
                 source_run_id=run_id,
                 minimum_retained_fraction=settings.PIPELINE_MIN_UNIVERSE_COVERAGE,

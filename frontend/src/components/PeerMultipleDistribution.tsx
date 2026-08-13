@@ -40,6 +40,14 @@ const compact = (value: number | null | undefined) => value == null || !Number.i
     ? "—"
     : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+}[character] ?? character));
+
 const unavailableCopy: Record<NonNullable<PeerMultiplesResponse["reason"]>, string> = {
     target_not_in_snapshot: "This stock is not in the latest published peer snapshot. It can be compared after a subsequent daily snapshot includes it.",
     target_metric_unavailable: "This multiple is unavailable because its underlying denominator is not positive or the provider did not publish it.",
@@ -130,12 +138,15 @@ function PeerBars({ data }: { data: PeerMultiplesResponse }) {
                 formatter: (params: TooltipParam) => {
                     const member = members[params.dataIndex];
                     if (!member) return "";
+                    const company = escapeHtml(member.name || member.ticker);
+                    const metricLabel = escapeHtml(data.metric.label);
+                    const snapshotDate = escapeHtml(data.as_of_date || "—");
                     return [
-                        `<strong>${member.name || member.ticker}${member.isTarget ? " · selected" : ""}</strong>`,
-                        `${data.metric.label}: ${multiple(member.value)}`,
+                        `<strong>${company}${member.isTarget ? " · selected" : ""}</strong>`,
+                        `${metricLabel}: ${multiple(member.value)}`,
                         `Market cap: ${compact(member.market_cap)}`,
                         `Sales growth TTM: ${percent(member.sales_growth_ttm)}`,
-                        `Snapshot: ${data.as_of_date || "—"}`,
+                        `Snapshot: ${snapshotDate}`,
                     ].join("<br/>");
                 },
             },

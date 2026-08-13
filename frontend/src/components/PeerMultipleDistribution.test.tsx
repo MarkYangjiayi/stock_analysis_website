@@ -8,6 +8,9 @@ import type { PeerMultiplesResponse } from "@/lib/api";
 const apiMocks = vi.hoisted(() => ({
     fetchPeerMultiples: vi.fn(),
 }));
+const chartMocks = vi.hoisted(() => ({
+    options: [] as Array<Record<string, unknown>>,
+}));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -15,7 +18,10 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 vi.mock("echarts-for-react", () => ({
-    default: ({ option }: { option: unknown }) => <div data-testid="peer-bars">{JSON.stringify(option)}</div>,
+    default: ({ option }: { option: Record<string, unknown> }) => {
+        chartMocks.options.push(option);
+        return <div data-testid="peer-bars">{JSON.stringify(option)}</div>;
+    },
 }));
 
 const available: PeerMultiplesResponse = {
@@ -47,6 +53,7 @@ const available: PeerMultiplesResponse = {
 describe("PeerMultipleDistribution", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        chartMocks.options.length = 0;
         apiMocks.fetchPeerMultiples.mockResolvedValue(available);
     });
 
@@ -105,5 +112,24 @@ describe("PeerMultipleDistribution", () => {
 
         expect(await screen.findByText(/underlying denominator is not positive/)).toBeInTheDocument();
         expect(screen.queryByText("0.0×")).not.toBeInTheDocument();
+    });
+
+    it("escapes provider strings before returning ECharts tooltip HTML", async () => {
+        apiMocks.fetchPeerMultiples.mockResolvedValue({
+            ...available,
+            target: {
+                ...available.target,
+                name: '<img src=x onerror="alert(1)">',
+            },
+        });
+        render(<PeerMultipleDistribution ticker="NET.US" />);
+
+        await screen.findByText("44.1×");
+        const option = chartMocks.options.at(-1) as {
+            tooltip: { formatter: (params: { dataIndex: number }) => string };
+        };
+        const tooltip = option.tooltip.formatter({ dataIndex: 0 });
+        expect(tooltip).not.toContain("<img");
+        expect(tooltip).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     });
 });

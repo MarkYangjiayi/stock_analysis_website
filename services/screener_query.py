@@ -50,6 +50,40 @@ def _primary_listing_condition() -> Any:
     )
 
 
+def _live_index_membership_condition(selected_date: date) -> Any:
+    """Limit the public screener to the live indexes named by the product UI."""
+    return exists(
+        select(UniverseMembership.id).where(
+            UniverseMembership.ticker == StockScreenerSnapshot.ticker,
+            UniverseMembership.universe.in_(SCREENER_MEMBERSHIP_UNIVERSES),
+            UniverseMembership.source == LIVE_UNIVERSE_SOURCE,
+            UniverseMembership.effective_from <= selected_date,
+            or_(
+                UniverseMembership.effective_to.is_(None),
+                UniverseMembership.effective_to >= selected_date,
+            ),
+        )
+    )
+
+
+async def _has_live_index_membership(db: AsyncSession, selected_date: date) -> bool:
+    """Keep pre-membership legacy snapshots queryable while gating new snapshots."""
+    result = await db.execute(
+        select(UniverseMembership.id)
+        .where(
+            UniverseMembership.universe.in_(SCREENER_MEMBERSHIP_UNIVERSES),
+            UniverseMembership.source == LIVE_UNIVERSE_SOURCE,
+            UniverseMembership.effective_from <= selected_date,
+            or_(
+                UniverseMembership.effective_to.is_(None),
+                UniverseMembership.effective_to >= selected_date,
+            ),
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 def _canonical_field_expression(field_id: str, column: Any) -> Any:
     conditions = []
     if field_id in POSITIVE_MULTIPLE_FIELDS or field_id in POSITIVE_VALUE_FIELDS:
@@ -142,6 +176,13 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
     coverage: dict[str, float] = {}
     enum_options: dict[str, list[dict[str, str]]] = {}
     if selected_date is not None:
+        restrict_to_live_index = await _has_live_index_membership(db, selected_date)
+        snapshot_conditions = [
+            StockScreenerSnapshot.date == selected_date,
+            _primary_listing_condition(),
+        ]
+        if restrict_to_live_index:
+            snapshot_conditions.append(_live_index_membership_condition(selected_date))
         aggregate_expressions = [func.count(StockScreenerSnapshot.id).label("_total")]
         for definition in FIELD_DEFINITIONS:
             column = MODEL_FIELD_MAP.get(definition.id)
@@ -165,10 +206,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                     ))).label(definition.id)
                 )
         aggregate_result = await db.execute(
-            select(*aggregate_expressions).where(
-                StockScreenerSnapshot.date == selected_date,
-                _primary_listing_condition(),
-            )
+            select(*aggregate_expressions).where(*snapshot_conditions)
         )
         aggregate_row = aggregate_result.one()._mapping
         total = aggregate_row["_total"] or 0
@@ -220,8 +258,7 @@ async def get_screener_metadata(db: AsyncSession) -> dict[str, Any]:
                 values_result = await db.execute(
                     select(column)
                     .where(
-                        StockScreenerSnapshot.date == selected_date,
-                        _primary_listing_condition(),
+                        *snapshot_conditions,
                         column.is_not(None),
                     )
                     .distinct()
@@ -446,6 +483,8 @@ async def query_screener(request_data: dict[str, Any], db: AsyncSession) -> dict
         StockScreenerSnapshot.date == selected_date,
         _primary_listing_condition(),
     ]
+    if await _has_live_index_membership(db, selected_date):
+        conditions.append(_live_index_membership_condition(selected_date))
     for clause in request_data.get("filters") or []:
         field_id = clause["field"]
         operator = clause["operator"]

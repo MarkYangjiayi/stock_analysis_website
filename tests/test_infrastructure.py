@@ -152,6 +152,83 @@ def test_peg_migration_preserves_raw_values_and_normalizes_public_values(tmp_pat
     ]
 
 
+def test_membership_migration_repairs_legacy_source_constraint(tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    database_path = tmp_path / "legacy-membership.db"
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{database_path}",
+        "ENVIRONMENT": "test",
+    }
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE alembic_version (
+                version_num VARCHAR(32) NOT NULL PRIMARY KEY
+            );
+            INSERT INTO alembic_version VALUES ('0012_normalize_screener_values');
+            CREATE TABLE universe_membership (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                universe VARCHAR NOT NULL,
+                ticker VARCHAR NOT NULL,
+                effective_from DATE NOT NULL,
+                effective_to DATE,
+                observed_at DATETIME,
+                source VARCHAR NOT NULL,
+                source_run_id INTEGER,
+                CONSTRAINT uix_universe_membership_period
+                    UNIQUE (universe, ticker, effective_from)
+            );
+            INSERT INTO universe_membership (
+                universe, ticker, effective_from, source
+            ) VALUES (
+                'SP500', 'AAA.US', '2025-01-02',
+                'EODHD HistoricalTickerComponents'
+            );
+            """
+        )
+
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=project_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO universe_membership (
+                universe, ticker, effective_from, source
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                "SP500",
+                "AAA.US",
+                "2025-01-02",
+                "EODHD Live Index Components",
+            ),
+        )
+        sources = connection.execute(
+            """
+            SELECT source
+            FROM universe_membership
+            WHERE universe = 'SP500' AND ticker = 'AAA.US'
+            ORDER BY source
+            """
+        ).fetchall()
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()[0]
+
+    assert sources == [
+        ("EODHD HistoricalTickerComponents",),
+        ("EODHD Live Index Components",),
+    ]
+    assert revision == "0013_repair_membership_source"
+
+
 def test_alembic_upgrade_adds_rrg_snapshot_table(tmp_path):
     project_root = Path(__file__).resolve().parents[1]
     database_path = tmp_path / "migration.db"
@@ -424,6 +501,37 @@ async def test_universe_membership_supports_same_date_corrections(db_session):
         row.effective_to is None or row.effective_to >= row.effective_from
         for row in memberships
     )
+
+
+@pytest.mark.asyncio
+async def test_universe_membership_preserves_same_date_source_rows(db_session):
+    snapshot_date = date(2025, 1, 2)
+    await record_universe_membership(
+        db_session,
+        "SP500",
+        ["AAA.US"],
+        snapshot_date,
+        source="EODHD HistoricalTickerComponents",
+    )
+    await record_universe_membership(
+        db_session,
+        "SP500",
+        ["AAA.US"],
+        snapshot_date,
+        source="EODHD Live Index Components",
+    )
+
+    memberships = (await db_session.execute(
+        select(UniverseMembership).where(
+            UniverseMembership.universe == "SP500",
+            UniverseMembership.ticker == "AAA.US",
+            UniverseMembership.effective_from == snapshot_date,
+        )
+    )).scalars().all()
+    assert {row.source for row in memberships} == {
+        "EODHD HistoricalTickerComponents",
+        "EODHD Live Index Components",
+    }
 
 
 @pytest.mark.asyncio
@@ -715,8 +823,8 @@ async def test_bulk_screener_filters_non_primary_or_unknown_venue_components(
             return ["AAA.US", "BBB.US"]
         return ["CCC.US", "VAXX.US", "DDD.US"]
 
-    async def no_delisted_symbols(*args, **kwargs):
-        return []
+    async def delisted_symbols(*args, **kwargs):
+        return [{"Code": "STALE", "Exchange": "NYSE", "Name": "Stale Co"}]
 
     async def full_bulk(*args, **kwargs):
         return [
@@ -754,7 +862,7 @@ async def test_bulk_screener_filters_non_primary_or_unknown_venue_components(
     )
     monkeypatch.setattr(
         "services.screener_sync.eodhd_client.get_exchange_symbol_list",
-        no_delisted_symbols,
+        delisted_symbols,
     )
     monkeypatch.setattr(
         "services.screener_sync.eodhd_client.get_bulk_eod_prices",
@@ -769,10 +877,14 @@ async def test_bulk_screener_filters_non_primary_or_unknown_venue_components(
         fundamentals,
     )
 
-    frame = await fetch_and_merge_bulk_data("2025-01-02")
+    frame = await fetch_and_merge_bulk_data(
+        "2025-01-02",
+        supplemental_tickers={"STALE.US"},
+    )
 
     assert "VAXX.US" not in set(frame["ticker"])
     assert "VAXX.US" not in set(frame.attrs["target_tickers"])
+    assert "STALE.US" not in set(frame.attrs["target_tickers"])
     assert "VAXX.US" not in set(frame.attrs["russell2000_tickers"])
     assert "VAXX.US" in set(frame.attrs["known_exits"])
     assert "VAXX.US" in set(frame.attrs["russell2000_known_exits"])

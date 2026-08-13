@@ -890,7 +890,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     assert metadata["supported_finviz_fields"] == 66
     fcf_metadata = next(field for field in metadata["fields"] if field["id"] == "fcf")
     assert fcf_metadata["finviz_field"] is None
-    assert metadata["record_count"] == 2
+    assert metadata["record_count"] == 1
     assert any(field["id"] == "pe_ratio" and field["available"] for field in metadata["fields"])
     peg_metadata = next(field for field in metadata["fields"] if field["id"] == "peg_ratio")
     assert peg_metadata["label"] == "PEG (5Y Expected)"
@@ -902,7 +902,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
     assert "at or below 0" in peg_metadata["description"]
     index_metadata = next(field for field in metadata["fields"] if field["id"] == "index")
     assert index_metadata["result_column"] is False
-    assert index_metadata["coverage"] == pytest.approx(0.5)
+    assert index_metadata["coverage"] == pytest.approx(1.0)
     assert index_metadata["options"] == [{"value": "SP500", "label": "S&P 500"}]
 
     result = await query_screener({
@@ -977,7 +977,7 @@ async def test_metadata_and_generic_query_are_allowlisted_and_point_in_time(db_s
         assert [
             item["ticker"]
             for item in default_direction_response.json()["items"]
-        ] == ["BBB.US", "AAA.US"]
+        ] == ["AAA.US"]
 
         invalid_response = await client.post("/api/stocks/screener/query", json={
             "filters": [{"field": "drop_table", "operator": "eq", "value": 1}],
@@ -1383,9 +1383,10 @@ async def test_index_metadata_accepts_live_memberships_without_pit_history(db_se
 
     metadata = await get_screener_metadata(db_session)
     assert metadata["universe"] == "RUSSELL3000_NASDAQ100"
+    assert metadata["record_count"] == 2
     index_field = next(field for field in metadata["fields"] if field["id"] == "index")
     assert index_field["available"] is True
-    assert index_field["coverage"] == pytest.approx(2 / 3)
+    assert index_field["coverage"] == pytest.approx(1.0)
     assert index_field["options"] == [
         {"value": "SP500", "label": "S&P 500"},
         {"value": "RUSSELL1000", "label": "Russell 1000"},
