@@ -452,10 +452,19 @@ async def fetch_target_universe_fundamentals(
     # The broad screener run cannot grow into multi-gigabyte process memory.
     chunk_size = 100
     for i in range(0, total_tasks, chunk_size):
-        await asyncio.gather(*(fetch_single(ticker) for ticker in symbols[i:i+chunk_size]))
+        outcomes = await asyncio.gather(
+            *(fetch_single(ticker) for ticker in symbols[i:i+chunk_size]),
+            return_exceptions=True,
+        )
         if on_chunk and raw_fundamentals:
             await on_chunk(dict(raw_fundamentals))
         raw_fundamentals.clear()
+        errors = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+        if errors:
+            # A quota response can race with successful paid requests already
+            # in flight. Persist those successes above before stopping so the
+            # next run never pays for the same payloads again.
+            raise errors[0]
         logger.info(f"Fetched fundamentals: {min(i+chunk_size, total_tasks)} / {total_tasks}")
 
     return results
@@ -926,6 +935,51 @@ async def calculate_technicals_locally(
     return pd.DataFrame(output)
 
 
+async def _persist_fundamental_chunk(
+    raw_batch: Dict[str, dict],
+    observed_date: date,
+) -> None:
+    raw_snapshot_ids: dict[str, int] = {}
+    normalized_records = [
+        _normalize_fundamental_record(ticker, raw_payload)
+        for ticker, raw_payload in raw_batch.items()
+    ]
+    # Preserve the paid payload independently. The cache row is the completion
+    # checkpoint, so it must be committed only after the derived financial
+    # writes succeed; otherwise a retry could skip permanently stale tables.
+    async with async_session_maker() as raw_db, raw_db.begin():
+        await raw_db.execute(
+            insert(Ticker)
+            .values([{"ticker": ticker} for ticker in raw_batch])
+            .on_conflict_do_nothing(index_elements=["ticker"])
+        )
+        for ticker, raw_payload in raw_batch.items():
+            raw_snapshot = await persist_snapshot(
+                raw_db,
+                "EODHD",
+                "fundamentals",
+                raw_payload,
+                as_of_date=observed_date,
+                details={"ticker": ticker},
+            )
+            raw_snapshot_ids[ticker] = raw_snapshot.id
+
+    async with async_session_maker() as financial_db, financial_db.begin():
+        for ticker, raw_payload in raw_batch.items():
+            await _upsert_financials(
+                ticker,
+                raw_payload,
+                financial_db,
+                raw_snapshot_id=raw_snapshot_ids[ticker],
+            )
+        await _upsert_fundamental_cache(
+            financial_db,
+            normalized_records,
+            observed_date,
+            raw_snapshot_ids,
+        )
+
+
 async def run_screener_pipeline(target_date: str = None, observe_current_universe: bool = False):
     """
     主管道：串联获取并入库截面快照
@@ -954,52 +1008,11 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
 
         # 1. Fetch cross-sectional daily bulk
         await update_pipeline_run(run_id, "fetching_source_data")
-        async def persist_fundamental_chunk(raw_batch: Dict[str, dict], observed_date: date) -> None:
-            raw_snapshot_ids: dict[str, int] = {}
-            normalized_records = [
-                _normalize_fundamental_record(ticker, raw_payload)
-                for ticker, raw_payload in raw_batch.items()
-            ]
-            # Commit the paid source payload and compact cache first. Any later
-            # normalization/publication failure can then resume from this exact
-            # checkpoint without another provider request.
-            async with async_session_maker() as raw_db, raw_db.begin():
-                await raw_db.execute(
-                    insert(Ticker)
-                    .values([{"ticker": ticker} for ticker in raw_batch])
-                    .on_conflict_do_nothing(index_elements=["ticker"])
-                )
-                for ticker, raw_payload in raw_batch.items():
-                    raw_snapshot = await persist_snapshot(
-                        raw_db,
-                        "EODHD",
-                        "fundamentals",
-                        raw_payload,
-                        as_of_date=observed_date,
-                        details={"ticker": ticker},
-                    )
-                    raw_snapshot_ids[ticker] = raw_snapshot.id
-                await _upsert_fundamental_cache(
-                    raw_db,
-                    normalized_records,
-                    observed_date,
-                    raw_snapshot_ids,
-                )
-
-            async with async_session_maker() as financial_db, financial_db.begin():
-                for ticker, raw_payload in raw_batch.items():
-                    await _upsert_financials(
-                        ticker,
-                        raw_payload,
-                        financial_db,
-                        raw_snapshot_id=raw_snapshot_ids[ticker],
-                    )
-
         df_merged = await fetch_and_merge_bulk_data(
             target_date,
             target_tickers=historical_universe,
             supplemental_tickers=supplemental_tickers,
-            fundamental_chunk_handler=persist_fundamental_chunk,
+            fundamental_chunk_handler=_persist_fundamental_chunk,
         )
         if df_merged.empty:
             raise ValueError("Merged screener dataset is empty")

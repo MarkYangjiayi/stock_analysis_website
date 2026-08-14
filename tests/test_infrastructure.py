@@ -1709,6 +1709,73 @@ async def test_bulk_fundamentals_carry_profile_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bulk_fundamentals_persist_successes_before_quota_error(monkeypatch):
+    from services.eodhd_client import EODHDQuotaExceeded
+    from services.screener_sync import fetch_target_universe_fundamentals
+
+    async def fake_fundamental_data(ticker, client=None):
+        if ticker == "BBB.US":
+            raise EODHDQuotaExceeded("quota exhausted")
+        return {
+            "General": {
+                "Code": "AAA",
+                "Name": "AAA Corp",
+                "Exchange": "NYSE",
+            }
+        }
+
+    persisted_batches = []
+
+    async def persist_batch(raw_batch):
+        persisted_batches.append(set(raw_batch))
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_fundamental_data",
+        fake_fundamental_data,
+    )
+
+    with pytest.raises(EODHDQuotaExceeded):
+        await fetch_target_universe_fundamentals(
+            {"AAA.US", "BBB.US"},
+            client=object(),
+            on_chunk=persist_batch,
+        )
+
+    assert persisted_batches == [{"AAA.US"}]
+
+
+@pytest.mark.asyncio
+async def test_eodhd_quota_response_opens_daily_circuit_breaker(monkeypatch):
+    import httpx
+    from services import eodhd_client
+
+    class QuotaClient:
+        def __init__(self):
+            self.calls = 0
+
+        async def get(self, url, params=None):
+            self.calls += 1
+            return httpx.Response(
+                402,
+                request=httpx.Request("GET", url, params=params),
+            )
+
+    client = QuotaClient()
+    monkeypatch.setattr(eodhd_client, "_quota_exhausted_on", None)
+
+    with pytest.raises(eodhd_client.EODHDQuotaExceeded):
+        await eodhd_client._fetch_from_eodhd(
+            "fundamentals", "AAA.US", client=client
+        )
+    with pytest.raises(eodhd_client.EODHDQuotaExceeded):
+        await eodhd_client._fetch_from_eodhd(
+            "fundamentals", "BBB.US", client=client
+        )
+
+    assert client.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_bulk_ticker_profiles_store_and_preserve_descriptive_fields(db_session):
     from services.screener_sync import _upsert_ticker_profiles
 
@@ -2621,3 +2688,55 @@ async def test_screener_fundamental_retry_keeps_same_paid_cohort(
     assert retry_plan == []
     persisted = await db_session.get(ScreenerFundamentalRefreshPlan, observed)
     assert persisted.tickers == ["AAA.US", "BBB.US"]
+
+
+@pytest.mark.asyncio
+async def test_screener_cache_checkpoint_waits_for_financial_writes(
+    db_session,
+    monkeypatch,
+):
+    from models import RawDataSnapshot, ScreenerFundamentalCache
+    from services.screener_sync import _persist_fundamental_chunk
+
+    observed = date(2025, 7, 10)
+    raw_batch = {
+        "AAA.US": {
+            "General": {
+                "Code": "AAA",
+                "Name": "AAA Corp",
+                "Exchange": "NYSE",
+            }
+        }
+    }
+
+    async def fail_financial_write(*args, **kwargs):
+        raise RuntimeError("financial write failed")
+
+    monkeypatch.setattr(
+        "services.screener_sync._upsert_financials",
+        fail_financial_write,
+    )
+
+    with pytest.raises(RuntimeError, match="financial write failed"):
+        await _persist_fundamental_chunk(raw_batch, observed)
+
+    await db_session.rollback()
+    raw_snapshots = (
+        await db_session.execute(select(RawDataSnapshot))
+    ).scalars().all()
+    assert len(raw_snapshots) == 1
+    assert await db_session.get(ScreenerFundamentalCache, "AAA.US") is None
+
+    async def complete_financial_write(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "services.screener_sync._upsert_financials",
+        complete_financial_write,
+    )
+    await _persist_fundamental_chunk(raw_batch, observed)
+
+    await db_session.rollback()
+    cached = await db_session.get(ScreenerFundamentalCache, "AAA.US")
+    assert cached is not None
+    assert cached.as_of_date == observed
