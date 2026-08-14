@@ -2,6 +2,7 @@ import asyncio
 import logging
 import argparse
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Awaitable, Callable, List, Dict, Any, Optional
 
 import pandas as pd
@@ -9,7 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy import select, and_, func
 
-from models import StockScreenerSnapshot, DailyPrice, Ticker, CorporateAction, SecurityMaster
+from models import (
+    StockScreenerSnapshot,
+    DailyPrice,
+    Ticker,
+    CorporateAction,
+    SecurityMaster,
+    ScreenerFundamentalCache,
+    ScreenerFundamentalRefreshPlan,
+)
 from database import engine, async_session_maker
 from services import eodhd_client
 from services.data_quality import DataQualityError, validate_screener_records
@@ -87,6 +96,20 @@ TECHNICAL_SNAPSHOT_FIELDS = (
     "candlestick",
 )
 
+FUNDAMENTAL_SNAPSHOT_FIELDS = (
+    "market_cap", "pe_ratio", "pb_ratio", "dividend_yield", "short_float",
+    "analyst_recommendation", "target_price", "shares_outstanding",
+    "shares_float", "roe", "debt_to_equity", "fcf", "gross_margin",
+    "sales_growth_5yr", "forward_pe", "peg_ratio_raw", "peg_ratio",
+    "ps_ratio", "price_cash", "price_fcf", "ev_ebitda", "ev_sales",
+    "eps_growth_this_year", "eps_growth_next_year", "eps_growth_qoq",
+    "eps_growth_ttm", "eps_growth_3yr", "eps_growth_5yr",
+    "sales_growth_qoq", "sales_growth_ttm", "sales_growth_3yr", "roa",
+    "roic", "current_ratio", "quick_ratio", "lt_debt_to_equity",
+    "operating_margin", "net_profit_margin", "payout_ratio",
+    "insider_ownership", "institutional_ownership",
+)
+
 
 def _validate_universe_coverage(target_tickers: set[str], priced_tickers: set[str]) -> float:
     if len(target_tickers) < settings.PIPELINE_MIN_UNIVERSE_SIZE:
@@ -117,6 +140,289 @@ def _validate_index_components(
         )
 
 
+def _normalize_fundamental_record(ticker: str, payload: dict) -> dict[str, Any]:
+    general = payload.get("General") or {}
+    return {
+        "code": general.get("Code", ticker.split(".")[0]),
+        "ticker": ticker,
+        "Name": general.get("Name"),
+        "Exchange": general.get("Exchange"),
+        "Sector": general.get("Sector"),
+        "Industry": general.get("Industry"),
+        "Description": general.get("Description"),
+        "CurrencyCode": general.get("CurrencyCode"),
+        **extract_fundamental_metrics(payload),
+    }
+
+
+def _json_safe_fundamental_record(record: dict[str, Any]) -> dict[str, Any]:
+    safe = {}
+    for key, value in record.items():
+        if isinstance(value, (date, datetime)):
+            safe[key] = value.isoformat()
+        elif isinstance(value, Decimal):
+            safe[key] = float(value)
+        elif hasattr(value, "item"):
+            safe[key] = value.item()
+        else:
+            safe[key] = value
+    return safe
+
+
+def _restore_fundamental_record(record: dict[str, Any]) -> dict[str, Any]:
+    restored = dict(record)
+    ipo_date = restored.get("ipo_date")
+    if isinstance(ipo_date, str):
+        try:
+            restored["ipo_date"] = date.fromisoformat(ipo_date)
+        except ValueError:
+            restored["ipo_date"] = None
+    return restored
+
+
+def _fundamental_record_from_snapshot(
+    snapshot: StockScreenerSnapshot,
+    description: Optional[str],
+    currency: Optional[str],
+) -> dict[str, Any]:
+    record = {
+        "code": snapshot.ticker.split(".")[0],
+        "ticker": snapshot.ticker,
+        "Name": snapshot.name,
+        "Exchange": snapshot.exchange,
+        "Sector": snapshot.sector,
+        "Industry": snapshot.industry,
+        "Description": description,
+        "CurrencyCode": currency,
+        "exchange": snapshot.exchange,
+        "country": snapshot.country,
+        "ipo_date": snapshot.ipo_date,
+    }
+    record.update({
+        field_name: getattr(snapshot, field_name)
+        for field_name in FUNDAMENTAL_SNAPSHOT_FIELDS
+    })
+    return record
+
+
+async def _upsert_fundamental_cache(
+    db: AsyncSession,
+    records: list[dict[str, Any]],
+    as_of_date: date,
+    raw_snapshot_ids: Optional[dict[str, int]] = None,
+) -> None:
+    if not records:
+        return
+    fetched_at = utc_now()
+    values = [
+        {
+            "ticker": record["ticker"],
+            "as_of_date": as_of_date,
+            "fetched_at": fetched_at,
+            "normalized_data": _json_safe_fundamental_record(record),
+            "raw_snapshot_id": (raw_snapshot_ids or {}).get(record["ticker"]),
+            "source": "EODHD",
+        }
+        for record in records
+    ]
+    stmt = insert(ScreenerFundamentalCache).values(values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["ticker"],
+        set_={
+            "as_of_date": stmt.excluded.as_of_date,
+            "fetched_at": stmt.excluded.fetched_at,
+            "normalized_data": stmt.excluded.normalized_data,
+            "raw_snapshot_id": stmt.excluded.raw_snapshot_id,
+            "source": stmt.excluded.source,
+        },
+        where=stmt.excluded.as_of_date >= ScreenerFundamentalCache.as_of_date,
+    )
+    await db.execute(stmt)
+
+
+async def _load_and_seed_fundamental_cache(
+    tickers: set[str],
+    observed_date: date,
+) -> tuple[dict[str, dict[str, Any]], dict[str, date]]:
+    """Load the compact cache and seed it from the latest published rows.
+
+    Seeding lets an existing deployment adopt incremental refresh without one
+    more full-universe provider pull.
+    """
+    records: dict[str, dict[str, Any]] = {}
+    as_of_dates: dict[str, date] = {}
+    symbols = sorted(tickers)
+    async with async_session_maker() as db, db.begin():
+        for start in range(0, len(symbols), 500):
+            result = await db.execute(
+                select(ScreenerFundamentalCache).where(
+                    ScreenerFundamentalCache.ticker.in_(symbols[start:start + 500]),
+                    ScreenerFundamentalCache.as_of_date <= observed_date,
+                )
+            )
+            for cached in result.scalars():
+                records[cached.ticker] = _restore_fundamental_record(
+                    cached.normalized_data
+                )
+                as_of_dates[cached.ticker] = cached.as_of_date
+
+        missing = set(symbols) - set(records)
+        if not missing:
+            return records, as_of_dates
+
+        latest_result = await db.execute(
+            select(func.max(StockScreenerSnapshot.date)).where(
+                StockScreenerSnapshot.date <= observed_date
+            )
+        )
+        latest_snapshot_date = latest_result.scalar_one_or_none()
+        if latest_snapshot_date is None:
+            return records, as_of_dates
+
+        seeded_records = []
+        missing_symbols = sorted(missing)
+        for start in range(0, len(missing_symbols), 500):
+            result = await db.execute(
+                select(
+                    StockScreenerSnapshot,
+                    Ticker.description,
+                    Ticker.currency,
+                )
+                .join(Ticker, Ticker.ticker == StockScreenerSnapshot.ticker)
+                .where(
+                    StockScreenerSnapshot.date == latest_snapshot_date,
+                    StockScreenerSnapshot.ticker.in_(
+                        missing_symbols[start:start + 500]
+                    ),
+                )
+            )
+            for snapshot, description, currency in result.all():
+                record = _fundamental_record_from_snapshot(
+                    snapshot, description, currency
+                )
+                records[snapshot.ticker] = record
+                as_of_dates[snapshot.ticker] = latest_snapshot_date
+                seeded_records.append(record)
+        await _upsert_fundamental_cache(
+            db, seeded_records, latest_snapshot_date
+        )
+    if seeded_records:
+        logger.info(
+            "Seeded %s fundamental cache rows from screener snapshot %s",
+            len(seeded_records),
+            latest_snapshot_date,
+        )
+    return records, as_of_dates
+
+
+def _select_fundamental_refresh_tickers(
+    tickers: set[str],
+    cached_records: dict[str, dict[str, Any]],
+    cached_as_of_dates: dict[str, date],
+    observed_date: date,
+) -> list[str]:
+    missing = sorted(tickers - set(cached_records))
+    stale_before = observed_date - timedelta(
+        days=max(0, settings.SCREENER_FUNDAMENTAL_MAX_AGE_DAYS)
+    )
+    incomplete = []
+    stale = []
+    for ticker in sorted(tickers & set(cached_records)):
+        cached_date = cached_as_of_dates[ticker]
+        if cached_date >= observed_date:
+            continue
+        record = cached_records[ticker]
+        if not record.get("Exchange") or not record.get("Name"):
+            incomplete.append(ticker)
+        elif cached_date < stale_before:
+            stale.append(ticker)
+    stale.sort(key=lambda ticker: (cached_as_of_dates[ticker], ticker))
+    priority = list(dict.fromkeys([*missing, *incomplete]))
+    refresh_limit = max(0, settings.SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT)
+    if not cached_records:
+        # A genuinely empty installation cannot publish a quality-gated first
+        # snapshot incrementally. Cold start remains an explicit full import.
+        selected = priority
+    else:
+        selected = priority[:refresh_limit]
+        remaining = max(0, refresh_limit - len(selected))
+        selected.extend(stale[:remaining])
+    logger.info(
+        "Fundamental refresh plan: %s cached, %s missing, %s incomplete, "
+        "%s stale, %s selected",
+        len(cached_records),
+        len(missing),
+        len(incomplete),
+        len(stale),
+        len(selected),
+    )
+    return selected
+
+
+async def _load_or_create_fundamental_refresh_plan(
+    tickers: set[str],
+    cached_records: dict[str, dict[str, Any]],
+    cached_as_of_dates: dict[str, date],
+    observed_date: date,
+) -> list[str]:
+    async with async_session_maker() as db, db.begin():
+        plan = await db.get(ScreenerFundamentalRefreshPlan, observed_date)
+        if plan is None:
+            selected = _select_fundamental_refresh_tickers(
+                tickers,
+                cached_records,
+                cached_as_of_dates,
+                observed_date,
+            )
+            await db.execute(
+                insert(ScreenerFundamentalRefreshPlan)
+                .values(
+                    target_date=observed_date,
+                    tickers=selected,
+                    created_at=utc_now(),
+                )
+                .on_conflict_do_nothing(index_elements=["target_date"])
+            )
+            plan = await db.get(ScreenerFundamentalRefreshPlan, observed_date)
+        planned_tickers = list(plan.tickers or [])
+
+    # Successful members of this same plan are already cached for the target
+    # date. A retry only retries planned members that did not finish.
+    return [
+        ticker
+        for ticker in planned_tickers
+        if ticker in tickers
+        and cached_as_of_dates.get(ticker) != observed_date
+    ]
+
+
+async def fetch_incremental_target_universe_fundamentals(
+    tickers: set[str],
+    observed_date: date,
+    client=None,
+    on_chunk: Optional[Callable[[Dict[str, dict]], Awaitable[None]]] = None,
+) -> list[dict[str, Any]]:
+    cached_records, cached_as_of_dates = await _load_and_seed_fundamental_cache(
+        tickers,
+        observed_date,
+    )
+    refresh_tickers = await _load_or_create_fundamental_refresh_plan(
+        tickers,
+        cached_records,
+        cached_as_of_dates,
+        observed_date,
+    )
+    if refresh_tickers:
+        fresh_records = await fetch_target_universe_fundamentals(
+            set(refresh_tickers),
+            client=client,
+            on_chunk=on_chunk,
+        )
+        for record in fresh_records:
+            cached_records[record["ticker"]] = record
+    return [cached_records[ticker] for ticker in sorted(tickers) if ticker in cached_records]
+
+
 async def fetch_target_universe_fundamentals(
     tickers: set,
     client=None,
@@ -137,19 +443,7 @@ async def fetch_target_universe_fundamentals(
             data = await eodhd_client.get_fundamental_data(ticker, client=client)
             if data:
                 raw_fundamentals[ticker] = data
-                gen = data.get("General", {})
-                metrics = extract_fundamental_metrics(data)
-                results.append({
-                    "code": gen.get("Code", ticker.split('.')[0]),
-                    "ticker": ticker,
-                    "Name": gen.get("Name"),
-                    "Exchange": gen.get("Exchange"),
-                    "Sector": gen.get("Sector"),
-                    "Industry": gen.get("Industry"),
-                    "Description": gen.get("Description"),
-                    "CurrencyCode": gen.get("CurrencyCode"),
-                    **metrics,
-                })
+                results.append(_normalize_fundamental_record(ticker, data))
 
     # Run tasks with progress logging
     symbols = sorted(tickers)
@@ -363,11 +657,24 @@ async def fetch_and_merge_bulk_data(
             if fundamental_chunk_handler:
                 await fundamental_chunk_handler(raw_batch, observed_date)
 
-        fundamental_data = await fetch_target_universe_fundamentals(
-            priced_tickers,
-            client=client,
-            on_chunk=handle_chunk,
-        )
+        if fundamental_chunk_handler:
+            # Production runs persist every fetched chunk and combine it with
+            # the latest compact cache. A failed publication can therefore
+            # resume without fetching the same paid payloads again.
+            fundamental_data = await fetch_incremental_target_universe_fundamentals(
+                priced_tickers,
+                observed_date,
+                client=client,
+                on_chunk=handle_chunk,
+            )
+        else:
+            # Keep the lower-level data assembly function useful for isolated
+            # imports/tests that intentionally do not own persistence.
+            fundamental_data = await fetch_target_universe_fundamentals(
+                priced_tickers,
+                client=client,
+                on_chunk=handle_chunk,
+            )
 
     if fundamental_data:
         df_fund = pd.DataFrame(fundamental_data)
@@ -648,6 +955,14 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
         # 1. Fetch cross-sectional daily bulk
         await update_pipeline_run(run_id, "fetching_source_data")
         async def persist_fundamental_chunk(raw_batch: Dict[str, dict], observed_date: date) -> None:
+            raw_snapshot_ids: dict[str, int] = {}
+            normalized_records = [
+                _normalize_fundamental_record(ticker, raw_payload)
+                for ticker, raw_payload in raw_batch.items()
+            ]
+            # Commit the paid source payload and compact cache first. Any later
+            # normalization/publication failure can then resume from this exact
+            # checkpoint without another provider request.
             async with async_session_maker() as raw_db, raw_db.begin():
                 await raw_db.execute(
                     insert(Ticker)
@@ -663,11 +978,21 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                         as_of_date=observed_date,
                         details={"ticker": ticker},
                     )
+                    raw_snapshot_ids[ticker] = raw_snapshot.id
+                await _upsert_fundamental_cache(
+                    raw_db,
+                    normalized_records,
+                    observed_date,
+                    raw_snapshot_ids,
+                )
+
+            async with async_session_maker() as financial_db, financial_db.begin():
+                for ticker, raw_payload in raw_batch.items():
                     await _upsert_financials(
                         ticker,
                         raw_payload,
-                        raw_db,
-                        raw_snapshot_id=raw_snapshot.id,
+                        financial_db,
+                        raw_snapshot_id=raw_snapshot_ids[ticker],
                     )
 
         df_merged = await fetch_and_merge_bulk_data(

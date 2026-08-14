@@ -189,7 +189,13 @@ def test_membership_migration_repairs_legacy_source_constraint(tmp_path):
         )
 
     subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "upgrade",
+            "0013_repair_membership_source",
+        ],
         cwd=project_root,
         env=env,
         check=True,
@@ -2508,3 +2514,110 @@ def test_deploy_waits_for_service_health_and_fails_closed():
     assert 'if [ "$attempt" -ge 60 ]' in script
     assert "docker compose logs --tail=200 backend worker frontend" in script
     assert "exit 1" in script
+
+
+def test_screener_fundamental_refresh_selection_is_bounded(monkeypatch):
+    from services.screener_sync import _select_fundamental_refresh_tickers
+
+    observed = date(2025, 7, 10)
+    tickers = {"AAA.US", "BBB.US", "CCC.US", "DDD.US"}
+    cached_records = {
+        ticker: {"ticker": ticker, "Name": ticker, "Exchange": "NASDAQ"}
+        for ticker in tickers
+    }
+    cached_dates = {
+        "AAA.US": observed - timedelta(days=30),
+        "BBB.US": observed - timedelta(days=20),
+        "CCC.US": observed - timedelta(days=10),
+        "DDD.US": observed,
+    }
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_MAX_AGE_DAYS", 7)
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT", 2)
+
+    selected = _select_fundamental_refresh_tickers(
+        tickers,
+        cached_records,
+        cached_dates,
+        observed,
+    )
+
+    assert selected == ["AAA.US", "BBB.US"]
+
+
+@pytest.mark.asyncio
+async def test_screener_fundamental_cache_seeds_from_latest_snapshot(db_session):
+    from models import ScreenerFundamentalCache
+    from services.screener_sync import _load_and_seed_fundamental_cache
+
+    observed = date(2025, 7, 10)
+    db_session.add(Ticker(
+        ticker="AAA.US",
+        description="Cached description",
+        currency="USD",
+    ))
+    db_session.add(StockScreenerSnapshot(
+        ticker="AAA.US",
+        date=observed,
+        name="AAA Corp",
+        exchange="NASDAQ",
+        sector="Technology",
+        market_cap=1_000,
+    ))
+    await db_session.commit()
+
+    records, as_of_dates = await _load_and_seed_fundamental_cache(
+        {"AAA.US"},
+        observed,
+    )
+
+    assert records["AAA.US"]["Name"] == "AAA Corp"
+    assert records["AAA.US"]["Description"] == "Cached description"
+    assert as_of_dates["AAA.US"] == observed
+    cached = await db_session.get(ScreenerFundamentalCache, "AAA.US")
+    assert cached is not None
+    assert cached.as_of_date == observed
+
+
+@pytest.mark.asyncio
+async def test_screener_fundamental_retry_keeps_same_paid_cohort(
+    db_session,
+    monkeypatch,
+):
+    from models import ScreenerFundamentalRefreshPlan
+    from services.screener_sync import _load_or_create_fundamental_refresh_plan
+
+    observed = date(2025, 7, 10)
+    tickers = {"AAA.US", "BBB.US", "CCC.US"}
+    records = {
+        ticker: {"ticker": ticker, "Name": ticker, "Exchange": "NYSE"}
+        for ticker in tickers
+    }
+    old_dates = {
+        ticker: observed - timedelta(days=30)
+        for ticker in tickers
+    }
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_MAX_AGE_DAYS", 7)
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT", 2)
+
+    first_plan = await _load_or_create_fundamental_refresh_plan(
+        tickers,
+        records,
+        old_dates,
+        observed,
+    )
+    assert first_plan == ["AAA.US", "BBB.US"]
+
+    completed_dates = {
+        **old_dates,
+        **{ticker: observed for ticker in first_plan},
+    }
+    retry_plan = await _load_or_create_fundamental_refresh_plan(
+        tickers,
+        records,
+        completed_dates,
+        observed,
+    )
+
+    assert retry_plan == []
+    persisted = await db_session.get(ScreenerFundamentalRefreshPlan, observed)
+    assert persisted.tickers == ["AAA.US", "BBB.US"]
