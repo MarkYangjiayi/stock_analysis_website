@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     PIPELINE_MIN_RUSSELL2000_SIZE: int = 1500
     PIPELINE_MIN_NASDAQ100_SIZE: int = 90
     PROFILE_MAX_STALENESS_DAYS: int = 7
+    # Full EODHD fundamentals cost 10 calls per symbol. Reuse the latest
+    # normalized payload between runs and refresh only the oldest cohort.
+    SCREENER_FUNDAMENTAL_MAX_AGE_DAYS: int = 7
+    SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT: int = 600
 
     @property
     def cors_origins(self) -> List[str]:

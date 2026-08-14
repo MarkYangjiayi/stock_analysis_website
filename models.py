@@ -465,6 +465,42 @@ class RawDataSnapshot(Base):
     details: Mapped[Optional[Any]] = mapped_column(JSON)
 
 
+class ScreenerFundamentalCache(Base):
+    """Latest normalized fundamentals used to build daily screener rows.
+
+    The immutable raw payload remains in ``raw_data_snapshots``. This compact
+    cache avoids reopening thousands of large raw files and lets failed daily
+    publications resume without paying for the same provider data again.
+    """
+
+    __tablename__ = "screener_fundamental_cache"
+
+    ticker: Mapped[str] = mapped_column(
+        ForeignKey("tickers.ticker"), primary_key=True
+    )
+    as_of_date: Mapped[dt_date] = mapped_column(Date, index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    normalized_data: Mapped[Any] = mapped_column(JSON)
+    raw_snapshot_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("raw_data_snapshots.id")
+    )
+    source: Mapped[str] = mapped_column(String, default="EODHD")
+
+
+class ScreenerFundamentalRefreshPlan(Base):
+    """Stable paid-refresh cohort for one market date.
+
+    Keeping the plan durable prevents a failed publication retry from moving
+    on to a second paid cohort after the first cohort was cached successfully.
+    """
+
+    __tablename__ = "screener_fundamental_refresh_plans"
+
+    target_date: Mapped[dt_date] = mapped_column(Date, primary_key=True)
+    tickers: Mapped[Any] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class FundamentalVersion(Base):
     """A filing version with an explicit information-availability timestamp."""
     __tablename__ = "fundamental_versions"

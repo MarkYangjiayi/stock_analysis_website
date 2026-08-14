@@ -189,7 +189,13 @@ def test_membership_migration_repairs_legacy_source_constraint(tmp_path):
         )
 
     subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "upgrade",
+            "0013_repair_membership_source",
+        ],
         cwd=project_root,
         env=env,
         check=True,
@@ -1703,6 +1709,73 @@ async def test_bulk_fundamentals_carry_profile_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bulk_fundamentals_persist_successes_before_quota_error(monkeypatch):
+    from services.eodhd_client import EODHDQuotaExceeded
+    from services.screener_sync import fetch_target_universe_fundamentals
+
+    async def fake_fundamental_data(ticker, client=None):
+        if ticker == "BBB.US":
+            raise EODHDQuotaExceeded("quota exhausted")
+        return {
+            "General": {
+                "Code": "AAA",
+                "Name": "AAA Corp",
+                "Exchange": "NYSE",
+            }
+        }
+
+    persisted_batches = []
+
+    async def persist_batch(raw_batch):
+        persisted_batches.append(set(raw_batch))
+
+    monkeypatch.setattr(
+        "services.screener_sync.eodhd_client.get_fundamental_data",
+        fake_fundamental_data,
+    )
+
+    with pytest.raises(EODHDQuotaExceeded):
+        await fetch_target_universe_fundamentals(
+            {"AAA.US", "BBB.US"},
+            client=object(),
+            on_chunk=persist_batch,
+        )
+
+    assert persisted_batches == [{"AAA.US"}]
+
+
+@pytest.mark.asyncio
+async def test_eodhd_quota_response_opens_daily_circuit_breaker(monkeypatch):
+    import httpx
+    from services import eodhd_client
+
+    class QuotaClient:
+        def __init__(self):
+            self.calls = 0
+
+        async def get(self, url, params=None):
+            self.calls += 1
+            return httpx.Response(
+                402,
+                request=httpx.Request("GET", url, params=params),
+            )
+
+    client = QuotaClient()
+    monkeypatch.setattr(eodhd_client, "_quota_exhausted_on", None)
+
+    with pytest.raises(eodhd_client.EODHDQuotaExceeded):
+        await eodhd_client._fetch_from_eodhd(
+            "fundamentals", "AAA.US", client=client
+        )
+    with pytest.raises(eodhd_client.EODHDQuotaExceeded):
+        await eodhd_client._fetch_from_eodhd(
+            "fundamentals", "BBB.US", client=client
+        )
+
+    assert client.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_bulk_ticker_profiles_store_and_preserve_descriptive_fields(db_session):
     from services.screener_sync import _upsert_ticker_profiles
 
@@ -2508,3 +2581,162 @@ def test_deploy_waits_for_service_health_and_fails_closed():
     assert 'if [ "$attempt" -ge 60 ]' in script
     assert "docker compose logs --tail=200 backend worker frontend" in script
     assert "exit 1" in script
+
+
+def test_screener_fundamental_refresh_selection_is_bounded(monkeypatch):
+    from services.screener_sync import _select_fundamental_refresh_tickers
+
+    observed = date(2025, 7, 10)
+    tickers = {"AAA.US", "BBB.US", "CCC.US", "DDD.US"}
+    cached_records = {
+        ticker: {"ticker": ticker, "Name": ticker, "Exchange": "NASDAQ"}
+        for ticker in tickers
+    }
+    cached_dates = {
+        "AAA.US": observed - timedelta(days=30),
+        "BBB.US": observed - timedelta(days=20),
+        "CCC.US": observed - timedelta(days=10),
+        "DDD.US": observed,
+    }
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_MAX_AGE_DAYS", 7)
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT", 2)
+
+    selected = _select_fundamental_refresh_tickers(
+        tickers,
+        cached_records,
+        cached_dates,
+        observed,
+    )
+
+    assert selected == ["AAA.US", "BBB.US"]
+
+
+@pytest.mark.asyncio
+async def test_screener_fundamental_cache_seeds_from_latest_snapshot(db_session):
+    from models import ScreenerFundamentalCache
+    from services.screener_sync import _load_and_seed_fundamental_cache
+
+    observed = date(2025, 7, 10)
+    db_session.add(Ticker(
+        ticker="AAA.US",
+        description="Cached description",
+        currency="USD",
+    ))
+    db_session.add(StockScreenerSnapshot(
+        ticker="AAA.US",
+        date=observed,
+        name="AAA Corp",
+        exchange="NASDAQ",
+        sector="Technology",
+        market_cap=1_000,
+    ))
+    await db_session.commit()
+
+    records, as_of_dates = await _load_and_seed_fundamental_cache(
+        {"AAA.US"},
+        observed,
+    )
+
+    assert records["AAA.US"]["Name"] == "AAA Corp"
+    assert records["AAA.US"]["Description"] == "Cached description"
+    assert as_of_dates["AAA.US"] == observed
+    cached = await db_session.get(ScreenerFundamentalCache, "AAA.US")
+    assert cached is not None
+    assert cached.as_of_date == observed
+
+
+@pytest.mark.asyncio
+async def test_screener_fundamental_retry_keeps_same_paid_cohort(
+    db_session,
+    monkeypatch,
+):
+    from models import ScreenerFundamentalRefreshPlan
+    from services.screener_sync import _load_or_create_fundamental_refresh_plan
+
+    observed = date(2025, 7, 10)
+    tickers = {"AAA.US", "BBB.US", "CCC.US"}
+    records = {
+        ticker: {"ticker": ticker, "Name": ticker, "Exchange": "NYSE"}
+        for ticker in tickers
+    }
+    old_dates = {
+        ticker: observed - timedelta(days=30)
+        for ticker in tickers
+    }
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_MAX_AGE_DAYS", 7)
+    monkeypatch.setattr(settings, "SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT", 2)
+
+    first_plan = await _load_or_create_fundamental_refresh_plan(
+        tickers,
+        records,
+        old_dates,
+        observed,
+    )
+    assert first_plan == ["AAA.US", "BBB.US"]
+
+    completed_dates = {
+        **old_dates,
+        **{ticker: observed for ticker in first_plan},
+    }
+    retry_plan = await _load_or_create_fundamental_refresh_plan(
+        tickers,
+        records,
+        completed_dates,
+        observed,
+    )
+
+    assert retry_plan == []
+    persisted = await db_session.get(ScreenerFundamentalRefreshPlan, observed)
+    assert persisted.tickers == ["AAA.US", "BBB.US"]
+
+
+@pytest.mark.asyncio
+async def test_screener_cache_checkpoint_waits_for_financial_writes(
+    db_session,
+    monkeypatch,
+):
+    from models import RawDataSnapshot, ScreenerFundamentalCache
+    from services.screener_sync import _persist_fundamental_chunk
+
+    observed = date(2025, 7, 10)
+    raw_batch = {
+        "AAA.US": {
+            "General": {
+                "Code": "AAA",
+                "Name": "AAA Corp",
+                "Exchange": "NYSE",
+            }
+        }
+    }
+
+    async def fail_financial_write(*args, **kwargs):
+        raise RuntimeError("financial write failed")
+
+    monkeypatch.setattr(
+        "services.screener_sync._upsert_financials",
+        fail_financial_write,
+    )
+
+    with pytest.raises(RuntimeError, match="financial write failed"):
+        await _persist_fundamental_chunk(raw_batch, observed)
+
+    await db_session.rollback()
+    raw_snapshots = (
+        await db_session.execute(select(RawDataSnapshot))
+    ).scalars().all()
+    assert len(raw_snapshots) == 1
+    assert await db_session.get(ScreenerFundamentalCache, "AAA.US") is None
+
+    async def complete_financial_write(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "services.screener_sync._upsert_financials",
+        complete_financial_write,
+    )
+    await _persist_fundamental_chunk(raw_batch, observed)
+
+    await db_session.rollback()
+    cached = await db_session.get(ScreenerFundamentalCache, "AAA.US")
+    assert cached is not None
+    assert cached.as_of_date == observed

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 import httpx
@@ -26,6 +27,22 @@ EODHD_BASE_URL = settings.EODHD_BASE_URL
 MAX_RETRIES = 5
 TIMEOUT_SECONDS = 15.0
 INITIAL_BACKOFF = 2.0  # 初始重试延迟（秒）
+_quota_exhausted_on = None
+
+
+class EODHDQuotaExceeded(RuntimeError):
+    """The provider rejected requests because the daily call budget is spent."""
+
+
+def _assert_quota_available() -> None:
+    global _quota_exhausted_on
+    today_utc = datetime.now(timezone.utc).date()
+    if _quota_exhausted_on is not None and _quota_exhausted_on < today_utc:
+        _quota_exhausted_on = None
+    if _quota_exhausted_on == today_utc:
+        raise EODHDQuotaExceeded(
+            "EODHD daily API call limit is exhausted; requests are paused until the UTC day resets."
+        )
 
 
 def create_http_client() -> httpx.AsyncClient:
@@ -48,6 +65,7 @@ async def _fetch_from_eodhd(
     """
     if params is None:
         params = {}
+    _assert_quota_available()
     
     # 强制加上 API_TOKEN
     params["api_token"] = EODHD_API_KEY
@@ -59,6 +77,18 @@ async def _fetch_from_eodhd(
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 response = await http_client.get(url, params=params)
+
+                if response.status_code == 402:
+                    global _quota_exhausted_on
+                    _quota_exhausted_on = datetime.now(timezone.utc).date()
+                    logger.error(
+                        "EODHD daily API call limit is exhausted while fetching %s/%s",
+                        endpoint,
+                        ticker,
+                    )
+                    raise EODHDQuotaExceeded(
+                        "EODHD daily API call limit is exhausted; requests are paused until the UTC day resets."
+                    )
                 
                 # 处理 HTTP 429 Too Many Requests (限流) 以及 5xx 服务器错误等
                 if response.status_code in (429, 500, 502, 503, 504):
@@ -92,6 +122,8 @@ async def _fetch_from_eodhd(
                 else:
                     logger.error(f"Failed to fetch data from {url} after {MAX_RETRIES} attempts.")
                     return None
+            except EODHDQuotaExceeded:
+                raise
             except httpx.HTTPStatusError as e:
                 logger.error(f"HTTPStatusError fetching {url}: {e.response.status_code} - {e.response.text}")
                 return None
