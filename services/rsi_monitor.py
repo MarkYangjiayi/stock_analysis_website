@@ -7,12 +7,12 @@ from datetime import date, timedelta
 
 import pandas as pd
 import pandas_ta_classic as ta
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert
 
 from core.config import settings
 from core.time_utils import utc_now
-from core.trading_calendar import latest_completed_us_session
+from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from database import async_session_maker
 from models import DailyPrice, RsiAlert, Ticker
 from services import eodhd_client
@@ -34,6 +34,40 @@ class RsiSignal:
     rsi: float
     zone: str
     threshold: float
+
+
+def _recent_us_sessions(target: date, count: int) -> list[date]:
+    sessions: list[date] = []
+    cursor = target
+    while len(sessions) < count:
+        if is_us_market_session(cursor):
+            sessions.append(cursor)
+        cursor -= timedelta(days=1)
+    return list(reversed(sessions))
+
+
+def _has_sufficient_recent_history(observed_dates: set[date], target: date) -> bool:
+    required = set(_recent_us_sessions(target, RSI_PERIOD + 1))
+    return required.issubset(observed_dates)
+
+
+def _trailing_session_prices(
+    observations: list[tuple[date, float]],
+    target: date,
+) -> list[tuple[date, float]]:
+    """Return the uninterrupted XNYS-session suffix ending at target."""
+    by_date = dict(observations)
+    trailing: list[tuple[date, float]] = []
+    cursor = target
+    earliest = min(by_date, default=target)
+    while cursor >= earliest:
+        if is_us_market_session(cursor):
+            value = by_date.get(cursor)
+            if value is None:
+                break
+            trailing.append((cursor, value))
+        cursor -= timedelta(days=1)
+    return list(reversed(trailing))
 
 
 def _configured_symbols() -> list[str]:
@@ -59,12 +93,32 @@ async def _refresh_missing_prices(symbols: list[str], target: date) -> dict[str,
         return {}
     async with async_session_maker() as db:
         result = await db.execute(
-            select(DailyPrice.ticker, func.max(DailyPrice.date))
-            .where(DailyPrice.ticker.in_(symbols))
-            .group_by(DailyPrice.ticker)
+            select(
+                DailyPrice.ticker,
+                DailyPrice.date,
+                DailyPrice.close,
+                DailyPrice.adjusted_close,
+            ).where(
+                DailyPrice.ticker.in_(symbols),
+                DailyPrice.date >= target - timedelta(days=45),
+                DailyPrice.date <= target,
+            )
         )
-        latest_by_ticker = dict(result.all())
-    pending = [symbol for symbol in symbols if latest_by_ticker.get(symbol) != target]
+        recent_rows = result.all()
+    observed_dates: dict[str, set[date]] = {}
+    for ticker, price_date, close, adjusted_close in recent_rows:
+        effective_close = adjusted_close if adjusted_close is not None else close
+        try:
+            valid = float(effective_close) > 0
+        except (TypeError, ValueError):
+            valid = False
+        if valid:
+            observed_dates.setdefault(ticker, set()).add(price_date)
+    pending = [
+        symbol
+        for symbol in symbols
+        if not _has_sufficient_recent_history(observed_dates.get(symbol, set()), target)
+    ]
     if not pending:
         return {}
 
@@ -154,8 +208,11 @@ async def _calculate_signals(symbols: list[str], target: date) -> tuple[list[Rsi
     signals: list[RsiSignal] = []
     unavailable: list[str] = []
     for ticker in symbols:
-        observations = prices_by_ticker.get(ticker, [])
-        if len(observations) <= RSI_PERIOD or observations[-1][0] != target:
+        observations = _trailing_session_prices(
+            prices_by_ticker.get(ticker, []),
+            target,
+        )
+        if len(observations) <= RSI_PERIOD:
             unavailable.append(ticker)
             continue
         close_series = pd.Series([value for _, value in observations], dtype="float64")

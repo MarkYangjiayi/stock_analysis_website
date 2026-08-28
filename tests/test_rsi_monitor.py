@@ -1,6 +1,5 @@
 from datetime import date
 
-import pandas as pd
 import pytest
 from sqlalchemy import select
 
@@ -11,7 +10,7 @@ from services import rsi_monitor
 
 async def _seed_prices(db_session, ticker: str, closes: list[float], target: date) -> None:
     db_session.add(Ticker(ticker=ticker))
-    dates = [timestamp.date() for timestamp in pd.bdate_range(end=target, periods=len(closes))]
+    dates = rsi_monitor._recent_us_sessions(target, len(closes))
     db_session.add_all(
         DailyPrice(
             ticker=ticker,
@@ -26,6 +25,50 @@ async def _seed_prices(db_session, ticker: str, closes: list[float], target: dat
         for price_date, close in zip(dates, closes)
     )
     await db_session.commit()
+
+
+def test_recent_history_requires_consecutive_market_sessions():
+    target = date(2025, 7, 7)
+    sessions = rsi_monitor._recent_us_sessions(
+        target,
+        rsi_monitor.RSI_PERIOD + 1,
+    )
+
+    assert rsi_monitor._has_sufficient_recent_history(set(sessions), target)
+    assert not rsi_monitor._has_sufficient_recent_history(
+        set(sessions) - {sessions[-2]},
+        target,
+    )
+
+
+@pytest.mark.asyncio
+async def test_signal_calculation_rejects_a_gap_before_target(
+    db_session,
+):
+    target = date(2025, 7, 7)
+    await _seed_prices(
+        db_session,
+        "GAP.US",
+        [120 - index for index in range(24)],
+        target,
+    )
+    missing_session = rsi_monitor._recent_us_sessions(target, 5)[0]
+    row = await db_session.execute(
+        select(DailyPrice).where(
+            DailyPrice.ticker == "GAP.US",
+            DailyPrice.date == missing_session,
+        )
+    )
+    await db_session.delete(row.scalar_one())
+    await db_session.commit()
+
+    signals, unavailable = await rsi_monitor._calculate_signals(
+        ["GAP.US"],
+        target,
+    )
+
+    assert signals == []
+    assert unavailable == ["GAP.US"]
 
 
 @pytest.mark.asyncio
