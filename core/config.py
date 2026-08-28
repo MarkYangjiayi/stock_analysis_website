@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # Notifications
     FEISHU_WEBHOOK_URL: str = ""
 
+    # Daily RSI(14) monitor. The personal watchlist is used when no explicit
+    # comma-separated symbol list is configured.
+    RSI_MONITOR_ENABLED: bool = False
+    RSI_MONITOR_SYMBOLS: str = ""
+    RSI_MONITOR_OVERSOLD: float = 30.0
+    RSI_MONITOR_OVERBOUGHT: float = 70.0
+    RSI_MONITOR_REFRESH_CONCURRENCY: int = 4
+
     # API and browser security. When omitted, admin operations are disabled.
     ADMIN_API_KEY: str = ""
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
