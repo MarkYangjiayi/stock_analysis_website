@@ -108,6 +108,7 @@ async def test_daily_rsi_monitor_alerts_once_per_ticker_and_session(
     assert first["alerts"] == 1
     assert second["status"] == "already-delivered"
     assert len(notifications) == 1
+    assert "Quantify" in notifications[0][0]
     assert "AAPL.US" in notifications[0][1]
     assert "超卖" in notifications[0][1]
     alerts = list((await db_session.execute(select(RsiAlert))).scalars())
