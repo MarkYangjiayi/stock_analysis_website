@@ -303,7 +303,7 @@ async def run_daily_rsi_monitor(reference_date: date | None = None) -> dict:
         }
 
     delivered = await NotificationManager.broadcast(
-        title="📈 Watchlist 日线 RSI 提醒",
+        title="📈 Quantify Watchlist 日线 RSI 提醒",
         content=_notification_content(pending, unavailable),
     )
     if not delivered:
