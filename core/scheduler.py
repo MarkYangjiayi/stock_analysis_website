@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 from datetime import date, datetime
 
+from core.config import settings
 from services.daily_reporter import generate_morning_briefing, generate_post_market_summary
 from services.screener_sync import run_screener_pipeline
 from services.quant.factor_engine import compute_factors_for_date
@@ -16,6 +17,7 @@ from services.market_breadth import (
     refresh_market_breadth,
 )
 from services.universe import refresh_historical_universe_memberships
+from services.rsi_monitor import run_daily_rsi_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,10 @@ async def scheduled_post_market_summary():
         return await generate_post_market_summary()
     return None
 
+
+async def scheduled_rsi_monitor(reference_date: date = None):
+    return await run_daily_rsi_monitor(reference_date)
+
 def start_scheduler():
     """Starts the global APScheduler instance and registers daily jobs."""
     logger.info("Starting APScheduler for Notifications and Data Sync...")
@@ -167,6 +173,18 @@ def start_scheduler():
         id="daily_factor_cross_section",
         replace_existing=True,
     )
+    # Run after the daily price/factor pipeline. Tue-Sat maps to the preceding
+    # Mon-Fri US market sessions.
+    if settings.RSI_MONITOR_ENABLED:
+        scheduler.add_job(
+            scheduled_rsi_monitor,
+            'cron',
+            day_of_week='tue-sat',
+            hour=4,
+            minute=30,
+            id="daily_rsi_monitor",
+            replace_existing=True,
+        )
     scheduler.add_job(
         create_backup,
         'cron',

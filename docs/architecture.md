@@ -13,6 +13,7 @@ FastAPI read and admin APIs -----> SQLite (WAL, FK enabled)
 Dedicated worker --------------------+
   |-- XNYS-aware APScheduler
   |-- data quality and publication jobs
+  |-- optional daily watchlist RSI alerts
   |-- optional WebSocket monitor
   `-- weekly online SQLite backup
 
@@ -20,6 +21,14 @@ Immutable raw JSON.gz ---> normalized point-in-time tables ---> factor panels --
 ```
 
 Uvicorn never owns scheduled jobs. This makes API worker scaling safe and prevents duplicate notifications or data writes. `worker.py` is the only scheduler process.
+
+The optional RSI monitor runs at 04:30 America/New_York on Tuesday through
+Saturday, after the preceding US session's daily pipeline. It reads the
+server-side personal watchlist unless `RSI_MONITOR_SYMBOLS` overrides it,
+refreshes stale daily price histories on demand, and sends one Feishu digest
+for RSI(14) values at or beyond the configured 30/70 thresholds. Successfully
+delivered ticker/date alerts are persisted so worker restarts cannot duplicate
+the same daily alert.
 
 ## 2. Storage choices
 

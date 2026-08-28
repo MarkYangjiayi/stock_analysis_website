@@ -615,6 +615,31 @@ class PersonalWorkspaceState(Base):
     )
 
 
+class RsiAlert(Base):
+    """One successfully delivered daily RSI alert for a monitored ticker."""
+
+    __tablename__ = "rsi_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    price_date: Mapped[dt_date] = mapped_column(Date, index=True)
+    period: Mapped[int] = mapped_column(Integer, default=14)
+    rsi_value: Mapped[float] = mapped_column(Float)
+    zone: Mapped[str] = mapped_column(String)
+    threshold: Mapped[float] = mapped_column(Float)
+    notified_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ticker",
+            "price_date",
+            "period",
+            "zone",
+            name="uix_rsi_alert_ticker_date_period_zone",
+        ),
+    )
+
+
 class TickerValuationScenario(Base):
     """Saved transparent DCF inputs for one ticker and named scenario."""
 

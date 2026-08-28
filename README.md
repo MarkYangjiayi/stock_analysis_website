@@ -44,6 +44,7 @@
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
     构建了企业级高可用推送路由，完美支持**飞书 (Lark) 富文本卡片**穿透。
     *   **Scheduled Daily Reporter**: 依托 `APScheduler` 时钟锁死美东时区，在每个工作日开盘与收盘后，自动唤醒 AI 撰写大盘异动速递并投递至群聊。
+    *   **Daily RSI Monitor**: 可选监控服务端 watchlist（或独立配置的一批股票），在日线 RSI(14) 进入超卖/超买区时汇总飞书提醒，并按股票与交易日去重。
     *   **Real-time WebSocket Monitor**: 独立 Worker 可选挂载盯盘 Daemon，避免多 Uvicorn worker 重复调度。直接接入 WebSocket 行情流，基于滑动时间窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）与告警冷却**。
 ---
 

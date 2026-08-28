@@ -14,6 +14,7 @@ from services.notifications import NotificationManager
 from services.ws_monitor import ws_monitor
 from services.catchup import catch_up_latest_publications
 from services.anomaly_scans import recover_interrupted_anomaly_scans
+from services.rsi_monitor import run_daily_rsi_monitor
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,11 @@ async def run_worker() -> None:
         await catch_up_latest_publications()
     except Exception as exc:
         logger.exception("Startup catch-up failed; scheduled jobs remain active: %s", exc)
+    if settings.RSI_MONITOR_ENABLED:
+        try:
+            await run_daily_rsi_monitor()
+        except Exception as exc:
+            logger.exception("Startup RSI monitor catch-up failed; scheduled job remains active: %s", exc)
     start_scheduler()
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
