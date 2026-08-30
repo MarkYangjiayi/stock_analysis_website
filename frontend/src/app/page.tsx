@@ -16,9 +16,11 @@ import {
     fetchEventsExpectations,
     fetchEarningsQuality,
     fetchEarningsQualityAnalysis,
+    fetchFinancialFlow,
     fetchLatestTickerFactors,
     fetchMarketSnapshot,
     fetchStockData,
+    FinancialFlowResponse,
     MarketSnapshotResponse,
     PublishedFactorSnapshot,
     startEarningsQualityAnalysis,
@@ -38,6 +40,10 @@ const StockChart = dynamic(() => import("@/components/StockChart"), {
     loading: () => <div className="h-[480px] animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />,
 });
 const FinancialTrendChart = dynamic(() => import("@/components/FinancialTrendChart"), {
+    ssr: false,
+    loading: () => <div className="h-[520px] animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />,
+});
+const FinancialFlowPanel = dynamic(() => import("@/components/FinancialFlowPanel"), {
     ssr: false,
     loading: () => <div className="h-[520px] animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />,
 });
@@ -95,6 +101,7 @@ function AnalysisPage() {
     const [earningsQuality, setEarningsQuality] = useState<EarningsQualityResponse | null>(null);
     const [eventsExpectations, setEventsExpectations] = useState<EventsExpectationsResponse | null>(null);
     const [marketSnapshot, setMarketSnapshot] = useState<MarketSnapshotResponse | null>(null);
+    const [financialFlow, setFinancialFlow] = useState<FinancialFlowResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [factorLoading, setFactorLoading] = useState(false);
     const [decisionLoading, setDecisionLoading] = useState(false);
@@ -110,6 +117,8 @@ function AnalysisPage() {
     const [eventsExpectationsError, setEventsExpectationsError] = useState("");
     const [marketSnapshotLoading, setMarketSnapshotLoading] = useState(false);
     const [marketSnapshotError, setMarketSnapshotError] = useState("");
+    const [financialFlowLoading, setFinancialFlowLoading] = useState(false);
+    const [financialFlowError, setFinancialFlowError] = useState("");
     const [chartInterval, setChartInterval] = useState("1d");
     const [financialPeriod, setFinancialPeriod] = useState<"annual" | "ttm" | "quarterly">("annual");
     const [financialMetric, setFinancialMetric] = useState<FinancialEvidenceMetric>("overview");
@@ -123,6 +132,7 @@ function AnalysisPage() {
     const earningsQualityRequestRef = useRef<AbortController | null>(null);
     const eventsExpectationsRequestRef = useRef<AbortController | null>(null);
     const marketSnapshotRequestRef = useRef<AbortController | null>(null);
+    const financialFlowRequestRef = useRef<AbortController | null>(null);
     const earningsAnalysisRequestRef = useRef<AbortController | null>(null);
     const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
 
@@ -253,6 +263,34 @@ function AnalysisPage() {
         }
     }, []);
 
+    const loadFinancialFlow = useCallback(async (
+        symbol: string,
+        periodType: "annual" | "quarterly",
+        periodEnd?: string,
+    ) => {
+        financialFlowRequestRef.current?.abort();
+        const controller = new AbortController();
+        financialFlowRequestRef.current = controller;
+        setFinancialFlowLoading(true);
+        setFinancialFlowError("");
+        try {
+            let result = await fetchFinancialFlow(symbol, periodType, periodEnd, controller.signal);
+            if (controller.signal.aborted) return;
+            setFinancialFlow(result);
+
+            for (let attempt = 0; attempt < 20 && ["queued", "running"].includes(result.enrichment.status); attempt += 1) {
+                await waitForPoll(3_000, controller.signal);
+                result = await fetchFinancialFlow(symbol, periodType, periodEnd, controller.signal);
+                if (!controller.signal.aborted) setFinancialFlow(result);
+            }
+        } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") return;
+            if (!controller.signal.aborted) setFinancialFlowError(caught instanceof Error ? caught.message : "Profit flow is unavailable.");
+        } finally {
+            if (!controller.signal.aborted) setFinancialFlowLoading(false);
+        }
+    }, []);
+
     const cachedActiveEarningsAnalysisId = [
         ...(earningsQuality?.quarterly ?? []),
         ...(earningsQuality?.annual ?? []),
@@ -298,7 +336,9 @@ function AnalysisPage() {
             setEarningsQuality(null);
             setEventsExpectations(null);
             setMarketSnapshot(null);
+            setFinancialFlow(null);
             setMarketSnapshotError("");
+            setFinancialFlowError("");
             setError("");
             return;
         }
@@ -308,7 +348,9 @@ function AnalysisPage() {
         setEarningsQuality(null);
         setEventsExpectations(null);
         setMarketSnapshot(null);
+        setFinancialFlow(null);
         setMarketSnapshotError("");
+        setFinancialFlowError("");
         setEarningsQualityBusyPeriod(null);
         setEarningsQualityError("");
         setEventsExpectationsError("");
@@ -323,6 +365,7 @@ function AnalysisPage() {
                 void loadEarningsQuality(requestedTicker);
                 void loadEventsExpectations(requestedTicker);
                 void loadMarketSnapshot(requestedTicker);
+                void loadFinancialFlow(requestedTicker, "annual");
             }
         });
         void loadFactors(requestedTicker);
@@ -334,9 +377,10 @@ function AnalysisPage() {
             earningsQualityRequestRef.current?.abort();
             eventsExpectationsRequestRef.current?.abort();
             marketSnapshotRequestRef.current?.abort();
+            financialFlowRequestRef.current?.abort();
             earningsAnalysisRequestRef.current?.abort();
         };
-    }, [loadEarningsQuality, loadEventsExpectations, loadFactors, loadMarketSnapshot, loadStock, requestedTicker]);
+    }, [loadEarningsQuality, loadEventsExpectations, loadFactors, loadFinancialFlow, loadMarketSnapshot, loadStock, requestedTicker]);
 
     useEffect(() => {
         if (!requestedTicker) {
@@ -361,6 +405,12 @@ function AnalysisPage() {
         const previous = financialPeriod;
         setFinancialPeriod(period);
         if (period === "quarterly" || previous === "quarterly") await loadStock(ticker, chartInterval, period);
+        if (period === "ttm") {
+            financialFlowRequestRef.current?.abort();
+            setFinancialFlowLoading(false);
+        } else {
+            await loadFinancialFlow(ticker, period);
+        }
     };
 
     const addToWatchlist = (symbol: string) => {
@@ -546,6 +596,20 @@ function AnalysisPage() {
                                 eventsExpectations={eventsExpectations}
                                 eventsExpectationsLoading={eventsExpectationsLoading}
                                 eventsExpectationsError={eventsExpectationsError}
+                            />
+
+                            <FinancialFlowPanel
+                                data={financialFlow}
+                                loading={financialFlowLoading}
+                                error={financialFlowError}
+                                timePeriod={financialPeriod}
+                                onTimePeriodChange={(period) => void handlePeriodChange(period)}
+                                onPeriodEndChange={(periodEnd) => {
+                                    if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, periodEnd);
+                                }}
+                                onRetry={() => {
+                                    if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, financialFlow?.period_end ?? undefined);
+                                }}
                             />
 
                             <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />

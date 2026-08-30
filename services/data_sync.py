@@ -12,6 +12,7 @@ from sqlalchemy.dialects.sqlite import insert
 from models import Ticker, DailyPrice, FinancialStatement, FundamentalVersion
 from services import eodhd_client
 from services.corporate_actions import upsert_corporate_actions
+from services.financial_flow import ensure_latest_financial_flow_jobs
 from services.raw_store import persist_snapshot
 from services.security_master import upsert_security
 from core.time_utils import utc_now
@@ -89,6 +90,12 @@ async def sync_ticker_data(ticker: str, db: AsyncSession) -> bool:
 
         # 提交整个会话 (事务控制)
         await db.commit()
+        try:
+            await ensure_latest_financial_flow_jobs(db, ticker)
+        except Exception:
+            # Enrichment is best-effort and must never turn a successful local
+            # fundamentals sync into a failed stock-page request.
+            logger.exception("Unable to enqueue financial-flow enrichment for %s", ticker)
         logger.info(f"Data sync for {ticker} completed successfully.")
         return True
 

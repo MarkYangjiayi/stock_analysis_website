@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     EARNINGS_QUALITY_LEASE_SECONDS: float = 180.0
     EARNINGS_QUALITY_MAX_CONTEXT_CHARS: int = 80_000
 
+    # Deterministic reported-profit flow enrichment. Public reads always have
+    # a local EODHD fallback; SEC work is cached and never blocks the request.
+    FINANCIAL_FLOW_ENABLED: bool = True
+    FINANCIAL_FLOW_ENRICHMENT_ENABLED: bool = True
+    FINANCIAL_FLOW_TIMEOUT_SECONDS: float = 120.0
+    FINANCIAL_FLOW_LEASE_SECONDS: float = 180.0
+    FINANCIAL_FLOW_MAX_CONCURRENCY: int = 1
+
     # Background workers are intentionally disabled in the web process. Run
     # `python worker.py` as a separate service instead.
     RUN_BACKGROUND_TASKS: bool = False

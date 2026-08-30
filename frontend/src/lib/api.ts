@@ -135,6 +135,67 @@ export interface StockDataResponse {
     valuation_metrics?: ValuationMetrics | null;
 }
 
+export interface FinancialFlowSummaryCard {
+    key: string;
+    label: string;
+    value: number | null;
+    yoy_change: number | null;
+    margin: number | null;
+    note: string | null;
+}
+
+export interface FinancialFlowNode {
+    id: string;
+    label: string;
+    value: number;
+    kind: string;
+    source_id: string;
+    evidence_type: string;
+    confidence: string;
+    original_label: string | null;
+}
+
+export interface FinancialFlowLink {
+    source: string;
+    target: string;
+    value: number;
+    kind: string;
+}
+
+export interface FinancialFlowResponse {
+    ticker: string;
+    currency: string | null;
+    period_type: "annual" | "quarterly";
+    period_end: string | null;
+    available_periods: string[];
+    status: "ready" | "partial" | "unsupported" | "unavailable";
+    coverage_level: "full" | "consolidated" | "none";
+    unsupported_reason: string | null;
+    chart_available: boolean;
+    summary_cards: FinancialFlowSummaryCard[];
+    nodes: FinancialFlowNode[];
+    links: FinancialFlowLink[];
+    insights: Array<{ code?: string; severity?: string; message?: string }>;
+    validation: {
+        reconciled?: boolean;
+        missing_fields?: string[];
+        warnings?: Array<{ code?: string; message?: string }>;
+        [key: string]: unknown;
+    };
+    sources: Array<{
+        source_id: string;
+        document_type: string;
+        filing_date: string | null;
+        url: string | null;
+    }>;
+    enrichment: {
+        status: string;
+        run_id: number | null;
+        last_error: string | null;
+        updated_at: string | null;
+    };
+}
+
 export type MarketSnapshotUnit =
     | "currency"
     | "integer"
@@ -802,6 +863,21 @@ export const fetchMarketSnapshot = (ticker: string, signal?: AbortSignal) =>
         `/api/stocks/${encodeURIComponent(ticker)}/market-snapshot`,
         { signal },
     );
+
+export const fetchFinancialFlow = (
+    ticker: string,
+    periodType: "annual" | "quarterly",
+    periodEnd?: string | null,
+    signal?: AbortSignal,
+) => {
+    const params = new URLSearchParams({ period_type: periodType });
+    if (periodEnd) params.set("period_end", periodEnd);
+    return apiRequest<FinancialFlowResponse>(
+        `/api/stocks/${encodeURIComponent(ticker)}/financial-flow?${params.toString()}`,
+        { signal },
+        90_000,
+    );
+};
 
 export const fetchEventsExpectations = (ticker: string, signal?: AbortSignal) =>
     apiRequest<EventsExpectationsResponse>(

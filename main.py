@@ -14,6 +14,11 @@ from services.filing_analysis import (
     shutdown_filing_analysis_tasks,
     start_filing_analysis_recovery_monitor,
 )
+from services.financial_flow import (
+    recover_interrupted_financial_flows,
+    shutdown_financial_flow_tasks,
+    start_financial_flow_recovery_monitor,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,8 +35,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     await recover_interrupted_anomaly_scans()
     await recover_interrupted_filing_analyses()
+    await recover_interrupted_financial_flows()
     start_filing_analysis_recovery_monitor()
+    start_financial_flow_recovery_monitor()
     yield
+    await shutdown_financial_flow_tasks()
     await shutdown_filing_analysis_tasks()
     await shutdown_anomaly_scan_tasks()
     logger.info("Shutting down application")
