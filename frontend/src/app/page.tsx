@@ -133,6 +133,7 @@ function AnalysisPage() {
     const eventsExpectationsRequestRef = useRef<AbortController | null>(null);
     const marketSnapshotRequestRef = useRef<AbortController | null>(null);
     const financialFlowRequestRef = useRef<AbortController | null>(null);
+    const financialFlowRequestedPeriodRef = useRef<string | undefined>(undefined);
     const earningsAnalysisRequestRef = useRef<AbortController | null>(null);
     const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
 
@@ -271,6 +272,12 @@ function AnalysisPage() {
         financialFlowRequestRef.current?.abort();
         const controller = new AbortController();
         financialFlowRequestRef.current = controller;
+        financialFlowRequestedPeriodRef.current = periodEnd;
+        setFinancialFlow((current) => {
+            if (!current || current.ticker !== symbol || current.period_type !== periodType) return null;
+            if (periodEnd && current.period_end !== periodEnd) return null;
+            return current;
+        });
         setFinancialFlowLoading(true);
         setFinancialFlowError("");
         try {
@@ -282,6 +289,12 @@ function AnalysisPage() {
                 await waitForPoll(3_000, controller.signal);
                 result = await fetchFinancialFlow(symbol, periodType, periodEnd, controller.signal);
                 if (!controller.signal.aborted) setFinancialFlow(result);
+            }
+            if (!controller.signal.aborted && ["queued", "running"].includes(result.enrichment.status)) {
+                setFinancialFlow({
+                    ...result,
+                    enrichment: { ...result.enrichment, status: "pending_refresh" },
+                });
             }
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
@@ -608,7 +621,7 @@ function AnalysisPage() {
                                     if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, periodEnd);
                                 }}
                                 onRetry={() => {
-                                    if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, financialFlow?.period_end ?? undefined);
+                                    if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, financialFlowRequestedPeriodRef.current);
                                 }}
                             />
 

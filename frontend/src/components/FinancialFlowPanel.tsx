@@ -183,9 +183,20 @@ export default function FinancialFlowPanel({
                         </div>
 
                         {(data.enrichment.status === "queued" || data.enrichment.status === "running") && (
-                            <div className="mt-4 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
-                                <LoaderCircle className="animate-spin" size={14} /> Official SEC detail is being checked. The consolidated view remains usable.
+                            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+                                {loading && <LoaderCircle className="animate-spin" size={14} />} Official SEC detail is being checked. The consolidated view remains usable.
+                                {!loading && <button type="button" className="secondary-button ml-auto" onClick={onRetry}>Refresh status</button>}
                             </div>
+                        )}
+                        {data.enrichment.status === "pending_refresh" && (
+                            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                                Official SEC detail is still processing. The consolidated view remains usable.
+                                <button type="button" className="secondary-button ml-auto" onClick={onRetry}>Refresh status</button>
+                            </div>
+                        )}
+                        {loading && data && <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-slate-500"><LoaderCircle className="animate-spin" size={14} /> Refreshing the selected report…</div>}
+                        {error && data && (
+                            <div className="error-panel mt-4" role="alert"><AlertTriangle size={18} /><span>{error}</span><button type="button" className="secondary-button ml-auto" onClick={onRetry}>Retry</button></div>
                         )}
                         {data.unsupported_reason && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">{data.unsupported_reason}</div>}
                         {data.insights.map((insight, index) => insight.message && (

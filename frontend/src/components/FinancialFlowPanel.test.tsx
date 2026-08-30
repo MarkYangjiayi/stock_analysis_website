@@ -81,6 +81,26 @@ describe("FinancialFlowPanel", () => {
         expect(screen.getByTestId("financial-flow-chart")).toBeInTheDocument();
     });
 
+    it("offers a status refresh after the bounded polling window", async () => {
+        const user = userEvent.setup();
+        const onRetry = vi.fn();
+        renderPanel({
+            data: data({ enrichment: { status: "pending_refresh", run_id: 8, last_error: null, updated_at: null } }),
+            onRetry,
+        });
+
+        expect(screen.getByText(/still processing/)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Refresh status" }));
+        expect(onRetry).toHaveBeenCalledOnce();
+    });
+
+    it("keeps a refresh error visible when existing data is retained", () => {
+        renderPanel({ error: "The selected report could not be refreshed." });
+
+        expect(screen.getByRole("alert")).toHaveTextContent("The selected report could not be refreshed.");
+        expect(screen.getByTestId("financial-flow-chart")).toBeInTheDocument();
+    });
+
     it("does not manufacture a Sankey for a negative or unreconciled period", () => {
         renderPanel({ data: data({ chart_available: false, links: [] }) });
 

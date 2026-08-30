@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from io import StringIO
 from typing import Any, Iterable
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -391,7 +391,9 @@ def _closest_amount(amounts: list[float], expected: float | None) -> float | Non
     if not amounts:
         return None
     if expected is None:
-        return amounts[-1]
+        # SEC comparison tables conventionally put the current period first.
+        # Choosing the last amount can silently substitute the prior-year value.
+        return amounts[0]
     return min(amounts, key=lambda value: abs(abs(value) - abs(expected)))
 
 
@@ -649,7 +651,8 @@ async def enqueue_financial_flow(
     fingerprint, identity = _cache_identity(statement, currency)
     existing = await _latest_run(db, statement, currency)
     if existing is not None:
-        if existing.status != "failed" or existing.created_at.date() == utc_now().date():
+        last_attempt_at = existing.finished_at or existing.updated_at or existing.created_at
+        if existing.status != "failed" or last_attempt_at.date() == utc_now().date():
             return existing, False
         existing.status = "queued"
         existing.stage = "retry_queued"
@@ -699,19 +702,38 @@ async def _resolve_cik(db: AsyncSession, ticker: str) -> str:
 async def execute_financial_flow(run_id: int) -> None:
     async with _semaphore:
         async with async_session_maker() as db:
-            run = await db.get(FinancialFlowRun, run_id)
-            if run is None or run.status not in ACTIVE_STATUSES:
-                return
-            run.status = "running"
-            run.stage = "fetching_sec"
-            run.owner_token = _OWNER_TOKEN
-            run.global_slot = GLOBAL_SLOT
-            run.started_at = run.started_at or utc_now()
-            run.lease_expires_at = utc_now() + timedelta(seconds=settings.FINANCIAL_FLOW_LEASE_SECONDS)
+            now = utc_now()
             try:
+                claim = await db.execute(
+                    update(FinancialFlowRun)
+                    .where(
+                        FinancialFlowRun.id == run_id,
+                        FinancialFlowRun.status.in_(ACTIVE_STATUSES),
+                        or_(
+                            FinancialFlowRun.owner_token.is_(None),
+                            FinancialFlowRun.lease_expires_at.is_(None),
+                            FinancialFlowRun.lease_expires_at <= now,
+                        ),
+                    )
+                    .values(
+                        status="running",
+                        stage="fetching_sec",
+                        owner_token=_OWNER_TOKEN,
+                        global_slot=GLOBAL_SLOT,
+                        started_at=now,
+                        lease_expires_at=now + timedelta(seconds=settings.FINANCIAL_FLOW_LEASE_SECONDS),
+                        error_message=None,
+                    )
+                )
                 await db.commit()
             except IntegrityError:
                 await db.rollback()
+                return
+            if claim.rowcount != 1:
+                return
+
+            run = await db.get(FinancialFlowRun, run_id)
+            if run is None:
                 return
 
             try:
@@ -723,9 +745,21 @@ async def execute_financial_flow(run_id: int) -> None:
                 documents: list[dict[str, Any]] | None = None
                 last_error: Exception | None = None
                 for attempt in range(run.attempt_count, 3):
-                    run.attempt_count = attempt + 1
-                    run.lease_expires_at = utc_now() + timedelta(seconds=settings.FINANCIAL_FLOW_LEASE_SECONDS)
+                    renewed = await db.execute(
+                        update(FinancialFlowRun)
+                        .where(
+                            FinancialFlowRun.id == run_id,
+                            FinancialFlowRun.owner_token == _OWNER_TOKEN,
+                            FinancialFlowRun.status == "running",
+                        )
+                        .values(
+                            attempt_count=attempt + 1,
+                            lease_expires_at=utc_now() + timedelta(seconds=settings.FINANCIAL_FLOW_LEASE_SECONDS),
+                        )
+                    )
                     await db.commit()
+                    if renewed.rowcount != 1:
+                        raise FinancialFlowError("Financial-flow task ownership changed")
                     try:
                         documents = await asyncio.wait_for(
                             asyncio.to_thread(
@@ -758,30 +792,64 @@ async def execute_financial_flow(run_id: int) -> None:
                         },
                     )
                     snapshot_ids.append(snapshot.id)
-                run.stage = "normalizing"
                 previous = await _previous_statement(db, statement)
                 base = build_consolidated_flow(statement, previous_statement=previous, currency=profile.currency if profile else None)
                 detail = extract_reported_detail(documents, statement)
                 result, validation = merge_reported_detail(base, detail)
-                run.result = result
-                run.validation_report = validation
-                run.source_snapshots = snapshot_ids
-                run.coverage_level = result["coverage_level"]
-                run.status = "completed"
-                run.stage = "completed"
-                run.error_message = None
-            except Exception as exc:
-                logger.warning("Financial-flow enrichment failed for run %s: %s", run_id, exc)
-                run.status = "failed"
-                run.stage = "failed"
-                run.error_message = str(exc)[:2000]
-            finally:
-                run.active_key = None
-                run.global_slot = None
-                run.owner_token = None
-                run.lease_expires_at = None
-                run.finished_at = utc_now()
+                final_values = {
+                    "result": result,
+                    "validation_report": validation,
+                    "source_snapshots": snapshot_ids,
+                    "coverage_level": result["coverage_level"],
+                    "status": "completed",
+                    "stage": "completed",
+                    "error_message": None,
+                }
+            except asyncio.CancelledError:
+                await db.rollback()
+                await db.execute(
+                    update(FinancialFlowRun)
+                    .where(
+                        FinancialFlowRun.id == run_id,
+                        FinancialFlowRun.owner_token == _OWNER_TOKEN,
+                        FinancialFlowRun.status == "running",
+                    )
+                    .values(
+                        status="queued",
+                        stage="interrupted",
+                        global_slot=None,
+                        owner_token=None,
+                        lease_expires_at=None,
+                    )
+                )
                 await db.commit()
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.warning("Financial-flow enrichment failed for run %s: %s", run_id, exc)
+                final_values = {
+                    "status": "failed",
+                    "stage": "failed",
+                    "error_message": str(exc)[:2000],
+                }
+
+            final_values.update({
+                "active_key": None,
+                "global_slot": None,
+                "owner_token": None,
+                "lease_expires_at": None,
+                "finished_at": utc_now(),
+            })
+            await db.execute(
+                update(FinancialFlowRun)
+                .where(
+                    FinancialFlowRun.id == run_id,
+                    FinancialFlowRun.owner_token == _OWNER_TOKEN,
+                    FinancialFlowRun.status == "running",
+                )
+                .values(**final_values)
+            )
+            await db.commit()
 
 
 def schedule_financial_flow(run_id: int) -> None:
@@ -916,11 +984,15 @@ async def get_financial_flow(
 
 async def recover_interrupted_financial_flows() -> None:
     async with async_session_maker() as db:
+        now = utc_now()
         result = await db.execute(
             select(FinancialFlowRun).where(
-                FinancialFlowRun.status == "running",
-                FinancialFlowRun.lease_expires_at.is_not(None),
-                FinancialFlowRun.lease_expires_at < utc_now(),
+                FinancialFlowRun.status.in_(ACTIVE_STATUSES),
+                or_(
+                    FinancialFlowRun.owner_token.is_(None),
+                    FinancialFlowRun.lease_expires_at.is_(None),
+                    FinancialFlowRun.lease_expires_at <= now,
+                ),
             )
         )
         expired = list(result.scalars().all())

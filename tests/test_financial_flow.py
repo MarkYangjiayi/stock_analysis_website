@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date, timedelta
 
 import pytest
@@ -86,21 +87,21 @@ def test_sec_tables_choose_quarter_not_ytd_and_convert_disclosed_millions():
     local = statement(scale=1_000_000)
     html = """
     <table>
-      <tr><th>Line item</th><th>Three Months Ended June 30, 2026</th><th>Six Months Ended June 30, 2026</th></tr>
-      <tr><td>Total revenue</td><td>200,606</td><td>390,000</td></tr>
-      <tr><td>Online stores</td><td>70,000</td><td>135,000</td></tr>
-      <tr><td>Third-party seller services</td><td>46,000</td><td>90,000</td></tr>
-      <tr><td>AWS</td><td>42,000</td><td>80,000</td></tr>
-      <tr><td>Advertising services</td><td>19,000</td><td>37,000</td></tr>
-      <tr><td>Subscription services</td><td>13,000</td><td>25,000</td></tr>
-      <tr><td>Physical stores</td><td>5,800</td><td>11,000</td></tr>
-      <tr><td>Other</td><td>4,806</td><td>12,000</td></tr>
-      <tr><td>Cost of sales</td><td>95,778</td><td>187,000</td></tr>
-      <tr><td>Technology &amp; infrastructure</td><td>33,158</td><td>65,000</td></tr>
-      <tr><td>Fulfillment</td><td>29,633</td><td>58,000</td></tr>
-      <tr><td>Sales &amp; marketing</td><td>11,698</td><td>23,000</td></tr>
-      <tr><td>G&amp;A</td><td>2,788</td><td>5,400</td></tr>
-      <tr><td>Other operating expense, net</td><td>90</td><td>180</td></tr>
+      <tr><th>Line item</th><th>Three Months Ended June 30, 2026</th><th>Three Months Ended June 30, 2025</th><th>Six Months Ended June 30, 2026</th></tr>
+      <tr><td>Total revenue</td><td>200,606</td><td>167,172</td><td>390,000</td></tr>
+      <tr><td>Online stores</td><td>70,000</td><td>60,000</td><td>135,000</td></tr>
+      <tr><td>Third-party seller services</td><td>46,000</td><td>39,000</td><td>90,000</td></tr>
+      <tr><td>AWS</td><td>42,000</td><td>31,000</td><td>80,000</td></tr>
+      <tr><td>Advertising services</td><td>19,000</td><td>16,000</td><td>37,000</td></tr>
+      <tr><td>Subscription services</td><td>13,000</td><td>11,000</td><td>25,000</td></tr>
+      <tr><td>Physical stores</td><td>5,800</td><td>5,000</td><td>11,000</td></tr>
+      <tr><td>Other</td><td>4,806</td><td>5,172</td><td>12,000</td></tr>
+      <tr><td>Cost of sales</td><td>95,778</td><td>84,000</td><td>187,000</td></tr>
+      <tr><td>Technology &amp; infrastructure</td><td>33,158</td><td>28,000</td><td>65,000</td></tr>
+      <tr><td>Fulfillment</td><td>29,633</td><td>25,000</td><td>58,000</td></tr>
+      <tr><td>Sales &amp; marketing</td><td>11,698</td><td>10,000</td><td>23,000</td></tr>
+      <tr><td>G&amp;A</td><td>2,788</td><td>2,400</td><td>5,400</td></tr>
+      <tr><td>Other operating expense, net</td><td>90</td><td>75</td><td>180</td></tr>
     </table>
     """
     detail = extract_reported_detail([{
@@ -172,6 +173,7 @@ async def test_failed_run_can_be_requeued_on_a_later_day(db_session):
     run.status = "failed"
     run.active_key = None
     run.created_at = utc_now() - timedelta(days=1)
+    run.finished_at = utc_now() - timedelta(days=1)
     run.error_message = "temporary failure"
     await db_session.commit()
 
@@ -181,6 +183,14 @@ async def test_failed_run_can_be_requeued_on_a_later_day(db_session):
     assert created is True
     assert retried.status == "queued"
     assert retried.error_message is None
+
+    retried.status = "failed"
+    retried.active_key = None
+    retried.finished_at = utc_now()
+    await db_session.commit()
+    same_day, created = await enqueue_financial_flow(db_session, local, "USD")
+    assert same_day.id == run.id
+    assert created is False
 
 
 @pytest.mark.asyncio
@@ -213,6 +223,45 @@ async def test_external_enrichment_stops_after_three_attempts(db_session, monkey
     assert run.attempt_count == 3
     assert run.active_key is None
     assert run.global_slot is None
+
+
+@pytest.mark.asyncio
+async def test_cancellation_requeues_owned_run_and_duplicate_executor_cannot_claim(db_session, monkeypatch):
+    import services.financial_flow as financial_flow
+
+    db_session.add(Ticker(ticker="AMZN.US", name="Amazon", sector="Consumer Cyclical", industry="Internet Retail", currency="USD"))
+    local = statement(period="Yearly")
+    db_session.add(local)
+    await db_session.commit()
+    run, _ = await enqueue_financial_flow(db_session, local, "USD")
+
+    started = asyncio.Event()
+
+    async def cik(*_args, **_kwargs):
+        return "1018724"
+
+    async def blocked_to_thread(*_args, **_kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(financial_flow, "_resolve_cik", cik)
+    monkeypatch.setattr(financial_flow.asyncio, "to_thread", blocked_to_thread)
+    monkeypatch.setattr(financial_flow, "_semaphore", asyncio.Semaphore(2))
+
+    owner = asyncio.create_task(execute_financial_flow(run.id))
+    await started.wait()
+    duplicate = asyncio.create_task(execute_financial_flow(run.id))
+    await duplicate
+    owner.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+    await db_session.refresh(run)
+
+    assert run.status == "queued"
+    assert run.stage == "interrupted"
+    assert run.active_key is not None
+    assert run.owner_token is None
+    assert run.lease_expires_at is None
 
 
 @pytest.mark.asyncio
