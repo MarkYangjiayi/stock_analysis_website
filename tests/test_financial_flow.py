@@ -147,6 +147,25 @@ def test_segment_gap_gets_labeled_reconciliation_but_incomplete_expenses_fall_ba
     assert all(node["id"] != "expense_marketing" for node in result["nodes"])
 
 
+def test_revenue_segments_are_reconciled_within_one_table():
+    local = statement()
+    html = """
+    <table>
+      <tr><th>Revenue</th><th>Three Months Ended June 30, 2026</th></tr>
+      <tr><td>Product A revenue</td><td>110,000</td></tr>
+      <tr><td>Product B revenue</td><td>50,000</td></tr>
+    </table>
+    <table>
+      <tr><th>Revenue</th><th>Three Months Ended June 30, 2026</th></tr>
+      <tr><td>Region A revenue</td><td>20,000</td></tr>
+      <tr><td>Region B revenue</td><td>20,000</td></tr>
+    </table>
+    """
+    detail = extract_reported_detail([{"source_id": "SEC:1", "form": "10-Q", "html": html}], local)
+
+    assert detail["revenue_segments"] == []
+
+
 @pytest.mark.asyncio
 async def test_financial_company_returns_structured_unsupported_response(db_session, monkeypatch):
     monkeypatch.setattr(settings, "FINANCIAL_FLOW_ENRICHMENT_ENABLED", False)
@@ -236,13 +255,14 @@ async def test_cancellation_requeues_owned_run_and_duplicate_executor_cannot_cla
     run, _ = await enqueue_financial_flow(db_session, local, "USD")
 
     started = asyncio.Event()
+    released = asyncio.Event()
 
     async def cik(*_args, **_kwargs):
         return "1018724"
 
     async def blocked_to_thread(*_args, **_kwargs):
         started.set()
-        await asyncio.Event().wait()
+        await released.wait()
 
     monkeypatch.setattr(financial_flow, "_resolve_cik", cik)
     monkeypatch.setattr(financial_flow.asyncio, "to_thread", blocked_to_thread)
@@ -253,6 +273,7 @@ async def test_cancellation_requeues_owned_run_and_duplicate_executor_cannot_cla
     duplicate = asyncio.create_task(execute_financial_flow(run.id))
     await duplicate
     owner.cancel()
+    released.set()
     with pytest.raises(asyncio.CancelledError):
         await owner
     await db_session.refresh(run)

@@ -397,6 +397,38 @@ def _closest_amount(amounts: list[float], expected: float | None) -> float | Non
     return min(amounts, key=lambda value: abs(abs(value) - abs(expected)))
 
 
+def _reconcile_segment_candidates(candidates: list[dict[str, Any]], revenue: float | None) -> list[dict[str, Any]]:
+    if not revenue or len(candidates) < 2:
+        return []
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in candidates:
+        deduped.setdefault(re.sub(r"[^a-z0-9]", "", row["label"].lower()), row)
+    candidates = sorted(deduped.values(), key=lambda row: row["value"], reverse=True)[:16]
+    best: list[dict[str, Any]] = []
+    for mask in range(1, 1 << len(candidates)):
+        subset = [candidates[index] for index in range(len(candidates)) if mask & (1 << index)]
+        total = sum(row["value"] for row in subset)
+        disclosure_unit = max((row.get("disclosure_unit", 1.0) for row in subset), default=1.0)
+        tolerance = max(disclosure_unit, abs(revenue) * 0.005)
+        gap = revenue - total
+        if abs(gap) <= tolerance or 0 <= gap <= revenue * 0.05:
+            if len(subset) > len(best):
+                best = subset
+    if len(best) < 2:
+        return []
+    gap = revenue - sum(row["value"] for row in best)
+    disclosure_unit = max((row.get("disclosure_unit", 1.0) for row in best), default=1.0)
+    if gap > max(disclosure_unit, revenue * 0.005):
+        best.append({
+            "label": "Other / reconciliation",
+            "value": gap,
+            "source_id": best[0]["source_id"],
+            "original_label": "Derived reconciliation",
+            "derived": True,
+        })
+    return best
+
+
 def extract_reported_detail(
     documents: list[dict[str, Any]],
     statement: FinancialStatement,
@@ -409,7 +441,7 @@ def extract_reported_detail(
 
     expected = _statement_values(statement)
     expense_rows: dict[str, dict[str, Any]] = {}
-    revenue_candidates: list[dict[str, Any]] = []
+    revenue_tables: list[list[dict[str, Any]]] = []
     sources: list[dict[str, Any]] = []
     known_non_segments = re.compile(
         r"total|growth|margin|income|expense|cost|compensation|cash flow|employees|"
@@ -436,6 +468,7 @@ def extract_reported_detail(
             looks_like_sales_mix = bool(re.search(r"net sales|revenue", table_text, re.I))
             preferred_columns = _preferred_columns(table, statement.period)
             table_scale = _scale_for_table(table, preferred_columns, expected["revenue"])
+            table_revenue_candidates: list[dict[str, Any]] = []
             for _, series in table.iterrows():
                 row = list(series)
                 label = _row_label(row)
@@ -470,47 +503,23 @@ def extract_reported_detail(
                         # Preferred columns exclude YTD groups for quarterly statements.
                         value = amounts[0]
                         if value > 0 and expected["revenue"] and value <= expected["revenue"]:
-                            revenue_candidates.append({
+                            table_revenue_candidates.append({
                                 "label": label,
                                 "value": value,
                                 "source_id": source_id,
                                 "original_label": label,
                                 "disclosure_unit": table_scale,
                             })
+            if table_revenue_candidates:
+                revenue_tables.append(table_revenue_candidates)
 
-    # Deduplicate repeated filing and earnings-release rows.
-    deduped: dict[str, dict[str, Any]] = {}
-    for row in revenue_candidates:
-        deduped.setdefault(re.sub(r"[^a-z0-9]", "", row["label"].lower()), row)
-    candidates = list(deduped.values())
     revenue = expected["revenue"]
     segments: list[dict[str, Any]] = []
-    if revenue and len(candidates) >= 2:
-        # Retain the largest self-consistent collection. This deliberately
-        # rejects incomplete tables instead of guessing an undisclosed mix.
-        candidates = sorted(candidates, key=lambda row: row["value"], reverse=True)[:16]
-        best: list[dict[str, Any]] = []
-        for mask in range(1, 1 << len(candidates)):
-            subset = [candidates[index] for index in range(len(candidates)) if mask & (1 << index)]
-            total = sum(row["value"] for row in subset)
-            disclosure_unit = max((row.get("disclosure_unit", 1.0) for row in subset), default=1.0)
-            tolerance = max(disclosure_unit, abs(revenue) * 0.005)
-            gap = revenue - total
-            if abs(gap) <= tolerance or 0 <= gap <= revenue * 0.05:
-                if len(subset) > len(best):
-                    best = subset
-        if len(best) >= 2:
-            segments = best
-            gap = revenue - sum(row["value"] for row in segments)
-            disclosure_unit = max((row.get("disclosure_unit", 1.0) for row in segments), default=1.0)
-            if gap > max(disclosure_unit, revenue * 0.005):
-                segments.append({
-                    "label": "Other / reconciliation",
-                    "value": gap,
-                    "source_id": segments[0]["source_id"],
-                    "original_label": "Derived reconciliation",
-                    "derived": True,
-                })
+    # Reconcile within one disclosure table; never combine product and geography rows.
+    for table_candidates in revenue_tables:
+        table_segments = _reconcile_segment_candidates(table_candidates, revenue)
+        if len(table_segments) > len(segments):
+            segments = table_segments
 
     return {
         "revenue_segments": segments,
@@ -593,9 +602,20 @@ def merge_reported_detail(
     return result, validation
 
 
-def _cache_identity(statement: FinancialStatement, currency: str | None) -> tuple[str, str]:
+def _cache_identity(
+    statement: FinancialStatement,
+    currency: str | None,
+    comparison_fingerprint: str | None = None,
+) -> tuple[str, str]:
     fingerprint = statement_fingerprint(statement, currency=currency)
-    raw = "\0".join((statement.ticker, statement.fiscal_date.isoformat(), statement.period, fingerprint, FINANCIAL_FLOW_SCHEMA_VERSION))
+    raw = "\0".join((
+        statement.ticker,
+        statement.fiscal_date.isoformat(),
+        statement.period,
+        fingerprint,
+        comparison_fingerprint or "",
+        FINANCIAL_FLOW_SCHEMA_VERSION,
+    ))
     return fingerprint, hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -627,7 +647,9 @@ async def _latest_run(
     statement: FinancialStatement,
     currency: str | None,
 ) -> FinancialFlowRun | None:
-    _, identity = _cache_identity(statement, currency)
+    previous = await _previous_statement(db, statement)
+    comparison_fingerprint = statement_fingerprint(previous, currency=currency) if previous else None
+    _, identity = _cache_identity(statement, currency, comparison_fingerprint)
     result = await db.execute(
         select(FinancialFlowRun)
         .where(
@@ -648,7 +670,9 @@ async def enqueue_financial_flow(
     currency: str | None,
 ) -> tuple[FinancialFlowRun, bool]:
     period_type = "annual" if statement.period == "Yearly" else "quarterly"
-    fingerprint, identity = _cache_identity(statement, currency)
+    previous = await _previous_statement(db, statement)
+    comparison_fingerprint = statement_fingerprint(previous, currency=currency) if previous else None
+    fingerprint, identity = _cache_identity(statement, currency, comparison_fingerprint)
     existing = await _latest_run(db, statement, currency)
     if existing is not None:
         last_attempt_at = existing.finished_at or existing.updated_at or existing.created_at
@@ -699,7 +723,51 @@ async def _resolve_cik(db: AsyncSession, ticker: str) -> str:
     return str(support["cik"])
 
 
+async def _fetch_sec_documents_bounded(
+    *,
+    cik: str,
+    period_end: date,
+    period_type: str,
+) -> list[dict[str, Any]]:
+    """Bound the await but keep the global slot until the non-cancellable thread exits."""
+    fetch_task = asyncio.create_task(asyncio.to_thread(
+        _fetch_sec_documents_sync,
+        cik=cik,
+        period_end=period_end,
+        period_type=period_type,
+    ))
+    try:
+        return await asyncio.wait_for(
+            asyncio.shield(fetch_task),
+            timeout=settings.FINANCIAL_FLOW_TIMEOUT_SECONDS,
+        )
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        await asyncio.gather(fetch_task, return_exceptions=True)
+        raise
+
+
+async def _renew_financial_flow_lease(run_id: int) -> None:
+    interval = max(10.0, settings.FINANCIAL_FLOW_LEASE_SECONDS / 3)
+    while True:
+        await asyncio.sleep(interval)
+        async with async_session_maker() as db:
+            result = await db.execute(
+                update(FinancialFlowRun)
+                .where(
+                    FinancialFlowRun.id == run_id,
+                    FinancialFlowRun.status == "running",
+                    FinancialFlowRun.owner_token == _OWNER_TOKEN,
+                )
+                .values(lease_expires_at=utc_now() + timedelta(seconds=settings.FINANCIAL_FLOW_LEASE_SECONDS))
+            )
+            await db.commit()
+            if result.rowcount != 1:
+                return
+
+
 async def execute_financial_flow(run_id: int) -> None:
+    if not settings.FINANCIAL_FLOW_ENABLED or not settings.FINANCIAL_FLOW_ENRICHMENT_ENABLED:
+        return
     async with _semaphore:
         async with async_session_maker() as db:
             now = utc_now()
@@ -736,6 +804,7 @@ async def execute_financial_flow(run_id: int) -> None:
             if run is None:
                 return
 
+            heartbeat = asyncio.create_task(_renew_financial_flow_lease(run_id))
             try:
                 statement = await get_statement_for_period(db, run.ticker, run.period_end, run.period_type)
                 profile = await db.get(Ticker, run.ticker)
@@ -761,14 +830,10 @@ async def execute_financial_flow(run_id: int) -> None:
                     if renewed.rowcount != 1:
                         raise FinancialFlowError("Financial-flow task ownership changed")
                     try:
-                        documents = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                _fetch_sec_documents_sync,
-                                cik=cik,
-                                period_end=run.period_end,
-                                period_type=run.period_type,
-                            ),
-                            timeout=settings.FINANCIAL_FLOW_TIMEOUT_SECONDS,
+                        documents = await _fetch_sec_documents_bounded(
+                            cik=cik,
+                            period_end=run.period_end,
+                            period_type=run.period_type,
                         )
                         break
                     except Exception as exc:
@@ -833,23 +898,26 @@ async def execute_financial_flow(run_id: int) -> None:
                     "error_message": str(exc)[:2000],
                 }
 
-            final_values.update({
-                "active_key": None,
-                "global_slot": None,
-                "owner_token": None,
-                "lease_expires_at": None,
-                "finished_at": utc_now(),
-            })
-            await db.execute(
-                update(FinancialFlowRun)
-                .where(
-                    FinancialFlowRun.id == run_id,
-                    FinancialFlowRun.owner_token == _OWNER_TOKEN,
-                    FinancialFlowRun.status == "running",
+                final_values.update({
+                    "active_key": None,
+                    "global_slot": None,
+                    "owner_token": None,
+                    "lease_expires_at": None,
+                    "finished_at": utc_now(),
+                })
+                await db.execute(
+                    update(FinancialFlowRun)
+                    .where(
+                        FinancialFlowRun.id == run_id,
+                        FinancialFlowRun.owner_token == _OWNER_TOKEN,
+                        FinancialFlowRun.status == "running",
+                    )
+                    .values(**final_values)
                 )
-                .values(**final_values)
-            )
-            await db.commit()
+                await db.commit()
+            finally:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
 
 
 def schedule_financial_flow(run_id: int) -> None:
@@ -862,7 +930,7 @@ def schedule_financial_flow(run_id: int) -> None:
 
 
 async def ensure_latest_financial_flow_jobs(db: AsyncSession, ticker: str) -> None:
-    if not settings.FINANCIAL_FLOW_ENRICHMENT_ENABLED or not settings.SEC_USER_AGENT.strip():
+    if not settings.FINANCIAL_FLOW_ENABLED or not settings.FINANCIAL_FLOW_ENRICHMENT_ENABLED or not settings.SEC_USER_AGENT.strip():
         return
     profile = await db.get(Ticker, ticker)
     if profile is None or is_financial_company(profile.sector, profile.industry):
@@ -948,7 +1016,17 @@ async def get_financial_flow(
     unsupported_reason = None
     if profile and is_financial_company(profile.sector, profile.industry):
         unsupported_reason = "Financial companies require an industry-specific flow template and are not supported in this release."
-        result.update({"status": "unsupported", "coverage_level": "none", "chart_available": False, "links": []})
+        result.update({
+            "status": "unsupported",
+            "coverage_level": "none",
+            "chart_available": False,
+            "summary_cards": [],
+            "nodes": [],
+            "links": [],
+            "insights": [],
+            "sources": [],
+            "validation": {"reconciled": False, "missing_fields": [], "warnings": []},
+        })
 
     run = await _latest_run(db, statement, profile.currency if profile else None)
     if run and run.status == "completed" and isinstance(run.result, dict) and unsupported_reason is None:
