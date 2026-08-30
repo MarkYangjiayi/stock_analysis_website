@@ -6,8 +6,12 @@ import type { ComponentProps } from "react";
 import FinancialFlowPanel from "@/components/FinancialFlowPanel";
 import type { FinancialFlowResponse } from "@/lib/api";
 
+const { echartsMock } = vi.hoisted(() => ({ echartsMock: vi.fn() }));
 vi.mock("echarts-for-react", () => ({
-    default: () => <div data-testid="financial-flow-chart" />,
+    default: (props: unknown) => {
+        echartsMock(props);
+        return <div data-testid="financial-flow-chart" />;
+    },
 }));
 vi.mock("next-themes", () => ({ useTheme: () => ({ resolvedTheme: "light" }) }));
 
@@ -62,6 +66,91 @@ describe("FinancialFlowPanel", () => {
         expect(screen.getByTestId("financial-flow-chart")).toBeInTheDocument();
         expect(screen.getByText("derived calculation")).toBeInTheDocument();
         expect(screen.getByText("Non-operating items were material.")).toBeInTheDocument();
+    });
+
+    it("pins financial stages to adjacent columns and colors expense flows separately", () => {
+        const makeNode = (
+            id: string,
+            label: string,
+            value: number,
+            kind: "income" | "profit" | "expense",
+        ): FinancialFlowResponse["nodes"][number] => ({
+            id,
+            label,
+            value,
+            kind,
+            source_id: "EODHD:1",
+            evidence_type: "fact_provider_standardized",
+            confidence: "medium",
+            original_label: label,
+        });
+        renderPanel({
+            data: data({
+                coverage_level: "consolidated",
+                nodes: [
+                    makeNode("revenue", "Total revenue", 200, "income"),
+                    makeNode("cost_of_revenue", "Cost of revenue", 95, "expense"),
+                    makeNode("gross_profit", "Gross profit", 105, "profit"),
+                    makeNode("operating_expenses", "Operating expenses", 77, "expense"),
+                    makeNode("operating_income", "Operating income", 28, "profit"),
+                    makeNode("non_operating_income", "Net non-operating income", 53, "income"),
+                    makeNode("pretax_income", "Income before taxes", 81, "profit"),
+                    makeNode("income_tax", "Income taxes", 18, "expense"),
+                    makeNode("net_income", "Net income", 63, "profit"),
+                ],
+                links: [
+                    { source: "revenue", target: "cost_of_revenue", value: 95, kind: "expense" },
+                    { source: "revenue", target: "gross_profit", value: 105, kind: "profit" },
+                    { source: "gross_profit", target: "operating_expenses", value: 77, kind: "expense" },
+                    { source: "gross_profit", target: "operating_income", value: 28, kind: "profit" },
+                    { source: "operating_income", target: "pretax_income", value: 28, kind: "profit" },
+                    { source: "non_operating_income", target: "pretax_income", value: 53, kind: "income" },
+                    { source: "pretax_income", target: "income_tax", value: 18, kind: "expense" },
+                    { source: "pretax_income", target: "net_income", value: 63, kind: "profit" },
+                ],
+            }),
+        });
+
+        const props = echartsMock.mock.calls.at(-1)?.[0] as {
+            option: { series: Array<{ data: Array<{ name: string; depth: number }>; links: Array<{ kind: string; lineStyle: { color: string } }> }> };
+        };
+        const series = props.option.series[0];
+        const depths = new Map(series.data.map((node) => [node.name, node.depth]));
+        expect(depths.get("revenue")).toBe(0);
+        expect(depths.get("cost_of_revenue")).toBe(1);
+        expect(depths.get("gross_profit")).toBe(1);
+        expect(depths.get("operating_expenses")).toBe(2);
+        expect(depths.get("non_operating_income")).toBe(2);
+        expect(depths.get("pretax_income")).toBe(3);
+        expect(depths.get("income_tax")).toBe(4);
+        expect(depths.get("net_income")).toBe(4);
+
+        const expenseColor = series.links.find((link) => link.kind === "expense")?.lineStyle.color;
+        const profitColor = series.links.find((link) => link.kind === "profit")?.lineStyle.color;
+        expect(expenseColor).not.toBe(profitColor);
+    });
+
+    it("adds a leading column only when reported revenue segments are present", () => {
+        const segmented = data({
+            nodes: [
+                ...data().nodes,
+                { id: "revenue_segment_0", label: "AWS", value: 42_000_000_000, kind: "income", source_id: "SEC:1", evidence_type: "fact_source_reported", confidence: "high", original_label: "AWS" },
+            ],
+            links: [
+                { source: "revenue_segment_0", target: "revenue", value: 42_000_000_000, kind: "income" },
+                ...data().links,
+            ],
+        });
+        renderPanel({ data: segmented });
+
+        const props = echartsMock.mock.calls.at(-1)?.[0] as {
+            option: { series: Array<{ data: Array<{ name: string; depth: number; label: { position: string } }> }> };
+        };
+        const nodes = new Map(props.option.series[0].data.map((node) => [node.name, node]));
+        expect(nodes.get("revenue_segment_0")?.depth).toBe(0);
+        expect(nodes.get("revenue_segment_0")?.label.position).toBe("left");
+        expect(nodes.get("revenue")?.depth).toBe(1);
+        expect(nodes.get("gross_profit")?.depth).toBe(2);
     });
 
     it("changes only the selected profit-flow history period", async () => {

@@ -39,6 +39,70 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => (
     "'": "&#39;",
 }[character] ?? character));
 
+const buildSankeyLayout = (
+    nodes: FinancialFlowResponse["nodes"],
+    links: FinancialFlowResponse["links"],
+) => {
+    const revenueSegmentIds = new Set(
+        links
+            .filter((link) => link.target === "revenue" && link.source !== "revenue")
+            .map((link) => link.source),
+    );
+    const revenueDepth = revenueSegmentIds.size ? 1 : 0;
+    const depthById = new Map<string, number>();
+    const setDepth = (nodeId: string, depth: number) => {
+        if (nodes.some((node) => node.id === nodeId)) depthById.set(nodeId, depth);
+    };
+
+    revenueSegmentIds.forEach((nodeId) => depthById.set(nodeId, 0));
+    setDepth("revenue", revenueDepth);
+    setDepth("gross_profit", revenueDepth + 1);
+    setDepth("operating_income", revenueDepth + 2);
+    setDepth("pretax_income", revenueDepth + 3);
+    setDepth("net_income", revenueDepth + 4);
+    setDepth("income_tax", revenueDepth + 4);
+
+    for (let pass = 0; pass < nodes.length; pass += 1) {
+        let changed = false;
+        links.forEach((link) => {
+            const sourceDepth = depthById.get(link.source);
+            const targetDepth = depthById.get(link.target);
+            if (sourceDepth != null && targetDepth == null) {
+                depthById.set(link.target, sourceDepth + 1);
+                changed = true;
+            } else if (sourceDepth == null && targetDepth != null) {
+                depthById.set(link.source, Math.max(0, targetDepth - 1));
+                changed = true;
+            }
+        });
+        if (!changed) break;
+    }
+
+    nodes.forEach((node) => {
+        if (!depthById.has(node.id)) depthById.set(node.id, 0);
+    });
+
+    const lanePriority = (node: FinancialFlowResponse["nodes"][number]) => {
+        if (["gross_profit", "operating_income", "pretax_income", "net_income", "revenue"].includes(node.id)) return 0;
+        if (node.id === "non_operating_income" || revenueSegmentIds.has(node.id)) return 1;
+        return node.kind === "expense" ? 3 : 2;
+    };
+    const orderedNodes = [...nodes].sort((left, right) => {
+        const depthDifference = (depthById.get(left.id) ?? 0) - (depthById.get(right.id) ?? 0);
+        return depthDifference || lanePriority(left) - lanePriority(right);
+    });
+    const nodesPerDepth = new Map<number, number>();
+    depthById.forEach((depth) => nodesPerDepth.set(depth, (nodesPerDepth.get(depth) ?? 0) + 1));
+    const maxNodesInColumn = Math.max(1, ...nodesPerDepth.values());
+
+    return {
+        depthById,
+        orderedNodes,
+        revenueSegmentIds,
+        chartHeight: Math.min(680, Math.max(440, 150 + maxNodesInColumn * 62)),
+    };
+};
+
 export default function FinancialFlowPanel({
     data,
     loading,
@@ -54,14 +118,18 @@ export default function FinancialFlowPanel({
         () => new Map((data?.nodes ?? []).map((node) => [node.id, node])),
         [data?.nodes],
     );
+    const sankeyLayout = useMemo(
+        () => buildSankeyLayout(data?.nodes ?? [], data?.links ?? []),
+        [data?.links, data?.nodes],
+    );
     const option = useMemo(() => {
         if (!data?.chart_available || !data.nodes.length || !data.links.length) return {};
         const textColor = isDark ? "#d1d5db" : "#334155";
         const borderColor = isDark ? "#475569" : "#e2e8f0";
         const colors: Record<string, string> = {
-            income: "#3b82f6",
-            profit: "#2563eb",
-            expense: "#f97316",
+            income: isDark ? "#60a5fa" : "#3b82f6",
+            profit: isDark ? "#3b82f6" : "#1d4ed8",
+            expense: isDark ? "#fb923c" : "#f97316",
         };
         return {
             aria: {
@@ -87,26 +155,48 @@ export default function FinancialFlowPanel({
             },
             series: [{
                 type: "sankey",
-                left: 32,
-                right: 160,
-                top: 28,
-                bottom: 28,
+                left: sankeyLayout.revenueSegmentIds.size ? 210 : 36,
+                right: 180,
+                top: 36,
+                bottom: 36,
                 nodeAlign: "justify",
-                nodeWidth: 14,
-                nodeGap: 18,
+                nodeWidth: 13,
+                nodeGap: sankeyLayout.revenueSegmentIds.size ? 16 : 24,
+                layoutIterations: 0,
                 draggable: false,
                 emphasis: { focus: "adjacency" },
-                data: data.nodes.map((node) => ({
+                data: sankeyLayout.orderedNodes.map((node) => ({
                     name: node.id,
                     value: node.value,
-                    itemStyle: { color: colors[node.kind] ?? "#64748b", borderColor, borderWidth: 1 },
-                    label: { formatter: node.label, color: textColor, fontSize: 12, fontWeight: 600 },
+                    depth: sankeyLayout.depthById.get(node.id),
+                    itemStyle: {
+                        color: colors[node.kind] ?? "#64748b",
+                        borderColor,
+                        borderWidth: 1,
+                        borderRadius: 2,
+                    },
+                    label: {
+                        formatter: node.label,
+                        position: sankeyLayout.revenueSegmentIds.has(node.id) ? "left" : "right",
+                        align: sankeyLayout.revenueSegmentIds.has(node.id) ? "right" : "left",
+                        distance: 8,
+                        color: textColor,
+                        fontSize: 12,
+                        fontWeight: 600,
+                    },
                 })),
-                links: data.links.map((link) => ({ ...link, lineStyle: { color: "source", opacity: 0.3 } })),
-                lineStyle: { color: "source", curveness: 0.5, opacity: 0.3 },
+                links: data.links.map((link) => ({
+                    ...link,
+                    lineStyle: {
+                        color: colors[link.kind] ?? "#64748b",
+                        curveness: 0.42,
+                        opacity: link.kind === "expense" ? 0.3 : 0.24,
+                    },
+                })),
+                lineStyle: { curveness: 0.42, opacity: 0.24 },
             }],
         };
-    }, [data, isDark, nodeById]);
+    }, [data, isDark, nodeById, sankeyLayout]);
 
     if (timePeriod === "ttm") {
         return (
@@ -205,7 +295,7 @@ export default function FinancialFlowPanel({
 
                         {data.chart_available && data.links.length ? (
                             <div className="mt-5 overflow-x-auto">
-                                <div className="min-w-[960px]"><ReactECharts option={option} style={{ height: 520 }} opts={{ renderer: "canvas" }} /></div>
+                                <div className="mx-auto min-w-[960px] max-w-[1480px]"><ReactECharts option={option} style={{ height: sankeyLayout.chartHeight }} opts={{ renderer: "canvas" }} /></div>
                             </div>
                         ) : !data.unsupported_reason && (
                             <div className="surface-subtle mt-5 rounded-xl border p-5 text-sm text-slate-600 dark:text-slate-300">
