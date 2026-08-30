@@ -85,6 +85,66 @@ class StockDataResponse(BaseModel):
     valuation_metrics: Optional[ValuationMetricsModel] = None
 
 
+class FinancialFlowSummaryCardModel(BaseModel):
+    key: str
+    label: str
+    value: Optional[float] = None
+    yoy_change: Optional[float] = None
+    margin: Optional[float] = None
+    note: Optional[str] = None
+
+
+class FinancialFlowNodeModel(BaseModel):
+    id: str
+    label: str
+    value: float
+    kind: str
+    source_id: str
+    evidence_type: str
+    confidence: str
+    original_label: Optional[str] = None
+
+
+class FinancialFlowLinkModel(BaseModel):
+    source: str
+    target: str
+    value: float
+    kind: str
+
+
+class FinancialFlowSourceModel(BaseModel):
+    source_id: str
+    document_type: str
+    filing_date: Optional[str] = None
+    url: Optional[str] = None
+
+
+class FinancialFlowEnrichmentModel(BaseModel):
+    status: str
+    run_id: Optional[int] = None
+    last_error: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class FinancialFlowResponse(BaseModel):
+    ticker: str
+    currency: Optional[str] = None
+    period_type: Literal["annual", "quarterly"]
+    period_end: Optional[str] = None
+    available_periods: List[str] = Field(default_factory=list)
+    status: Literal["ready", "partial", "unsupported", "unavailable"]
+    coverage_level: Literal["full", "consolidated", "none"]
+    unsupported_reason: Optional[str] = None
+    chart_available: bool
+    summary_cards: List[FinancialFlowSummaryCardModel] = Field(default_factory=list)
+    nodes: List[FinancialFlowNodeModel] = Field(default_factory=list)
+    links: List[FinancialFlowLinkModel] = Field(default_factory=list)
+    insights: List[Dict[str, Any]] = Field(default_factory=list)
+    validation: Dict[str, Any] = Field(default_factory=dict)
+    sources: List[FinancialFlowSourceModel] = Field(default_factory=list)
+    enrichment: FinancialFlowEnrichmentModel
+
+
 class MarketSnapshotMetricModel(BaseModel):
     value: Optional[Any] = None
     unit: Literal[

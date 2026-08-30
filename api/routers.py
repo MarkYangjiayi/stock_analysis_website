@@ -17,6 +17,7 @@ from api.schemas import (
     FactorComputeRequest,
     FactorResearchRequest,
     EventsExpectationsResponse,
+    FinancialFlowResponse,
     MarketSnapshotResponse,
     MarketOverviewResponse,
     PeerMultiplesResponse,
@@ -36,6 +37,7 @@ from services.analyzer import (
 from services.ai_assistant import generate_stock_report, get_cached_stock_report
 from services.earnings_quality import get_earnings_quality, serialize_analysis_run
 from services.events_expectations import get_events_expectations
+from services.financial_flow import get_financial_flow
 from services.filing_analysis import (
     FilingAnalysisError,
     assert_filing_analysis_configured,
@@ -551,6 +553,32 @@ async def read_market_snapshot(
 ):
     """Return a local-only, point-in-time market snapshot for one security."""
     return await get_market_snapshot(ticker, db)
+
+
+@router.get(
+    "/api/stocks/{ticker}/financial-flow",
+    response_model=FinancialFlowResponse,
+    tags=["Stocks Analysis Read"],
+)
+async def read_financial_flow(
+    ticker: str,
+    period_type: Literal["annual", "quarterly"] = Query(default="annual"),
+    period_end: Optional[date] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return an auditable reported-profit flow; SEC enrichment never blocks."""
+    try:
+        result = await get_financial_flow(
+            ticker,
+            db,
+            period_type=period_type,
+            period_end=period_end,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if period_end is not None and period_end.isoformat() not in result["available_periods"]:
+        raise HTTPException(status_code=404, detail=result["unsupported_reason"])
+    return result
 
 
 @router.get(
