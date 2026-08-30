@@ -683,7 +683,9 @@ async def enqueue_financial_flow(
         existing.active_key = f"{statement.ticker}:{period_type}:{statement.fiscal_date.isoformat()}"
         existing.attempt_count = 0
         existing.error_message = None
-        existing.finished_at = None
+        # Record the retry date immediately so a requeue itself cannot bypass
+        # the once-per-day provider request guard if execution is interrupted.
+        existing.finished_at = utc_now()
         await db.commit()
         return existing, True
     active_key = f"{statement.ticker}:{period_type}:{statement.fiscal_date.isoformat()}"
