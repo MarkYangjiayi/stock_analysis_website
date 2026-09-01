@@ -1,107 +1,317 @@
-import logging
+from __future__ import annotations
 
-from core.config import settings
-from services.deepseek_client import generate_deepseek_text
-from services.notifications import NotificationManager
+from collections import Counter
+import logging
+import re
+from typing import Any
+from urllib.parse import urlparse
+
+from sqlalchemy import update
+
+from core.time_utils import utc_now
+from database import async_session_maker
+from models import DailyReportRun
 from services.anomaly_scans import run_persisted_anomaly_scan
+from services.notifications import NotificationManager
+
 
 logger = logging.getLogger(__name__)
+REPORT_RENDERER_VERSION = "evidence-v1"
+_CITATION_PATTERN = re.compile(r"\[(\d+)]")
+_NO_CATALYST = "缺乏明确新闻催化剂，可能为资金面或技术面行为。"
+_INVALID_CITATIONS = "归因引用无法与已保存新闻匹配，本次仅展示行情异动。"
 
 
-async def _invoke_deepseek(prompt: str) -> str:
-    """Invoke DeepSeek for a business report."""
-    api_key = settings.DEEPSEEK_API_KEY
-    if not api_key:
-        logger.error("DEEPSEEK_API_KEY missing, cannot generate report.")
-        return "无法生成: LLM API Key未配置。"
-        
+def _safe_link(value: Any) -> str:
+    normalized = str(value or "").strip()
+    parsed = urlparse(normalized)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return normalized
+    return ""
+
+
+def _compact_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _display_ticker(value: Any) -> str:
+    ticker = _compact_text(value).upper()
+    return ticker[:-3] if ticker.endswith(".US") else ticker
+
+
+def _format_move(value: Any) -> str:
     try:
-        response = await generate_deepseek_text(prompt)
-        return response or "生成报告内容为空"
-    except Exception as e:
-        logger.error(f"Failed to generate AI report: {e}")
-        return f"AI 摘要失败: {str(e)}"
+        move = float(value)
+    except (TypeError, ValueError):
+        return "涨跌幅未知"
+    return f"{move:+.2f}%"
 
 
-async def generate_morning_briefing():
-    """Generates the morning briefing using intraday anomaly data and broadcasts it."""
+def _report_date(anomalies: list[dict[str, Any]]) -> str:
+    dates = [
+        _compact_text(anomaly.get("date"))
+        for anomaly in anomalies
+        if _compact_text(anomaly.get("date"))
+    ]
+    if not dates:
+        return "盘中实时更新"
+    return Counter(dates).most_common(1)[0][0]
+
+
+def _source_links(news: Any) -> dict[int, str]:
+    if not isinstance(news, list):
+        return {}
+    links: dict[int, str] = {}
+    for index, item in enumerate(news, start=1):
+        if not isinstance(item, dict):
+            continue
+        link = _safe_link(item.get("link"))
+        if link:
+            links[index] = link
+    return links
+
+
+def _grounded_analysis(anomaly: dict[str, Any]) -> str:
+    status = _compact_text(anomaly.get("attribution_status"))
+    analysis = _compact_text(anomaly.get("ai_analysis"))
+    links = _source_links(anomaly.get("news"))
+
+    if status == "no_news":
+        return _NO_CATALYST
+    if not analysis:
+        return "归因信息不可用，本次仅展示行情异动。"
+
+    citation_numbers = {
+        int(match.group(1))
+        for match in _CITATION_PATTERN.finditer(analysis)
+    }
+    if citation_numbers and not citation_numbers.issubset(links):
+        return _INVALID_CITATIONS
+
+    cited_links: set[int] = set()
+
+    def link_citation(match: re.Match[str]) -> str:
+        source_number = int(match.group(1))
+        link = links.get(source_number)
+        if not link:
+            return match.group(0)
+        cited_links.add(source_number)
+        return f"[{source_number}]({link})"
+
+    grounded = _CITATION_PATTERN.sub(link_citation, analysis)
+    if links and not cited_links:
+        source_markers = " ".join(
+            f"[{index}]({link})"
+            for index, link in links.items()
+        )
+        grounded = f"{grounded} 来源：{source_markers}"
+    return grounded
+
+
+def render_daily_report(
+    anomalies: list[dict[str, Any]],
+    *,
+    report_type: str,
+) -> str:
+    """Render an evidence-bound report without asking an LLM to infer causes again."""
+    if report_type not in {"morning_briefing", "post_market_summary"}:
+        raise ValueError(f"Unsupported daily report type: {report_type}")
+
+    report_name = (
+        "美股开盘速递"
+        if report_type == "morning_briefing"
+        else "美股盘后总结"
+    )
+    if not anomalies:
+        quiet_message = (
+            "早盘扫描完成：当前市场暂无显著异动标的。"
+            if report_type == "morning_briefing"
+            else "盘后扫描完成：今日市场平稳收盘，暂无特大级别异动。"
+        )
+        return f"**{report_name}｜{_report_date(anomalies)}**\n\n{quiet_message}"
+
+    lines = [
+        f"**{report_name}｜{_report_date(anomalies)}**",
+        "",
+        "**核心异动与已验证驱动**",
+        "",
+    ]
+    for anomaly in anomalies:
+        ticker = _display_ticker(anomaly.get("ticker")) or "UNKNOWN"
+        move = _format_move(anomaly.get("price_change"))
+        lines.append(
+            f"- **{ticker} {move}**：{_grounded_analysis(anomaly)}"
+        )
+    lines.extend([
+        "",
+        "> 说明：驱动仅依据扫描时抓取并保存的新闻；没有可靠证据时不推断原因，也不自动生成交易建议。",
+    ])
+    return "\n".join(lines)
+
+
+async def _create_report_run(
+    *,
+    report_type: str,
+) -> int:
+    async with async_session_maker() as db, db.begin():
+        run = DailyReportRun(
+            report_type=report_type,
+            renderer_version=REPORT_RENDERER_VERSION,
+            status="collecting_evidence",
+            source_results=[],
+            content="",
+            notification_delivered=False,
+        )
+        db.add(run)
+        await db.flush()
+        return run.id
+
+
+async def _record_report_evidence(
+    report_run_id: int,
+    anomalies: list[dict[str, Any]],
+) -> None:
+    async with async_session_maker() as db, db.begin():
+        await db.execute(
+            update(DailyReportRun)
+            .where(DailyReportRun.id == report_run_id)
+            .values(
+                status="evidence_collected",
+                source_results=anomalies,
+            )
+        )
+
+
+async def _record_rendered_report(
+    report_run_id: int,
+    content: str,
+) -> None:
+    async with async_session_maker() as db, db.begin():
+        await db.execute(
+            update(DailyReportRun)
+            .where(DailyReportRun.id == report_run_id)
+            .values(status="rendered", content=content)
+        )
+
+
+async def _finish_report_run(
+    report_run_id: int,
+    *,
+    status: str,
+    delivered: bool,
+    error_message: str | None = None,
+) -> None:
+    async with async_session_maker() as db, db.begin():
+        await db.execute(
+            update(DailyReportRun)
+            .where(DailyReportRun.id == report_run_id)
+            .values(
+                status=status,
+                notification_delivered=delivered,
+                error_message=error_message,
+                finished_at=utc_now(),
+            )
+        )
+
+
+async def _generate_and_broadcast(
+    *,
+    report_type: str,
+    limit_count: int,
+    notification_title: str,
+) -> dict[str, Any]:
+    report_run_id = await _create_report_run(
+        report_type=report_type,
+    )
+
+    try:
+        anomalies = await run_persisted_anomaly_scan(
+            trigger=report_type,
+            limit_count=limit_count,
+        )
+    except Exception as exc:
+        await _finish_report_run(
+            report_run_id,
+            status="evidence_failed",
+            delivered=False,
+            error_message=str(exc),
+        )
+        logger.exception(
+            "Failed to collect evidence for %s report run %s",
+            report_type,
+            report_run_id,
+        )
+        raise
+
+    await _record_report_evidence(report_run_id, anomalies)
+    try:
+        content = render_daily_report(anomalies, report_type=report_type)
+        await _record_rendered_report(report_run_id, content)
+    except Exception as exc:
+        await _finish_report_run(
+            report_run_id,
+            status="render_failed",
+            delivered=False,
+            error_message=str(exc),
+        )
+        logger.exception(
+            "Failed to render %s report run %s",
+            report_type,
+            report_run_id,
+        )
+        raise
+
+    try:
+        delivered = await NotificationManager.broadcast(
+            title=notification_title,
+            content=content,
+        )
+        if not delivered:
+            raise RuntimeError(
+                "No notification channel accepted the daily report"
+            )
+    except Exception as exc:
+        await _finish_report_run(
+            report_run_id,
+            status="delivery_failed",
+            delivered=False,
+            error_message=str(exc),
+        )
+        logger.exception(
+            "Failed to deliver %s report run %s",
+            report_type,
+            report_run_id,
+        )
+        raise
+
+    await _finish_report_run(
+        report_run_id,
+        status="delivered",
+        delivered=True,
+    )
+    return {
+        "status": "delivered",
+        "report_type": report_type,
+        "report_run_id": report_run_id,
+        "anomalies": len(anomalies),
+    }
+
+
+async def generate_morning_briefing() -> dict[str, Any]:
+    """Generate an evidence-bound morning briefing and broadcast it."""
     logger.info("Executing Morning Briefing Task...")
-    try:
-        anomalies_data = await run_persisted_anomaly_scan(
-            trigger="morning_briefing",
-            limit_count=5,
-        )
-            
-        if not anomalies_data:
-            logger.info("No anomalies detected for Morning Briefing.")
-            await NotificationManager.broadcast(
-                title="🌅 Quantify 美股开盘速递",
-                content="早盘扫描完成：当前市场暂无显著异动标的。"
-            )
-            return
-
-        # Prepare summary list for prompt
-        anomalies_text = []
-        for anomaly in anomalies_data:
-            anomalies_text.append(f"- {anomaly['ticker']} ({anomaly['company_name']}): 涨跌幅 {anomaly['price_change']}%")
-        
-        prompt = f"""
-        你是一个对冲基金经理，现在是美股开盘时间。
-        请根据以下开盘异动数据：
-        {chr(10).join(anomalies_text)}
-        
-        写一份不超过 300 字的『美股开盘速递』晨会纪要。
-        要求语言专业、精炼，直接指出核心驱动因素，使用 Markdown 格式渲染重点。
-        """
-        
-        ai_report = await _invoke_deepseek(prompt)
-        
-        await NotificationManager.broadcast(
-            title="🌅 Quantify 美股开盘速递",
-            content=ai_report
-        )
-            
-    except Exception as e:
-        logger.error(f"Error executing Morning Briefing: {e}")
+    return await _generate_and_broadcast(
+        report_type="morning_briefing",
+        limit_count=5,
+        notification_title="🌅 Quantify 美股开盘速递",
+    )
 
 
-async def generate_post_market_summary():
-    """Generates the post market summary and broadcasts it."""
+async def generate_post_market_summary() -> dict[str, Any]:
+    """Generate an evidence-bound post-market summary and broadcast it."""
     logger.info("Executing Post Market Summary Task...")
-    try:
-        anomalies_data = await run_persisted_anomaly_scan(
-            trigger="post_market_summary",
-            limit_count=10,
-        )
-            
-        if not anomalies_data:
-            logger.info("No anomalies detected for Post Market Summary.")
-            await NotificationManager.broadcast(
-                title="🌃 Quantify 美股盘后总结",
-                content="盘后扫描完成：今日市场平稳收盘，暂无特大级别异动。"
-            )
-            return
-
-        # Prepare summary list for prompt
-        anomalies_text = []
-        for anomaly in anomalies_data:
-            anomalies_text.append(f"- {anomaly['ticker']} ({anomaly['company_name']}): 涨跌幅 {anomaly['price_change']}%")
-        
-        prompt = f"""
-        你是一个华尔街顶级量化策略师，现在是美股收盘之后。
-        请针对以下今日全天涨跌幅极值标的的数据集：
-        {chr(10).join(anomalies_text)}
-        
-        写一份『美股盘后总结』复盘纪要（不超过 400 字）。
-        要求深入浅出，判断今日市场情绪走向，并用 Markdown 格式渲染重点标的。
-        """
-        
-        ai_report = await _invoke_deepseek(prompt)
-        
-        await NotificationManager.broadcast(
-            title="🌃 Quantify 美股盘后总结",
-            content=ai_report
-        )
-            
-    except Exception as e:
-        logger.error(f"Error executing Post Market Summary: {e}")
+    return await _generate_and_broadcast(
+        report_type="post_market_summary",
+        limit_count=10,
+        notification_title="🌃 Quantify 美股盘后总结",
+    )

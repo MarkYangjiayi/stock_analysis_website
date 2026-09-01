@@ -317,6 +317,27 @@ class AnomalyScanRun(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
+class DailyReportRun(Base):
+    """Auditable final content and delivery state for one scheduled report."""
+
+    __tablename__ = "daily_report_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_type: Mapped[str] = mapped_column(String, index=True)
+    renderer_version: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, index=True)
+    source_results: Mapped[Optional[Any]] = mapped_column(JSON)
+    content: Mapped[str] = mapped_column(Text)
+    notification_delivered: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        index=True,
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
 class EarningsQualityAnalysisRun(Base):
     """Durable, evidence-bound analysis of one reported financial period."""
 
