@@ -94,6 +94,22 @@ def test_uncited_analysis_gets_source_links_and_rejects_unsafe_urls():
     assert "来源：[2](https://example.com/evidence)" in content
 
 
+def test_unresolved_citation_fails_closed():
+    anomaly = _pypl_anomaly()
+    anomaly["ai_analysis"] = (
+        "Stripe与Advent放弃收购[2]，另有无法验证的事件[4]。"
+    )
+
+    content = daily_reporter.render_daily_report(
+        [anomaly],
+        report_type="morning_briefing",
+    )
+
+    assert "归因引用无法与已保存新闻匹配" in content
+    assert "无法验证的事件" not in content
+    assert "Stripe与Advent放弃收购" not in content
+
+
 @pytest.mark.asyncio
 async def test_morning_report_is_delivered_and_audited(db_session, monkeypatch):
     broadcasts: list[dict] = []
@@ -138,6 +154,39 @@ async def test_morning_report_is_delivered_and_audited(db_session, monkeypatch):
     assert run.source_results[0]["ticker"] == "PYPL.US"
     assert run.finished_at is not None
     assert run.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_evidence_failure_is_audited_and_raised(db_session, monkeypatch):
+    async def failed_scan(*, trigger, limit_count):
+        raise RuntimeError("Current quotes are unavailable")
+
+    async def unexpected_broadcast(*, title, content, channels=None):
+        pytest.fail("A report without evidence must not be broadcast")
+
+    monkeypatch.setattr(
+        daily_reporter,
+        "run_persisted_anomaly_scan",
+        failed_scan,
+    )
+    monkeypatch.setattr(
+        daily_reporter.NotificationManager,
+        "broadcast",
+        unexpected_broadcast,
+    )
+
+    with pytest.raises(RuntimeError, match="Current quotes are unavailable"):
+        await daily_reporter.generate_morning_briefing()
+
+    run = (
+        await db_session.execute(select(DailyReportRun))
+    ).scalar_one()
+    assert run.status == "evidence_failed"
+    assert run.source_results == []
+    assert run.content == ""
+    assert run.notification_delivered is False
+    assert run.error_message == "Current quotes are unavailable"
+    assert run.finished_at is not None
 
 
 @pytest.mark.asyncio

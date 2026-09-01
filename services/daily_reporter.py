@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 REPORT_RENDERER_VERSION = "evidence-v1"
 _CITATION_PATTERN = re.compile(r"\[(\d+)]")
 _NO_CATALYST = "缺乏明确新闻催化剂，可能为资金面或技术面行为。"
+_INVALID_CITATIONS = "归因引用无法与已保存新闻匹配，本次仅展示行情异动。"
 
 
 def _safe_link(value: Any) -> str:
@@ -79,6 +80,13 @@ def _grounded_analysis(anomaly: dict[str, Any]) -> str:
         return _NO_CATALYST
     if not analysis:
         return "归因信息不可用，本次仅展示行情异动。"
+
+    citation_numbers = {
+        int(match.group(1))
+        for match in _CITATION_PATTERN.finditer(analysis)
+    }
+    if citation_numbers and not citation_numbers.issubset(links):
+        return _INVALID_CITATIONS
 
     cited_links: set[int] = set()
 
@@ -144,16 +152,14 @@ def render_daily_report(
 async def _create_report_run(
     *,
     report_type: str,
-    anomalies: list[dict[str, Any]],
-    content: str,
 ) -> int:
     async with async_session_maker() as db, db.begin():
         run = DailyReportRun(
             report_type=report_type,
             renderer_version=REPORT_RENDERER_VERSION,
-            status="rendered",
-            source_results=anomalies,
-            content=content,
+            status="collecting_evidence",
+            source_results=[],
+            content="",
             notification_delivered=False,
         )
         db.add(run)
@@ -161,9 +167,37 @@ async def _create_report_run(
         return run.id
 
 
+async def _record_report_evidence(
+    report_run_id: int,
+    anomalies: list[dict[str, Any]],
+) -> None:
+    async with async_session_maker() as db, db.begin():
+        await db.execute(
+            update(DailyReportRun)
+            .where(DailyReportRun.id == report_run_id)
+            .values(
+                status="evidence_collected",
+                source_results=anomalies,
+            )
+        )
+
+
+async def _record_rendered_report(
+    report_run_id: int,
+    content: str,
+) -> None:
+    async with async_session_maker() as db, db.begin():
+        await db.execute(
+            update(DailyReportRun)
+            .where(DailyReportRun.id == report_run_id)
+            .values(status="rendered", content=content)
+        )
+
+
 async def _finish_report_run(
     report_run_id: int,
     *,
+    status: str,
     delivered: bool,
     error_message: str | None = None,
 ) -> None:
@@ -172,7 +206,7 @@ async def _finish_report_run(
             update(DailyReportRun)
             .where(DailyReportRun.id == report_run_id)
             .values(
-                status="delivered" if delivered else "delivery_failed",
+                status=status,
                 notification_delivered=delivered,
                 error_message=error_message,
                 finished_at=utc_now(),
@@ -186,16 +220,46 @@ async def _generate_and_broadcast(
     limit_count: int,
     notification_title: str,
 ) -> dict[str, Any]:
-    anomalies = await run_persisted_anomaly_scan(
-        trigger=report_type,
-        limit_count=limit_count,
-    )
-    content = render_daily_report(anomalies, report_type=report_type)
     report_run_id = await _create_report_run(
         report_type=report_type,
-        anomalies=anomalies,
-        content=content,
     )
+
+    try:
+        anomalies = await run_persisted_anomaly_scan(
+            trigger=report_type,
+            limit_count=limit_count,
+        )
+    except Exception as exc:
+        await _finish_report_run(
+            report_run_id,
+            status="evidence_failed",
+            delivered=False,
+            error_message=str(exc),
+        )
+        logger.exception(
+            "Failed to collect evidence for %s report run %s",
+            report_type,
+            report_run_id,
+        )
+        raise
+
+    await _record_report_evidence(report_run_id, anomalies)
+    try:
+        content = render_daily_report(anomalies, report_type=report_type)
+        await _record_rendered_report(report_run_id, content)
+    except Exception as exc:
+        await _finish_report_run(
+            report_run_id,
+            status="render_failed",
+            delivered=False,
+            error_message=str(exc),
+        )
+        logger.exception(
+            "Failed to render %s report run %s",
+            report_type,
+            report_run_id,
+        )
+        raise
 
     try:
         delivered = await NotificationManager.broadcast(
@@ -209,6 +273,7 @@ async def _generate_and_broadcast(
     except Exception as exc:
         await _finish_report_run(
             report_run_id,
+            status="delivery_failed",
             delivered=False,
             error_message=str(exc),
         )
@@ -219,7 +284,11 @@ async def _generate_and_broadcast(
         )
         raise
 
-    await _finish_report_run(report_run_id, delivered=True)
+    await _finish_report_run(
+        report_run_id,
+        status="delivered",
+        delivered=True,
+    )
     return {
         "status": "delivered",
         "report_type": report_type,
