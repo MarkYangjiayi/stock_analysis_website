@@ -69,6 +69,19 @@ jobs:
           script: |
             set -eu
             cd /home/admin/stock_analysis_website
+
+            # Validate the transfer before stopping the running application. The
+            # host has limited disk space, so keeping both generations of these
+            # images unpacked at once is not reliable.
+            gzip -t images.tar.gz
+            trap 'sudo rm -f images.tar.gz' EXIT
+
+            # Keep the shared WARP service running, but release the application
+            # containers and their old images before unpacking the new release.
+            sudo docker compose stop backend worker frontend
+            sudo docker compose rm -f backend worker frontend data-permissions
+            sudo docker image prune -af
+
             sudo docker load -i images.tar.gz
             if ! sudo docker compose up -d --remove-orphans; then
               sudo docker compose ps
@@ -86,5 +99,4 @@ jobs:
               fi
               sleep 3
             done
-            sudo docker image prune -f
-            rm -f images.tar.gz # 打扫战场，释放磁盘空间
+            sudo docker image prune -af
