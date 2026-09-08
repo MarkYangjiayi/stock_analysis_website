@@ -1,7 +1,7 @@
 services:
   # 1. 换上目前最稳的最新版 WARP 镜像
   warp:
-    image: ghcr.io/mon-ius/docker-warp-socks:v5
+    image: ghcr.io/mon-ius/docker-warp-socks:v7
     container_name: quantify_warp
     restart: always
     logging:
@@ -9,6 +9,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-x", "socks5h://127.0.0.1:9091", "-fsSL", "https://www.cloudflare.com/cdn-cgi/trace"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
   data-permissions:
     image: quantify-backend:latest
@@ -42,7 +48,7 @@ services:
       data-permissions:
         condition: service_completed_successfully
       warp:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: json-file
@@ -73,7 +79,7 @@ services:
       backend:
         condition: service_healthy
       warp:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: json-file
