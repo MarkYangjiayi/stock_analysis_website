@@ -22,7 +22,7 @@ def sqlite_path_from_url(database_url: str) -> Path:
 def create_backup(
     source_path: Optional[Path] = None,
     backup_dir: Optional[Path] = None,
-    retention: int = 14,
+    retention: int = 3,
 ) -> Path:
     source = (source_path or sqlite_path_from_url(settings.DATABASE_URL)).resolve()
     destination_dir = (backup_dir or Path(settings.BACKUP_DIR)).resolve()
@@ -59,6 +59,6 @@ def create_backup(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create an online SQLite backup")
-    parser.add_argument("--retention", type=int, default=14)
+    parser.add_argument("--retention", type=int, default=3)
     args = parser.parse_args()
     print(create_backup(retention=args.retention))

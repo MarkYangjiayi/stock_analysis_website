@@ -4,6 +4,11 @@ services:
     image: ghcr.io/mon-ius/docker-warp-socks:v5
     container_name: quantify_warp
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   data-permissions:
     image: quantify-backend:latest
@@ -12,6 +17,11 @@ services:
     volumes:
       - ./data:/app/data
     restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     image: quantify-backend:latest
@@ -34,6 +44,11 @@ services:
       warp:
         condition: service_started
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
       interval: 30s
@@ -60,6 +75,11 @@ services:
       warp:
         condition: service_started
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     image: quantify-frontend:latest
@@ -69,3 +89,8 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
