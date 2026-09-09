@@ -89,6 +89,7 @@ const valuationEvidenceFingerprint = (valuation: DecisionValuation | null | unde
             inputs: valuation.inputs,
             current_price: valuation.current_price,
             scenarios: valuation.scenarios,
+            implied_growth: valuation.implied_growth,
             position: valuation.position,
             sensitivity: valuation.sensitivity,
             formula: valuation.formula,
@@ -274,6 +275,7 @@ export default function DecisionCockpit({
     }, [decision]);
 
     const valuation = workingValuation;
+    const impliedGrowth = valuation?.implied_growth;
     const formatMoney = (value?: number | null) => money(
         value,
         decision?.metadata.currency,
@@ -495,6 +497,7 @@ export default function DecisionCockpit({
                                     {(valuation?.scenarios || decision.valuation.scenarios).map((scenario) => <div key={scenario.scenario} className="rounded-lg border bg-white/70 p-3 dark:bg-slate-950/30"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{scenario.scenario}</p><p className="mt-1 font-mono text-base font-black">{scenario.available ? formatMoney(scenario.intrinsic_value_per_share) : "—"}</p></div>)}
                                 </div>
                                 <p className="mt-3 text-xs text-slate-500">Current price {formatMoney(valuation?.current_price ?? decision.valuation.current_price)} · assumptions {valuation?.scenario_source || decision.valuation.scenario_source}</p>
+                                {impliedGrowth?.available && <div className="mt-3 rounded-lg border bg-white/70 px-3 py-2.5 dark:bg-slate-950/30"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Market-implied 5Y FCF growth</p><p className="mt-1 font-mono text-lg font-black text-indigo-600 dark:text-indigo-300">{(impliedGrowth.implied_fcf_growth_rate! * 100).toFixed(1)}%</p><p className="mt-1 text-[10px] text-slate-500">Base WACC {(impliedGrowth.wacc * 100).toFixed(1)}% · terminal {(impliedGrowth.perpetual_growth * 100).toFixed(1)}%</p></div>}
                             </article>
                             <article className="surface-subtle rounded-xl border p-5">
                                 <p className="eyebrow">Coverage facts</p>
@@ -525,6 +528,24 @@ export default function DecisionCockpit({
                     </div>}
 
                     {activeTab === "valuation" && valuation && <div className="space-y-6">
+                        <section className="overflow-hidden rounded-xl border">
+                            <div className="surface-subtle grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                                <div>
+                                    <p className="eyebrow">Reverse DCF growth hurdle</p>
+                                    <h3 className="mt-1 text-base font-black">Market-implied 5Y FCF growth</h3>
+                                    {impliedGrowth?.available ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The current price is matched when TTM free cash flow compounds at this rate for five years, holding the Base discount and terminal assumptions fixed. This is a market hurdle, not a forecast, and inherits the scenario DCF&apos;s FCF, currency, and share-unit limits.</p> : <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The growth hurdle cannot be reverse-solved from the current DCF inputs.</p>}
+                                </div>
+                                <div className="min-w-[220px] rounded-xl border bg-white/80 p-4 dark:bg-slate-950/40">
+                                    <p className="font-mono text-3xl font-black text-indigo-600 dark:text-indigo-300">{impliedGrowth?.available ? `${(impliedGrowth.implied_fcf_growth_rate! * 100).toFixed(1)}%` : "—"}</p>
+                                    <p className="mt-1 text-xs font-bold text-slate-500">5-year implied FCF CAGR</p>
+                                </div>
+                            </div>
+                            {impliedGrowth?.available ? <dl className="grid gap-px border-t bg-slate-200 text-xs dark:bg-slate-800 sm:grid-cols-3">
+                                <div className="bg-white p-3.5 dark:bg-slate-950/60"><dt className="text-slate-500">Base WACC</dt><dd className="mt-1 font-mono font-black">{(impliedGrowth.wacc * 100).toFixed(1)}%</dd></div>
+                                <div className="bg-white p-3.5 dark:bg-slate-950/60"><dt className="text-slate-500">Terminal growth</dt><dd className="mt-1 font-mono font-black">{(impliedGrowth.perpetual_growth * 100).toFixed(1)}%</dd></div>
+                                <div className="bg-white p-3.5 dark:bg-slate-950/60"><dt className="text-slate-500">Gap vs Base growth</dt><dd className={`mt-1 font-mono font-black ${(impliedGrowth.growth_gap_to_base ?? 0) > 0 ? "text-rose-500" : (impliedGrowth.growth_gap_to_base ?? 0) < 0 ? "text-emerald-600" : ""}`}>{(impliedGrowth.growth_gap_to_base ?? 0) > 0 ? "+" : ""}{((impliedGrowth.growth_gap_to_base ?? 0) * 100).toFixed(1)} pp</dd></div>
+                            </dl> : <ul className="space-y-1 border-t p-4 text-xs text-amber-700 dark:text-amber-300">{impliedGrowth?.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+                        </section>
                         <div className="grid gap-4 lg:grid-cols-3">
                             {scenarioDrafts.map((scenario, index) => {
                                 const result = valuation.scenarios.find((item) => item.scenario === scenario.scenario);

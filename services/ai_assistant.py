@@ -27,7 +27,7 @@ class AttributionGenerationError(RuntimeError):
     """Raised when the anomaly attribution provider cannot complete."""
 
 
-PROMPT_VERSION = "decision-evidence-v22"
+PROMPT_VERSION = "decision-evidence-v23"
 REPORT_SECTIONS = ("Core View", "Valuation", "Peer Context", "Risks")
 SECTION_HEADING_RE = re.compile(
     r"(?im)^(?:#{1,4}\s*|\*\*)?"
@@ -75,6 +75,9 @@ COMPACT_SCALE_DIVISORS = {
 }
 RATIO_VALUE_KEYS = {
     "fcf_growth_rate",
+    "implied_fcf_growth_rate",
+    "base_fcf_growth_rate",
+    "growth_gap_to_base",
     "wacc",
     "perpetual_growth",
     "upside_downside",
@@ -237,6 +240,9 @@ SEMANTIC_VALUE_KEYS = {
     "terminal_value": "terminal_value",
     "statement_count": "statement_count",
     "fcf_growth_rate": "fcf_growth_rate",
+    "implied_fcf_growth_rate": "implied_fcf_growth_rate",
+    "base_fcf_growth_rate": "fcf_growth_rate",
+    "growth_gap_to_base": "growth_gap_to_base",
     "wacc": "wacc",
     "perpetual_growth": "perpetual_growth",
     "upside_downside": "upside_downside",
@@ -289,6 +295,8 @@ SEMANTIC_CLAIM_PATTERNS = {
     "stockholder_equity": re.compile(r"\b(?:stockholders?'?|shareholders?'?)\s+equity\b", re.IGNORECASE),
     "statement_count": re.compile(r"\b(?:statement\s+count|statements?)\b", re.IGNORECASE),
     "fcf_growth_rate": re.compile(r"\b(?:fcf|free\s+cash\s+flow)\s+growth\b", re.IGNORECASE),
+    "implied_fcf_growth_rate": re.compile(r"\b(?:market[- ]implied|implied)\s+(?:fcf|free\s+cash\s+flow)\s+growth\b", re.IGNORECASE),
+    "growth_gap_to_base": re.compile(r"\b(?:fcf\s+)?growth\s+(?:gap|hurdle)\b", re.IGNORECASE),
     "wacc": re.compile(r"\bwacc\b", re.IGNORECASE),
     "perpetual_growth": re.compile(r"\b(?:perpetual|terminal)\s+growth\b", re.IGNORECASE),
     "sales_growth_ttm": re.compile(r"\b(?:ttm\s+sales\s+growth|sales\s+growth\s*\(?ttm\)?)\b", re.IGNORECASE),
