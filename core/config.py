@@ -19,6 +19,16 @@ class Settings(BaseSettings):
     EODHD_API_KEY: str = "demo"
     EODHD_BASE_URL: str = "https://eodhd.com/api"
 
+    # DCF market assumptions. These are exposed in valuation lineage; company
+    # beta, capital structure, tax and debt cost supply the company-specific part.
+    VALUATION_RISK_FREE_RATE: float = 0.04808
+    VALUATION_EQUITY_RISK_PREMIUM: float = 0.06
+    VALUATION_FALLBACK_DEBT_SPREAD: float = 0.015
+    VALUATION_FALLBACK_TAX_RATE: float = 0.21
+    VALUATION_FALLBACK_FCF_GROWTH: float = 0.05
+    VALUATION_TERMINAL_GROWTH_RATE: float = 0.025
+    VALUATION_MARKET_ASSUMPTIONS_AS_OF: str = "2026-09-09"
+
     # DeepSeek API 配置
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"

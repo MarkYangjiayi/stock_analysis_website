@@ -330,25 +330,67 @@ export interface DecisionValuation {
     unavailable_reasons: string[];
     inputs: {
         fcf: number | null;
+        reported_fcf?: number | null;
+        after_tax_interest_adjustment?: number | null;
+        cash_flow_type?: "FCFF" | "unspecified";
         cash: number | null;
         debt: number | null;
         shares: number | null;
         financial_statement_date: string | null;
+        model_input_reasons?: string[];
     };
     current_price: number | null;
     scenario_source: "default" | "saved" | "request";
+    default_scenarios?: DecisionValuationScenarioInput[];
+    assumption_basis?: {
+        wacc: {
+            available: boolean;
+            wacc: number | null;
+            method: string;
+            quality: "calculated" | "estimated_with_fallbacks";
+            assumptions_as_of: string;
+            risk_free_rate: number;
+            equity_risk_premium: number;
+            beta: number;
+            beta_source: string;
+            cost_of_equity: number;
+            average_debt: number | null;
+            cost_of_debt: number | null;
+            debt_cost_source: string;
+            tax_rate: number;
+            equity_weight: number | null;
+            debt_weight: number | null;
+            notes: string[];
+            unavailable_reasons: string[];
+        };
+        growth: {
+            method: string;
+            signals: Array<{ source: string; raw_value: number; winsorized_value: number }>;
+            base_growth: number;
+            scenario_spread: number;
+        };
+        terminal_growth: { rate: number; configured_rate: number; method: string };
+        cash_flow: {
+            available: boolean;
+            fcff: number | null;
+            reported_fcf: number | null;
+            after_tax_interest_adjustment: number | null;
+            reason: string | null;
+        };
+    } | null;
     scenarios: DecisionValuationScenarioResult[];
     implied_growth: DecisionImpliedGrowth;
     position: { status: string; text: string };
     sensitivity: {
-        growth_values: number[];
         wacc_values: number[];
-        terminal_growth: number;
+        terminal_growth_values: number[];
+        fcf_growth_rate: number;
         values: Array<Array<number | null>>;
         cell_reasons: Array<Array<string | null>>;
     };
     formula: {
         forecast_years: number;
+        cash_flow_type: string;
         cash_treatment: string;
         debt_treatment: string;
         terminal_value: string;

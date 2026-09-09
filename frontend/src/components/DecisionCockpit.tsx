@@ -61,9 +61,9 @@ interface DecisionCockpitProps {
 }
 
 const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
-    { scenario: "bear", fcf_growth_rate: 0.05, wacc: 0.105, perpetual_growth: 0.02 },
+    { scenario: "bear", fcf_growth_rate: 0.05, wacc: 0.09, perpetual_growth: 0.025 },
     { scenario: "base", fcf_growth_rate: 0.10, wacc: 0.09, perpetual_growth: 0.025 },
-    { scenario: "bull", fcf_growth_rate: 0.15, wacc: 0.08, perpetual_growth: 0.03 },
+    { scenario: "bull", fcf_growth_rate: 0.15, wacc: 0.09, perpetual_growth: 0.025 },
 ];
 
 type ScenarioRateField = "fcf_growth_rate" | "wacc" | "perpetual_growth";
@@ -317,6 +317,11 @@ export default function DecisionCockpit({
         setSaveMessage("");
     };
 
+    const editSharedRate = (key: "wacc" | "perpetual_growth", percentValue: string) => {
+        setScenarioDrafts((current) => current.map((item) => ({ ...item, [key]: percentValue })));
+        setSaveMessage("");
+    };
+
     const parseScenarioDrafts = () => {
         const labels: Record<ScenarioRateField, string> = {
             fcf_growth_rate: "FCF growth",
@@ -409,7 +414,7 @@ export default function DecisionCockpit({
     const reset = async () => {
         setValuationError("");
         setSaveMessage("");
-        const defaults = DEFAULT_SCENARIOS.map((item) => ({ ...item }));
+        const defaults = (valuation?.default_scenarios || DEFAULT_SCENARIOS).map((item) => ({ ...item }));
         setScenarioDrafts(toScenarioDrafts(defaults));
         if (!adminKey) {
             await calculate(defaults);
@@ -546,16 +551,36 @@ export default function DecisionCockpit({
                                 <div className="bg-white p-3.5 dark:bg-slate-950/60"><dt className="text-slate-500">Gap vs Base growth</dt><dd className={`mt-1 font-mono font-black ${(impliedGrowth.growth_gap_to_base ?? 0) > 0 ? "text-rose-500" : (impliedGrowth.growth_gap_to_base ?? 0) < 0 ? "text-emerald-600" : ""}`}>{(impliedGrowth.growth_gap_to_base ?? 0) > 0 ? "+" : ""}{((impliedGrowth.growth_gap_to_base ?? 0) * 100).toFixed(1)} pp</dd></div>
                             </dl> : <ul className="space-y-1 border-t p-4 text-xs text-amber-700 dark:text-amber-300">{impliedGrowth?.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
                         </section>
+                        <section className="rounded-xl border p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div>
+                                    <p className="eyebrow">Shared valuation assumptions</p>
+                                    <h3 className="mt-1 text-base font-black">One company WACC, one mature growth rate</h3>
+                                    <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">All three operating cases use the same discount and terminal assumptions. The default WACC is estimated from CAPM, book debt and the tax shield; edit it here only when you have a documented alternative.</p>
+                                </div>
+                                <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-2">
+                                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Shared WACC<div className="relative mt-1"><input type="number" min={3} max={25} step="0.1" value={scenarioDrafts[1]?.wacc ?? ""} disabled={valuationBusy} onChange={(event) => editSharedRate("wacc", event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label="Shared WACC" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>
+                                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Terminal growth<div className="relative mt-1"><input type="number" min={-2} max={6} step="0.1" value={scenarioDrafts[1]?.perpetual_growth ?? ""} disabled={valuationBusy} onChange={(event) => editSharedRate("perpetual_growth", event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label="Shared terminal growth" /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>
+                                </div>
+                            </div>
+                            {valuation.assumption_basis?.wacc && <dl className="mt-4 grid gap-px overflow-hidden rounded-lg bg-slate-200 text-xs dark:bg-slate-800 sm:grid-cols-4">
+                                <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Risk-free</dt><dd className="mt-1 font-mono font-black">{(valuation.assumption_basis.wacc.risk_free_rate * 100).toFixed(2)}%</dd></div>
+                                <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Beta</dt><dd className="mt-1 font-mono font-black">{valuation.assumption_basis.wacc.beta.toFixed(2)}</dd></div>
+                                <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Cost of equity</dt><dd className="mt-1 font-mono font-black">{(valuation.assumption_basis.wacc.cost_of_equity * 100).toFixed(2)}%</dd></div>
+                                <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Cost of debt</dt><dd className="mt-1 font-mono font-black">{valuation.assumption_basis.wacc.cost_of_debt == null ? "—" : `${(valuation.assumption_basis.wacc.cost_of_debt * 100).toFixed(2)}%`}</dd></div>
+                            </dl>}
+                            {valuation.assumption_basis?.wacc.notes.length ? <ul className="mt-3 space-y-1 text-xs text-amber-700 dark:text-amber-300">{valuation.assumption_basis.wacc.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}
+                        </section>
                         <div className="grid gap-4 lg:grid-cols-3">
                             {scenarioDrafts.map((scenario, index) => {
                                 const result = valuation.scenarios.find((item) => item.scenario === scenario.scenario);
-                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? formatMoney(result.intrinsic_value_per_share) : "Unavailable"}</span></div><div className="mt-4 grid grid-cols-3 gap-2">{([['fcf_growth_rate', 'FCF growth', -20, 50], ['wacc', 'WACC', 3, 25], ['perpetual_growth', 'Terminal', -2, 6]] as const).map(([key, label, min, max]) => <label key={key} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><input type="number" min={min} max={max} step="0.1" value={scenario[key]} disabled={valuationBusy} onChange={(event) => editScenario(index, key, event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label={`${scenario.scenario} ${label}`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>)}</div>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
+                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? formatMoney(result.intrinsic_value_per_share) : "Unavailable"}</span></div><label className="mt-4 block text-[10px] font-bold uppercase tracking-wide text-slate-500">5Y FCF growth<div className="relative mt-1"><input type="number" min={-20} max={50} step="0.1" value={scenario.fcf_growth_rate} disabled={valuationBusy} onChange={(event) => editScenario(index, "fcf_growth_rate", event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label={`${scenario.scenario} FCF growth`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
                             })}
                         </div>
                         <div className="flex flex-wrap items-center gap-2"><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void calculate()}><Calculator size={15} /> Calculate</button><button type="button" className="primary-button" disabled={valuationBusy} onClick={() => void save()}><Save size={15} /> {adminKey ? "Save scenarios" : "Unlock to save"}</button><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void reset()}><RotateCcw size={15} /> Reset defaults</button>{valuationBusy && <LoaderCircle className="animate-spin text-emerald-500" size={18} />}{saveMessage && <span className="text-xs font-bold text-emerald-600">{saveMessage}</span>}</div>
                         {valuationError && <div className="error-panel" role="alert">{valuationError}</div>}
-                        <section className="overflow-hidden rounded-xl border"><header className="surface-subtle border-b p-4"><h3 className="text-sm font-black">Base-case sensitivity</h3><p className="mt-1 text-xs text-slate-500">Intrinsic value per share · growth ±5/10 points · WACC ±1/2 points · terminal growth {(valuation.sensitivity.terminal_growth * 100).toFixed(1)}%</p></header><div className="overflow-x-auto p-3"><table className="w-full min-w-[620px] border-separate border-spacing-1 text-right font-mono text-xs"><thead><tr><th className="p-2 text-left text-slate-500">Growth ↓ / WACC →</th>{valuation.sensitivity.wacc_values.map((wacc) => <th key={wacc} className="p-2 text-slate-500">{(wacc * 100).toFixed(1)}%</th>)}</tr></thead><tbody>{valuation.sensitivity.growth_values.map((growth, rowIndex) => <tr key={`${growth}-${rowIndex}`}><th className="p-2 text-left text-slate-500">{(growth * 100).toFixed(1)}%</th>{valuation.sensitivity.values[rowIndex].map((value, columnIndex) => <td key={columnIndex} title={valuation.sensitivity.cell_reasons[rowIndex][columnIndex] || undefined} className={`rounded-lg border p-2.5 font-bold ${rowIndex === 2 && columnIndex === 2 ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 dark:bg-slate-900/50"}`}>{value == null ? "—" : formatMoney(value)}</td>)}</tr>)}</tbody></table></div></section>
-                        <p className="rounded-xl border p-4 text-xs leading-5 text-slate-500">Five-year FCF forecast. Cash is added, debt is deducted, and terminal value uses <span className="font-mono">FCF₅ × (1 + g) / (WACC − g)</span>. Inputs: FCF {compact(valuation.inputs.fcf)}, cash {compact(valuation.inputs.cash)}, debt {compact(valuation.inputs.debt)}, shares {compact(valuation.inputs.shares)}.</p>
+                        <section className="overflow-hidden rounded-xl border"><header className="surface-subtle border-b p-4"><h3 className="text-sm font-black">Base-case WACC / terminal sensitivity</h3><p className="mt-1 text-xs text-slate-500">Intrinsic value per share · Base FCF growth {(valuation.sensitivity.fcf_growth_rate * 100).toFixed(1)}% · WACC ±1/2 points · terminal growth ±0.5/1 point</p></header><div className="overflow-x-auto p-3"><table className="w-full min-w-[620px] border-separate border-spacing-1 text-right font-mono text-xs"><thead><tr><th className="p-2 text-left text-slate-500">Terminal ↓ / WACC →</th>{valuation.sensitivity.wacc_values.map((wacc) => <th key={wacc} className="p-2 text-slate-500">{(wacc * 100).toFixed(1)}%</th>)}</tr></thead><tbody>{valuation.sensitivity.terminal_growth_values.map((terminal, rowIndex) => <tr key={`${terminal}-${rowIndex}`}><th className="p-2 text-left text-slate-500">{(terminal * 100).toFixed(1)}%</th>{valuation.sensitivity.values[rowIndex].map((value, columnIndex) => <td key={columnIndex} title={valuation.sensitivity.cell_reasons[rowIndex][columnIndex] || undefined} className={`rounded-lg border p-2.5 font-bold ${rowIndex === 2 && columnIndex === 2 ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 dark:bg-slate-900/50"}`}>{value == null ? "—" : formatMoney(value)}</td>)}</tr>)}</tbody></table></div></section>
+                        <p className="rounded-xl border p-4 text-xs leading-5 text-slate-500">Five-year FCFF forecast. Provider FCF is unlevered by adding after-tax interest, cash is added, debt is deducted, and terminal value uses <span className="font-mono">FCFF₅ × (1 + g) / (WACC − g)</span>. Inputs: reported FCF {compact(valuation.inputs.reported_fcf)}, after-tax interest {compact(valuation.inputs.after_tax_interest_adjustment)}, FCFF {compact(valuation.inputs.fcf)}, cash {compact(valuation.inputs.cash)}, debt {compact(valuation.inputs.debt)}, shares {compact(valuation.inputs.shares)}.</p>
                     </div>}
 
                     {activeTab === "valuation" && !valuation && <div className="space-y-3">

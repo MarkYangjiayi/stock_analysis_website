@@ -97,7 +97,7 @@ TECHNICAL_SNAPSHOT_FIELDS = (
 )
 
 FUNDAMENTAL_SNAPSHOT_FIELDS = (
-    "market_cap", "pe_ratio", "pb_ratio", "dividend_yield", "short_float",
+    "market_cap", "provider_beta", "pe_ratio", "pb_ratio", "dividend_yield", "short_float",
     "analyst_recommendation", "target_price", "shares_outstanding",
     "shares_float", "roe", "debt_to_equity", "fcf", "gross_margin",
     "sales_growth_5yr", "forward_pe", "peg_ratio_raw", "peg_ratio",
@@ -1118,7 +1118,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 "currency": currency,
             }
             numeric_fundamental_fields = (
-                "market_cap", "pe_ratio", "pb_ratio", "dividend_yield", "short_float",
+                "market_cap", "provider_beta", "pe_ratio", "pb_ratio", "dividend_yield", "short_float",
                 "analyst_recommendation", "target_price", "roe", "debt_to_equity",
                 "fcf", "gross_margin", "sales_growth_5yr", "forward_pe", "peg_ratio_raw",
                 "peg_ratio",

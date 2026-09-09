@@ -282,6 +282,7 @@ class StockScreenerSnapshot(Base):
     low_50d_rel: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     high_52w_rel: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     low_52w_rel: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    provider_beta: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     beta_1yr: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     atr_14: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     candlestick: Mapped[Optional[str]] = mapped_column(String)

@@ -30,7 +30,7 @@
 *   **🧠 硬核多因子估值引擎 (Screener)**
     自研基本面财务分析引擎。内置经典的 DCF (现金流折现模型) 测算股票绝对内在价值 (`Intrinsic Value`) 与安全边际 (`Margin of Safety`)。创新的五维多因子雷达：覆盖 `Value (价值)`、`Quality (质量)`、`Growth (成长)`、`Health (健康)` 与 `Momentum (动量)` 维度，让优质公司显像化。
 *   **🧭 Personal Stock Decision Cockpit**
-    个股页顶部提供无黑盒总分的决策驾驶舱：Bear/Base/Bull 三情景五年 FCF DCF、以 Base WACC/永续增长反解的市场隐含五年 FCF 增长率、Base 5×5 敏感性矩阵、20 项行业/板块 midrank 分位、确定性基本面预警，以及价格、Screener、财报和因子的独立来源日期。缺失数据会给出明确原因，不会回填为零估值。
+    个股页顶部提供无黑盒总分的决策驾驶舱：由公司历史增长信号生成 Bear/Base/Bull 三种五年 FCFF 经营情景；三者共享按 CAPM、资本结构、债务成本和税盾估算的公司 WACC 与成熟期增长率；另提供 WACC × terminal growth 5×5 敏感性矩阵，以及以 Base 假设反解的市场隐含五年 FCFF 增长率。页面同时展示 20 项行业/板块 midrank 分位、确定性基本面预警，以及价格、Screener、财报和因子的独立来源日期。缺失数据会给出明确原因，不会回填为零估值。
 *   **🧾 Earnings Quality / 一次性损益**
     Analysis 页先用本地结构化财报生成可追溯的异常候选与数据质量提示；美国 SEC 公司可在解锁后按单个年度或季度点击分析对应 10-K/10-Q 与同期 earnings 8-K。页面浏览、同步和定时任务不会批量调用 SEC 或 AI。Reported 始终为默认口径，只有金额、税后勾稽和 SEC 引用全部通过验证时才并列显示 normalized Net Income / adjusted EPS，且 adjusted 结果不进入 DCF、ROE、P/E、peer benchmark 或 factor score。
 *   **🤖 Evidence-cited AI Brief**

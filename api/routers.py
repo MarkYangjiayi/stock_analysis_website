@@ -47,8 +47,8 @@ from services.filing_analysis import (
     schedule_filing_analysis,
 )
 from services.decision_support import (
-    DEFAULT_SCENARIOS,
     calculate_ticker_valuation,
+    get_default_ticker_valuation_scenarios,
     get_decision_support,
     get_peer_multiple_distribution,
     validate_scenarios,
@@ -395,10 +395,11 @@ async def read_personal_valuation_scenarios(
 ):
     canonical_ticker = canonicalize_ticker(ticker)
     saved = await get_saved_valuation_scenarios(db, canonical_ticker)
+    defaults = await get_default_ticker_valuation_scenarios(canonical_ticker, db)
     return {
         "ticker": canonical_ticker,
         "is_saved": saved is not None,
-        "scenarios": saved or DEFAULT_SCENARIOS,
+        "scenarios": saved or defaults,
     }
 
 
@@ -431,10 +432,11 @@ async def remove_personal_valuation_scenarios(
     db: AsyncSession = Depends(get_db),
 ):
     await delete_valuation_scenarios(db, ticker)
+    defaults = await get_default_ticker_valuation_scenarios(ticker, db)
     return {
         "ticker": canonicalize_ticker(ticker),
         "is_saved": False,
-        "scenarios": DEFAULT_SCENARIOS,
+        "scenarios": defaults,
     }
 
 

@@ -141,12 +141,17 @@ async def get_saved_valuation_scenarios(
     by_name = {row.scenario: row for row in result.scalars().all()}
     if set(by_name) != set(SCENARIO_NAMES):
         return None
+    # Older saved records allowed scenario-specific discount and terminal rates.
+    # Keep each operating-growth view, but normalize legacy records to the base
+    # case's company-level capital-market assumptions on read.
+    shared_wacc = by_name["base"].wacc
+    shared_perpetual_growth = by_name["base"].perpetual_growth
     return [
         {
             "scenario": name,
             "fcf_growth_rate": by_name[name].fcf_growth_rate,
-            "wacc": by_name[name].wacc,
-            "perpetual_growth": by_name[name].perpetual_growth,
+            "wacc": shared_wacc,
+            "perpetual_growth": shared_perpetual_growth,
         }
         for name in SCENARIO_NAMES
     ]

@@ -151,7 +151,8 @@ def test_calculate_valuation_uses_base_assumptions_for_reverse_dcf():
         (lambda rows: rows[2].update(perpetual_growth=0.061), "between -2% and 6%"),
         (lambda rows: rows[1].update(wacc=0.03, perpetual_growth=0.026), "at least 0.5"),
         (lambda rows: rows[0].update(fcf_growth_rate=0.11), "Bear <= Base <= Bull"),
-        (lambda rows: rows[0].update(wacc=0.085), "Bear >= Base >= Bull"),
+        (lambda rows: rows[0].update(wacc=0.085), "share one WACC"),
+        (lambda rows: rows[2].update(perpetual_growth=0.03), "share one terminal"),
     ],
 )
 def test_scenario_validation_rejects_invalid_bounds_and_order(mutate, message):
@@ -163,8 +164,8 @@ def test_scenario_validation_rejects_invalid_bounds_and_order(mutate, message):
 
 def test_scenario_validation_accepts_inclusive_bounds_when_ordered():
     scenarios = [
-        {"scenario": "bear", "fcf_growth_rate": -0.20, "wacc": 0.25, "perpetual_growth": -0.02},
-        {"scenario": "base", "fcf_growth_rate": 0.10, "wacc": 0.10, "perpetual_growth": 0.02},
+        {"scenario": "bear", "fcf_growth_rate": -0.20, "wacc": 0.065, "perpetual_growth": 0.06},
+        {"scenario": "base", "fcf_growth_rate": 0.10, "wacc": 0.065, "perpetual_growth": 0.06},
         {"scenario": "bull", "fcf_growth_rate": 0.50, "wacc": 0.065, "perpetual_growth": 0.06},
     ]
     assert validate_scenarios(scenarios) == scenarios
@@ -597,6 +598,34 @@ def _quarterly_statement(ticker: str, fiscal_date: date, scale: float = 1.0, *, 
     )
 
 
+def test_financial_context_prefers_debt_components_and_uses_four_quarter_average():
+    records = []
+    for fiscal_date, short_debt, long_debt, leases in (
+        (date(2025, 12, 31), 10.0, 40.0, 5.0),
+        (date(2025, 9, 30), 9.0, 39.0, 4.0),
+        (date(2025, 6, 30), 8.0, 38.0, 3.0),
+        (date(2025, 3, 31), 7.0, 37.0, 2.0),
+    ):
+        statement = _quarterly_statement("AAA.US", fiscal_date)
+        statement.balance_sheet.update(
+            {
+                "shortTermDebt": short_debt,
+                "longTermDebt": long_debt,
+                "capitalLeaseObligations": leases,
+                # Provider aggregates can overlap with the component fields.
+                "totalDebt": 999.0,
+            }
+        )
+        records.append(statement)
+
+    context = build_financial_context(records)
+
+    assert context["latest_balance"]["debt"] == pytest.approx(55.0)
+    assert context["latest_balance"]["average_debt_1yr"] == pytest.approx(
+        (55.0 + 52.0 + 49.0 + 46.0) / 4
+    )
+
+
 def test_prior_ttm_must_immediately_precede_current_ttm():
     records = [
         _quarterly_statement("AAA.US", value)
@@ -973,14 +1002,16 @@ async def test_decision_support_normalizes_statement_shares_for_later_splits(
         warning["id"] == "share_dilution"
         for warning in result["risks"]["warnings"]
     )
+    base_assumptions = result["valuation"]["scenarios"][1]["assumptions"]
+    valuation_inputs = result["valuation"]["inputs"]
     expected = calculate_dcf_value(
-        fcf=100,
-        cash=200,
-        debt=50,
-        shares=200,
-        fcf_growth_rate=0.10,
-        wacc=0.09,
-        perpetual_growth=0.025,
+        fcf=valuation_inputs["fcf"],
+        cash=valuation_inputs["cash"],
+        debt=valuation_inputs["debt"],
+        shares=valuation_inputs["shares"],
+        fcf_growth_rate=base_assumptions["fcf_growth_rate"],
+        wacc=base_assumptions["wacc"],
+        perpetual_growth=base_assumptions["perpetual_growth"],
     )["intrinsic_value_per_share"]
     assert result["valuation"]["scenarios"][1][
         "intrinsic_value_per_share"
@@ -1155,7 +1186,10 @@ def test_personal_valuation_endpoints_save_and_reset_scenarios():
             headers={"X-API-Key": "test-secret"},
         )
         assert reset.json()["is_saved"] is False
-        assert reset.json()["scenarios"] == DEFAULT_SCENARIOS
+        reset_scenarios = reset.json()["scenarios"]
+        assert reset_scenarios[1]["fcf_growth_rate"] == pytest.approx(0.05)
+        assert len({row["wacc"] for row in reset_scenarios}) == 1
+        assert len({row["perpetual_growth"] for row in reset_scenarios}) == 1
 
 
 def test_public_decision_support_never_exposes_saved_personal_scenarios():
@@ -1183,7 +1217,7 @@ def test_public_decision_support_never_exposes_saved_personal_scenarios():
 
         assert public.status_code == 200
         assert public.json()["valuation"]["scenario_source"] == "default"
-        assert public.json()["valuation"]["scenarios"][1]["assumptions"]["fcf_growth_rate"] == pytest.approx(0.10)
+        assert public.json()["valuation"]["scenarios"][1]["assumptions"]["fcf_growth_rate"] == pytest.approx(0.05)
         assert personal.json()["valuation"]["scenario_source"] == "saved"
         assert personal.json()["valuation"]["scenarios"][1]["assumptions"]["fcf_growth_rate"] == pytest.approx(0.11)
         assert invalid.status_code == 401
