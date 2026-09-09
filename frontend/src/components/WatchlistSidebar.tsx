@@ -27,12 +27,12 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
 
     if (compact) {
         return (
-            <section className="surface-panel p-3 md:hidden" aria-label="Watchlist">
-                <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            <section className="surface-panel p-3 xl:hidden" aria-label="Watchlist">
+                <div className="flex items-center gap-2 overflow-x-auto">
                     <span className="flex shrink-0 items-center gap-1.5 px-1 text-xs font-black uppercase tracking-wide text-slate-500"><Star size={14} /> Watchlist</span>
                     {watchlist.map((ticker) => (
                         <div key={ticker} className={`flex shrink-0 items-center rounded-full border ${ticker === currentTicker ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
-                            <button type="button" onClick={() => onSelectTicker(ticker)} className="py-1.5 pl-3 pr-1 font-mono text-xs font-bold">
+                            <button type="button" onClick={() => onSelectTicker(ticker)} className="min-h-11 py-1.5 pl-3 pr-1 font-mono text-xs font-bold">
                                 {ticker.replace(".US", "")}
                             </button>
                             {!readOnly && <button type="button" onClick={() => onRemove(ticker)} className="mr-1 flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 focus-visible:bg-rose-50 focus-visible:text-rose-500 dark:hover:bg-rose-950/30 dark:focus-visible:bg-rose-950/30" aria-label={`Remove ${ticker} from watchlist`}>
@@ -40,8 +40,9 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                             </button>}
                         </div>
                     ))}
+                    {readOnly && <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-slate-500" onClick={onUnlock} aria-label="Unlock to edit watchlist"><LockKeyhole size={15} /></button>}
                 </div>
-                {readOnly ? <button type="button" className="secondary-button mt-1 w-full min-h-9" onClick={onUnlock}><LockKeyhole size={14} /> Unlock to edit watchlist</button> : <form onSubmit={handleAdd} className="mt-1 flex gap-2">
+                {!readOnly && <form onSubmit={handleAdd} className="mt-2 flex gap-2">
                     <label className="sr-only" htmlFor="mobile-watchlist-ticker">Add ticker to watchlist</label>
                     <input id="mobile-watchlist-ticker" className="control-field py-2" value={newTicker} onChange={(event) => setNewTicker(event.target.value)} placeholder="Add ticker" />
                     <button type="submit" className="primary-button min-h-9 px-3" disabled={!newTicker.trim()} aria-label="Add ticker"><Plus size={16} /></button>
@@ -51,7 +52,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
     }
 
     return (
-        <aside className="flex h-full w-64 shrink-0 flex-col border-r bg-white dark:bg-[#10171d]" aria-label="Watchlist">
+        <aside className="flex h-full w-60 shrink-0 flex-col border-r bg-[var(--surface)]" aria-label="Watchlist">
             <div className="border-b p-4">
                 <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm font-black"><Star className="text-emerald-500" size={17} /> Watchlist</span>{readOnly && <button type="button" onClick={onUnlock} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Unlock personal workspace"><LockKeyhole size={15} /></button>}</div>
                 <p className="mt-1 text-xs text-slate-500">{readOnly ? "Preview from this browser · locked" : "Synced to personal workspace"}</p>
@@ -66,7 +67,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                     const selected = ticker === currentTicker;
                     return (
                         <div key={ticker} className={`group flex items-center gap-1 rounded-xl border ${selected ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30" : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60"}`}>
-                            <button type="button" onClick={() => onSelectTicker(ticker)} className={`min-w-0 flex-1 truncate px-3 py-3 text-left font-mono text-xs font-bold ${selected ? "text-emerald-700 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}>
+                            <button type="button" onClick={() => onSelectTicker(ticker)} aria-current={selected ? "true" : undefined} className={`min-h-11 min-w-0 flex-1 truncate px-3 py-3 text-left font-mono text-xs font-bold ${selected ? "text-emerald-700 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}>
                                 {ticker}
                             </button>
                             {!readOnly && <button type="button" onClick={() => onRemove(ticker)} className="mr-2 rounded-lg p-1.5 text-slate-400 opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 focus:opacity-100 group-hover:opacity-100 dark:hover:bg-rose-950/30" aria-label={`Remove ${ticker} from watchlist`}><Trash2 size={14} /></button>}

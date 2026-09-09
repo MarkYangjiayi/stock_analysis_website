@@ -215,16 +215,16 @@ function ScreenerContent() {
     };
 
     return (
-        <main className="h-full overflow-y-auto bg-[#f5f7f8] px-3 py-5 text-slate-900 dark:bg-[#0b1014] dark:text-slate-100 md:px-7 md:py-7">
-            <div className="mx-auto max-w-[1580px] space-y-4">
-                <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
+        <main className="app-page">
+            <div className="page-container max-w-[1580px]">
+                <header className="surface-panel overflow-hidden">
                     <div className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between md:p-6">
                         <div>
-                            <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-400">
+                            <div className="eyebrow mb-1 flex items-center gap-2">
                                 <SlidersHorizontal size={14} />
                                 Quantify Market Intelligence
                             </div>
-                            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Stock Screener</h1>
+                            <h1 className="page-title">Stock Screener</h1>
                             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                                 {metadata?.universe === "RUSSELL3000_NASDAQ100"
                                     ? "Russell 3000 + Nasdaq-100"
@@ -232,18 +232,18 @@ function ScreenerContent() {
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-900">
-                                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Matches</div>
+                            <div className="surface-subtle rounded-xl border px-4 py-2">
+                                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Matches</div>
                                 <div className="font-mono text-xl font-semibold">{loading ? "···" : (result?.total ?? 0).toLocaleString()}</div>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-900">
-                                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Published snapshot</div>
+                            <div className="surface-subtle rounded-xl border px-4 py-2">
+                                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Published snapshot</div>
                                 <div className="font-mono text-sm font-semibold">{result?.as_of_date ?? metadata?.as_of_date ?? "No data"}</div>
                             </div>
                             <button
                                 onClick={() => void loadMetadata()}
                                 aria-label="Refresh results"
-                                className="grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-slate-700 dark:bg-slate-900"
+                                className="grid size-11 place-items-center rounded-xl border bg-[var(--surface)] text-slate-500 transition hover:border-emerald-400 hover:text-emerald-500"
                             >
                                 <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
                             </button>
@@ -257,13 +257,13 @@ function ScreenerContent() {
                     )}
                 </header>
 
-                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
+                <section className="surface-panel">
                     <div className="flex items-center justify-between border-b border-slate-200 p-3 dark:border-slate-800 md:hidden">
                         <button onClick={() => setMobileFiltersOpen(true)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
                             <Filter size={16} /> Filters {filters.length ? `(${filters.length})` : ""}
                         </button>
                     </div>
-                    <div className={`${mobileFiltersOpen ? "fixed inset-0 z-50 overflow-auto bg-white p-4 dark:bg-[#0b1014]" : "hidden"} md:block`}>
+                    <div className={`${mobileFiltersOpen ? "fixed inset-0 z-50 overflow-auto bg-[var(--app-bg)] p-4" : "hidden"} md:block`}>
                         <div className="mb-4 flex items-center justify-between md:hidden">
                             <h2 className="text-lg font-semibold">Filters</h2>
                             <button aria-label="Close filters" onClick={() => setMobileFiltersOpen(false)}><X /></button>
@@ -338,7 +338,7 @@ function ScreenerContent() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                <span className={`text-[10px] ${field.coverage < 0.5 ? "text-amber-500" : "text-slate-400"}`}>{Math.round(field.coverage * 100)}% coverage</span>
+                                                <span className={`text-xs ${field.coverage < 0.5 ? "text-amber-600 dark:text-amber-400" : "text-slate-500"}`}>{Math.round(field.coverage * 100)}% coverage</span>
                                             </div>
                                             {field.presets.length > 0 && (
                                                 <select
@@ -351,7 +351,7 @@ function ScreenerContent() {
                                                         : -1)}
                                                     onChange={(event) => applyPreset(field, Number(event.target.value))}
                                                     disabled={!field.available || (filterLimitReached && !active)}
-                                                    className="max-w-24 rounded-md border-0 bg-transparent text-[10px] text-slate-500 outline-none"
+                                                    className="max-w-28 rounded-md border-0 bg-transparent text-xs text-slate-500 outline-none"
                                                 >
                                                     <option value="-1">Preset</option>
                                                     {field.presets.map((preset, index) => <option value={index} key={preset.label}>{preset.label}</option>)}
@@ -369,13 +369,13 @@ function ScreenerContent() {
                                 );
                             })}
                         </div>
-                        <div className="sticky bottom-0 z-50 border-t border-slate-200 bg-white p-4 md:hidden dark:border-slate-800 dark:bg-[#0b1014]">
+                        <div className="sticky bottom-0 z-50 border-t bg-[var(--surface)] p-4 md:hidden">
                             <button onClick={() => setMobileFiltersOpen(false)} className="w-full rounded-xl bg-emerald-500 py-3 font-semibold text-slate-950">Show {result?.total ?? 0} matches</button>
                         </div>
                     </div>
                 </section>
 
-                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111820]">
+                <section className="surface-panel overflow-hidden">
                     <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h2 className="font-semibold">Screening results</h2>
@@ -410,12 +410,12 @@ function ScreenerContent() {
                     ) : (
                         <div className="max-h-[680px] overflow-auto">
                             <table className="min-w-full whitespace-nowrap text-left text-sm">
-                                <thead className="sticky top-0 z-10 bg-slate-100/95 text-[11px] uppercase tracking-wider text-slate-500 backdrop-blur dark:bg-slate-900/95">
+                                <thead className="surface-subtle sticky top-0 z-10 text-xs uppercase tracking-wider text-slate-500 backdrop-blur">
                                     <tr>
                                         {selectedColumns.map((column) => {
                                             const field = fieldMap.get(column);
                                             return (
-                                                <th key={column} className="px-4 py-3 font-semibold">
+                                                <th key={column} className={`px-4 py-3 font-semibold ${column === "ticker" ? "sticky left-0 z-20 bg-[var(--surface-muted)]" : column === "name" ? "" : "text-right"}`}>
                                                     <button
                                                         title={field?.description ?? undefined}
                                                         onClick={() => {
@@ -424,7 +424,7 @@ function ScreenerContent() {
                                                                 setPage(0);
                                                             }
                                                         }}
-                                                        className="flex items-center gap-1 hover:text-emerald-500"
+                                                        className={`flex items-center gap-1 hover:text-emerald-500 ${column === "name" || column === "ticker" ? "" : "ml-auto"}`}
                                                     >
                                                         {column === "ticker" ? "Ticker" : column === "name" ? "Company" : field?.label ?? column}
                                                         {sort.field === column && <span>{sort.direction === "desc" ? "↓" : "↑"}</span>}
@@ -442,7 +442,7 @@ function ScreenerContent() {
                                     ) : result?.items.length ? result.items.map((row, rowIndex) => (
                                         <tr key={String(row.ticker ?? rowIndex)} className="transition hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20">
                                             {selectedColumns.map((column) => (
-                                                <td key={column} className={`px-4 py-3 ${column === "ticker" ? "font-mono font-bold text-emerald-600 dark:text-emerald-400" : column === "name" ? "max-w-64 truncate font-medium" : "font-mono text-slate-700 dark:text-slate-300"}`}>
+                                                <td key={column} className={`px-4 py-3 ${column === "ticker" ? "sticky left-0 z-[5] bg-[var(--surface)] font-mono font-bold text-emerald-600 dark:text-emerald-400" : column === "name" ? "max-w-64 truncate font-medium" : "text-right font-mono text-slate-700 dark:text-slate-300"}`}>
                                                     {column === "ticker" ? (
                                                         <Link
                                                             href={`/?ticker=${encodeURIComponent(String(row[column] ?? ""))}`}
@@ -480,7 +480,7 @@ function ScreenerContent() {
 
 export default function ScreenerPage() {
     return (
-        <Suspense fallback={<div className="h-full bg-[#f5f7f8] dark:bg-[#0b1014]" />}>
+        <Suspense fallback={<div className="h-full bg-[var(--app-bg)]" />}>
             <ScreenerContent />
         </Suspense>
     );
