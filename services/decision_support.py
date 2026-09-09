@@ -248,6 +248,109 @@ def calculate_dcf_value(
     }
 
 
+def calculate_implied_fcf_growth(
+    inputs: dict[str, Any],
+    current_price: float | None,
+    base_scenario: dict[str, Any],
+) -> dict[str, Any]:
+    """Reverse the five-year DCF to the FCF CAGR implied by market price."""
+    wacc = float(base_scenario["wacc"])
+    perpetual_growth = float(base_scenario["perpetual_growth"])
+    base_growth = float(base_scenario["fcf_growth_rate"])
+    result: dict[str, Any] = {
+        "available": False,
+        "implied_fcf_growth_rate": None,
+        "base_fcf_growth_rate": base_growth,
+        "growth_gap_to_base": None,
+        "wacc": wacc,
+        "perpetual_growth": perpetual_growth,
+        "forecast_years": 5,
+        "target_price": current_price,
+        "target_enterprise_value": None,
+        "modeled_price": None,
+        "status": "unavailable",
+        "reasons": [],
+    }
+
+    reasons = valuation_unavailable_reasons(inputs)
+    if current_price is None or not math.isfinite(current_price) or current_price <= 0:
+        reasons.append("A positive current price is required for reverse DCF.")
+    if reasons:
+        result["reasons"] = reasons
+        return result
+
+    fcf = float(inputs["fcf"])
+    cash = float(inputs["cash"])
+    debt = float(inputs["debt"])
+    shares = float(inputs["shares"])
+    target_enterprise_value = current_price * shares - cash + debt
+    result["target_enterprise_value"] = target_enterprise_value
+    if target_enterprise_value <= 0:
+        result["reasons"] = [
+            "Market equity value is at or below net cash, so this positive-FCF DCF has no implied operating-growth solution."
+        ]
+        return result
+
+    def enterprise_value_for_growth_factor(growth_factor: float) -> float:
+        return calculate_dcf_value(
+            fcf=fcf,
+            cash=0,
+            debt=0,
+            shares=1,
+            fcf_growth_rate=growth_factor - 1,
+            wacc=wacc,
+            perpetual_growth=perpetual_growth,
+        )["enterprise_value"]
+
+    lower_factor = 0.0
+    upper_factor = 1.5
+    while (
+        enterprise_value_for_growth_factor(upper_factor)
+        < target_enterprise_value
+        and upper_factor < 1024
+    ):
+        upper_factor *= 2
+    if enterprise_value_for_growth_factor(upper_factor) < target_enterprise_value:
+        result["reasons"] = [
+            "The implied FCF growth rate is beyond the numerical search range."
+        ]
+        return result
+
+    for _ in range(100):
+        midpoint = (lower_factor + upper_factor) / 2
+        if enterprise_value_for_growth_factor(midpoint) < target_enterprise_value:
+            lower_factor = midpoint
+        else:
+            upper_factor = midpoint
+
+    implied_growth = (lower_factor + upper_factor) / 2 - 1
+    calculated = calculate_dcf_value(
+        fcf=fcf,
+        cash=cash,
+        debt=debt,
+        shares=shares,
+        fcf_growth_rate=implied_growth,
+        wacc=wacc,
+        perpetual_growth=perpetual_growth,
+    )
+    growth_gap = implied_growth - base_growth
+    if math.isclose(growth_gap, 0.0, abs_tol=1e-9):
+        status = "at_base"
+    elif growth_gap > 0:
+        status = "above_base"
+    else:
+        status = "below_base"
+    return {
+        **result,
+        "available": True,
+        "implied_fcf_growth_rate": implied_growth,
+        "growth_gap_to_base": growth_gap,
+        "modeled_price": calculated["intrinsic_value_per_share"],
+        "status": status,
+        "reasons": [],
+    }
+
+
 def _scenario_result(
     scenario: dict[str, Any],
     inputs: dict[str, Any],
@@ -369,12 +472,18 @@ def calculate_valuation(
 ) -> dict[str, Any]:
     ordered = validate_scenarios(scenarios)
     results = [_scenario_result(item, inputs, current_price) for item in ordered]
+    implied_growth = calculate_implied_fcf_growth(
+        inputs,
+        current_price,
+        ordered[1],
+    )
     return {
         "available": all(item["available"] for item in results),
         "unavailable_reasons": valuation_unavailable_reasons(inputs),
         "inputs": inputs,
         "current_price": current_price,
         "scenarios": results,
+        "implied_growth": implied_growth,
         "position": _valuation_position(current_price, results),
         "sensitivity": _sensitivity_matrix(ordered[1], inputs),
         "formula": {
@@ -1347,7 +1456,14 @@ def _evidence_items(
         {"id": "E3", "kind": "financials", "label": "Quarterly financial coverage", "value": {"statement_count": financial["statement_count"], "current_ttm": financial["current_ttm"], "previous_ttm": financial["previous_ttm"], "latest_balance": financial["latest_balance"], "prior_year_balance": financial["prior_year_balance"], "data_quality_notes": risks["data_quality_notes"]}, "source_date": _iso(financial["latest_statement_date"]), "available": financial["statement_count"] > 0},
     ]
     for evidence_id, scenario in zip(("E4", "E5", "E6"), valuation["scenarios"]):
-        items.append({"id": evidence_id, "kind": "valuation", "label": f"{scenario['scenario'].title()} DCF", "value": scenario, "source_date": _iso(financial["latest_statement_date"]), "available": scenario["available"]})
+        value = dict(scenario)
+        if scenario["scenario"] == "base":
+            value["market_implied_fcf_growth"] = {
+                **valuation["implied_growth"],
+                "price_date": _iso(price_date),
+                "financial_statement_date": _iso(financial["latest_statement_date"]),
+            }
+        items.append({"id": evidence_id, "kind": "valuation", "label": f"{scenario['scenario'].title()} DCF", "value": value, "source_date": _iso(financial["latest_statement_date"]), "available": scenario["available"]})
     for metric in peers["metrics"]:
         items.append({"id": metric["evidence_id"], "kind": "peer_metric", "label": metric["label"], "value": {"metric_key": metric["key"], "metric_value": metric["value"], "format": metric["format"], "direction": metric["direction"], "industry": {"metric_key": metric["key"], **metric["industry"]}, "sector": {"metric_key": metric["key"], **metric["sector"]}, "summary_scope": metric["summary_scope"], "summary_percentile": metric["summary_percentile"]}, "source_date": _iso(screener_date), "available": metric["summary_percentile"] is not None})
     by_rule = {item["id"]: item for item in risks["warnings"]}

@@ -310,6 +310,21 @@ export interface DecisionValuationScenarioResult {
     upside_downside?: number | null;
 }
 
+export interface DecisionImpliedGrowth {
+    available: boolean;
+    implied_fcf_growth_rate: number | null;
+    base_fcf_growth_rate: number;
+    growth_gap_to_base: number | null;
+    wacc: number;
+    perpetual_growth: number;
+    forecast_years: number;
+    target_price: number | null;
+    target_enterprise_value: number | null;
+    modeled_price: number | null;
+    status: "above_base" | "at_base" | "below_base" | "unavailable";
+    reasons: string[];
+}
+
 export interface DecisionValuation {
     available: boolean;
     unavailable_reasons: string[];
@@ -323,6 +338,7 @@ export interface DecisionValuation {
     current_price: number | null;
     scenario_source: "default" | "saved" | "request";
     scenarios: DecisionValuationScenarioResult[];
+    implied_growth: DecisionImpliedGrowth;
     position: { status: string; text: string };
     sensitivity: {
         growth_values: number[];

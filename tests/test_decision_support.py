@@ -39,6 +39,7 @@ from services.decision_support import (
     build_peer_comparison,
     build_peer_multiple_distribution,
     calculate_dcf_value,
+    calculate_implied_fcf_growth,
     calculate_valuation,
     evaluate_fundamental_warnings,
     get_decision_support,
@@ -70,6 +71,73 @@ def test_dcf_formula_and_base_sensitivity_cell_are_transparent():
     assert all(len(row) == 5 for row in valuation["sensitivity"]["values"])
     assert valuation["formula"]["cash_treatment"] == "added"
     assert valuation["formula"]["debt_treatment"] == "deducted"
+
+
+def test_reverse_dcf_recovers_the_market_implied_growth_rate():
+    inputs = {"fcf": 100.0, "cash": 50.0, "debt": 20.0, "shares": 10.0}
+    base = DEFAULT_SCENARIOS[1]
+    market_case = calculate_dcf_value(
+        fcf=inputs["fcf"],
+        cash=inputs["cash"],
+        debt=inputs["debt"],
+        shares=inputs["shares"],
+        fcf_growth_rate=0.17,
+        wacc=base["wacc"],
+        perpetual_growth=base["perpetual_growth"],
+    )
+
+    result = calculate_implied_fcf_growth(
+        inputs,
+        market_case["intrinsic_value_per_share"],
+        base,
+    )
+
+    assert result["available"] is True
+    assert result["implied_fcf_growth_rate"] == pytest.approx(0.17)
+    assert result["growth_gap_to_base"] == pytest.approx(0.07)
+    assert result["status"] == "above_base"
+    assert result["modeled_price"] == pytest.approx(
+        market_case["intrinsic_value_per_share"]
+    )
+
+
+def test_reverse_dcf_marks_invalid_market_inputs_unavailable():
+    inputs = {"fcf": 100.0, "cash": 500.0, "debt": 0.0, "shares": 10.0}
+    below_net_cash = calculate_implied_fcf_growth(
+        inputs,
+        current_price=40.0,
+        base_scenario=DEFAULT_SCENARIOS[1],
+    )
+    missing_price = calculate_implied_fcf_growth(
+        inputs,
+        current_price=None,
+        base_scenario=DEFAULT_SCENARIOS[1],
+    )
+
+    assert below_net_cash["available"] is False
+    assert "at or below net cash" in below_net_cash["reasons"][0]
+    assert missing_price["available"] is False
+    assert "positive current price" in missing_price["reasons"][0]
+
+
+def test_calculate_valuation_uses_base_assumptions_for_reverse_dcf():
+    inputs = {"fcf": 100.0, "cash": 50.0, "debt": 20.0, "shares": 10.0}
+    base_value = calculate_dcf_value(
+        fcf=inputs["fcf"],
+        cash=inputs["cash"],
+        debt=inputs["debt"],
+        shares=inputs["shares"],
+        fcf_growth_rate=DEFAULT_SCENARIOS[1]["fcf_growth_rate"],
+        wacc=DEFAULT_SCENARIOS[1]["wacc"],
+        perpetual_growth=DEFAULT_SCENARIOS[1]["perpetual_growth"],
+    )["intrinsic_value_per_share"]
+
+    valuation = calculate_valuation(inputs, DEFAULT_SCENARIOS, base_value)
+
+    assert valuation["implied_growth"]["status"] == "at_base"
+    assert valuation["implied_growth"]["implied_fcf_growth_rate"] == pytest.approx(
+        DEFAULT_SCENARIOS[1]["fcf_growth_rate"]
+    )
 
 
 @pytest.mark.parametrize(

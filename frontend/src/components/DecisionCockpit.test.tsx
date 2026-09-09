@@ -42,6 +42,20 @@ const valuation: DecisionValuation = {
         intrinsic_value_per_share: 80 + index * 20,
         upside_downside: -0.2 + index * 0.2,
     })),
+    implied_growth: {
+        available: true,
+        implied_fcf_growth_rate: 0.125,
+        base_fcf_growth_rate: 0.10,
+        growth_gap_to_base: 0.025,
+        wacc: 0.09,
+        perpetual_growth: 0.025,
+        forecast_years: 5,
+        target_price: 100,
+        target_enterprise_value: 960,
+        modeled_price: 100,
+        status: "above_base",
+        reasons: [],
+    },
     position: { status: "between_bear_base", text: "Price is between the Bear- and Base-case intrinsic values." },
     sensitivity: {
         growth_values: [0, 0.05, 0.10, 0.15, 0.20],
@@ -203,6 +217,19 @@ describe("DecisionCockpit", () => {
 
         expect(screen.getByText("¥80")).toBeInTheDocument();
         expect(screen.queryByText("$80.00")).not.toBeInTheDocument();
+    });
+
+    it("shows the market-implied FCF growth hurdle and its fixed assumptions", async () => {
+        const user = userEvent.setup();
+        render(<DecisionCockpit {...props()} />);
+
+        expect(screen.getByText("Market-implied 5Y FCF growth")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Valuation" }));
+
+        expect(screen.getByText("Reverse DCF growth hurdle")).toBeInTheDocument();
+        expect(screen.getByText("12.5%")).toBeInTheDocument();
+        expect(screen.getByText("+2.5 pp")).toBeInTheDocument();
+        expect(screen.getByText(/market hurdle, not a forecast/i)).toBeInTheDocument();
     });
 
     it("shows unavailable warning coverage instead of a clean result", async () => {
