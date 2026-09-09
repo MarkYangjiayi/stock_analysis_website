@@ -53,9 +53,9 @@ export default function TopNavBar() {
     );
 
     return (
-        <nav className="relative z-50 shrink-0 border-b bg-white/95 px-4 py-3 backdrop-blur-xl dark:bg-[#0b1116]/95 md:h-16 md:px-6 md:py-0" aria-label="Primary navigation">
+        <nav className="relative z-50 shrink-0 border-b bg-[var(--surface)] px-4 py-3 backdrop-blur-xl md:h-16 md:px-6 md:py-0" aria-label="Primary navigation">
             <div className="mx-auto flex h-full max-w-[1600px] flex-wrap items-center gap-3 md:flex-nowrap md:justify-between">
-                <div className="flex min-w-0 flex-1 items-center gap-5 md:h-full lg:flex-none">
+                <div className="order-1 flex min-w-0 flex-1 items-center gap-5 md:h-full">
                     <Link href="/" onClick={() => setMenuOpen(false)} className="flex shrink-0 items-center gap-2" aria-label="Quantify home">
                         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 shadow-sm">
                             <ChartNoAxesCombined size={19} strokeWidth={2.5} />
@@ -65,20 +65,7 @@ export default function TopNavBar() {
                     <div className="hidden h-full lg:block">{navLinks()}</div>
                 </div>
 
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                    <ThemeToggle />
-                    <button
-                        type="button"
-                        onClick={() => setMenuOpen((open) => !open)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-200 lg:hidden"
-                        aria-label={menuOpen ? "Close navigation" : "Open navigation"}
-                        aria-expanded={menuOpen}
-                    >
-                        {menuOpen ? <X size={19} /> : <Menu size={19} />}
-                    </button>
-                </div>
-
-                <form onSubmit={handleSearch} className="relative order-3 w-full md:order-none md:w-64 xl:w-72" role="search">
+                <form onSubmit={handleSearch} className="relative order-3 w-full md:order-2 md:ml-auto md:w-64 xl:w-72" role="search">
                     <input
                         type="search"
                         className="control-field py-2 pl-3 pr-10"
@@ -91,10 +78,23 @@ export default function TopNavBar() {
                         <Search size={15} />
                     </button>
                 </form>
+
+                <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-3 md:ml-0">
+                    <ThemeToggle />
+                    <button
+                        type="button"
+                        onClick={() => setMenuOpen((open) => !open)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border bg-[var(--surface)] text-slate-600 dark:text-slate-200 lg:hidden"
+                        aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+                        aria-expanded={menuOpen}
+                    >
+                        {menuOpen ? <X size={19} /> : <Menu size={19} />}
+                    </button>
+                </div>
             </div>
 
             {menuOpen && (
-                <div className="absolute inset-x-0 top-full border-b bg-white p-3 shadow-xl dark:bg-[#10171d] lg:hidden">
+                <div className="absolute inset-x-0 top-full border-b bg-[var(--surface)] p-3 shadow-xl lg:hidden">
                     {navLinks(true)}
                 </div>
             )}

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, Clock3, Plus, Search, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronUp, Clock3, Plus, Search, ShieldCheck } from "lucide-react";
 import {
     ApiError,
     DecisionSupportResponse,
@@ -26,7 +26,7 @@ import {
     startEarningsQualityAnalysis,
     StockDataResponse,
 } from "@/lib/api";
-import DecisionCockpit from "@/components/DecisionCockpit";
+import DecisionCockpit, { type CockpitTab } from "@/components/DecisionCockpit";
 import NewsFeed from "@/components/NewsFeed";
 import PersonalUnlockDialog from "@/components/PersonalUnlockDialog";
 import PointInTimeFactorPanel from "@/components/PointInTimeFactorPanel";
@@ -34,6 +34,10 @@ import StockSnapshotPanel from "@/components/StockSnapshotPanel";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
 import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
+import AnalysisNavigation, { isAnalysisSection, type AnalysisSection } from "@/components/analysis/AnalysisNavigation";
+import { DataState } from "@/components/ui/DataState";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { formatSignedPercent } from "@/lib/format";
 
 const StockChart = dynamic(() => import("@/components/StockChart"), {
     ssr: false,
@@ -74,6 +78,19 @@ const attachEarningsAnalysis = (
     };
 };
 
+const isFinancialFlowResponse = (value: unknown): value is FinancialFlowResponse => {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as Partial<FinancialFlowResponse>;
+    return typeof candidate.ticker === "string"
+        && Array.isArray(candidate.nodes)
+        && Array.isArray(candidate.links)
+        && Array.isArray(candidate.summary_cards)
+        && Array.isArray(candidate.available_periods)
+        && Array.isArray(candidate.insights)
+        && Array.isArray(candidate.sources)
+        && Boolean(candidate.enrichment && typeof candidate.enrichment.status === "string");
+};
+
 const waitForPoll = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
     const finish = () => {
         signal.removeEventListener("abort", abort);
@@ -94,6 +111,8 @@ function AnalysisPage() {
     const router = useRouter();
     const requestedSymbol = searchParams.get("ticker")?.trim().toUpperCase() || "";
     const requestedTicker = requestedSymbol && !requestedSymbol.includes(".") ? `${requestedSymbol}.US` : requestedSymbol;
+    const requestedSection = searchParams.get("section");
+    const activeSection: AnalysisSection = isAnalysisSection(requestedSection) ? requestedSection : "overview";
     const [ticker, setTicker] = useState("");
     const [stockData, setStockData] = useState<StockDataResponse | null>(null);
     const [factorSnapshot, setFactorSnapshot] = useState<PublishedFactorSnapshot | null>(null);
@@ -123,6 +142,8 @@ function AnalysisPage() {
     const [financialPeriod, setFinancialPeriod] = useState<"annual" | "ttm" | "quarterly">("annual");
     const [financialMetric, setFinancialMetric] = useState<FinancialEvidenceMetric>("overview");
     const [unlockOpen, setUnlockOpen] = useState(false);
+    const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+    const [cockpitView, setCockpitView] = useState<CockpitTab>("overview");
     const personal = usePersonalWorkspace();
     const watchlist = personal.watchlist;
     const handlePersonalUnauthorized = personal.handleUnauthorized;
@@ -136,6 +157,7 @@ function AnalysisPage() {
     const financialFlowRequestedPeriodRef = useRef<string | undefined>(undefined);
     const earningsAnalysisRequestRef = useRef<AbortController | null>(null);
     const financialEvidenceRef = useRef<HTMLDivElement | null>(null);
+    const pendingEvidenceFocusRef = useRef(false);
 
     const loadStock = useCallback(async (
         symbol: string,
@@ -283,11 +305,13 @@ function AnalysisPage() {
         try {
             let result = await fetchFinancialFlow(symbol, periodType, periodEnd, controller.signal);
             if (controller.signal.aborted) return;
+            if (!isFinancialFlowResponse(result)) throw new Error("Profit flow returned an incomplete response.");
             setFinancialFlow(result);
 
             for (let attempt = 0; attempt < 20 && ["queued", "running"].includes(result.enrichment.status); attempt += 1) {
                 await waitForPoll(3_000, controller.signal);
                 result = await fetchFinancialFlow(symbol, periodType, periodEnd, controller.signal);
+                if (!isFinancialFlowResponse(result)) throw new Error("Profit flow returned an incomplete response.");
                 if (!controller.signal.aborted) setFinancialFlow(result);
             }
             if (!controller.signal.aborted && ["queued", "running"].includes(result.enrichment.status)) {
@@ -370,6 +394,7 @@ function AnalysisPage() {
         setChartInterval("1d");
         setFinancialPeriod("annual");
         setFinancialMetric("overview");
+        setDescriptionExpanded(false);
         void loadStock(requestedTicker, "1d", "annual", true).then((loaded) => {
             // The stock endpoint can populate a cold local snapshot. Refresh the
             // cockpit after that read-through completes so it sees the new data.
@@ -406,6 +431,34 @@ function AnalysisPage() {
     }, [decisionRefreshVersion, loadDecision, personal.adminKey, requestedTicker]);
 
     const selectTicker = (symbol: string) => router.push(`/?ticker=${encodeURIComponent(symbol.toUpperCase())}`);
+
+    const selectSection = useCallback((section: AnalysisSection) => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (section === "overview") params.delete("section");
+        else params.set("section", section);
+        const query = params.toString();
+        router.push(query ? `/?${query}` : "/", { scroll: false });
+    }, [router, searchParams]);
+
+    useEffect(() => {
+        setCockpitView((current) => {
+            if (activeSection === "overview") return "overview";
+            if (activeSection === "valuation") return current === "peers" ? current : "valuation";
+            if (activeSection === "financials") return "risks";
+            if (activeSection === "events") return "brief";
+            return current;
+        });
+    }, [activeSection]);
+
+    useEffect(() => {
+        if (activeSection !== "financials" || !pendingEvidenceFocusRef.current) return;
+        pendingEvidenceFocusRef.current = false;
+        const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            financialEvidenceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            financialEvidenceRef.current?.focus({ preventScroll: true });
+        }));
+        return () => window.cancelAnimationFrame(frame);
+    }, [activeSection, financialMetric, financialPeriod]);
 
     const handleIntervalChange = async (interval: string) => {
         if (!ticker || interval === chartInterval) return;
@@ -504,20 +557,29 @@ function AnalysisPage() {
             debt_to_equity: "debt_to_equity",
             shares: "shares_outstanding",
         };
+        pendingEvidenceFocusRef.current = true;
+        setCockpitView("risks");
+        selectSection("financials");
         setFinancialMetric(metricMap[metric]);
         if (financialPeriod !== "quarterly") await handlePeriodChange("quarterly");
-        window.requestAnimationFrame(() => financialEvidenceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    };
+
+    const handleCockpitViewChange = (view: CockpitTab) => {
+        setCockpitView(view);
+        if (view === "overview") selectSection("overview");
+        else if (view === "valuation" || view === "peers") selectSection("valuation");
+        else if (view === "risks") selectSection("financials");
+        else selectSection("events");
     };
 
     const latest = stockData?.historical_data.filter((point) => point.close != null).at(-1);
     const previous = stockData?.historical_data.filter((point) => point.close != null).at(-2);
     const change = latest?.close != null && previous?.close != null ? latest.close - previous.close : null;
     const changePct = change != null && previous?.close ? change / previous.close : null;
-    const isPositive = change != null && change >= 0;
 
     return (
         <div className="flex h-full w-full overflow-hidden bg-[var(--app-bg)]">
-            <div className="hidden h-full md:block">
+            <div className="hidden h-full xl:block">
                 <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} />
             </div>
 
@@ -555,13 +617,13 @@ function AnalysisPage() {
                     {stockData && (
                         <>
                             {error && <div className="error-panel" role="alert">{error} The previous snapshot remains visible.</div>}
-                            <section className="surface-panel overflow-hidden p-5 sm:p-7">
-                                <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+                            <section className="stock-context-header surface-panel overflow-hidden p-4 sm:p-6">
+                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                                     <div className="min-w-0">
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <h1 className="text-3xl font-black tracking-[-0.04em] sm:text-4xl">{stockData.profile.name || stockData.profile.ticker}</h1>
+                                        <div className="flex flex-wrap items-start gap-3">
+                                            <h1 className="min-w-0 max-w-4xl text-2xl font-bold tracking-[-0.035em] sm:text-3xl">{stockData.profile.name || stockData.profile.ticker}</h1>
                                             {watchlist.includes(stockData.profile.ticker) ? (
-                                                <span className="status-pill"><Check size={14} /> In watchlist</span>
+                                                <span className="status-pill mt-1"><Check size={14} /> In watchlist</span>
                                             ) : (
                                                 <button type="button" onClick={() => addToWatchlist(stockData.profile.ticker)} className="secondary-button min-h-9 px-3 py-1.5"><Plus size={15} /> {personal.isUnlocked ? "Add" : "Unlock to add"}</button>
                                             )}
@@ -570,76 +632,110 @@ function AnalysisPage() {
                                             <span className="rounded-lg border px-2.5 py-1 font-mono text-emerald-700 dark:text-emerald-300">{stockData.profile.ticker}</span>
                                             {stockData.profile.exchange && <span className="rounded-lg border px-2.5 py-1">{stockData.profile.exchange}</span>}
                                             {stockData.profile.sector && <span className="rounded-lg border px-2.5 py-1">{stockData.profile.sector}</span>}
-                                            {stockData.profile.industry && <span className="hidden rounded-lg border px-2.5 py-1 sm:inline-flex">{stockData.profile.industry}</span>}
+                                            {stockData.profile.industry && <span className="rounded-lg border px-2.5 py-1">{stockData.profile.industry}</span>}
                                         </div>
                                     </div>
-                                    <div className="surface-subtle min-w-[240px] rounded-xl border p-4">
+                                    <div className="surface-subtle min-w-0 rounded-xl border p-4 sm:min-w-[260px]">
                                         <p className="eyebrow">Latest adjusted close</p>
-                                        <div className="mt-1 flex items-baseline gap-2"><span className="text-sm font-bold text-slate-400">{stockData.profile.currency || "USD"}</span><span className="font-mono text-3xl font-black">{latest?.close?.toFixed(2) ?? "—"}</span></div>
-                                        {change != null && <p className={`mt-1 flex items-center gap-1 text-sm font-bold ${isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>{isPositive ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${Math.abs(changePct * 100).toFixed(2)}%)`}</p>}
-                                        {latest?.date && <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 size={12} /> Price date {latest.date}</p>}
+                                        <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                                            <span className="text-sm font-semibold text-slate-500">{stockData.profile.currency || "USD"}</span>
+                                            <span className="font-mono text-3xl font-bold tracking-[-0.04em]">{latest?.close?.toFixed(2) ?? "—"}</span>
+                                        </div>
+                                        {change != null && <p className={`mt-1 flex items-center gap-1 text-sm font-semibold ${change > 0 ? "text-[var(--positive)]" : change < 0 ? "text-[var(--negative)]" : "text-[var(--neutral)]"}`}>{change > 0 ? <ArrowUpRight size={15} /> : change < 0 ? <ArrowDownRight size={15} /> : null}{change > 0 ? "+" : change < 0 ? "−" : ""}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${formatSignedPercent(changePct)})`}</p>}
+                                        <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 size={12} /> {latest?.date ? `Price date ${latest.date}` : "Price date unavailable"} · adjusted</p>
                                     </div>
                                 </div>
-                                {stockData.profile.description && <p className="mt-6 border-t pt-5 text-sm leading-6 text-slate-600 line-clamp-3 hover:line-clamp-none dark:text-slate-400">{stockData.profile.description}</p>}
+                                <div className="scrollbar-hide mt-4 flex flex-nowrap gap-2 overflow-x-auto border-t pt-3 sm:flex-wrap" aria-label="Data availability">
+                                    <DataState label={latest?.date ? `Price ${latest.date}` : "Price unavailable"} tone={latest?.date ? "ready" : "neutral"} />
+                                    <DataState label={stockData.historical_financials.length ? "Financials available" : "Financials unavailable"} tone={stockData.historical_financials.length ? "ready" : "neutral"} />
+                                    <DataState label={factorLoading ? "Factors loading" : factorError ? "Factors unavailable" : "Factors available"} tone={factorLoading ? "loading" : factorError ? "error" : "ready"} />
+                                    <DataState label={decisionLoading ? "Research loading" : decisionError ? "Research limited" : "Research available"} tone={decisionLoading ? "loading" : decisionError ? "error" : "ready"} />
+                                </div>
+                                {stockData.profile.description && <div className="mt-3 border-t pt-3 sm:mt-4 sm:pt-4">
+                                    <p id="company-description" className={`text-sm leading-6 text-slate-600 dark:text-slate-400 ${descriptionExpanded ? "" : "line-clamp-1 sm:line-clamp-2"}`}>{stockData.profile.description}</p>
+                                    <button type="button" className="mt-2 inline-flex min-h-8 items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300" aria-expanded={descriptionExpanded} aria-controls="company-description" onClick={() => setDescriptionExpanded((expanded) => !expanded)}>
+                                        {descriptionExpanded ? <><ChevronUp size={14} /> Show less</> : <><ChevronDown size={14} /> Show more</>}
+                                    </button>
+                                </div>}
                             </section>
 
-                            <StockSnapshotPanel
-                                data={marketSnapshot}
-                                loading={marketSnapshotLoading}
-                                error={marketSnapshotError}
-                                onRetry={() => void loadMarketSnapshot(stockData.profile.ticker)}
-                            />
+                            <AnalysisNavigation active={activeSection} onChange={selectSection} />
 
-                            <DecisionCockpit
-                                ticker={stockData.profile.ticker}
-                                decision={decision}
-                                loading={decisionLoading}
-                                error={decisionError}
-                                adminKey={personal.adminKey}
-                                onUnlock={() => setUnlockOpen(true)}
-                                onUnauthorized={personal.handleUnauthorized}
-                                onRetry={() => void refreshDecision()}
-                                onRefresh={refreshDecision}
-                                onShowEvidence={(metric) => void showFinancialEvidence(metric)}
-                                earningsQuality={earningsQuality}
-                                earningsQualityLoading={earningsQualityLoading}
-                                earningsQualityError={earningsQualityError}
-                                earningsQualityBusyPeriod={earningsQualityBusyPeriod}
-                                onAnalyzeEarningsPeriod={analyzeEarningsPeriod}
-                                eventsExpectations={eventsExpectations}
-                                eventsExpectationsLoading={eventsExpectationsLoading}
-                                eventsExpectationsError={eventsExpectationsError}
-                            />
+                            <div id={`analysis-panel-${activeSection}`} role="tabpanel" aria-labelledby={`analysis-tab-${activeSection}`} className="space-y-6">
+                                {activeSection === "overview" && <StockSnapshotPanel
+                                    data={marketSnapshot}
+                                    loading={marketSnapshotLoading}
+                                    error={marketSnapshotError}
+                                    onRetry={() => void loadMarketSnapshot(stockData.profile.ticker)}
+                                />}
 
-                            <FinancialFlowPanel
-                                data={financialFlow}
-                                loading={financialFlowLoading}
-                                error={financialFlowError}
-                                timePeriod={financialPeriod}
-                                onTimePeriodChange={(period) => void handlePeriodChange(period)}
-                                onPeriodEndChange={(periodEnd) => {
-                                    if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, periodEnd);
-                                }}
-                                onRetry={() => {
-                                    if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, financialFlowRequestedPeriodRef.current);
-                                }}
-                            />
+                                {activeSection === "valuation" && <div className="flex justify-end">
+                                    <SegmentedControl<CockpitTab>
+                                        label="Valuation section"
+                                        value={cockpitView === "peers" ? "peers" : "valuation"}
+                                        options={[{ value: "valuation", label: "Scenarios & sensitivity" }, { value: "peers", label: "Peer benchmarks" }]}
+                                        onChange={handleCockpitViewChange}
+                                    />
+                                </div>}
 
-                            <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
+                                <div className={["overview", "valuation", "financials", "events"].includes(activeSection) ? "" : "hidden"}>
+                                    <DecisionCockpit
+                                        ticker={stockData.profile.ticker}
+                                        decision={decision}
+                                        loading={decisionLoading}
+                                        error={decisionError}
+                                        adminKey={personal.adminKey}
+                                        onUnlock={() => setUnlockOpen(true)}
+                                        onUnauthorized={personal.handleUnauthorized}
+                                        onRetry={() => void refreshDecision()}
+                                        onRefresh={refreshDecision}
+                                        onShowEvidence={(metric) => void showFinancialEvidence(metric)}
+                                        earningsQuality={earningsQuality}
+                                        earningsQualityLoading={earningsQualityLoading}
+                                        earningsQualityError={earningsQualityError}
+                                        earningsQualityBusyPeriod={earningsQualityBusyPeriod}
+                                        onAnalyzeEarningsPeriod={analyzeEarningsPeriod}
+                                        eventsExpectations={eventsExpectations}
+                                        eventsExpectationsLoading={eventsExpectationsLoading}
+                                        eventsExpectationsError={eventsExpectationsError}
+                                        activeView={cockpitView}
+                                        onViewChange={handleCockpitViewChange}
+                                        hideNavigation
+                                    />
+                                </div>
 
-                            <section className="surface-panel overflow-hidden">
-                                <header className="surface-subtle flex flex-col justify-between gap-2 border-b px-4 py-3 sm:flex-row sm:items-center">
-                                    <div><p className="eyebrow">Market history</p><h2 className="mt-0.5 font-black">Price & volume</h2></div>
-                                    <span className="text-xs text-slate-500">Logarithmic price scale · adjusted data</span>
-                                </header>
-                                <div className="p-2 sm:p-4"><StockChart data={stockData.historical_data} interval={chartInterval} onIntervalChange={handleIntervalChange} isLoading={chartLoading} /></div>
-                            </section>
+                                {activeSection === "financials" && <>
+                                    <FinancialFlowPanel
+                                        data={financialFlow}
+                                        loading={financialFlowLoading}
+                                        error={financialFlowError}
+                                        timePeriod={financialPeriod}
+                                        onTimePeriodChange={(period) => void handlePeriodChange(period)}
+                                        onPeriodEndChange={(periodEnd) => {
+                                            if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, periodEnd);
+                                        }}
+                                        onRetry={() => {
+                                            if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, financialFlowRequestedPeriodRef.current);
+                                        }}
+                                    />
+                                    <div ref={financialEvidenceRef} tabIndex={-1} className="scroll-mt-20 rounded-2xl focus:outline-none">
+                                        <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} selectedMetric={financialMetric} onMetricChange={setFinancialMetric} earningsQuality={earningsQuality} dataQualityWarnings={stockData.valuation_metrics?.data_quality_warnings} />
+                                    </div>
+                                </>}
 
-                            <div ref={financialEvidenceRef} className="scroll-mt-5">
-                                <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} selectedMetric={financialMetric} onMetricChange={setFinancialMetric} earningsQuality={earningsQuality} dataQualityWarnings={stockData.valuation_metrics?.data_quality_warnings} />
+                                {activeSection === "technical" && <>
+                                    <section className="surface-panel overflow-hidden">
+                                        <header className="section-header">
+                                            <div><p className="eyebrow">Market history</p><h2 className="section-title">Price & volume</h2><p className="section-description">Adjusted data · logarithmic price scale · moving averages and volume.</p></div>
+                                            <span className="text-xs text-slate-500">Currency {stockData.profile.currency || "USD"}</span>
+                                        </header>
+                                        <div className="p-2 sm:p-4"><StockChart data={stockData.historical_data} interval={chartInterval} onIntervalChange={handleIntervalChange} isLoading={chartLoading} /></div>
+                                    </section>
+                                    <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
+                                </>}
+
+                                {activeSection === "events" && <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>}
                             </div>
-
-                            <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>
 
                             <footer className="flex flex-wrap items-center gap-2 rounded-xl border px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
                                 <ShieldCheck size={14} className="text-emerald-500" /> Published factor values are versioned and quality-gated. Cockpit calculations are transparent decision support, not investment advice.

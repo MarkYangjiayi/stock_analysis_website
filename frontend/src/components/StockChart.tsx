@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi, CrosshairMode, PriceScaleMode } from 'lightweight-charts';
 import { HistoricalDataPoint } from '@/lib/api';
 import { useTheme } from 'next-themes';
+import { chartTheme } from '@/lib/chartTheme';
 
 interface StockChartProps {
     data: HistoricalDataPoint[];
@@ -49,19 +50,16 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
-        const isDark = resolvedTheme === 'dark';
-        const backgroundColor = isDark ? '#191D26' : '#ffffff';
-        const textColor = isDark ? '#D9D9D9' : '#334155';
-        const gridColor = isDark ? '#2B2B43' : '#e2e8f0';
+        const colors = chartTheme(resolvedTheme === 'dark');
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: ColorType.Solid, color: backgroundColor },
-                textColor: textColor,
+                background: { type: ColorType.Solid, color: colors.background },
+                textColor: colors.textMuted,
             },
             grid: {
-                vertLines: { color: gridColor },
-                horzLines: { color: gridColor },
+                vertLines: { color: colors.grid },
+                horzLines: { color: colors.grid },
             },
             width: chartContainerRef.current.clientWidth,
             height: 480,
@@ -70,10 +68,10 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             },
             timeScale: {
                 timeVisible: true,
-                borderColor: gridColor,
+                borderColor: colors.grid,
             },
             rightPriceScale: {
-                borderColor: gridColor,
+                borderColor: colors.grid,
                 mode: PriceScaleMode.Logarithmic,
             },
         });
@@ -81,15 +79,15 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         chartRef.current = chart;
 
         candlestickSeriesRef.current = chart.addCandlestickSeries({
-            upColor: '#26a69a',
-            downColor: '#ef5350',
+            upColor: colors.positive,
+            downColor: colors.negative,
             borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
+            wickUpColor: colors.positive,
+            wickDownColor: colors.negative,
         });
 
         volumeSeriesRef.current = chart.addHistogramSeries({
-            color: '#26a69a',
+            color: colors.positive,
             priceFormat: { type: 'volume' },
             priceScaleId: '',
         });
@@ -102,13 +100,13 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         });
 
         ma20SeriesRef.current = chart.addLineSeries({
-            color: '#2962FF',
+            color: colors.series[0],
             lineWidth: 2,
             crosshairMarkerVisible: false,
         });
 
         ma50SeriesRef.current = chart.addLineSeries({
-            color: '#FF9800',
+            color: colors.series[3],
             lineWidth: 2,
             crosshairMarkerVisible: false,
         });
@@ -133,27 +131,32 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     useEffect(() => {
         if (!chartRef.current) return;
 
-        const isDark = resolvedTheme === 'dark';
-        const backgroundColor = isDark ? '#191D26' : '#ffffff';
-        const textColor = isDark ? '#D9D9D9' : '#334155';
-        const gridColor = isDark ? '#2B2B43' : '#e2e8f0';
+        const colors = chartTheme(resolvedTheme === 'dark');
 
         chartRef.current.applyOptions({
             layout: {
-                background: { type: ColorType.Solid, color: backgroundColor },
-                textColor: textColor,
+                background: { type: ColorType.Solid, color: colors.background },
+                textColor: colors.textMuted,
             },
             grid: {
-                vertLines: { color: gridColor },
-                horzLines: { color: gridColor },
+                vertLines: { color: colors.grid },
+                horzLines: { color: colors.grid },
             },
             timeScale: {
-                borderColor: gridColor,
+                borderColor: colors.grid,
             },
             rightPriceScale: {
-                borderColor: gridColor,
+                borderColor: colors.grid,
             },
         });
+        candlestickSeriesRef.current?.applyOptions({
+            upColor: colors.positive,
+            downColor: colors.negative,
+            wickUpColor: colors.positive,
+            wickDownColor: colors.negative,
+        });
+        ma20SeriesRef.current?.applyOptions({ color: colors.series[0] });
+        ma50SeriesRef.current?.applyOptions({ color: colors.series[3] });
     }, [resolvedTheme]);
 
     // 3. Data Update Effect (triggers when `data` changes instead of tearing down instance)
@@ -176,7 +179,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         const volumeData = validCandleData.map((d) => ({
             time: d.date,
             value: d.volume != null ? d.volume : 0,
-            color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
+            color: d.close >= d.open ? 'rgba(17, 135, 95, 0.52)' : 'rgba(214, 69, 93, 0.52)',
         }));
 
         const ma20Data = data.filter(d => d.MA20 != null).map(d => ({
@@ -246,7 +249,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     }, [data]);
 
     return (
-        <div className="relative w-full overflow-hidden rounded-xl border bg-white dark:bg-[#121920]">
+        <div className="relative w-full overflow-hidden rounded-xl border bg-[var(--surface)]">
             {/* Interval Switcher UI */}
             {onIntervalChange && (
                 <div className="absolute left-3 top-3 z-20 flex gap-1 rounded-lg border bg-white/95 p-1 shadow-sm backdrop-blur-md dark:bg-slate-900/95">
@@ -300,14 +303,14 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                         <span className="text-right text-slate-800 dark:text-gray-200 mt-1">{(tooltipData.volume / 1000000).toFixed(2)}M</span>
                         {tooltipData.ma20 && (
                             <>
-                                <span className="text-[#2962FF] font-medium mt-1">MA20:</span>
-                                <span className="text-right text-[#2962FF] mt-1">{tooltipData.ma20.toFixed(2)}</span>
+                                <span className="mt-1 font-medium text-[var(--chart-series-1)]">MA20:</span>
+                                <span className="mt-1 text-right text-[var(--chart-series-1)]">{tooltipData.ma20.toFixed(2)}</span>
                             </>
                         )}
                         {tooltipData.ma50 && (
                             <>
-                                <span className="text-[#FF9800] font-medium">MA50:</span>
-                                <span className="text-right text-[#FF9800]">{tooltipData.ma50.toFixed(2)}</span>
+                                <span className="font-medium text-[var(--chart-series-4)]">MA50:</span>
+                                <span className="text-right text-[var(--chart-series-4)]">{tooltipData.ma50.toFixed(2)}</span>
                             </>
                         )}
                     </div>

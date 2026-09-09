@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { useTheme } from "next-themes";
+import { chartTheme } from "@/lib/chartTheme";
 import { AlertTriangle, ExternalLink, ShieldCheck, X } from "lucide-react";
 import { EarningsQualityResponse, HistoricalFinancialPoint, ValuationMetrics } from "@/lib/api";
 
@@ -120,8 +121,9 @@ export default function FinancialTrendChart({
         }
 
         const isDark = resolvedTheme === "dark";
-        const textColor = isDark ? "#9ca3af" : "#475569";
-        const gridColor = isDark ? "#374151" : "#e2e8f0";
+        const colors = chartTheme(isDark);
+        const textColor = colors.textMuted;
+        const gridColor = colors.grid;
         const dates = points.map((point) => point.date);
         const earningsPeriods = showEarningsQualityOverlay
             ? timePeriod === "quarterly"

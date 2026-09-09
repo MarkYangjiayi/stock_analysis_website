@@ -12,7 +12,7 @@ export default defineConfig({
     },
     webServer: [
         {
-            command: "cd .. && PYTHONPATH=. DATABASE_URL=sqlite+aiosqlite:///./data/screener_e2e.db ENVIRONMENT=test ./venv/bin/python scripts/seed_screener_e2e.py && PYTHONPATH=. DATABASE_URL=sqlite+aiosqlite:///./data/screener_e2e.db ENVIRONMENT=test ./venv/bin/uvicorn main:app --host 127.0.0.1 --port 8010",
+            command: "cd .. && PYTHONPATH=. DATABASE_URL=sqlite+aiosqlite:///./data/screener_e2e.db ENVIRONMENT=test ./.venv/bin/python scripts/seed_screener_e2e.py && PYTHONPATH=. DATABASE_URL=sqlite+aiosqlite:///./data/screener_e2e.db ENVIRONMENT=test ./.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8010",
             url: "http://127.0.0.1:8010/docs",
             timeout: 60_000,
             reuseExistingServer: false,

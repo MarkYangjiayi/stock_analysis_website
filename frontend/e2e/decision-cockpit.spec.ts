@@ -183,6 +183,7 @@ function marketSnapshotFixture(ticker: string) {
 type MockLifecycle = {
     onDecisionRequest?: () => void;
     beforeStockResponse?: () => Promise<void> | void;
+    companyName?: string;
 };
 
 async function mockTicker(
@@ -295,7 +296,7 @@ async function mockTicker(
             status: 200,
             contentType: "application/json",
             body: JSON.stringify({
-                profile: { ticker, name: `${kind} fixture`, exchange: "US", sector: "Technology", industry: "Software", description: "Fixture company.", currency: "USD", last_updated: "2026-01-02" },
+                profile: { ticker, name: lifecycle.companyName ?? `${kind} fixture`, exchange: "US", sector: "Technology", industry: "Software", description: "Fixture company.", currency: "USD", last_updated: "2026-01-02" },
                 historical_data: [
                     { date: "2025-12-31", open: 98, high: 101, low: 97, close: 99, volume: 1_000_000 },
                     { date: "2026-01-02", open: 99, high: 102, low: 98, close: 100, volume: 1_100_000 },
@@ -342,12 +343,17 @@ for (const fixture of [
         await expect(page.getByRole("heading", { name: "Market Snapshot" })).toBeVisible();
         await expect(page.getByTestId("snapshot-metric-forward_pe")).toContainText("20×");
         await expect(page.getByRole("heading", { name: `${fixture.kind} fixture`, exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Price & volume" })).not.toBeVisible();
+        await page.getByRole("tab", { name: "Price & Factors" }).click();
+        await expect(page).toHaveURL(/section=technical/);
         await expect(page.getByRole("heading", { name: "Price & volume" })).toBeVisible();
+        await page.goBack();
+        await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
 
         if (fixture.kind === "complete") {
             await expect(page.getByText("Price is between the Bear- and Base-case intrinsic values.")).toBeVisible();
             await expect(page.getByRole("heading", { name: "What could move the stock next" })).toBeVisible();
-            await page.getByRole("button", { name: "Evidence Brief" }).click();
+            await page.getByRole("tab", { name: "Events & Brief" }).click();
             await expect(page.getByText("Forward consensus")).toBeVisible();
             await expect(page.getByRole("button", { name: "Unlock personal workspace" }).last()).toBeVisible();
         } else if (fixture.kind === "sparse") {
@@ -356,9 +362,10 @@ for (const fixture of [
         } else if (fixture.kind === "outside") {
             await expect(page.getByText("Ticker is outside the latest published Screener universe.")).toBeVisible();
         } else {
-            await page.getByRole("button", { name: "Risks" }).click();
+            await page.getByRole("tab", { name: "Financials" }).click();
             await expect(page.getByText("Negative free cash flow", { exact: true })).toBeVisible();
             await page.getByRole("button", { name: "Show evidence" }).click();
+            await expect(page).toHaveURL(/section=financials/);
             await expect(page.getByLabel("Financial evidence metric")).toHaveValue("free_cash_flow");
             await expect(page.getByLabel("Financial evidence", { exact: true }).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
         }
@@ -375,4 +382,69 @@ test("keeps market snapshot groups usable on mobile", async ({ page }) => {
     await growth.click();
     await expect(growth).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByTestId("snapshot-metric-sales_growth_ttm")).toBeVisible();
+});
+
+test("keeps a long company identity and price readable at 360px", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await mockTicker(page, "LONG.US", "complete", {
+        companyName: "A Very Long International Holdings and Technologies Company",
+    });
+    await page.goto("/?ticker=LONG.US");
+
+    const heading = page.getByRole("heading", { name: "A Very Long International Holdings and Technologies Company" });
+    await expect(heading).toBeVisible();
+    await expect(page.getByText("100.00", { exact: true })).toBeVisible();
+    await expect.poll(() => page.locator(".app-page").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test("keeps working valuation assumptions while switching research sections", async ({ page }) => {
+    await mockTicker(page, "DRAFT.US", "complete");
+    await page.goto("/?ticker=DRAFT.US&section=valuation");
+
+    const bearGrowth = page.getByLabel("bear FCF growth");
+    await expect(bearGrowth).toBeVisible();
+    await bearGrowth.fill("7.5");
+    await page.getByRole("tab", { name: "Price & Factors" }).click();
+    await page.getByRole("tab", { name: "Valuation" }).click();
+
+    await expect(bearGrowth).toHaveValue("7.5");
+});
+
+test("captures responsive light and dark acceptance views", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "the desktop project captures the explicit acceptance viewport matrix");
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await mockTicker(page, "ACCEPT.US", "complete");
+
+    const viewports = [
+        { width: 1440, height: 900 },
+        { width: 1280, height: 800 },
+        { width: 768, height: 1024 },
+        { width: 390, height: 844 },
+        { width: 360, height: 800 },
+    ];
+    for (const viewport of viewports) {
+        await page.setViewportSize(viewport);
+        await page.goto("/?ticker=ACCEPT.US");
+        await page.getByRole("button", { name: "Use light theme" }).click();
+        await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+        await expect.poll(() => page.locator(".app-page").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        await page.screenshot({
+            path: `../docs/frontend_redesign_acceptance/analysis-light-${viewport.width}x${viewport.height}.png`,
+            animations: "disabled",
+        });
+    }
+
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        await page.goto("/?ticker=ACCEPT.US");
+        await page.getByRole("button", { name: "Use dark theme" }).click();
+        await expect(page.locator("html")).toHaveClass(/dark/);
+        await expect.poll(() => page.locator(".app-page").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        await page.screenshot({
+            path: `../docs/frontend_redesign_acceptance/analysis-dark-${viewport.width}x${viewport.height}.png`,
+            animations: "disabled",
+        });
+    }
+    expect(pageErrors).toEqual([]);
 });

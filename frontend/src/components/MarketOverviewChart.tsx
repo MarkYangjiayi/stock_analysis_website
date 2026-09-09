@@ -5,6 +5,7 @@ import ReactECharts from "echarts-for-react";
 import { useTheme } from "next-themes";
 
 import type { MarketOverviewResponse } from "@/lib/api";
+import { chartTheme } from "@/lib/chartTheme";
 
 export type TrendMode = "relative" | "absolute";
 export type LowerMetric = "net_advances" | "new_high_low" | "mcclellan";
@@ -58,10 +59,11 @@ export default function MarketOverviewChart({
     const dark = resolvedTheme === "dark";
 
     const option = useMemo(() => {
-        const axisColor = dark ? "#91a19b" : "#64748b";
+        const colors = chartTheme(dark);
+        const axisColor = colors.textMuted;
         const splitColor = dark ? "rgba(145,161,155,0.13)" : "rgba(100,116,139,0.13)";
-        const textColor = dark ? "#e8f0ed" : "#12211d";
-        const tooltipBackground = dark ? "rgba(15,21,27,0.97)" : "rgba(255,255,255,0.98)";
+        const textColor = colors.text;
+        const tooltipBackground = colors.backgroundMuted;
         const lowerValues = lowerMetric === "net_advances"
             ? data.breadth.net_advances_pct
             : lowerMetric === "new_high_low"
@@ -152,7 +154,7 @@ export default function MarketOverviewChart({
             data: lowerValues,
             barMaxWidth: 8,
             itemStyle: {
-                color: (params: BarColorParam) => Number(params.value ?? 0) >= 0 ? "#10b981" : "#ef5b6b",
+                color: (params: BarColorParam) => Number(params.value ?? 0) >= 0 ? colors.positive : colors.negative,
                 opacity: 0.82,
             },
             emphasis: { focus: "series" },
@@ -266,7 +268,7 @@ export default function MarketOverviewChart({
                 confine: true,
                 order: "seriesAsc",
                 backgroundColor: tooltipBackground,
-                borderColor: dark ? "#35434d" : "#cbd5e1",
+                borderColor: colors.border,
                 textStyle: { color: textColor, fontSize: 12 },
                 extraCssText: "max-height:72vh;overflow-y:auto;box-shadow:0 18px 45px rgba(15,23,42,.18);",
                 axisPointer: { type: "cross", snap: true },
@@ -300,7 +302,7 @@ export default function MarketOverviewChart({
                     bottom: 12,
                     height: 22,
                     borderColor: splitColor,
-                    backgroundColor: dark ? "#0f151b" : "#f8fafc",
+                    backgroundColor: colors.backgroundMuted,
                     fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.13)",
                     handleStyle: { color: "#10b981", borderColor: "#10b981" },
                     textStyle: { color: axisColor },

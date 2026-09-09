@@ -37,7 +37,7 @@ import {
     savePersonalValuationScenarios,
 } from "@/lib/api";
 
-type CockpitTab = "overview" | "valuation" | "peers" | "risks" | "brief";
+export type CockpitTab = "overview" | "valuation" | "peers" | "risks" | "brief";
 
 interface DecisionCockpitProps {
     ticker: string;
@@ -58,6 +58,9 @@ interface DecisionCockpitProps {
     eventsExpectations?: EventsExpectationsResponse | null;
     eventsExpectationsLoading?: boolean;
     eventsExpectationsError?: string;
+    activeView?: CockpitTab;
+    onViewChange?: (view: CockpitTab) => void;
+    hideNavigation?: boolean;
 }
 
 const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
@@ -240,8 +243,16 @@ export default function DecisionCockpit({
     eventsExpectations = null,
     eventsExpectationsLoading = false,
     eventsExpectationsError = "",
+    activeView,
+    onViewChange,
+    hideNavigation = false,
 }: DecisionCockpitProps) {
-    const [activeTab, setActiveTab] = useState<CockpitTab>("overview");
+    const [internalActiveTab, setInternalActiveTab] = useState<CockpitTab>("overview");
+    const activeTab = activeView ?? internalActiveTab;
+    const setActiveTab = (next: CockpitTab) => {
+        if (activeView == null) setInternalActiveTab(next);
+        onViewChange?.(next);
+    };
     const [peerScope, setPeerScope] = useState<"industry" | "sector">("industry");
     const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDraft[]>(() => toScenarioDrafts(DEFAULT_SCENARIOS));
     const [workingValuation, setWorkingValuation] = useState<DecisionValuation | null>(() => decision?.valuation ?? null);
@@ -261,7 +272,7 @@ export default function DecisionCockpit({
     useEffect(() => {
         valuationRequestVersionRef.current += 1;
         setValuationBusy(false);
-        setActiveTab("overview");
+        setInternalActiveTab("overview");
         setValuationError("");
         setSaveMessage("");
     }, [ticker]);
@@ -482,12 +493,12 @@ export default function DecisionCockpit({
                 </div>}
             </header>
 
-            <nav className="scrollbar-hide flex overflow-x-auto border-b px-3 sm:px-5" aria-label="Decision cockpit views">
+            {!hideNavigation && <nav className="scrollbar-hide flex overflow-x-auto border-b px-3 sm:px-5" aria-label="Decision cockpit views">
                 {tabs.map((tab) => {
                     const Icon = tab.icon;
                     return <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} aria-current={activeTab === tab.key ? "page" : undefined} className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-3.5 text-xs font-bold transition-colors ${activeTab === tab.key ? "border-emerald-500 text-emerald-700 dark:text-emerald-300" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}><Icon size={15} />{tab.label}</button>;
                 })}
-            </nav>
+            </nav>}
 
             {loading && !decision ? <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center"><LoaderCircle className="animate-spin text-emerald-500" size={28} /><p className="mt-3 text-sm font-bold">Building deterministic decision evidence…</p></div> : error && !decision ? <div className="m-5 error-panel flex min-h-[260px] flex-col items-center justify-center text-center"><AlertTriangle size={28} /><p className="mt-3 max-w-lg">{error}</p><button type="button" className="secondary-button mt-4" onClick={onRetry}><RefreshCw size={15} /> Retry cockpit</button></div> : decision && (
                 <div className="p-5 sm:p-6">
