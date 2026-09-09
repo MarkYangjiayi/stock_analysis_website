@@ -1,9 +1,9 @@
 import { expect, Page, test } from "@playwright/test";
 
 const scenarioInputs = [
-    { scenario: "bear", fcf_growth_rate: 0.05, wacc: 0.105, perpetual_growth: 0.02 },
+    { scenario: "bear", fcf_growth_rate: 0.05, wacc: 0.09, perpetual_growth: 0.025 },
     { scenario: "base", fcf_growth_rate: 0.10, wacc: 0.09, perpetual_growth: 0.025 },
-    { scenario: "bull", fcf_growth_rate: 0.15, wacc: 0.08, perpetual_growth: 0.03 },
+    { scenario: "bull", fcf_growth_rate: 0.15, wacc: 0.09, perpetual_growth: 0.025 },
 ];
 
 const financialPoints = Array.from({ length: 8 }, (_, index) => ({
@@ -87,6 +87,7 @@ function decisionFixture(ticker: string, kind: "complete" | "sparse" | "outside"
         },
         current_price: 100,
         scenario_source: "default",
+        default_scenarios: scenarioInputs,
         scenarios: scenarioInputs.map((assumptions, index) => ({
             scenario: assumptions.scenario,
             assumptions,
@@ -98,13 +99,13 @@ function decisionFixture(ticker: string, kind: "complete" | "sparse" | "outside"
             text: available ? "Price is between the Bear- and Base-case intrinsic values." : `Valuation unavailable: ${reasons.join(" ")}`,
         },
         sensitivity: {
-            growth_values: [0, 0.05, 0.10, 0.15, 0.20],
             wacc_values: [0.07, 0.08, 0.09, 0.10, 0.11],
-            terminal_growth: 0.025,
+            terminal_growth_values: [0.015, 0.02, 0.025, 0.03, 0.035],
+            fcf_growth_rate: 0.10,
             values: Array.from({ length: 5 }, (_, row) => Array.from({ length: 5 }, (_, column) => available ? 80 + row * 5 - column * 3 : null)),
             cell_reasons: Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => available ? null : reasons[0])),
         },
-        formula: { forecast_years: 5, cash_treatment: "added", debt_treatment: "deducted", terminal_value: "formula" },
+        formula: { forecast_years: 5, cash_flow_type: "FCFF", cash_treatment: "added", debt_treatment: "deducted", terminal_value: "formula" },
     };
     const warnings = negative ? [risk] : [];
     const missing = [

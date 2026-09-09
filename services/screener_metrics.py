@@ -247,6 +247,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
     dividends = payload.get("SplitsDividends") or {}
     ratings = payload.get("AnalystRatings") or {}
     earnings = payload.get("Earnings") or {}
+    technicals = payload.get("Technicals") or {}
     financials = payload.get("Financials") or {}
     income = financials.get("Income_Statement") or {}
     balance = financials.get("Balance_Sheet") or {}
@@ -527,6 +528,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "sales_growth_ttm": sales_growth_ttm,
         "sales_growth_3yr": sales_growth_3yr,
         "sales_growth_5yr": sales_growth_5yr,
+        "provider_beta": safe_float(technicals.get("Beta")),
         "eps_growth_this_year": _trend_growth(earnings.get("Trend"), {"0y", "current year", "year"}),
         "eps_growth_next_year": _trend_growth(earnings.get("Trend"), {"+1y", "next year"}),
         "eps_growth_qoq": eps_growth_qoq,

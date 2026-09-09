@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from models import (
     CorporateAction,
     DailyPrice,
@@ -22,14 +23,19 @@ from services.personal_workspace import get_saved_valuation_scenarios
 from services.earnings_quality import get_earnings_quality
 from services.screener_normalization import normalize_multiple
 from services.security_master import canonicalize_ticker
+from services.valuation_assumptions import (
+    convert_reported_fcf_to_fcff,
+    derive_growth_scenarios,
+    estimate_company_wacc,
+)
 
 
 DEFAULT_SCENARIOS: list[dict[str, Any]] = [
     {
         "scenario": "bear",
         "fcf_growth_rate": 0.05,
-        "wacc": 0.105,
-        "perpetual_growth": 0.02,
+        "wacc": 0.09,
+        "perpetual_growth": 0.025,
     },
     {
         "scenario": "base",
@@ -40,8 +46,8 @@ DEFAULT_SCENARIOS: list[dict[str, Any]] = [
     {
         "scenario": "bull",
         "fcf_growth_rate": 0.15,
-        "wacc": 0.08,
-        "perpetual_growth": 0.03,
+        "wacc": 0.09,
+        "perpetual_growth": 0.025,
     },
 ]
 
@@ -146,6 +152,22 @@ def _copy_scenarios(scenarios: Sequence[dict[str, Any]]) -> list[dict[str, Any]]
     ]
 
 
+def _normalize_legacy_shared_rates(
+    scenarios: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Preserve saved growth cases while migrating old three-rate records."""
+
+    copied = _copy_scenarios(scenarios)
+    by_name = {item["scenario"]: item for item in copied}
+    base = by_name.get("base")
+    if base is None:
+        return copied
+    for item in copied:
+        item["wacc"] = base["wacc"]
+        item["perpetual_growth"] = base["perpetual_growth"]
+    return copied
+
+
 def validate_scenarios(
     scenarios: Sequence[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -186,14 +208,21 @@ def validate_scenarios(
         <= bull["fcf_growth_rate"]
     ):
         raise ValueError("FCF growth must be ordered Bear <= Base <= Bull.")
-    if not (
-        bear["perpetual_growth"]
-        <= base["perpetual_growth"]
-        <= bull["perpetual_growth"]
+    if any(
+        not math.isclose(item["wacc"], base["wacc"], rel_tol=0.0, abs_tol=1e-12)
+        for item in ordered
     ):
-        raise ValueError("Terminal growth must be ordered Bear <= Base <= Bull.")
-    if not bear["wacc"] >= base["wacc"] >= bull["wacc"]:
-        raise ValueError("WACC must be ordered Bear >= Base >= Bull.")
+        raise ValueError("Bear, Base, and Bull must share one WACC.")
+    if any(
+        not math.isclose(
+            item["perpetual_growth"],
+            base["perpetual_growth"],
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
+        for item in ordered
+    ):
+        raise ValueError("Bear, Base, and Bull must share one terminal growth rate.")
     return ordered
 
 
@@ -205,6 +234,11 @@ def valuation_unavailable_reasons(inputs: dict[str, Any]) -> list[str]:
         "debt": "Total debt is unavailable.",
     }
     reasons = [labels[key] for key in labels if _safe_float(inputs.get(key)) is None]
+    reasons.extend(
+        str(reason)
+        for reason in inputs.get("model_input_reasons", [])
+        if reason and str(reason) not in reasons
+    )
     fcf = _safe_float(inputs.get("fcf"))
     shares = _safe_float(inputs.get("shares"))
     if fcf is not None and fcf <= 0:
@@ -387,23 +421,26 @@ def _sensitivity_matrix(
     base: dict[str, Any],
     inputs: dict[str, Any],
 ) -> dict[str, Any]:
-    growth_values = [base["fcf_growth_rate"] + delta for delta in (-0.10, -0.05, 0, 0.05, 0.10)]
     wacc_values = [base["wacc"] + delta for delta in (-0.02, -0.01, 0, 0.01, 0.02)]
+    terminal_growth_values = [
+        base["perpetual_growth"] + delta
+        for delta in (-0.01, -0.005, 0, 0.005, 0.01)
+    ]
     matrix: list[list[float | None]] = []
     cell_reasons: list[list[str | None]] = []
     unavailable = valuation_unavailable_reasons(inputs)
-    for growth in growth_values:
+    for terminal_growth in terminal_growth_values:
         row: list[float | None] = []
         reason_row: list[str | None] = []
         for wacc in wacc_values:
             reason = None
             if unavailable:
                 reason = "; ".join(unavailable)
-            elif not -0.20 <= growth <= 0.50:
-                reason = "Growth is outside the allowed -20% to 50% range."
             elif not 0.03 <= wacc <= 0.25:
                 reason = "WACC is outside the allowed 3% to 25% range."
-            elif wacc - base["perpetual_growth"] < 0.005 - 1e-12:
+            elif not -0.02 <= terminal_growth <= 0.06:
+                reason = "Terminal growth is outside the allowed -2% to 6% range."
+            elif wacc - terminal_growth < 0.005 - 1e-12:
                 reason = "WACC must exceed terminal growth by at least 0.5 points."
 
             if reason:
@@ -415,9 +452,9 @@ def _sensitivity_matrix(
                 cash=float(inputs["cash"]),
                 debt=float(inputs["debt"]),
                 shares=float(inputs["shares"]),
-                fcf_growth_rate=growth,
+                fcf_growth_rate=base["fcf_growth_rate"],
                 wacc=wacc,
-                perpetual_growth=base["perpetual_growth"],
+                perpetual_growth=terminal_growth,
             )
             row.append(calculated["intrinsic_value_per_share"])
             reason_row.append(None)
@@ -425,9 +462,9 @@ def _sensitivity_matrix(
         cell_reasons.append(reason_row)
 
     return {
-        "growth_values": growth_values,
         "wacc_values": wacc_values,
-        "terminal_growth": base["perpetual_growth"],
+        "terminal_growth_values": terminal_growth_values,
+        "fcf_growth_rate": base["fcf_growth_rate"],
         "values": matrix,
         "cell_reasons": cell_reasons,
     }
@@ -469,6 +506,9 @@ def calculate_valuation(
     inputs: dict[str, Any],
     scenarios: Sequence[dict[str, Any]],
     current_price: float | None,
+    *,
+    assumption_basis: dict[str, Any] | None = None,
+    default_scenarios: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     ordered = validate_scenarios(scenarios)
     results = [_scenario_result(item, inputs, current_price) for item in ordered]
@@ -482,12 +522,15 @@ def calculate_valuation(
         "unavailable_reasons": valuation_unavailable_reasons(inputs),
         "inputs": inputs,
         "current_price": current_price,
+        "assumption_basis": assumption_basis,
+        "default_scenarios": _copy_scenarios(default_scenarios or ordered),
         "scenarios": results,
         "implied_growth": implied_growth,
         "position": _valuation_position(current_price, results),
         "sensitivity": _sensitivity_matrix(ordered[1], inputs),
         "formula": {
             "forecast_years": 5,
+            "cash_flow_type": "FCFF",
             "cash_treatment": "added",
             "debt_treatment": "deducted",
             "terminal_value": "FCF5 × (1 + terminal growth) / (WACC - terminal growth)",
@@ -832,12 +875,19 @@ def _statement_point(record: FinancialStatement) -> dict[str, Any]:
     income = record.income_statement or {}
     balance = record.balance_sheet or {}
     cash_flow = record.cash_flow or {}
-    debt = _first_value(balance, "shortLongTermDebtTotal", "totalDebt")
-    if debt is None:
-        short_debt = _first_value(balance, "shortTermDebt", "shortTermDebtTotal")
-        long_debt = _first_value(balance, "longTermDebt", "longTermDebtTotal")
-        if short_debt is not None or long_debt is not None:
-            debt = (short_debt or 0) + (long_debt or 0)
+    short_debt = _first_value(balance, "shortTermDebt", "shortTermDebtTotal")
+    long_debt = _first_value(balance, "longTermDebt", "longTermDebtTotal")
+    lease_obligations = _first_value(
+        balance,
+        "capitalLeaseObligations",
+        "capitalLeaseObligation",
+    )
+    debt_components = (short_debt, long_debt, lease_obligations)
+    debt = (
+        sum(value or 0 for value in debt_components)
+        if short_debt is not None or long_debt is not None
+        else _first_value(balance, "shortLongTermDebtTotal", "totalDebt")
+    )
     return {
         "date": record.fiscal_date,
         "revenue": _first_value(income, "totalRevenue")
@@ -848,6 +898,21 @@ def _statement_point(record: FinancialStatement) -> dict[str, Any]:
         "net_income": _first_value(income, "netIncome")
         if income.get("netIncome") is not None
         else _safe_float(record.net_income),
+        "interest_expense": _first_value(
+            income,
+            "interestExpense",
+            "interestExpenseNonOperating",
+        ),
+        "income_before_tax": _first_value(
+            income,
+            "incomeBeforeTax",
+            "incomeBeforeTaxExpense",
+        ),
+        "income_tax_expense": _first_value(
+            income,
+            "incomeTaxExpense",
+            "taxProvision",
+        ),
         "fcf": _first_value(cash_flow, "freeCashFlow"),
         "cash_and_short_term_investments": _first_value(
             balance,
@@ -982,7 +1047,21 @@ def build_financial_context(
 
     def window(points_in_window: Sequence[dict[str, Any]], contiguous: bool) -> dict[str, float | None]:
         if not contiguous:
-            return {key: None for key in ("revenue", "gross_profit", "operating_income", "net_income", "fcf", "gross_margin", "operating_margin")}
+            return {
+                key: None
+                for key in (
+                    "revenue",
+                    "gross_profit",
+                    "operating_income",
+                    "net_income",
+                    "interest_expense",
+                    "income_before_tax",
+                    "income_tax_expense",
+                    "fcf",
+                    "gross_margin",
+                    "operating_margin",
+                )
+            }
         revenue = _sum_complete(points_in_window, "revenue")
         gross_profit = _sum_complete(points_in_window, "gross_profit")
         operating_income = _sum_complete(points_in_window, "operating_income")
@@ -991,6 +1070,9 @@ def build_financial_context(
             "gross_profit": gross_profit,
             "operating_income": operating_income,
             "net_income": _sum_complete(points_in_window, "net_income"),
+            "interest_expense": _sum_complete(points_in_window, "interest_expense"),
+            "income_before_tax": _sum_complete(points_in_window, "income_before_tax"),
+            "income_tax_expense": _sum_complete(points_in_window, "income_tax_expense"),
             "fcf": _sum_complete(points_in_window, "fcf"),
             "gross_margin": gross_profit / revenue
             if revenue is not None and revenue > 0 and gross_profit is not None
@@ -1017,6 +1099,16 @@ def build_financial_context(
 
     current = window(current_points, current_contiguous)
     previous = window(previous_points, comparison_windows_are_adjacent)
+    current_debt_values = [
+        value
+        for point in current_points
+        if (value := _safe_float(point.get("debt"))) is not None and value >= 0
+    ]
+    average_debt = (
+        sum(current_debt_values) / len(current_debt_values)
+        if current_contiguous and len(current_debt_values) == 4
+        else None
+    )
     prior_year = prior_year_candidate if prior_year_is_comparable else {}
     current_de = (
         latest["debt"] / latest["equity"]
@@ -1050,6 +1142,7 @@ def build_financial_context(
             "share_adjustment_factor": latest.get("share_adjustment_factor"),
             "shares_reference_date": share_reference_date,
             "debt_to_equity": current_de,
+            "average_debt_1yr": average_debt,
         },
         "prior_year_balance": {
             "cash": prior_year.get("cash"),
@@ -1666,14 +1759,137 @@ async def _load_price_and_financial_context(
     return price_row, current_price, financial
 
 
-def _valuation_inputs(financial: dict[str, Any]) -> dict[str, Any]:
+def build_company_valuation_assumptions(
+    financial: dict[str, Any],
+    snapshot: StockScreenerSnapshot | None,
+    current_price: float | None,
+) -> dict[str, Any]:
+    """Derive one WACC, one terminal rate and three operating-growth cases."""
+
+    current = financial["current_ttm"]
+    previous = financial["previous_ttm"]
+    latest = financial["latest_balance"]
+    prior = financial["prior_year_balance"]
+    provider_beta = _safe_float(getattr(snapshot, "provider_beta", None)) if snapshot else None
+    local_beta = _safe_float(getattr(snapshot, "beta_1yr", None)) if snapshot else None
+    if provider_beta is not None and 0 < provider_beta <= 3:
+        selected_beta = provider_beta
+        beta_source = "provider_fundamental_beta"
+    elif local_beta is not None and 0 < local_beta <= 3:
+        selected_beta = local_beta
+        beta_source = "local_one_year_beta"
+    else:
+        selected_beta = None
+        beta_source = None
+    wacc = estimate_company_wacc(
+        market_cap=snapshot.market_cap if snapshot else None,
+        beta=selected_beta,
+        latest_debt=latest.get("debt"),
+        prior_debt=prior.get("debt"),
+        average_debt=latest.get("average_debt_1yr"),
+        interest_expense=current.get("interest_expense"),
+        income_tax_expense=current.get("income_tax_expense"),
+        income_before_tax=current.get("income_before_tax"),
+        current_price=current_price,
+        shares=latest.get("shares"),
+        risk_free_rate=settings.VALUATION_RISK_FREE_RATE,
+        equity_risk_premium=settings.VALUATION_EQUITY_RISK_PREMIUM,
+        fallback_debt_spread=settings.VALUATION_FALLBACK_DEBT_SPREAD,
+        fallback_tax_rate=settings.VALUATION_FALLBACK_TAX_RATE,
+        assumptions_as_of=settings.VALUATION_MARKET_ASSUMPTIONS_AS_OF,
+        beta_source=beta_source,
+    )
+    growth = derive_growth_scenarios(
+        current_fcf=current.get("fcf"),
+        previous_fcf=previous.get("fcf"),
+        current_revenue=current.get("revenue"),
+        previous_revenue=previous.get("revenue"),
+        sales_growth_3yr=snapshot.sales_growth_3yr if snapshot else None,
+        sales_growth_5yr=snapshot.sales_growth_5yr if snapshot else None,
+        fallback_growth=settings.VALUATION_FALLBACK_FCF_GROWTH,
+    )
+    shared_wacc = wacc["wacc"] if wacc["wacc"] is not None else DEFAULT_SCENARIOS[1]["wacc"]
+    terminal_growth = min(
+        settings.VALUATION_TERMINAL_GROWTH_RATE,
+        shared_wacc - 0.005,
+    )
+    scenarios = [
+        {
+            "scenario": name,
+            "fcf_growth_rate": growth[f"{name}_growth"] if name != "base" else growth["base_growth"],
+            "wacc": shared_wacc,
+            "perpetual_growth": terminal_growth,
+        }
+        for name in SCENARIO_NAMES
+    ]
+    cash_flow = convert_reported_fcf_to_fcff(
+        current.get("fcf"),
+        interest_expense_for_fcff=wacc.get("interest_expense_for_fcff"),
+        tax_rate=wacc.get("tax_rate"),
+    )
     return {
-        "fcf": financial["current_ttm"]["fcf"],
+        "wacc": wacc,
+        "growth": growth,
+        "terminal_growth": {
+            "rate": terminal_growth,
+            "configured_rate": settings.VALUATION_TERMINAL_GROWTH_RATE,
+            "method": "configured_mature_nominal_growth_capped_below_wacc",
+        },
+        "cash_flow": cash_flow,
+        "default_scenarios": validate_scenarios(scenarios),
+    }
+
+
+def _valuation_inputs(
+    financial: dict[str, Any],
+    assumption_basis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    cash_flow = assumption_basis.get("cash_flow", {}) if assumption_basis else {}
+    wacc = assumption_basis.get("wacc", {}) if assumption_basis else {}
+    model_input_reasons: list[str] = []
+    if assumption_basis:
+        model_input_reasons.extend(wacc.get("unavailable_reasons", []))
+        if not cash_flow.get("available") and cash_flow.get("reason"):
+            model_input_reasons.append(cash_flow["reason"])
+    return {
+        "fcf": cash_flow.get("fcff") if assumption_basis else financial["current_ttm"]["fcf"],
+        "reported_fcf": cash_flow.get("reported_fcf") if assumption_basis else financial["current_ttm"]["fcf"],
+        "after_tax_interest_adjustment": cash_flow.get("after_tax_interest_adjustment") if assumption_basis else None,
+        "cash_flow_type": "FCFF" if assumption_basis else "unspecified",
         "cash": financial["latest_balance"]["cash"],
         "debt": financial["latest_balance"]["debt"],
         "shares": financial["latest_balance"]["shares"],
         "financial_statement_date": _iso(financial["latest_statement_date"]),
+        "model_input_reasons": model_input_reasons,
     }
+
+
+async def get_default_ticker_valuation_scenarios(
+    ticker: str,
+    db: AsyncSession,
+) -> list[dict[str, Any]]:
+    """Return the current company-derived defaults without loading peer evidence."""
+
+    canonical_ticker = canonicalize_ticker(ticker)
+    _, current_price, financial = await _load_price_and_financial_context(
+        canonical_ticker,
+        db,
+    )
+    publication = await _latest_publication(db, "screener")
+    snapshot = None
+    if publication is not None:
+        result = await db.execute(
+            select(StockScreenerSnapshot).where(
+                StockScreenerSnapshot.ticker == canonical_ticker,
+                StockScreenerSnapshot.date == publication.as_of_date,
+            )
+        )
+        snapshot = result.scalar_one_or_none()
+    return build_company_valuation_assumptions(
+        financial,
+        snapshot,
+        current_price,
+    )["default_scenarios"]
 
 
 async def calculate_ticker_valuation(
@@ -1687,10 +1903,27 @@ async def calculate_ticker_valuation(
         canonical_ticker,
         db,
     )
+    publication = await _latest_publication(db, "screener")
+    snapshot = None
+    if publication is not None:
+        snapshot_result = await db.execute(
+            select(StockScreenerSnapshot).where(
+                StockScreenerSnapshot.ticker == canonical_ticker,
+                StockScreenerSnapshot.date == publication.as_of_date,
+            )
+        )
+        snapshot = snapshot_result.scalar_one_or_none()
+    assumption_basis = build_company_valuation_assumptions(
+        financial,
+        snapshot,
+        current_price,
+    )
     valuation = calculate_valuation(
-        _valuation_inputs(financial),
+        _valuation_inputs(financial, assumption_basis),
         validate_scenarios(scenarios),
         current_price,
+        assumption_basis=assumption_basis,
+        default_scenarios=assumption_basis["default_scenarios"],
     )
     valuation["scenario_source"] = "request"
     return valuation
@@ -1758,6 +1991,13 @@ async def get_decision_support(
     )
     factors = await _load_factor_snapshot(db, canonical_ticker)
 
+    assumption_basis = build_company_valuation_assumptions(
+        financial,
+        target_snapshot,
+        current_price,
+    )
+    derived_defaults = assumption_basis["default_scenarios"]
+
     scenario_source = "request"
     selected_scenarios = scenarios
     if selected_scenarios is None and include_saved_scenarios:
@@ -1766,13 +2006,17 @@ async def get_decision_support(
     elif selected_scenarios is None:
         scenario_source = "default"
     if selected_scenarios is None:
-        selected_scenarios = DEFAULT_SCENARIOS
+        selected_scenarios = derived_defaults
+    elif scenario_source == "saved":
+        selected_scenarios = _normalize_legacy_shared_rates(selected_scenarios)
     selected_scenarios = validate_scenarios(selected_scenarios)
 
     valuation = calculate_valuation(
-        _valuation_inputs(financial),
+        _valuation_inputs(financial, assumption_basis),
         selected_scenarios,
         current_price,
+        assumption_basis=assumption_basis,
+        default_scenarios=derived_defaults,
     )
     valuation["scenario_source"] = scenario_source
     risks = evaluate_fundamental_warnings(financial)

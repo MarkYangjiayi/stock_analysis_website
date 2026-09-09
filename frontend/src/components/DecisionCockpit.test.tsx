@@ -24,9 +24,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 const scenarios = [
-    { scenario: "bear" as const, fcf_growth_rate: 0.05, wacc: 0.105, perpetual_growth: 0.02 },
+    { scenario: "bear" as const, fcf_growth_rate: 0.05, wacc: 0.09, perpetual_growth: 0.025 },
     { scenario: "base" as const, fcf_growth_rate: 0.10, wacc: 0.09, perpetual_growth: 0.025 },
-    { scenario: "bull" as const, fcf_growth_rate: 0.15, wacc: 0.08, perpetual_growth: 0.03 },
+    { scenario: "bull" as const, fcf_growth_rate: 0.15, wacc: 0.09, perpetual_growth: 0.025 },
 ];
 
 const valuation: DecisionValuation = {
@@ -35,6 +35,7 @@ const valuation: DecisionValuation = {
     inputs: { fcf: 100, cash: 50, debt: 10, shares: 10, financial_statement_date: "2025-12-31" },
     current_price: 100,
     scenario_source: "default",
+    default_scenarios: scenarios,
     scenarios: scenarios.map((assumptions, index) => ({
         scenario: assumptions.scenario,
         assumptions,
@@ -58,13 +59,13 @@ const valuation: DecisionValuation = {
     },
     position: { status: "between_bear_base", text: "Price is between the Bear- and Base-case intrinsic values." },
     sensitivity: {
-        growth_values: [0, 0.05, 0.10, 0.15, 0.20],
         wacc_values: [0.07, 0.08, 0.09, 0.10, 0.11],
-        terminal_growth: 0.025,
+        terminal_growth_values: [0.015, 0.02, 0.025, 0.03, 0.035],
+        fcf_growth_rate: 0.10,
         values: Array.from({ length: 5 }, (_, row) => Array.from({ length: 5 }, (_, column) => 80 + row * 5 - column * 3)),
         cell_reasons: Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => null)),
     },
-    formula: { forecast_years: 5, cash_treatment: "added", debt_treatment: "deducted", terminal_value: "formula" },
+    formula: { forecast_years: 5, cash_flow_type: "FCFF", cash_treatment: "added", debt_treatment: "deducted", terminal_value: "formula" },
 };
 
 const metric = {
@@ -448,7 +449,7 @@ describe("DecisionCockpit", () => {
         await user.click(screen.getByRole("button", { name: "Valuation" }));
 
         const growth = screen.getByRole("spinbutton", { name: "bear FCF growth" });
-        const wacc = screen.getByRole("spinbutton", { name: "bear WACC" });
+        const wacc = screen.getByRole("spinbutton", { name: "Shared WACC" });
         await user.clear(growth);
         await user.type(growth, "-5");
         await user.clear(wacc);
