@@ -495,3 +495,21 @@ test("opens assumptions and financial evidence from the overview", async ({ page
     await page.getByRole("tab", { name: "Valuation" }).click();
     await expect(page.getByLabel("bear FCF growth")).toHaveValue("7.5");
 });
+
+test("edits sourced operating forecasts without overflowing the valuation page", async ({ page }, testInfo) => {
+    await mockTicker(page, "FORECAST.US", "complete");
+    await page.goto("/?ticker=FORECAST.US&section=valuation");
+    await page.getByText("Annual operating forecast", { exact: true }).click();
+    await page.getByRole("checkbox", { name: "Use operating forecasts for all cases" }).check();
+    await page.getByLabel("base year 1 Revenue", { exact: true }).fill("123");
+    await page.getByLabel("base year 1 EBIT margin %", { exact: true }).fill("25");
+    await page.getByLabel("base forecast source").fill("Company plan and explicit investment assumptions");
+    await page.getByRole("tab", { name: "Overview", exact: true }).click();
+    await page.getByRole("tab", { name: "Valuation", exact: true }).click();
+    await page.getByText("Annual operating forecast", { exact: true }).click();
+    await expect(page.getByLabel("base year 1 Revenue", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("base year 1 Revenue", { exact: true })).toHaveValue("123");
+    await expect.poll(() => page.locator(".app-page").evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.getByText("Annual operating forecast", { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath("operating-forecast.png"), animations: "disabled" });
+});

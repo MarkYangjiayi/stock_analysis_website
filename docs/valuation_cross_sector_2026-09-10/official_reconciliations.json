@@ -1,0 +1,93 @@
+{
+  "compiled_at_utc": "2026-09-10T14:46:59Z",
+  "currency": "USD",
+  "amount_unit": "billions unless stated",
+  "implementation_status": "All production changes held; evidence only",
+  "rows": [
+    {
+      "ticker": "NVDA",
+      "fiscal_period_end": "2026-07-26",
+      "provider_period_label": "2026-07-31",
+      "source": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+      "official": {
+        "short_term_borrowings": 1,
+        "long_term_borrowings": 32.366,
+        "total_borrowings": 33.366,
+        "cash": 22.443,
+        "marketable_debt_securities": 34.143,
+        "marketable_equity_securities": 42.783,
+        "diluted_weighted_average_shares_billion": 24.285,
+        "quarter_reported_fcf": 21.341,
+        "quarter_cfo_less_capex": 21.4,
+        "quarter_equipment_principal_payments": 0.059
+      },
+      "local": {
+        "dcf_debt": 1.509,
+        "financial_view_debt": 38.86,
+        "dcf_cash_and_investments": 99.369,
+        "dcf_shares_billion": 24.285
+      },
+      "conclusion": "Borrowings omitted from DCF debt. Cash comprises cash and two investment categories. Share input equals quarterly diluted weighted-average shares; it is not a verified point-in-time outstanding count. FCF difference is explained by principal payments and is a definition difference."
+    },
+    {
+      "ticker": "WMT",
+      "fiscal_period_end": "2026-07-31",
+      "source": "https://stock.walmart.com/sec-filings/all-sec-filings/content/0000104169-26-000145/earningsreleasefy27q2.htm",
+      "official": {
+        "short_term_borrowings": 10.479,
+        "current_long_term_debt": 3.47,
+        "long_term_debt": 36.462,
+        "current_finance_lease": 0.88,
+        "noncurrent_finance_lease": 5.952,
+        "debt_including_finance_leases": 57.243,
+        "current_operating_lease": 1.714,
+        "noncurrent_operating_lease": 14.798,
+        "debt_including_all_leases": 73.755
+      },
+      "local": {
+        "dcf_debt": 16.543,
+        "financial_view_debt": 73.755
+      },
+      "conclusion": "DCF debt omits borrowings. Difference between 57.243 and 73.755 is lease classification; do not fix by copying all lease debt without cash-flow alignment."
+    },
+    {
+      "ticker": "UNH",
+      "fiscal_period_end": "2026-06-30",
+      "source": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/unh-20260630.htm",
+      "official": {
+        "current_borrowings": 3.827,
+        "long_term_debt": 69.501,
+        "total_debt": 73.328,
+        "cash_and_equivalents": 28.585,
+        "short_term_investments": 2.883,
+        "cash_available_for_general_corporate_use_rounded": 1.1,
+        "period_end_common_shares_billion_rounded": 0.905,
+        "quarter_diluted_weighted_average_shares_billion": 0.906
+      },
+      "local": {
+        "dcf_debt": 3.827,
+        "financial_view_debt": 73.328,
+        "dcf_cash_and_investments": 31.468,
+        "dcf_shares_billion": 0.906
+      },
+      "conclusion": "Long-term debt definitely omitted from DCF. Cash availability and regulatory capital require economic analysis; 1.1 is not an automatically correct excess-cash adjustment. Shares use quarterly diluted average."
+    },
+    {
+      "ticker": "O",
+      "fiscal_period_end": "2026-06-30",
+      "source": "https://www.sec.gov/Archives/edgar/data/726728/000072672826000044/realtyincomeq22026supple.htm",
+      "source_section": "Q2 2026 supplement pages 32-34",
+      "official": {
+        "consolidated_debt_principal": 30.9906,
+        "consolidated_debt_net_of_discounts_and_financing_costs": 30.6517,
+        "pro_rata_debt_principal": 31.1655,
+        "period_end_common_shares_billion": 0.946202
+      },
+      "local": {
+        "dcf_debt": 28.418,
+        "financial_view_debt": 2.760395
+      },
+      "conclusion": "Financial-view total debt does not represent official consolidated debt; DCF amount also does not reconcile. Consolidated versus pro-rata and discount/fee differences must remain explicit. Root field mapping and all related share/ownership adjustments remain to be audited."
+    }
+  ]
+}

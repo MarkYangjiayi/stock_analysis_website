@@ -1,0 +1,18 @@
+{
+  "retrieved_on": "2026-09-10",
+  "selection_rule": "First named company in each of the 11 fixed panel sectors; retain unavailable and non-comparable cases.",
+  "scope": "Published future cash flow value, not analyst price targets or community narratives. Full per-company cash flow forecasts and model inputs were not obtained, except the NVDA table provided in the conversation. Values are external comparators, not ground truth.",
+  "rows": [
+    {"ticker":"NVDA","price":223.67,"value":305.48,"price_date":"2026-09-09","analysis_updated":"2026-09-09 03:51 UTC","source":"https://simplywall.st/stocks/us/semiconductors/nasdaq-nvda/nvidia/valuation"},
+    {"ticker":"GOOGL","price":330.65,"value":487.01,"price_date":"2026-09-09","analysis_updated":"2026-09-09 21:58 UTC","source":"https://simplywall.st/stocks/us/media/nasdaq-googl/alphabet/valuation"},
+    {"ticker":"AMZN","price":252.4,"value":433.42,"price_date":"2026-09-09","analysis_updated":"2026-09-09 22:17 UTC","source":"https://simplywall.st/stocks/us/retail/nasdaq-amzn/amazoncom/valuation"},
+    {"ticker":"PG","price":142.64,"value":196.96,"price_date":"2026-09-09","analysis_updated":"2026-09-09 04:02 UTC","source":"https://simplywall.st/stocks/us/household/nyse-pg/procter-gamble/valuation"},
+    {"ticker":"JNJ","price":267.08,"value":364.27,"price_date":"2026-09-09","analysis_updated":"2026-09-09 03:56 UTC","source":"https://simplywall.st/stocks/us/pharmaceuticals-biotech/nyse-jnj/johnson-johnson/valuation"},
+    {"ticker":"JPM","price":354.71,"value":493.29,"price_date":"2026-09-09","analysis_updated":"2026-09-09 03:57 UTC","source":"https://simplywall.st/stocks/us/banks/nyse-jpm/jpmorgan-chase/valuation"},
+    {"ticker":"XOM","price":164.23,"value":192.65,"price_date":"2026-09-09","analysis_updated":"2026-09-09 21:59 UTC","source":"https://simplywall.st/stocks/us/energy/nyse-xom/exxonmobil-holdings/valuation"},
+    {"ticker":"CAT","price":815.56,"value":887.64,"price_date":"2026-09-09","analysis_updated":"2026-09-09 22:05 UTC","source":"https://simplywall.st/stocks/us/capital-goods/nyse-cat/caterpillar/valuation"},
+    {"ticker":"LIN","price":466.65,"value":489.58,"price_date":"2026-09-09","analysis_updated":"2026-09-09 04:16 UTC","source":"https://simplywall.st/stocks/us/materials/nasdaq-lin/linde/valuation"},
+    {"ticker":"NEE","price":82.65,"value":76.48,"price_date":"2026-09-09","analysis_updated":"2026-09-09 03:56 UTC","source":"https://simplywall.st/stocks/us/utilities/nyse-nee/nextera-energy/valuation"},
+    {"ticker":"PLD","price":135.66,"value":127.71,"price_date":"2026-09-09","analysis_updated":"2026-09-09 04:33 UTC","source":"https://simplywall.st/stocks/us/real-estate/nyse-pld/prologis/valuation"}
+  ]
+}

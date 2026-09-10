@@ -23,6 +23,8 @@ from services.personal_workspace import get_saved_valuation_scenarios
 from services.earnings_quality import get_earnings_quality
 from services.screener_normalization import normalize_multiple
 from services.security_master import canonicalize_ticker
+from services.dcf import MODEL_VERSION, FORECAST_YEARS, INITIAL_GROWTH_YEARS, calculate_dcf_value, operating_forecast_cash_flows
+from services.valuation_inputs import statement_inputs
 from services.valuation_assumptions import (
     convert_reported_fcf_to_fcff,
     derive_growth_scenarios,
@@ -147,6 +149,7 @@ def _copy_scenarios(scenarios: Sequence[dict[str, Any]]) -> list[dict[str, Any]]
             "fcf_growth_rate": float(item["fcf_growth_rate"]),
             "wacc": float(item["wacc"]),
             "perpetual_growth": float(item["perpetual_growth"]),
+            **({"operating_forecast": item["operating_forecast"], "terminal_roic": float(item["terminal_roic"]), "forecast_as_of": str(item["forecast_as_of"])} if item.get("operating_forecast") is not None else {}),
         }
         for item in scenarios
     ]
@@ -196,11 +199,28 @@ def validate_scenarios(
             raise ValueError(f"{name} WACC must be between 3% and 25%.")
         if not -0.02 <= terminal <= 0.06:
             raise ValueError(f"{name} terminal growth must be between -2% and 6%.")
+        if item.get("operating_forecast") is not None:
+            try:
+                forecast_as_of = date.fromisoformat(item["forecast_as_of"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Operating forecast needs a valid as-of date.") from exc
+            if forecast_as_of > date.today():
+                raise ValueError("Operating forecast as-of date cannot be in the future.")
+            operating_forecast_cash_flows(item["operating_forecast"], terminal, item["terminal_roic"])
         if wacc - terminal < 0.005 - 1e-12:
             raise ValueError(
                 f"{name} WACC must exceed terminal growth by at least 0.5 percentage points."
             )
 
+    if any(item.get("operating_forecast") is not None for item in ordered) and not all(item.get("operating_forecast") is not None for item in ordered):
+        raise ValueError("All three cases must use the same historical or operating-forecast mode.")
+    if ordered[1].get("operating_forecast") is not None:
+        enterprise_values = []
+        for item in ordered:
+            path, terminal = operating_forecast_cash_flows(item["operating_forecast"], item["perpetual_growth"], item["terminal_roic"])
+            enterprise_values.append(calculate_dcf_value(fcf=0, cash=0, debt=0, shares=1, fcf_growth_rate=0, wacc=item["wacc"], perpetual_growth=item["perpetual_growth"], explicit_fcff=path, terminal_fcff=terminal)["enterprise_value"])
+        if enterprise_values != sorted(enterprise_values):
+            raise ValueError("Operating forecasts must produce Bear <= Base <= Bull equity values.")
     bear, base, bull = ordered
     if not (
         bear["fcf_growth_rate"]
@@ -226,60 +246,27 @@ def validate_scenarios(
     return ordered
 
 
-def valuation_unavailable_reasons(inputs: dict[str, Any]) -> list[str]:
+def valuation_unavailable_reasons(inputs: dict[str, Any], explicit_forecast: bool = False) -> list[str]:
     labels = {
         "fcf": "Free cash flow is unavailable.",
         "shares": "Shares outstanding are unavailable.",
         "cash": "Cash and short-term investments are unavailable.",
         "debt": "Total debt is unavailable.",
     }
-    reasons = [labels[key] for key in labels if _safe_float(inputs.get(key)) is None]
+    reasons = [labels[key] for key in labels if not (explicit_forecast and key == "fcf") and _safe_float(inputs.get(key)) is None]
     reasons.extend(
         str(reason)
         for reason in inputs.get("model_input_reasons", [])
         if reason and str(reason) not in reasons
+        and not (explicit_forecast and str(reason) in inputs.get("historical_cash_flow_reasons", []))
     )
     fcf = _safe_float(inputs.get("fcf"))
     shares = _safe_float(inputs.get("shares"))
-    if fcf is not None and fcf <= 0:
-        reasons.append("Free cash flow must be positive for this DCF.")
+    if not explicit_forecast and fcf is not None and fcf <= 0:
+        reasons.append("Free cash flow must be positive for the historical-growth DCF; a negative starting value requires a sourced operating forecast with reinvestment and a sustainable terminal value.")
     if shares is not None and shares <= 0:
         reasons.append("Shares outstanding must be positive for a per-share valuation.")
     return reasons
-
-
-def calculate_dcf_value(
-    *,
-    fcf: float,
-    cash: float,
-    debt: float,
-    shares: float,
-    fcf_growth_rate: float,
-    wacc: float,
-    perpetual_growth: float,
-) -> dict[str, Any]:
-    projected_fcf: list[float] = []
-    present_value_fcf = 0.0
-    current_fcf = fcf
-    for year in range(1, 6):
-        current_fcf *= 1 + fcf_growth_rate
-        projected_fcf.append(current_fcf)
-        present_value_fcf += current_fcf / ((1 + wacc) ** year)
-
-    terminal_value = projected_fcf[-1] * (1 + perpetual_growth) / (
-        wacc - perpetual_growth
-    )
-    present_value_terminal = terminal_value / ((1 + wacc) ** 5)
-    enterprise_value = present_value_fcf + present_value_terminal
-    equity_value = enterprise_value + cash - debt
-    return {
-        "intrinsic_value_per_share": equity_value / shares,
-        "enterprise_value": enterprise_value,
-        "equity_value": equity_value,
-        "projected_fcf": projected_fcf,
-        "present_value_explicit_fcf": present_value_fcf,
-        "present_value_terminal": present_value_terminal,
-    }
 
 
 def calculate_implied_fcf_growth(
@@ -287,7 +274,7 @@ def calculate_implied_fcf_growth(
     current_price: float | None,
     base_scenario: dict[str, Any],
 ) -> dict[str, Any]:
-    """Reverse the five-year DCF to the FCF CAGR implied by market price."""
+    """Reverse the shared ten-year DCF to its initial five-year growth rate."""
     wacc = float(base_scenario["wacc"])
     perpetual_growth = float(base_scenario["perpetual_growth"])
     base_growth = float(base_scenario["fcf_growth_rate"])
@@ -298,7 +285,8 @@ def calculate_implied_fcf_growth(
         "growth_gap_to_base": None,
         "wacc": wacc,
         "perpetual_growth": perpetual_growth,
-        "forecast_years": 5,
+        "forecast_years": FORECAST_YEARS,
+        "initial_growth_years": INITIAL_GROWTH_YEARS,
         "target_price": current_price,
         "target_enterprise_value": None,
         "modeled_price": None,
@@ -306,6 +294,9 @@ def calculate_implied_fcf_growth(
         "reasons": [],
     }
 
+    if base_scenario.get("operating_forecast") is not None:
+        result["reasons"] = ["A single historical growth rate cannot reverse-solve an explicit operating forecast."]
+        return result
     reasons = valuation_unavailable_reasons(inputs)
     if current_price is None or not math.isfinite(current_price) or current_price <= 0:
         reasons.append("A positive current price is required for reverse DCF.")
@@ -317,7 +308,8 @@ def calculate_implied_fcf_growth(
     cash = float(inputs["cash"])
     debt = float(inputs["debt"])
     shares = float(inputs["shares"])
-    target_enterprise_value = current_price * shares - cash + debt
+    equity_adjustment = float(inputs.get("equity_adjustment", 0))
+    target_enterprise_value = current_price * shares - cash + debt - equity_adjustment
     result["target_enterprise_value"] = target_enterprise_value
     if target_enterprise_value <= 0:
         result["reasons"] = [
@@ -350,6 +342,7 @@ def calculate_implied_fcf_growth(
         ]
         return result
 
+    lower_factor = 1e-12
     for _ in range(100):
         midpoint = (lower_factor + upper_factor) / 2
         if enterprise_value_for_growth_factor(midpoint) < target_enterprise_value:
@@ -364,6 +357,7 @@ def calculate_implied_fcf_growth(
         debt=debt,
         shares=shares,
         fcf_growth_rate=implied_growth,
+        equity_adjustment=equity_adjustment,
         wacc=wacc,
         perpetual_growth=perpetual_growth,
     )
@@ -385,6 +379,16 @@ def calculate_implied_fcf_growth(
     }
 
 
+def _scenario_calculation(scenario: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+    explicit, terminal = (None, None)
+    if scenario.get("operating_forecast") is not None:
+        explicit, terminal = operating_forecast_cash_flows(scenario["operating_forecast"], scenario["perpetual_growth"], scenario["terminal_roic"])
+    return calculate_dcf_value(fcf=float(inputs.get("fcf") or 0), cash=float(inputs["cash"]), debt=float(inputs["debt"]),
+                               shares=float(inputs["shares"]), fcf_growth_rate=scenario["fcf_growth_rate"], wacc=scenario["wacc"],
+                               perpetual_growth=scenario["perpetual_growth"], explicit_fcff=explicit, terminal_fcff=terminal,
+                               equity_adjustment=float(inputs.get("equity_adjustment", 0)))
+
+
 def _scenario_result(
     scenario: dict[str, Any],
     inputs: dict[str, Any],
@@ -392,20 +396,16 @@ def _scenario_result(
 ) -> dict[str, Any]:
     assumptions = dict(scenario)
     result = {"scenario": scenario["scenario"], "assumptions": assumptions}
-    reasons = valuation_unavailable_reasons(inputs)
+    reasons = valuation_unavailable_reasons(inputs, scenario.get("operating_forecast") is not None)
     if reasons:
         return {**result, "available": False, "reasons": reasons}
 
-    calculated = calculate_dcf_value(
-        fcf=float(inputs["fcf"]),
-        cash=float(inputs["cash"]),
-        debt=float(inputs["debt"]),
-        shares=float(inputs["shares"]),
-        fcf_growth_rate=scenario["fcf_growth_rate"],
-        wacc=scenario["wacc"],
-        perpetual_growth=scenario["perpetual_growth"],
-    )
+    calculated = _scenario_calculation(scenario, inputs)
     intrinsic = calculated["intrinsic_value_per_share"]
+    if intrinsic <= 0:
+        return {**result, **calculated, "available": False,
+                "raw_equity_residual_per_share": intrinsic, "intrinsic_value_per_share": None,
+                "reasons": ["The assumptions do not support a positive ordinary-equity residual; review the operating forecast and capital claims before quoting a per-share value."]}
     margin = None
     if current_price is not None and current_price > 0:
         margin = intrinsic / current_price - 1
@@ -428,7 +428,7 @@ def _sensitivity_matrix(
     ]
     matrix: list[list[float | None]] = []
     cell_reasons: list[list[str | None]] = []
-    unavailable = valuation_unavailable_reasons(inputs)
+    unavailable = valuation_unavailable_reasons(inputs, base.get("operating_forecast") is not None)
     for terminal_growth in terminal_growth_values:
         row: list[float | None] = []
         reason_row: list[str | None] = []
@@ -447,15 +447,16 @@ def _sensitivity_matrix(
                 row.append(None)
                 reason_row.append(reason)
                 continue
-            calculated = calculate_dcf_value(
-                fcf=float(inputs["fcf"]),
-                cash=float(inputs["cash"]),
-                debt=float(inputs["debt"]),
-                shares=float(inputs["shares"]),
-                fcf_growth_rate=base["fcf_growth_rate"],
-                wacc=wacc,
-                perpetual_growth=terminal_growth,
-            )
+            try:
+                calculated = _scenario_calculation({**base, "wacc": wacc, "perpetual_growth": terminal_growth}, inputs)
+            except ValueError as exc:
+                row.append(None)
+                reason_row.append(str(exc))
+                continue
+            if calculated["intrinsic_value_per_share"] <= 0:
+                row.append(None)
+                reason_row.append("No positive ordinary-equity residual under these assumptions.")
+                continue
             row.append(calculated["intrinsic_value_per_share"])
             reason_row.append(None)
         matrix.append(row)
@@ -512,14 +513,18 @@ def calculate_valuation(
 ) -> dict[str, Any]:
     ordered = validate_scenarios(scenarios)
     results = [_scenario_result(item, inputs, current_price) for item in ordered]
+    if all(r["available"] for r in results) and not (results[0]["equity_value"] <= results[1]["equity_value"] <= results[2]["equity_value"]):
+        raise ValueError("Operating forecasts must produce Bear <= Base <= Bull equity values.")
     implied_growth = calculate_implied_fcf_growth(
         inputs,
         current_price,
         ordered[1],
     )
     return {
+        "model_version": MODEL_VERSION,
+        "valuation_method": "FCFF discounted at WACC",
         "available": all(item["available"] for item in results),
-        "unavailable_reasons": valuation_unavailable_reasons(inputs),
+        "unavailable_reasons": list(dict.fromkeys(reason for result in results for reason in result.get("reasons", []))),
         "inputs": inputs,
         "current_price": current_price,
         "assumption_basis": assumption_basis,
@@ -529,11 +534,14 @@ def calculate_valuation(
         "position": _valuation_position(current_price, results),
         "sensitivity": _sensitivity_matrix(ordered[1], inputs),
         "formula": {
-            "forecast_years": 5,
+            "forecast_years": FORECAST_YEARS,
+            "initial_growth_years": INITIAL_GROWTH_YEARS,
             "cash_flow_type": "FCFF",
+            "forecast_mode": "explicit_operating" if ordered[1].get("operating_forecast") is not None else "historical_growth_with_fade",
             "cash_treatment": "added",
             "debt_treatment": "deducted",
-            "terminal_value": "FCF5 × (1 + terminal growth) / (WACC - terminal growth)",
+            "terminal_value": "NOPAT10 × (1 + g) × (1 - max(g, 0) / terminal ROIC) / (WACC - g)"
+            if ordered[1].get("operating_forecast") is not None else "FCFF10 × (1 + terminal growth) / (WACC - terminal growth); growth fades linearly in years 6–10",
         },
     }
 
@@ -875,19 +883,7 @@ def _statement_point(record: FinancialStatement) -> dict[str, Any]:
     income = record.income_statement or {}
     balance = record.balance_sheet or {}
     cash_flow = record.cash_flow or {}
-    short_debt = _first_value(balance, "shortTermDebt", "shortTermDebtTotal")
-    long_debt = _first_value(balance, "longTermDebt", "longTermDebtTotal")
-    lease_obligations = _first_value(
-        balance,
-        "capitalLeaseObligations",
-        "capitalLeaseObligation",
-    )
-    debt_components = (short_debt, long_debt, lease_obligations)
-    debt = (
-        sum(value or 0 for value in debt_components)
-        if short_debt is not None or long_debt is not None
-        else _first_value(balance, "shortLongTermDebtTotal", "totalDebt")
-    )
+    normalized = statement_inputs(income, balance, cash_flow)
     return {
         "date": record.fiscal_date,
         "revenue": _first_value(income, "totalRevenue")
@@ -898,11 +894,13 @@ def _statement_point(record: FinancialStatement) -> dict[str, Any]:
         "net_income": _first_value(income, "netIncome")
         if income.get("netIncome") is not None
         else _safe_float(record.net_income),
-        "interest_expense": _first_value(
-            income,
-            "interestExpense",
-            "interestExpenseNonOperating",
-        ),
+        "interest_expense": normalized["interest_expense"],
+        "interest_income": normalized["interest_income"],
+        "cfo": normalized["cfo"],
+        "capex": normalized["capex"],
+        "input_lineage": normalized,
+        "reported_period_end": normalized["reported_period_end"],
+        "filing_date": income.get("filing_date") or balance.get("filing_date"),
         "income_before_tax": _first_value(
             income,
             "incomeBeforeTax",
@@ -913,25 +911,15 @@ def _statement_point(record: FinancialStatement) -> dict[str, Any]:
             "incomeTaxExpense",
             "taxProvision",
         ),
-        "fcf": _first_value(cash_flow, "freeCashFlow"),
+        "fcf": normalized["fcf"],
         "cash_and_short_term_investments": _first_value(
             balance,
             "cashAndShortTermInvestments",
         ),
-        "cash": _first_value(
-            balance,
-            "cashAndShortTermInvestments",
-            "cashAndCashEquivalents",
-            "cashAndEquivalents",
-            "cash",
-        ),
-        "debt": debt,
+        "cash": normalized["cash"],
+        "debt": normalized["debt"]["value"],
         "equity": _first_value(balance, "totalStockholderEquity", "totalShareholderEquity"),
-        "shares": _first_value(
-            balance,
-            "commonStockSharesOutstanding",
-            "sharesOutstanding",
-        ),
+        "shares": normalized["shares"],
     }
 
 
@@ -1074,6 +1062,9 @@ def build_financial_context(
             "income_before_tax": _sum_complete(points_in_window, "income_before_tax"),
             "income_tax_expense": _sum_complete(points_in_window, "income_tax_expense"),
             "fcf": _sum_complete(points_in_window, "fcf"),
+            "interest_income": _sum_complete(points_in_window, "interest_income"),
+            "cfo": _sum_complete(points_in_window, "cfo"),
+            "capex": _sum_complete(points_in_window, "capex"),
             "gross_margin": gross_profit / revenue
             if revenue is not None and revenue > 0 and gross_profit is not None
             else None,
@@ -1143,6 +1134,9 @@ def build_financial_context(
             "shares_reference_date": share_reference_date,
             "debt_to_equity": current_de,
             "average_debt_1yr": average_debt,
+            "input_lineage": latest.get("input_lineage", {}),
+            "reported_period_end": latest.get("reported_period_end"),
+            "filing_date": latest.get("filing_date"),
         },
         "prior_year_balance": {
             "cash": prior_year.get("cash"),
@@ -1772,10 +1766,10 @@ def build_company_valuation_assumptions(
     prior = financial["prior_year_balance"]
     provider_beta = _safe_float(getattr(snapshot, "provider_beta", None)) if snapshot else None
     local_beta = _safe_float(getattr(snapshot, "beta_1yr", None)) if snapshot else None
-    if provider_beta is not None and 0 < provider_beta <= 3:
+    if provider_beta is not None:
         selected_beta = provider_beta
         beta_source = "provider_fundamental_beta"
-    elif local_beta is not None and 0 < local_beta <= 3:
+    elif local_beta is not None:
         selected_beta = local_beta
         beta_source = "local_one_year_beta"
     else:
@@ -1798,6 +1792,7 @@ def build_company_valuation_assumptions(
         fallback_tax_rate=settings.VALUATION_FALLBACK_TAX_RATE,
         assumptions_as_of=settings.VALUATION_MARKET_ASSUMPTIONS_AS_OF,
         beta_source=beta_source,
+        valuation_date=str(getattr(snapshot, "date", None) or date.today()),
     )
     growth = derive_growth_scenarios(
         current_fcf=current.get("fcf"),
@@ -1826,8 +1821,29 @@ def build_company_valuation_assumptions(
         current.get("fcf"),
         interest_expense_for_fcff=wacc.get("interest_expense_for_fcff"),
         tax_rate=wacc.get("tax_rate"),
+        interest_income=current.get("interest_income"),
     )
+    statement_shares = latest.get("shares")
+    snapshot_shares = _safe_float(getattr(snapshot, "shares_outstanding", None))
+    snapshot_date = getattr(snapshot, "date", None)
+    reference_date = latest.get("shares_reference_date")
+    usable_snapshot_shares = (snapshot_shares is not None and snapshot_shares > 0
+                              and snapshot_date is not None and reference_date is not None
+                              and snapshot_date == reference_date)
+    share_basis = {
+        "value": snapshot_shares if usable_snapshot_shares else statement_shares,
+        "source": "published_screener_shares_outstanding" if usable_snapshot_shares else "split_adjusted_statement_shares",
+        "basis": "provider_current_outstanding" if usable_snapshot_shares else latest.get("input_lineage", {}).get("shares_basis", "provider_statement_basis_unverified"),
+        "as_of": _iso(snapshot_date if usable_snapshot_shares else reference_date),
+        "statement_shares": statement_shares,
+        "price_times_shares": current_price * (snapshot_shares if usable_snapshot_shares else statement_shares)
+        if current_price is not None and (snapshot_shares if usable_snapshot_shares else statement_shares) is not None else None,
+        "published_market_cap": _safe_float(getattr(snapshot, "market_cap", None)),
+        "future_dilution": "not_separately_projected; denominator uses the disclosed current/share-proxy basis",
+    }
     return {
+        "shares": share_basis,
+        "input_lineage": latest.get("input_lineage", {}),
         "wacc": wacc,
         "growth": growth,
         "terminal_growth": {
@@ -1847,6 +1863,12 @@ def _valuation_inputs(
     cash_flow = assumption_basis.get("cash_flow", {}) if assumption_basis else {}
     wacc = assumption_basis.get("wacc", {}) if assumption_basis else {}
     model_input_reasons: list[str] = []
+    lineage = financial["latest_balance"].get("input_lineage", {})
+    bridge = lineage.get("equity_bridge", {})
+    model_input_reasons.extend(lineage.get("unavailable_reasons", []))
+    for point in financial.get("points", []):
+        model_input_reasons.extend(point.get("input_lineage", {}).get("unavailable_reasons", []))
+    model_input_reasons = list(dict.fromkeys(model_input_reasons))
     if assumption_basis:
         model_input_reasons.extend(wacc.get("unavailable_reasons", []))
         if not cash_flow.get("available") and cash_flow.get("reason"):
@@ -1855,19 +1877,29 @@ def _valuation_inputs(
         "fcf": cash_flow.get("fcff") if assumption_basis else financial["current_ttm"]["fcf"],
         "reported_fcf": cash_flow.get("reported_fcf") if assumption_basis else financial["current_ttm"]["fcf"],
         "after_tax_interest_adjustment": cash_flow.get("after_tax_interest_adjustment") if assumption_basis else None,
+        "after_tax_interest_income_deduction": cash_flow.get("after_tax_interest_income_deduction") if assumption_basis else None,
+        "cash_flow_bridge": cash_flow,
         "cash_flow_type": "FCFF" if assumption_basis else "unspecified",
-        "cash": financial["latest_balance"]["cash"],
+        "cash": bridge.get("cash_added", financial["latest_balance"]["cash"]),
+        "equity_bridge": bridge,
+        "equity_adjustment": bridge.get("equity_adjustment", 0),
         "debt": financial["latest_balance"]["debt"],
-        "shares": financial["latest_balance"]["shares"],
+        "shares": assumption_basis["shares"]["value"] if assumption_basis and assumption_basis.get("shares") else financial["latest_balance"]["shares"],
+        "shares_basis": assumption_basis.get("shares") if assumption_basis else None,
+        "input_lineage": financial["latest_balance"].get("input_lineage", {}),
+        "reported_period_end": financial["latest_balance"].get("reported_period_end"),
+        "filing_date": financial["latest_balance"].get("filing_date"),
+        "period_date_basis": "provider_period_label_unless_reported_period_end_is_available",
         "financial_statement_date": _iso(financial["latest_statement_date"]),
         "model_input_reasons": model_input_reasons,
+        "historical_cash_flow_reasons": [cash_flow["reason"]] if cash_flow.get("reason") else [],
     }
 
 
-async def get_default_ticker_valuation_scenarios(
+async def get_default_ticker_valuation(
     ticker: str,
     db: AsyncSession,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Return the current company-derived defaults without loading peer evidence."""
 
     canonical_ticker = canonicalize_ticker(ticker)
@@ -1885,11 +1917,15 @@ async def get_default_ticker_valuation_scenarios(
             )
         )
         snapshot = result.scalar_one_or_none()
-    return build_company_valuation_assumptions(
-        financial,
-        snapshot,
-        current_price,
-    )["default_scenarios"]
+    assumption_basis = build_company_valuation_assumptions(financial, snapshot, current_price)
+    result = calculate_valuation(_valuation_inputs(financial, assumption_basis), assumption_basis["default_scenarios"], current_price,
+                                 assumption_basis=assumption_basis, default_scenarios=assumption_basis["default_scenarios"])
+    result["scenario_source"] = "default"
+    return result
+
+
+async def get_default_ticker_valuation_scenarios(ticker: str, db: AsyncSession) -> list[dict[str, Any]]:
+    return (await get_default_ticker_valuation(ticker, db))["default_scenarios"]
 
 
 async def calculate_ticker_valuation(

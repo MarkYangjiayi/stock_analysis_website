@@ -1,0 +1,151 @@
+{
+  "compiled_on": "2026-09-10",
+  "purpose": "Reviewed financial facts only. No valuation target or ticker-specific model parameter. Apply only to an exact source fingerprint.",
+  "records": [
+    {
+      "ticker": "NVDA.US",
+      "period": "Quarterly",
+      "provider_period_end": "2026-07-31",
+      "reconciliation": {
+        "input_sha256": "10c9d1779484efcc91652746d7b8ec49a034eb0073d278e515d13978c081892c",
+        "period_end": "2026-07-26",
+        "available_at": "2026-08-26",
+        "balance": {
+          "totalDebt": {
+            "value": 33366000000,
+            "source_url": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+            "definition": "borrowings_excluding_operating_leases"
+          },
+          "debtScope": {
+            "value": "borrowings_excluding_operating_leases",
+            "source_url": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+            "definition": "Debt definition used in the valuation bridge"
+          },
+          "sharesBasis": {
+            "value": "quarterly_diluted_weighted_average",
+            "source_url": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+            "definition": "Official quarterly diluted weighted-average shares; use current snapshot count for current valuation when available"
+          }
+        }
+      }
+    },
+    {
+      "ticker": "WMT.US",
+      "period": "Quarterly",
+      "provider_period_end": "2026-07-31",
+      "reconciliation": {
+        "input_sha256": "82ea077e6b4b356b9da1b72d1ef28a9193b8cfab638de49fc526031472b5bd99",
+        "period_end": "2026-07-31",
+        "available_at": "2026-08-20",
+        "balance": {
+          "totalDebt": {
+            "value": 57243000000,
+            "source_url": "https://stock.walmart.com/sec-filings/all-sec-filings/content/0000104169-26-000145/earningsreleasefy27q2.htm",
+            "definition": "borrowings_and_finance_leases_excluding_operating_leases"
+          },
+          "debtScope": {
+            "value": "borrowings_and_finance_leases_excluding_operating_leases",
+            "source_url": "https://stock.walmart.com/sec-filings/all-sec-filings/content/0000104169-26-000145/earningsreleasefy27q2.htm",
+            "definition": "Debt definition used in the valuation bridge"
+          }
+        }
+      }
+    },
+    {
+      "ticker": "UNH.US",
+      "period": "Quarterly",
+      "provider_period_end": "2026-06-30",
+      "reconciliation": {
+        "input_sha256": "f5e75d1c58078e8358bedac2e334a63caa514af640f1944f88e3addf16f9c867",
+        "period_end": "2026-06-30",
+        "available_at": "2026-08-10",
+        "balance": {
+          "totalDebt": {
+            "value": 73328000000,
+            "source_url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/unh-20260630.htm",
+            "definition": "reported_current_and_noncurrent_borrowings"
+          },
+          "debtScope": {
+            "value": "reported_current_and_noncurrent_borrowings",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/unh-20260630.htm",
+            "definition": "Debt definition used in the valuation bridge"
+          },
+          "commonStockSharesOutstanding": {
+            "value": 905000000,
+            "source_url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/unh-20260630.htm",
+            "definition": "Period-end common shares; not quarterly weighted average"
+          },
+          "sharesBasis": {
+            "value": "period_end_common_shares",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/unh-20260630.htm",
+            "definition": "Period-end common shares"
+          }
+        }
+      }
+    },
+    {
+      "ticker": "O.US",
+      "period": "Quarterly",
+      "provider_period_end": "2026-06-30",
+      "reconciliation": {
+        "input_sha256": "fc555ef74310705b4510f5661a811146081b0eb5142af20db149b13bb2d21c2f",
+        "period_end": "2026-06-30",
+        "available_at": "2026-08-06",
+        "balance": {
+          "totalDebt": {
+            "value": 30651653000,
+            "source_url": "https://www.sec.gov/Archives/edgar/data/726728/000072672826000044/realtyincomeq22026supple.htm",
+            "definition": "consolidated_borrowings_net_of_fees_finance_leases_not_included"
+          },
+          "debtScope": {
+            "value": "consolidated_borrowings_net_of_fees_finance_leases_not_included",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/726728/000072672826000044/realtyincomeq22026supple.htm",
+            "definition": "Debt definition used in the valuation bridge"
+          },
+          "commonStockSharesOutstanding": {
+            "value": 946202000,
+            "source_url": "https://www.sec.gov/Archives/edgar/data/726728/000072672826000044/realtyincomeq22026supple.htm",
+            "definition": "Period-end common shares; not quarterly weighted average"
+          },
+          "sharesBasis": {
+            "value": "period_end_common_shares",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/726728/000072672826000044/realtyincomeq22026supple.htm",
+            "definition": "Period-end common shares"
+          }
+        }
+      }
+    },
+    {
+      "ticker": "MSFT.US",
+      "period": "Quarterly",
+      "provider_period_end": "2026-06-30",
+      "reconciliation": {
+        "input_sha256": "dae09b7b72f04c54fbcbac95a92fee88fb59df15a4fce8523002bfe5665656f6",
+        "period_end": "2026-06-30",
+        "available_at": "2026-07-29",
+        "balance": {
+          "totalDebt": {
+            "value": 106888000000,
+            "source_url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json",
+            "definition": "borrowings_and_finance_leases_excluding_operating_leases"
+          },
+          "debtScope": {
+            "value": "borrowings_and_finance_leases_excluding_operating_leases",
+            "source_url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json",
+            "definition": "Debt definition used in the valuation bridge"
+          },
+          "commonStockSharesOutstanding": {
+            "value": 7427000000,
+            "source_url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json",
+            "definition": "Period-end common shares; not quarterly weighted average"
+          },
+          "sharesBasis": {
+            "value": "period_end_common_shares",
+            "source_url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json",
+            "definition": "Period-end common shares"
+          }
+        }
+      }
+    }
+  ]
+}

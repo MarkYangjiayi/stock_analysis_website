@@ -1,0 +1,3593 @@
+{
+  "ticker": "MCD",
+  "retrieved_at_utc": "2026-09-10T14:28:43.103292+00:00",
+  "decision": {
+    "url": "https://finbrain.icu/api/stocks/MCD.US/decision-support",
+    "response_sha256": "49392a026e147228ee2f2724cb9ee8294788b5d1d3c54d0caef7e8e29c0e86ab",
+    "data": {
+      "metadata": {
+        "ticker": "MCD.US",
+        "company_name": "McDonald’s Corporation",
+        "currency": "USD",
+        "industry": "Restaurants",
+        "sector": "Consumer Cyclical",
+        "price_date": "2026-09-09",
+        "screener_date": "2026-09-09",
+        "screener_published_at": "2026-09-10T02:57:16.699533",
+        "financial_statement_date": "2026-06-30",
+        "factor_date": "2026-09-09",
+        "factor_published_at": "2026-09-10T02:57:42.448665"
+      },
+      "summary": {
+        "valuation_position": {
+          "status": "above_bull",
+          "text": "Price is above the Bull-case intrinsic value."
+        },
+        "strongest_peer_metrics": [
+          {
+            "key": "net_profit_margin",
+            "label": "Net margin",
+            "value": 0.3172,
+            "format": "percent",
+            "direction": "higher_better",
+            "scope": "industry",
+            "desirability_percentile": 98.21428571428571,
+            "evidence_id": "E15"
+          },
+          {
+            "key": "operating_margin",
+            "label": "Operating margin",
+            "value": 0.4649,
+            "format": "percent",
+            "direction": "higher_better",
+            "scope": "industry",
+            "desirability_percentile": 98.21428571428571,
+            "evidence_id": "E14"
+          },
+          {
+            "key": "gross_margin",
+            "label": "Gross margin",
+            "value": 0.5738214112,
+            "format": "percent",
+            "direction": "higher_better",
+            "scope": "industry",
+            "desirability_percentile": 94.64285714285714,
+            "evidence_id": "E13"
+          }
+        ],
+        "weakest_peer_metrics": [
+          {
+            "key": "ps_ratio",
+            "label": "Price / sales",
+            "value": 6.6659,
+            "format": "multiple",
+            "direction": "lower_better",
+            "scope": "industry",
+            "desirability_percentile": 1.7857142857142918,
+            "evidence_id": "E22"
+          },
+          {
+            "key": "peg_ratio",
+            "label": "PEG",
+            "value": 2.2535,
+            "format": "multiple",
+            "direction": "lower_better",
+            "scope": "industry",
+            "desirability_percentile": 16.66666666666667,
+            "evidence_id": "E21"
+          },
+          {
+            "key": "ev_ebitda",
+            "label": "EV / EBITDA",
+            "value": 15.8227,
+            "format": "multiple",
+            "direction": "lower_better",
+            "scope": "industry",
+            "desirability_percentile": 38.888888888888886,
+            "evidence_id": "E25"
+          }
+        ],
+        "fundamental_warnings": [
+          {
+            "id": "cash_decline",
+            "triggered": true,
+            "severity": "high",
+            "title": "Cash balance decline",
+            "message": "Cash and cash-equivalent balances declined 56.2% year over year.",
+            "metric": "cash_change",
+            "current": 822000000.0,
+            "previous": 1876000000.0,
+            "evidence_metric": "cash",
+            "evidence_id": "E34"
+          }
+        ],
+        "coverage": {
+          "quarterly_statements": 8,
+          "peer_metrics_available": 17,
+          "peer_metrics_total": 20,
+          "published_factor_count": 6,
+          "missing_data_reasons": [
+            "Peer percentiles are available for 17 of 20 metrics."
+          ],
+          "data_quality_notes": [
+            {
+              "code": "debt_level_unavailable",
+              "message": "Debt / equity could not be assessed because debt or positive equity is unavailable."
+            },
+            {
+              "code": "debt_trend_unavailable",
+              "message": "The YoY debt / equity trend could not be assessed from two positive observations."
+            }
+          ]
+        }
+      },
+      "valuation": {
+        "available": true,
+        "unavailable_reasons": [],
+        "inputs": {
+          "fcf": 9037609298.167189,
+          "reported_fcf": 7761000000.0,
+          "after_tax_interest_adjustment": 1276609298.1671882,
+          "cash_flow_type": "FCFF",
+          "cash": 822000000.0,
+          "debt": 55282000000.0,
+          "shares": 713500000.0,
+          "financial_statement_date": "2026-06-30",
+          "model_input_reasons": []
+        },
+        "current_price": 253.48,
+        "assumption_basis": {
+          "wacc": {
+            "available": true,
+            "wacc": 0.08833652757006281,
+            "method": "CAPM plus after-tax book-debt cost",
+            "quality": "estimated_with_fallbacks",
+            "assumptions_as_of": "2026-09-09",
+            "risk_free_rate": 0.04808,
+            "equity_risk_premium": 0.06,
+            "beta": 1.0,
+            "beta_source": "fallback_market_beta",
+            "cost_of_equity": 0.10808,
+            "equity_value": 184659066880.0,
+            "equity_source": "screener_market_cap",
+            "average_debt": 55723500000.0,
+            "debt_source": "average_four_quarter_book_debt",
+            "cost_of_debt": 0.02916184374635477,
+            "debt_cost_source": "ttm_interest_over_average_book_debt",
+            "tax_rate": 0.21439427805096112,
+            "tax_source": "ttm_income_tax_over_pretax_income",
+            "equity_weight": 0.7681882645515745,
+            "debt_weight": 0.23181173544842545,
+            "interest_expense_for_fcff": 1625000000.0,
+            "notes": [
+              "A usable provider/local beta was unavailable; market beta 1.0 was used."
+            ],
+            "unavailable_reasons": []
+          },
+          "growth": {
+            "method": "median_of_company_growth_signals",
+            "signals": [
+              {
+                "source": "ttm_fcf_yoy",
+                "raw_value": 0.1252718573292737,
+                "winsorized_value": 0.1252718573292737
+              },
+              {
+                "source": "ttm_revenue_yoy",
+                "raw_value": 0.06308518802762864,
+                "winsorized_value": 0.06308518802762864
+              },
+              {
+                "source": "sales_growth_3yr",
+                "raw_value": 0.0506378595,
+                "winsorized_value": 0.0506378595
+              },
+              {
+                "source": "sales_growth_5yr",
+                "raw_value": 0.0695632769,
+                "winsorized_value": 0.0695632769
+              }
+            ],
+            "raw_base_growth": 0.06632423246381432,
+            "base_growth": 0.06632423246381432,
+            "scenario_spread": 0.05,
+            "bear_growth": 0.016324232463814314,
+            "bull_growth": 0.11632423246381432
+          },
+          "terminal_growth": {
+            "rate": 0.025,
+            "configured_rate": 0.025,
+            "method": "configured_mature_nominal_growth_capped_below_wacc"
+          },
+          "cash_flow": {
+            "available": true,
+            "fcff": 9037609298.167189,
+            "reported_fcf": 7761000000.0,
+            "after_tax_interest_adjustment": 1276609298.1671882,
+            "reason": null
+          },
+          "default_scenarios": [
+            {
+              "scenario": "bear",
+              "fcf_growth_rate": 0.016324232463814314,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            {
+              "scenario": "base",
+              "fcf_growth_rate": 0.06632423246381432,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            {
+              "scenario": "bull",
+              "fcf_growth_rate": 0.11632423246381432,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            }
+          ]
+        },
+        "default_scenarios": [
+          {
+            "scenario": "bear",
+            "fcf_growth_rate": 0.016324232463814314,
+            "wacc": 0.08833652757006281,
+            "perpetual_growth": 0.025
+          },
+          {
+            "scenario": "base",
+            "fcf_growth_rate": 0.06632423246381432,
+            "wacc": 0.08833652757006281,
+            "perpetual_growth": 0.025
+          },
+          {
+            "scenario": "bull",
+            "fcf_growth_rate": 0.11632423246381432,
+            "wacc": 0.08833652757006281,
+            "perpetual_growth": 0.025
+          }
+        ],
+        "scenarios": [
+          {
+            "scenario": "bear",
+            "assumptions": {
+              "scenario": "bear",
+              "fcf_growth_rate": 0.016324232463814314,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            "available": true,
+            "intrinsic_value_per_share": 121.05968072050347,
+            "enterprise_value": 140836082194.07922,
+            "equity_value": 86376082194.07922,
+            "projected_fcf": [
+              9185141333.267601,
+              9335081715.60485,
+              9487469759.599089,
+              9642345421.448195,
+              9799749309.604311
+            ],
+            "present_value_explicit_fcf": 36971242710.60308,
+            "present_value_terminal": 103864839483.47615,
+            "upside_downside": -0.5224093391174709
+          },
+          {
+            "scenario": "base",
+            "assumptions": {
+              "scenario": "base",
+              "fcf_growth_rate": 0.06632423246381432,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            "available": true,
+            "intrinsic_value_per_share": 168.34422987319888,
+            "enterprise_value": 174573608014.5274,
+            "equity_value": 120113608014.5274,
+            "projected_fcf": [
+              9637021798.175959,
+              10276189872.177027,
+              10957750278.10159,
+              11684514654.826824,
+              12459481121.020403
+            ],
+            "present_value_explicit_fcf": 42519004799.94394,
+            "present_value_terminal": 132054603214.58347,
+            "upside_downside": -0.33586780072116584
+          },
+          {
+            "scenario": "bull",
+            "assumptions": {
+              "scenario": "bull",
+              "fcf_growth_rate": 0.11632423246381432,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            "available": true,
+            "intrinsic_value_per_share": 224.79851701808977,
+            "enterprise_value": 214853741892.40704,
+            "equity_value": 160393741892.40704,
+            "projected_fcf": [
+              10088902263.084318,
+              11262486075.24004,
+              12572586123.576735,
+              14035082554.487,
+              15667702760.20397
+            ],
+            "present_value_explicit_fcf": 48796082573.65973,
+            "present_value_terminal": 166057659318.7473,
+            "upside_downside": -0.11315087179229222
+          }
+        ],
+        "implied_growth": {
+          "available": true,
+          "implied_fcf_growth_rate": 0.13877938742411322,
+          "base_fcf_growth_rate": 0.06632423246381432,
+          "growth_gap_to_base": 0.0724551549602989,
+          "wacc": 0.08833652757006281,
+          "perpetual_growth": 0.025,
+          "forecast_years": 5,
+          "target_price": 253.48,
+          "target_enterprise_value": 235317980000.0,
+          "modeled_price": 253.47999999999965,
+          "status": "above_base",
+          "reasons": []
+        },
+        "position": {
+          "status": "above_bull",
+          "text": "Price is above the Bull-case intrinsic value."
+        },
+        "sensitivity": {
+          "wacc_values": [
+            0.06833652757006281,
+            0.07833652757006282,
+            0.08833652757006281,
+            0.09833652757006281,
+            0.10833652757006282
+          ],
+          "terminal_growth_values": [
+            0.015000000000000001,
+            0.02,
+            0.025,
+            0.030000000000000002,
+            0.035
+          ],
+          "fcf_growth_rate": 0.06632423246381432,
+          "values": [
+            [
+              225.4329098627052,
+              176.8510940777977,
+              141.54769951833757,
+              114.74145607858517,
+              93.70020146711279
+            ],
+            [
+              251.43112221453254,
+              194.32797359284274,
+              153.9656496538828,
+              123.93185910965734,
+              100.71794404952291
+            ],
+            [
+              283.4284798162406,
+              215.0815717679256,
+              168.34422987319888,
+              134.37544433186773,
+              108.57778346354262
+            ],
+            [
+              323.77227869206536,
+              240.1287340897091,
+              185.18757459226129,
+              146.34728766047712,
+              117.44096571874076
+            ],
+            [
+              376.21805753297036,
+              270.95558475437826,
+              205.1888573111189,
+              160.2093267083523,
+              127.51271109369269
+            ]
+          ],
+          "cell_reasons": [
+            [
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          ]
+        },
+        "formula": {
+          "forecast_years": 5,
+          "cash_flow_type": "FCFF",
+          "cash_treatment": "added",
+          "debt_treatment": "deducted",
+          "terminal_value": "FCF5 × (1 + terminal growth) / (WACC - terminal growth)"
+        },
+        "scenario_source": "default"
+      },
+      "peer_comparison": {
+        "ticker_in_screener": true,
+        "industry": "Restaurants",
+        "sector": "Consumer Cyclical",
+        "industry_member_count": 28,
+        "sector_member_count": 297,
+        "metrics": [
+          {
+            "key": "sales_growth_ttm",
+            "label": "Sales growth (TTM)",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E7",
+            "value": 0.0630084273,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 58.92857142857143,
+              "desirability_percentile": 58.92857142857143,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 297,
+              "available": true,
+              "raw_percentile": 63.804713804713806,
+              "desirability_percentile": 63.804713804713806,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 58.92857142857143
+          },
+          {
+            "key": "sales_growth_3yr",
+            "label": "Sales growth (3Y)",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E8",
+            "value": 0.0506378595,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 58.92857142857143,
+              "desirability_percentile": 58.92857142857143,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 295,
+              "available": true,
+              "raw_percentile": 63.559322033898304,
+              "desirability_percentile": 63.559322033898304,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 58.92857142857143
+          },
+          {
+            "key": "sales_growth_5yr",
+            "label": "Sales growth (5Y)",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E9",
+            "value": 0.0695632769,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 41.07142857142857,
+              "desirability_percentile": 41.07142857142857,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 292,
+              "available": true,
+              "raw_percentile": 43.66438356164384,
+              "desirability_percentile": 43.66438356164384,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 41.07142857142857
+          },
+          {
+            "key": "eps_growth_ttm",
+            "label": "EPS growth (TTM)",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E10",
+            "value": 0.052852349,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 15,
+              "available": true,
+              "raw_percentile": 63.333333333333336,
+              "desirability_percentile": 63.333333333333336,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 139,
+              "available": true,
+              "raw_percentile": 50.719424460431654,
+              "desirability_percentile": 50.719424460431654,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 63.333333333333336
+          },
+          {
+            "key": "eps_growth_3yr",
+            "label": "EPS growth (3Y)",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E11",
+            "value": -0.1958030448,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 19,
+              "available": true,
+              "raw_percentile": 50.0,
+              "desirability_percentile": 50.0,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 214,
+              "available": true,
+              "raw_percentile": 48.36448598130841,
+              "desirability_percentile": 48.36448598130841,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 50.0
+          },
+          {
+            "key": "eps_growth_5yr",
+            "label": "EPS growth (5Y)",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E12",
+            "value": -0.0771975799,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 17,
+              "available": true,
+              "raw_percentile": 55.88235294117647,
+              "desirability_percentile": 55.88235294117647,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 187,
+              "available": true,
+              "raw_percentile": 60.160427807486634,
+              "desirability_percentile": 60.160427807486634,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 55.88235294117647
+          },
+          {
+            "key": "gross_margin",
+            "label": "Gross margin",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E13",
+            "value": 0.5738214112,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 94.64285714285714,
+              "desirability_percentile": 94.64285714285714,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 83.95270270270271,
+              "desirability_percentile": 83.95270270270271,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 94.64285714285714
+          },
+          {
+            "key": "operating_margin",
+            "label": "Operating margin",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E14",
+            "value": 0.4649,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 98.21428571428571,
+              "desirability_percentile": 98.21428571428571,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 98.14189189189189,
+              "desirability_percentile": 98.14189189189189,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 98.21428571428571
+          },
+          {
+            "key": "net_profit_margin",
+            "label": "Net margin",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E15",
+            "value": 0.3172,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 98.21428571428571,
+              "desirability_percentile": 98.21428571428571,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 98.14189189189189,
+              "desirability_percentile": 98.14189189189189,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 98.21428571428571
+          },
+          {
+            "key": "roe",
+            "label": "Return on equity",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E16",
+            "value": null,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 18,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 258,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "summary_scope": null,
+            "summary_percentile": null
+          },
+          {
+            "key": "roa",
+            "label": "Return on assets",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E17",
+            "value": 0.1325,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 83.92857142857143,
+              "desirability_percentile": 83.92857142857143,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 297,
+              "available": true,
+              "raw_percentile": 92.42424242424242,
+              "desirability_percentile": 92.42424242424242,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 83.92857142857143
+          },
+          {
+            "key": "roic",
+            "label": "Return on invested capital",
+            "direction": "higher_better",
+            "format": "percent",
+            "evidence_id": "E18",
+            "value": 0.259097585,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 16,
+              "available": true,
+              "raw_percentile": 53.125,
+              "desirability_percentile": 53.125,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 197,
+              "available": true,
+              "raw_percentile": 87.56345177664974,
+              "desirability_percentile": 87.56345177664974,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 53.125
+          },
+          {
+            "key": "pe_ratio",
+            "label": "P/E",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E19",
+            "value": 21.2327,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 20,
+              "available": true,
+              "raw_percentile": 37.5,
+              "desirability_percentile": 62.5,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 215,
+              "available": true,
+              "raw_percentile": 57.44186046511628,
+              "desirability_percentile": 42.55813953488372,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 62.5
+          },
+          {
+            "key": "forward_pe",
+            "label": "Forward P/E",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E20",
+            "value": 18.6916,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 42.857142857142854,
+              "desirability_percentile": 57.142857142857146,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 277,
+              "available": true,
+              "raw_percentile": 66.06498194945848,
+              "desirability_percentile": 33.935018050541515,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 57.142857142857146
+          },
+          {
+            "key": "peg_ratio",
+            "label": "PEG",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E21",
+            "value": 2.2535,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 21,
+              "available": true,
+              "raw_percentile": 83.33333333333333,
+              "desirability_percentile": 16.66666666666667,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 235,
+              "available": true,
+              "raw_percentile": 81.91489361702128,
+              "desirability_percentile": 18.085106382978722,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 16.66666666666667
+          },
+          {
+            "key": "ps_ratio",
+            "label": "Price / sales",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E22",
+            "value": 6.6659,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 98.21428571428571,
+              "desirability_percentile": 1.7857142857142918,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 96.45270270270271,
+              "desirability_percentile": 3.547297297297291,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 1.7857142857142918
+          },
+          {
+            "key": "pb_ratio",
+            "label": "Price / book",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E23",
+            "value": null,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 18,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 258,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "summary_scope": null,
+            "summary_percentile": null
+          },
+          {
+            "key": "price_fcf",
+            "label": "Price / FCF",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E24",
+            "value": 23.7932053704,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 23,
+              "available": true,
+              "raw_percentile": 54.34782608695652,
+              "desirability_percentile": 45.65217391304348,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 239,
+              "available": true,
+              "raw_percentile": 72.17573221757323,
+              "desirability_percentile": 27.824267782426773,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 45.65217391304348
+          },
+          {
+            "key": "ev_ebitda",
+            "label": "EV / EBITDA",
+            "direction": "lower_better",
+            "format": "multiple",
+            "evidence_id": "E25",
+            "value": 15.8227,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 27,
+              "available": true,
+              "raw_percentile": 61.111111111111114,
+              "desirability_percentile": 38.888888888888886,
+              "reason": null
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 281,
+              "available": true,
+              "raw_percentile": 71.70818505338079,
+              "desirability_percentile": 28.291814946619212,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 38.888888888888886
+          },
+          {
+            "key": "debt_to_equity",
+            "label": "Debt / equity",
+            "direction": "lower_better",
+            "format": "ratio",
+            "evidence_id": "E26",
+            "value": null,
+            "industry": {
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 18,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "sector": {
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 256,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "summary_scope": null,
+            "summary_percentile": null
+          }
+        ],
+        "strongest": [
+          {
+            "key": "net_profit_margin",
+            "label": "Net margin",
+            "value": 0.3172,
+            "format": "percent",
+            "direction": "higher_better",
+            "scope": "industry",
+            "desirability_percentile": 98.21428571428571,
+            "evidence_id": "E15"
+          },
+          {
+            "key": "operating_margin",
+            "label": "Operating margin",
+            "value": 0.4649,
+            "format": "percent",
+            "direction": "higher_better",
+            "scope": "industry",
+            "desirability_percentile": 98.21428571428571,
+            "evidence_id": "E14"
+          },
+          {
+            "key": "gross_margin",
+            "label": "Gross margin",
+            "value": 0.5738214112,
+            "format": "percent",
+            "direction": "higher_better",
+            "scope": "industry",
+            "desirability_percentile": 94.64285714285714,
+            "evidence_id": "E13"
+          }
+        ],
+        "weakest": [
+          {
+            "key": "ps_ratio",
+            "label": "Price / sales",
+            "value": 6.6659,
+            "format": "multiple",
+            "direction": "lower_better",
+            "scope": "industry",
+            "desirability_percentile": 1.7857142857142918,
+            "evidence_id": "E22"
+          },
+          {
+            "key": "peg_ratio",
+            "label": "PEG",
+            "value": 2.2535,
+            "format": "multiple",
+            "direction": "lower_better",
+            "scope": "industry",
+            "desirability_percentile": 16.66666666666667,
+            "evidence_id": "E21"
+          },
+          {
+            "key": "ev_ebitda",
+            "label": "EV / EBITDA",
+            "value": 15.8227,
+            "format": "multiple",
+            "direction": "lower_better",
+            "scope": "industry",
+            "desirability_percentile": 38.888888888888886,
+            "evidence_id": "E25"
+          }
+        ],
+        "available_metric_count": 17,
+        "total_metric_count": 20
+      },
+      "risks": {
+        "warnings": [
+          {
+            "id": "cash_decline",
+            "triggered": true,
+            "severity": "high",
+            "title": "Cash balance decline",
+            "message": "Cash and cash-equivalent balances declined 56.2% year over year.",
+            "metric": "cash_change",
+            "current": 822000000.0,
+            "previous": 1876000000.0,
+            "evidence_metric": "cash",
+            "evidence_id": "E34"
+          }
+        ],
+        "data_quality_notes": [
+          {
+            "code": "debt_level_unavailable",
+            "message": "Debt / equity could not be assessed because debt or positive equity is unavailable."
+          },
+          {
+            "code": "debt_trend_unavailable",
+            "message": "The YoY debt / equity trend could not be assessed from two positive observations."
+          }
+        ],
+        "high_count": 1,
+        "warning_count": 0
+      },
+      "published_factors": {
+        "as_of_date": "2026-09-09",
+        "published_at": "2026-09-10T02:57:42.448665",
+        "version": "lfq-v1",
+        "factors": {
+          "composite": {
+            "raw_value": 0.0969089814258374,
+            "normalized_value": 0.0969089814258374,
+            "details": {
+              "sector": "Consumer Cyclical"
+            }
+          },
+          "growth": {
+            "raw_value": 0.0695632769,
+            "normalized_value": -0.26502776579912224,
+            "details": {
+              "sector": "Consumer Cyclical"
+            }
+          },
+          "low_volatility": {
+            "raw_value": -0.20436983819603602,
+            "normalized_value": 1.3310077332060966,
+            "details": {
+              "sector": "Consumer Cyclical"
+            }
+          },
+          "momentum": {
+            "raw_value": -0.1079648933827353,
+            "normalized_value": -0.25965741597587333,
+            "details": {
+              "sector": "Consumer Cyclical"
+            }
+          },
+          "quality": {
+            "raw_value": 0.5738214112,
+            "normalized_value": 0.5433865978212781,
+            "details": {
+              "sector": "Consumer Cyclical"
+            }
+          },
+          "value": {
+            "raw_value": 0.047097166163511936,
+            "normalized_value": -0.8651642421231921,
+            "details": {
+              "sector": "Consumer Cyclical"
+            }
+          }
+        }
+      },
+      "earnings_quality": {
+        "ticker": "MCD.US",
+        "currency": "USD",
+        "methodology": {
+          "materiality_base": "max(abs(income before tax), 1% of abs(revenue))",
+          "warning_threshold": 0.1,
+          "high_threshold": 0.25,
+          "reported_remains_primary": true,
+          "structured_flags_are_adjustments": false
+        },
+        "summary": {
+          "verdict": "unavailable",
+          "evaluated_periods": 0,
+          "flagged_periods": 0,
+          "data_quality_periods": 11,
+          "financial_industry_exemption": false,
+          "message": "Potential earnings-quality issues are screening signals, not allegations of fraud."
+        },
+        "annual": [
+          {
+            "period_end": "2025-12-31",
+            "period_type": "annual",
+            "reported": {
+              "revenue": 26885000000.0,
+              "net_income": 8563000000.0,
+              "income_before_tax": 10897000000.0,
+              "net_income_from_continuing_operations": 8563000000.0,
+              "income_tax_expense": 2334000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 10897000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "d00e224f73b9cfa99020d11c52b31064e769ea0e8a37a191df5c71b5d0303a1e",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2024-12-31",
+            "period_type": "annual",
+            "reported": {
+              "revenue": 25920000000.0,
+              "net_income": 8223000000.0,
+              "income_before_tax": 10345000000.0,
+              "net_income_from_continuing_operations": 8224000000.0,
+              "income_tax_expense": 2121000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 10345000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "bbd4e849c9a331ab81ed68956550667f439f888c86d453fc5e18c3a4e256c385",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2023-12-31",
+            "period_type": "annual",
+            "reported": {
+              "revenue": 25495000000.0,
+              "net_income": 8469000000.0,
+              "income_before_tax": 10522000000.0,
+              "net_income_from_continuing_operations": 8333200000.0,
+              "income_tax_expense": 2053000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 10522000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "cdbb1e62a7246bb0d1f6ce8d785ba47890bc24b3143ea50def6e33f7ebab2715",
+            "analysis": null,
+            "verified_normalized": null
+          }
+        ],
+        "quarterly": [
+          {
+            "period_end": "2026-06-30",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 7100000000.0,
+              "net_income": 2362000000.0,
+              "income_before_tax": 2936000000.0,
+              "net_income_from_continuing_operations": 2362000000.0,
+              "income_tax_expense": 574000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2936000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "48c32cc3de95aa85742f68623744c8487f01fdfb946a754e771e9bcc7e2f1cec",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2026-03-31",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 6517000000.0,
+              "net_income": 1983000000.0,
+              "income_before_tax": 2542000000.0,
+              "net_income_from_continuing_operations": 1983000000.0,
+              "income_tax_expense": 559000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2542000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "fd0d51dd5ac139e6c12e5fde57bf5c8811cbed5f125a0a57473ce15b064f23ed",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2025-12-31",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 7009000000.0,
+              "net_income": 2164000000.0,
+              "income_before_tax": 2758000000.0,
+              "net_income_from_continuing_operations": 2163000000.0,
+              "income_tax_expense": 594000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2758000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "0ce1f48e6d8a25cc5b554ee71c43fb2c7ad2594fe26ab57683dd8ac201810660",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2025-09-30",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 7078000000.0,
+              "net_income": 2278000000.0,
+              "income_before_tax": 2949000000.0,
+              "net_income_from_continuing_operations": 2278000000.0,
+              "income_tax_expense": 671000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2949000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "6445ee05a2598d036c40cf53629bf8a7d38a2193670fc1de40c814c5bd3a815f",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2025-06-30",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 6843000000.0,
+              "net_income": 2253000000.0,
+              "income_before_tax": 2861000000.0,
+              "net_income_from_continuing_operations": 2253000000.0,
+              "income_tax_expense": 608000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2861000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "055493f7f417c943a24f4e4c88c860d4025a6b9b5f48a5cade9979e113fe6e6b",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2025-03-31",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 5955000000.0,
+              "net_income": 1868000000.0,
+              "income_before_tax": 2330000000.0,
+              "net_income_from_continuing_operations": 1869000000.0,
+              "income_tax_expense": 461000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2330000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "4b06ae39639149217494caf035dc5cad2fbcb11e3243b37db7f5c812010f0c08",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2024-12-31",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 6388000000.0,
+              "net_income": 2016000000.0,
+              "income_before_tax": 2538000000.0,
+              "net_income_from_continuing_operations": 2017000000.0,
+              "income_tax_expense": 521000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2538000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "d63e91df931724612138796cb89836dc08175a53d6b4a58be43c296e548d6373",
+            "analysis": null,
+            "verified_normalized": null
+          },
+          {
+            "period_end": "2024-09-30",
+            "period_type": "quarterly",
+            "reported": {
+              "revenue": 6874000000.0,
+              "net_income": 2255000000.0,
+              "income_before_tax": 2843000000.0,
+              "net_income_from_continuing_operations": 2255000000.0,
+              "income_tax_expense": 588000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "materiality_base": 2843000000.0,
+            "thresholds": {
+              "warning": 0.1,
+              "high": 0.25
+            },
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "assessment": "unavailable",
+            "statement_fingerprint": "d670bf7a3a0b0ce3a059715e29eca80f25195b30d73a2f1f366abb694a84ddd7",
+            "analysis": null,
+            "verified_normalized": null
+          }
+        ],
+        "sec_analysis": {
+          "supported": true,
+          "cik": "63908",
+          "reason": null,
+          "supported_forms": [
+            "10-K",
+            "10-Q",
+            "8-K Item 2.02",
+            "Exhibit 99.1"
+          ],
+          "unsupported_forms": [
+            "20-F",
+            "6-K"
+          ]
+        }
+      },
+      "evidence": [
+        {
+          "id": "E1",
+          "kind": "price",
+          "label": "Current price",
+          "value": 253.48,
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E2",
+          "kind": "screener",
+          "label": "Published Screener membership",
+          "value": {
+            "ticker_in_screener": true,
+            "industry": "Restaurants",
+            "sector": "Consumer Cyclical"
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E3",
+          "kind": "financials",
+          "label": "Quarterly financial coverage",
+          "value": {
+            "statement_count": 8,
+            "current_ttm": {
+              "revenue": 27704000000.0,
+              "gross_profit": 15899000000.0,
+              "operating_income": 12699000000.0,
+              "net_income": 8787000000.0,
+              "interest_expense": 1625000000.0,
+              "income_before_tax": 11185000000.0,
+              "income_tax_expense": 2398000000.0,
+              "fcf": 7761000000.0,
+              "gross_margin": 0.5738882471845221,
+              "operating_margin": 0.4583814611608432
+            },
+            "previous_ttm": {
+              "revenue": 26060000000.0,
+              "gross_profit": 14853000000.0,
+              "operating_income": 11936000000.0,
+              "net_income": 8392000000.0,
+              "interest_expense": 1527000000.0,
+              "income_before_tax": 10572000000.0,
+              "income_tax_expense": 2178000000.0,
+              "fcf": 6897000000.0,
+              "gross_margin": 0.5699539524174981,
+              "operating_margin": 0.4580199539524175
+            },
+            "latest_balance": {
+              "cash": 822000000.0,
+              "cash_and_short_term_investments": 822000000.0,
+              "debt": 55282000000.0,
+              "equity": -1023000000.0,
+              "shares": 713500000.0,
+              "shares_reported": 713500000.0,
+              "share_adjustment_factor": 1.0,
+              "shares_reference_date": "2026-09-09",
+              "debt_to_equity": null,
+              "average_debt_1yr": 55723500000.0
+            },
+            "prior_year_balance": {
+              "cash": 1876000000.0,
+              "cash_and_short_term_investments": 1876000000.0,
+              "debt": 56553000000.0,
+              "equity": -2760000000.0,
+              "shares": 717600000.0,
+              "shares_reported": 717600000.0,
+              "share_adjustment_factor": 1.0,
+              "shares_reference_date": "2026-09-09",
+              "debt_to_equity": null
+            },
+            "data_quality_notes": [
+              {
+                "code": "debt_level_unavailable",
+                "message": "Debt / equity could not be assessed because debt or positive equity is unavailable."
+              },
+              {
+                "code": "debt_trend_unavailable",
+                "message": "The YoY debt / equity trend could not be assessed from two positive observations."
+              }
+            ]
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E4",
+          "kind": "valuation",
+          "label": "Bear DCF",
+          "value": {
+            "scenario": "bear",
+            "assumptions": {
+              "scenario": "bear",
+              "fcf_growth_rate": 0.016324232463814314,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            "available": true,
+            "intrinsic_value_per_share": 121.05968072050347,
+            "enterprise_value": 140836082194.07922,
+            "equity_value": 86376082194.07922,
+            "projected_fcf": [
+              9185141333.267601,
+              9335081715.60485,
+              9487469759.599089,
+              9642345421.448195,
+              9799749309.604311
+            ],
+            "present_value_explicit_fcf": 36971242710.60308,
+            "present_value_terminal": 103864839483.47615,
+            "upside_downside": -0.5224093391174709
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E5",
+          "kind": "valuation",
+          "label": "Base DCF",
+          "value": {
+            "scenario": "base",
+            "assumptions": {
+              "scenario": "base",
+              "fcf_growth_rate": 0.06632423246381432,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            "available": true,
+            "intrinsic_value_per_share": 168.34422987319888,
+            "enterprise_value": 174573608014.5274,
+            "equity_value": 120113608014.5274,
+            "projected_fcf": [
+              9637021798.175959,
+              10276189872.177027,
+              10957750278.10159,
+              11684514654.826824,
+              12459481121.020403
+            ],
+            "present_value_explicit_fcf": 42519004799.94394,
+            "present_value_terminal": 132054603214.58347,
+            "upside_downside": -0.33586780072116584,
+            "market_implied_fcf_growth": {
+              "available": true,
+              "implied_fcf_growth_rate": 0.13877938742411322,
+              "base_fcf_growth_rate": 0.06632423246381432,
+              "growth_gap_to_base": 0.0724551549602989,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025,
+              "forecast_years": 5,
+              "target_price": 253.48,
+              "target_enterprise_value": 235317980000.0,
+              "modeled_price": 253.47999999999965,
+              "status": "above_base",
+              "reasons": [],
+              "price_date": "2026-09-09",
+              "financial_statement_date": "2026-06-30"
+            }
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E6",
+          "kind": "valuation",
+          "label": "Bull DCF",
+          "value": {
+            "scenario": "bull",
+            "assumptions": {
+              "scenario": "bull",
+              "fcf_growth_rate": 0.11632423246381432,
+              "wacc": 0.08833652757006281,
+              "perpetual_growth": 0.025
+            },
+            "available": true,
+            "intrinsic_value_per_share": 224.79851701808977,
+            "enterprise_value": 214853741892.40704,
+            "equity_value": 160393741892.40704,
+            "projected_fcf": [
+              10088902263.084318,
+              11262486075.24004,
+              12572586123.576735,
+              14035082554.487,
+              15667702760.20397
+            ],
+            "present_value_explicit_fcf": 48796082573.65973,
+            "present_value_terminal": 166057659318.7473,
+            "upside_downside": -0.11315087179229222
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E7",
+          "kind": "peer_metric",
+          "label": "Sales growth (TTM)",
+          "value": {
+            "metric_key": "sales_growth_ttm",
+            "metric_value": 0.0630084273,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "sales_growth_ttm",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 58.92857142857143,
+              "desirability_percentile": 58.92857142857143,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "sales_growth_ttm",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 297,
+              "available": true,
+              "raw_percentile": 63.804713804713806,
+              "desirability_percentile": 63.804713804713806,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 58.92857142857143
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E8",
+          "kind": "peer_metric",
+          "label": "Sales growth (3Y)",
+          "value": {
+            "metric_key": "sales_growth_3yr",
+            "metric_value": 0.0506378595,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "sales_growth_3yr",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 58.92857142857143,
+              "desirability_percentile": 58.92857142857143,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "sales_growth_3yr",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 295,
+              "available": true,
+              "raw_percentile": 63.559322033898304,
+              "desirability_percentile": 63.559322033898304,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 58.92857142857143
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E9",
+          "kind": "peer_metric",
+          "label": "Sales growth (5Y)",
+          "value": {
+            "metric_key": "sales_growth_5yr",
+            "metric_value": 0.0695632769,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "sales_growth_5yr",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 41.07142857142857,
+              "desirability_percentile": 41.07142857142857,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "sales_growth_5yr",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 292,
+              "available": true,
+              "raw_percentile": 43.66438356164384,
+              "desirability_percentile": 43.66438356164384,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 41.07142857142857
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E10",
+          "kind": "peer_metric",
+          "label": "EPS growth (TTM)",
+          "value": {
+            "metric_key": "eps_growth_ttm",
+            "metric_value": 0.052852349,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "eps_growth_ttm",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 15,
+              "available": true,
+              "raw_percentile": 63.333333333333336,
+              "desirability_percentile": 63.333333333333336,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "eps_growth_ttm",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 139,
+              "available": true,
+              "raw_percentile": 50.719424460431654,
+              "desirability_percentile": 50.719424460431654,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 63.333333333333336
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E11",
+          "kind": "peer_metric",
+          "label": "EPS growth (3Y)",
+          "value": {
+            "metric_key": "eps_growth_3yr",
+            "metric_value": -0.1958030448,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "eps_growth_3yr",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 19,
+              "available": true,
+              "raw_percentile": 50.0,
+              "desirability_percentile": 50.0,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "eps_growth_3yr",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 214,
+              "available": true,
+              "raw_percentile": 48.36448598130841,
+              "desirability_percentile": 48.36448598130841,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 50.0
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E12",
+          "kind": "peer_metric",
+          "label": "EPS growth (5Y)",
+          "value": {
+            "metric_key": "eps_growth_5yr",
+            "metric_value": -0.0771975799,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "eps_growth_5yr",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 17,
+              "available": true,
+              "raw_percentile": 55.88235294117647,
+              "desirability_percentile": 55.88235294117647,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "eps_growth_5yr",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 187,
+              "available": true,
+              "raw_percentile": 60.160427807486634,
+              "desirability_percentile": 60.160427807486634,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 55.88235294117647
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E13",
+          "kind": "peer_metric",
+          "label": "Gross margin",
+          "value": {
+            "metric_key": "gross_margin",
+            "metric_value": 0.5738214112,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "gross_margin",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 94.64285714285714,
+              "desirability_percentile": 94.64285714285714,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "gross_margin",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 83.95270270270271,
+              "desirability_percentile": 83.95270270270271,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 94.64285714285714
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E14",
+          "kind": "peer_metric",
+          "label": "Operating margin",
+          "value": {
+            "metric_key": "operating_margin",
+            "metric_value": 0.4649,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "operating_margin",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 98.21428571428571,
+              "desirability_percentile": 98.21428571428571,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "operating_margin",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 98.14189189189189,
+              "desirability_percentile": 98.14189189189189,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 98.21428571428571
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E15",
+          "kind": "peer_metric",
+          "label": "Net margin",
+          "value": {
+            "metric_key": "net_profit_margin",
+            "metric_value": 0.3172,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "net_profit_margin",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 98.21428571428571,
+              "desirability_percentile": 98.21428571428571,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "net_profit_margin",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 98.14189189189189,
+              "desirability_percentile": 98.14189189189189,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 98.21428571428571
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E16",
+          "kind": "peer_metric",
+          "label": "Return on equity",
+          "value": {
+            "metric_key": "roe",
+            "metric_value": null,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "roe",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 18,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "sector": {
+              "metric_key": "roe",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 258,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "summary_scope": null,
+            "summary_percentile": null
+          },
+          "source_date": "2026-09-09",
+          "available": false
+        },
+        {
+          "id": "E17",
+          "kind": "peer_metric",
+          "label": "Return on assets",
+          "value": {
+            "metric_key": "roa",
+            "metric_value": 0.1325,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "roa",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 83.92857142857143,
+              "desirability_percentile": 83.92857142857143,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "roa",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 297,
+              "available": true,
+              "raw_percentile": 92.42424242424242,
+              "desirability_percentile": 92.42424242424242,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 83.92857142857143
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E18",
+          "kind": "peer_metric",
+          "label": "Return on invested capital",
+          "value": {
+            "metric_key": "roic",
+            "metric_value": 0.259097585,
+            "format": "percent",
+            "direction": "higher_better",
+            "industry": {
+              "metric_key": "roic",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 16,
+              "available": true,
+              "raw_percentile": 53.125,
+              "desirability_percentile": 53.125,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "roic",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 197,
+              "available": true,
+              "raw_percentile": 87.56345177664974,
+              "desirability_percentile": 87.56345177664974,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 53.125
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E19",
+          "kind": "peer_metric",
+          "label": "P/E",
+          "value": {
+            "metric_key": "pe_ratio",
+            "metric_value": 21.2327,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "pe_ratio",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 20,
+              "available": true,
+              "raw_percentile": 37.5,
+              "desirability_percentile": 62.5,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "pe_ratio",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 215,
+              "available": true,
+              "raw_percentile": 57.44186046511628,
+              "desirability_percentile": 42.55813953488372,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 62.5
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E20",
+          "kind": "peer_metric",
+          "label": "Forward P/E",
+          "value": {
+            "metric_key": "forward_pe",
+            "metric_value": 18.6916,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "forward_pe",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 42.857142857142854,
+              "desirability_percentile": 57.142857142857146,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "forward_pe",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 277,
+              "available": true,
+              "raw_percentile": 66.06498194945848,
+              "desirability_percentile": 33.935018050541515,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 57.142857142857146
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E21",
+          "kind": "peer_metric",
+          "label": "PEG",
+          "value": {
+            "metric_key": "peg_ratio",
+            "metric_value": 2.2535,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "peg_ratio",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 21,
+              "available": true,
+              "raw_percentile": 83.33333333333333,
+              "desirability_percentile": 16.66666666666667,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "peg_ratio",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 235,
+              "available": true,
+              "raw_percentile": 81.91489361702128,
+              "desirability_percentile": 18.085106382978722,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 16.66666666666667
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E22",
+          "kind": "peer_metric",
+          "label": "Price / sales",
+          "value": {
+            "metric_key": "ps_ratio",
+            "metric_value": 6.6659,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "ps_ratio",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 28,
+              "available": true,
+              "raw_percentile": 98.21428571428571,
+              "desirability_percentile": 1.7857142857142918,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "ps_ratio",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 296,
+              "available": true,
+              "raw_percentile": 96.45270270270271,
+              "desirability_percentile": 3.547297297297291,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 1.7857142857142918
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E23",
+          "kind": "peer_metric",
+          "label": "Price / book",
+          "value": {
+            "metric_key": "pb_ratio",
+            "metric_value": null,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "pb_ratio",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 18,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "sector": {
+              "metric_key": "pb_ratio",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 258,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "summary_scope": null,
+            "summary_percentile": null
+          },
+          "source_date": "2026-09-09",
+          "available": false
+        },
+        {
+          "id": "E24",
+          "kind": "peer_metric",
+          "label": "Price / FCF",
+          "value": {
+            "metric_key": "price_fcf",
+            "metric_value": 23.7932053704,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "price_fcf",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 23,
+              "available": true,
+              "raw_percentile": 54.34782608695652,
+              "desirability_percentile": 45.65217391304348,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "price_fcf",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 239,
+              "available": true,
+              "raw_percentile": 72.17573221757323,
+              "desirability_percentile": 27.824267782426773,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 45.65217391304348
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E25",
+          "kind": "peer_metric",
+          "label": "EV / EBITDA",
+          "value": {
+            "metric_key": "ev_ebitda",
+            "metric_value": 15.8227,
+            "format": "multiple",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "ev_ebitda",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 27,
+              "available": true,
+              "raw_percentile": 61.111111111111114,
+              "desirability_percentile": 38.888888888888886,
+              "reason": null
+            },
+            "sector": {
+              "metric_key": "ev_ebitda",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 281,
+              "available": true,
+              "raw_percentile": 71.70818505338079,
+              "desirability_percentile": 28.291814946619212,
+              "reason": null
+            },
+            "summary_scope": "industry",
+            "summary_percentile": 38.888888888888886
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E26",
+          "kind": "peer_metric",
+          "label": "Debt / equity",
+          "value": {
+            "metric_key": "debt_to_equity",
+            "metric_value": null,
+            "format": "ratio",
+            "direction": "lower_better",
+            "industry": {
+              "metric_key": "debt_to_equity",
+              "scope": "industry",
+              "minimum_observations": 10,
+              "observation_count": 18,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "sector": {
+              "metric_key": "debt_to_equity",
+              "scope": "sector",
+              "minimum_observations": 20,
+              "observation_count": 256,
+              "available": false,
+              "raw_percentile": null,
+              "desirability_percentile": null,
+              "reason": "The ticker does not have a valid value for this metric."
+            },
+            "summary_scope": null,
+            "summary_percentile": null
+          },
+          "source_date": "2026-09-09",
+          "available": false
+        },
+        {
+          "id": "E27",
+          "kind": "fundamental_warning",
+          "label": "Revenue Decline",
+          "value": {
+            "rule_id": "revenue_decline",
+            "metric": "revenue",
+            "triggered": false,
+            "assessment": "not triggered on available data"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E28",
+          "kind": "fundamental_warning",
+          "label": "Gross Margin Compression",
+          "value": {
+            "rule_id": "gross_margin_compression",
+            "metric": "gross_margin",
+            "triggered": false,
+            "assessment": "not triggered on available data"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E29",
+          "kind": "fundamental_warning",
+          "label": "Operating Margin Compression",
+          "value": {
+            "rule_id": "operating_margin_compression",
+            "metric": "operating_margin",
+            "triggered": false,
+            "assessment": "not triggered on available data"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E30",
+          "kind": "fundamental_warning",
+          "label": "Fcf Decline",
+          "value": {
+            "rule_id": "fcf_decline",
+            "metric": "fcf",
+            "triggered": false,
+            "assessment": "not triggered on available data"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E31",
+          "kind": "fundamental_warning",
+          "label": "Fcf Conversion",
+          "value": {
+            "rule_id": "fcf_conversion",
+            "metric": "fcf_net_income_conversion",
+            "triggered": false,
+            "assessment": "not triggered on available data"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E32",
+          "kind": "fundamental_warning",
+          "label": "Debt Level",
+          "value": {
+            "rule_id": "debt_level",
+            "metric": "debt_to_equity",
+            "triggered": null,
+            "assessment": "unavailable",
+            "data_quality_notes": [
+              {
+                "code": "debt_level_unavailable",
+                "message": "Debt / equity could not be assessed because debt or positive equity is unavailable."
+              }
+            ]
+          },
+          "source_date": "2026-06-30",
+          "available": false
+        },
+        {
+          "id": "E33",
+          "kind": "fundamental_warning",
+          "label": "Debt Increase",
+          "value": {
+            "rule_id": "debt_increase",
+            "metric": "debt_to_equity",
+            "triggered": null,
+            "assessment": "unavailable",
+            "data_quality_notes": [
+              {
+                "code": "debt_trend_unavailable",
+                "message": "The YoY debt / equity trend could not be assessed from two positive observations."
+              }
+            ]
+          },
+          "source_date": "2026-06-30",
+          "available": false
+        },
+        {
+          "id": "E34",
+          "kind": "fundamental_warning",
+          "label": "Cash Decline",
+          "value": {
+            "id": "cash_decline",
+            "triggered": true,
+            "severity": "high",
+            "title": "Cash balance decline",
+            "message": "Cash and cash-equivalent balances declined 56.2% year over year.",
+            "metric": "cash_change",
+            "current": 822000000.0,
+            "previous": 1876000000.0,
+            "evidence_metric": "cash",
+            "evidence_id": "E34"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E35",
+          "kind": "fundamental_warning",
+          "label": "Share Dilution",
+          "value": {
+            "rule_id": "share_dilution",
+            "metric": "shares",
+            "triggered": false,
+            "assessment": "not triggered on available data"
+          },
+          "source_date": "2026-06-30",
+          "available": true
+        },
+        {
+          "id": "E36",
+          "kind": "published_factors",
+          "label": "Published factors",
+          "value": {
+            "version": "lfq-v1",
+            "factors": {
+              "composite": {
+                "raw_value": 0.0969089814258374,
+                "normalized_value": 0.0969089814258374,
+                "details": {
+                  "sector": "Consumer Cyclical"
+                }
+              },
+              "growth": {
+                "raw_value": 0.0695632769,
+                "normalized_value": -0.26502776579912224,
+                "details": {
+                  "sector": "Consumer Cyclical"
+                }
+              },
+              "low_volatility": {
+                "raw_value": -0.20436983819603602,
+                "normalized_value": 1.3310077332060966,
+                "details": {
+                  "sector": "Consumer Cyclical"
+                }
+              },
+              "momentum": {
+                "raw_value": -0.1079648933827353,
+                "normalized_value": -0.25965741597587333,
+                "details": {
+                  "sector": "Consumer Cyclical"
+                }
+              },
+              "quality": {
+                "raw_value": 0.5738214112,
+                "normalized_value": 0.5433865978212781,
+                "details": {
+                  "sector": "Consumer Cyclical"
+                }
+              },
+              "value": {
+                "raw_value": 0.047097166163511936,
+                "normalized_value": -0.8651642421231921,
+                "details": {
+                  "sector": "Consumer Cyclical"
+                }
+              }
+            }
+          },
+          "source_date": "2026-09-09",
+          "available": true
+        },
+        {
+          "id": "E37",
+          "kind": "earnings_quality",
+          "label": "Earnings quality",
+          "value": {
+            "summary": {
+              "verdict": "unavailable",
+              "evaluated_periods": 0,
+              "flagged_periods": 0,
+              "data_quality_periods": 11,
+              "financial_industry_exemption": false,
+              "message": "Potential earnings-quality issues are screening signals, not allegations of fraud."
+            },
+            "methodology": {
+              "materiality_base": "max(abs(income before tax), 1% of abs(revenue))",
+              "warning_threshold": 0.1,
+              "high_threshold": 0.25,
+              "reported_remains_primary": true,
+              "structured_flags_are_adjustments": false
+            },
+            "verified_period_count": 0
+          },
+          "source_date": "2026-06-30",
+          "available": false
+        },
+        {
+          "id": "E38",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality annual 2025-12-31",
+          "value": {
+            "period_end": "2025-12-31",
+            "period_type": "annual",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 26885000000.0,
+              "income_before_tax": 10897000000.0,
+              "net_income_from_continuing_operations": 8563000000.0,
+              "income_tax_expense": 2334000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 8563000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2025-12-31",
+          "available": false
+        },
+        {
+          "id": "E39",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality annual 2024-12-31",
+          "value": {
+            "period_end": "2024-12-31",
+            "period_type": "annual",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 25920000000.0,
+              "income_before_tax": 10345000000.0,
+              "net_income_from_continuing_operations": 8224000000.0,
+              "income_tax_expense": 2121000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 8223000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2024-12-31",
+          "available": false
+        },
+        {
+          "id": "E40",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality annual 2023-12-31",
+          "value": {
+            "period_end": "2023-12-31",
+            "period_type": "annual",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 25495000000.0,
+              "income_before_tax": 10522000000.0,
+              "net_income_from_continuing_operations": 8333200000.0,
+              "income_tax_expense": 2053000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 8469000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2023-12-31",
+          "available": false
+        },
+        {
+          "id": "E41",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2026-06-30",
+          "value": {
+            "period_end": "2026-06-30",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 7100000000.0,
+              "income_before_tax": 2936000000.0,
+              "net_income_from_continuing_operations": 2362000000.0,
+              "income_tax_expense": 574000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 2362000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2026-06-30",
+          "available": false
+        },
+        {
+          "id": "E42",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2026-03-31",
+          "value": {
+            "period_end": "2026-03-31",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 6517000000.0,
+              "income_before_tax": 2542000000.0,
+              "net_income_from_continuing_operations": 1983000000.0,
+              "income_tax_expense": 559000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 1983000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2026-03-31",
+          "available": false
+        },
+        {
+          "id": "E43",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2025-12-31",
+          "value": {
+            "period_end": "2025-12-31",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 7009000000.0,
+              "income_before_tax": 2758000000.0,
+              "net_income_from_continuing_operations": 2163000000.0,
+              "income_tax_expense": 594000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 2164000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2025-12-31",
+          "available": false
+        },
+        {
+          "id": "E44",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2025-09-30",
+          "value": {
+            "period_end": "2025-09-30",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 7078000000.0,
+              "income_before_tax": 2949000000.0,
+              "net_income_from_continuing_operations": 2278000000.0,
+              "income_tax_expense": 671000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 2278000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2025-09-30",
+          "available": false
+        },
+        {
+          "id": "E45",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2025-06-30",
+          "value": {
+            "period_end": "2025-06-30",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 6843000000.0,
+              "income_before_tax": 2861000000.0,
+              "net_income_from_continuing_operations": 2253000000.0,
+              "income_tax_expense": 608000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 2253000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2025-06-30",
+          "available": false
+        },
+        {
+          "id": "E46",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2025-03-31",
+          "value": {
+            "period_end": "2025-03-31",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 5955000000.0,
+              "income_before_tax": 2330000000.0,
+              "net_income_from_continuing_operations": 1869000000.0,
+              "income_tax_expense": 461000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 1868000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2025-03-31",
+          "available": false
+        },
+        {
+          "id": "E47",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2024-12-31",
+          "value": {
+            "period_end": "2024-12-31",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 6388000000.0,
+              "income_before_tax": 2538000000.0,
+              "net_income_from_continuing_operations": 2017000000.0,
+              "income_tax_expense": 521000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 2016000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2024-12-31",
+          "available": false
+        },
+        {
+          "id": "E48",
+          "kind": "earnings_quality_period",
+          "label": "Earnings quality quarterly 2024-09-30",
+          "value": {
+            "period_end": "2024-09-30",
+            "period_type": "quarterly",
+            "assessment": "unavailable",
+            "reported": {
+              "revenue": 6874000000.0,
+              "income_before_tax": 2843000000.0,
+              "net_income_from_continuing_operations": 2255000000.0,
+              "income_tax_expense": 588000000.0,
+              "non_recurring": null,
+              "extraordinary_items": null,
+              "discontinued_operations": null,
+              "non_operating_income_net_other": null
+            },
+            "reported_net_income": 2255000000.0,
+            "flags": [],
+            "data_quality_warnings": [
+              {
+                "code": "earnings_quality_fields_incomplete",
+                "message": "One or more earnings-quality screening fields are missing; the period cannot receive a clean conclusion."
+              }
+            ],
+            "analysis": null
+          },
+          "source_date": "2024-09-30",
+          "available": false
+        }
+      ]
+    }
+  },
+  "financials": {
+    "url": "https://finbrain.icu/api/stocks/MCD.US?financial_period=Quarterly",
+    "response_sha256": "c8f9a71db0991a547548bc4f5634105e032daca4602f3c511bc870e87f36d3ac",
+    "data": {
+      "profile": {
+        "ticker": "MCD.US",
+        "name": "McDonald’s Corporation",
+        "exchange": "NYSE",
+        "sector": "Consumer Cyclical",
+        "industry": "Restaurants",
+        "description": "McDonald's Corporation owns, operates, and franchises restaurants under the McDonald's brand in the United States and internationally. It offers food and beverages, including hamburgers and cheeseburgers, various chicken sandwiches, fries, shakes, frozen desserts, sundaes, soft serve cones, cookies, pies, soft drinks, coffee, and other beverages; and full or limited breakfast, as well as sells various other products during limited-time promotions. The company owns and operates franchised restaurants under various structures, including conventional franchise, developmental license, or affiliate. McDonald's Corporation was founded in 1940 and is based in Chicago, Illinois.",
+        "currency": "USD",
+        "last_updated": "2026-09-10T02:56:10.076338"
+      },
+      "historical_financials": [
+        {
+          "date": "2016-09-30",
+          "revenue": 6424100000.0,
+          "net_income": 1275400000.0,
+          "gross_margin": 0.4276085366043492,
+          "free_cash_flow": 1845800000.0,
+          "operating_margin": 0.3327003004311888,
+          "cash_and_short_term_investments": 2266700000.0,
+          "total_debt": 26084200000.0,
+          "stockholder_equity": -1624100000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 847700000.0,
+          "price": null
+        },
+        {
+          "date": "2016-12-31",
+          "revenue": 6028900000.0,
+          "net_income": 1193400000.0,
+          "gross_margin": 0.42432284496342615,
+          "free_cash_flow": 143400000.0,
+          "operating_margin": 0.32659357428386604,
+          "cash_and_short_term_investments": 1223400000.0,
+          "total_debt": 25955700000.0,
+          "stockholder_equity": -2204300000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 829700000.0,
+          "price": null
+        },
+        {
+          "date": "2017-03-31",
+          "revenue": 5675900000.0,
+          "net_income": 1214800000.0,
+          "gross_margin": 0.42802022586726335,
+          "free_cash_flow": 1116300000.0,
+          "operating_margin": 0.35835726492714814,
+          "cash_and_short_term_investments": 2412200000.0,
+          "total_debt": 27207100000.0,
+          "stockholder_equity": -2030800000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 825200000.0,
+          "price": null
+        },
+        {
+          "date": "2017-06-30",
+          "revenue": 6049700000.0,
+          "net_income": 1395100000.0,
+          "gross_margin": 0.4476916210721193,
+          "free_cash_flow": 844700000.0,
+          "operating_margin": 0.379374183843827,
+          "cash_and_short_term_investments": 2392400000.0,
+          "total_debt": 28360800000.0,
+          "stockholder_equity": -2000600000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 819200000.0,
+          "price": null
+        },
+        {
+          "date": "2017-09-30",
+          "revenue": 5754600000.0,
+          "net_income": 1883700000.0,
+          "gross_margin": 0.48960831334932053,
+          "free_cash_flow": 1267600000.0,
+          "operating_margin": 0.5351197303027143,
+          "cash_and_short_term_investments": 2671200000.0,
+          "total_debt": 28618400000.0,
+          "stockholder_equity": -3477600000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 813500000.0,
+          "price": null
+        },
+        {
+          "date": "2017-12-31",
+          "revenue": 5340200000.0,
+          "net_income": 698700000.0,
+          "gross_margin": 0.4991386090408599,
+          "free_cash_flow": 468900000.0,
+          "operating_margin": 0.40152054230178646,
+          "cash_and_short_term_investments": 2463800000.0,
+          "total_debt": 30114600000.0,
+          "stockholder_equity": -3268000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 803000000.0,
+          "price": null
+        },
+        {
+          "date": "2018-03-31",
+          "revenue": 5138900000.0,
+          "net_income": 1375400000.0,
+          "gross_margin": 0.49187569324174435,
+          "free_cash_flow": 1092400000.0,
+          "operating_margin": 0.41703477397886707,
+          "cash_and_short_term_investments": 2468000000.0,
+          "total_debt": 31032800000.0,
+          "stockholder_equity": -4718800000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 798700000.0,
+          "price": null
+        },
+        {
+          "date": "2018-06-30",
+          "revenue": 5353900000.0,
+          "net_income": 1496300000.0,
+          "gross_margin": 0.51168307215301,
+          "free_cash_flow": 727500000.0,
+          "operating_margin": 0.4225517846803265,
+          "cash_and_short_term_investments": 1623500000.0,
+          "total_debt": 30979900000.0,
+          "stockholder_equity": -5851000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 787100000.0,
+          "price": null
+        },
+        {
+          "date": "2018-09-30",
+          "revenue": 5369400000.0,
+          "net_income": 1637300000.0,
+          "gross_margin": 0.5255894513353447,
+          "free_cash_flow": 1767300000.0,
+          "operating_margin": 0.45027377360598947,
+          "cash_and_short_term_investments": 2574500000.0,
+          "total_debt": 32095800000.0,
+          "stockholder_equity": -6792600000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 779600000.0,
+          "price": null
+        },
+        {
+          "date": "2018-12-31",
+          "revenue": 5163000000.0,
+          "net_income": 1415300000.0,
+          "gross_margin": 0.5223126089482859,
+          "free_cash_flow": 637800000.0,
+          "operating_margin": 0.3872748402091807,
+          "cash_and_short_term_investments": 866000000.0,
+          "total_debt": 31221100000.0,
+          "stockholder_equity": -6258400000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 776600000.0,
+          "price": null
+        },
+        {
+          "date": "2019-03-31",
+          "revenue": 5024100000.0,
+          "net_income": 1328400000.0,
+          "gross_margin": 0.5078521526243507,
+          "free_cash_flow": 1505300000.0,
+          "operating_margin": 0.4167910670567863,
+          "cash_and_short_term_investments": 2289100000.0,
+          "total_debt": 45289400000.0,
+          "stockholder_equity": -6550900000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 771600000.0,
+          "price": null
+        },
+        {
+          "date": "2019-06-30",
+          "revenue": 5409800000.0,
+          "net_income": 1516900000.0,
+          "gross_margin": 0.5254538060556767,
+          "free_cash_flow": 1327700000.0,
+          "operating_margin": 0.420329771895449,
+          "cash_and_short_term_investments": 1134500000.0,
+          "total_debt": 45293100000.0,
+          "stockholder_equity": -6808800000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 768700000.0,
+          "price": null
+        },
+        {
+          "date": "2019-09-30",
+          "revenue": 5502300000.0,
+          "net_income": 1607900000.0,
+          "gross_margin": 0.5302509859513295,
+          "free_cash_flow": 1738000000.0,
+          "operating_margin": 0.4378714355814841,
+          "cash_and_short_term_investments": 1177300000.0,
+          "total_debt": 45435200000.0,
+          "stockholder_equity": -8599200000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 763900000.0,
+          "price": null
+        },
+        {
+          "date": "2019-12-31",
+          "revenue": 5349000000.0,
+          "net_income": 1572200000.0,
+          "gross_margin": 0.5320807627593943,
+          "free_cash_flow": 1157400000.0,
+          "operating_margin": 0.42860347728547393,
+          "cash_and_short_term_investments": 898500000.0,
+          "total_debt": 47556000000.0,
+          "stockholder_equity": -8210300000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 755600000.0,
+          "price": null
+        },
+        {
+          "date": "2020-03-31",
+          "revenue": 4714400000.0,
+          "net_income": 1106900000.0,
+          "gross_margin": 0.4967546241303241,
+          "free_cash_flow": 1063500000.0,
+          "operating_margin": 0.35923977600543017,
+          "cash_and_short_term_investments": 5379800000.0,
+          "total_debt": 52311500000.0,
+          "stockholder_equity": -9293400000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 750700000.0,
+          "price": null
+        },
+        {
+          "date": "2020-06-30",
+          "revenue": 3761500000.0,
+          "net_income": 483800000.0,
+          "gross_margin": 0.4586734015685232,
+          "free_cash_flow": -518100000.0,
+          "operating_margin": 0.25550977003854847,
+          "cash_and_short_term_investments": 3255700000.0,
+          "total_debt": 51922300000.0,
+          "stockholder_equity": -9463100000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 748600000.0,
+          "price": null
+        },
+        {
+          "date": "2020-09-30",
+          "revenue": 5418100000.0,
+          "net_income": 1762600000.0,
+          "gross_margin": 0.536110444620808,
+          "free_cash_flow": 2549300000.0,
+          "operating_margin": 0.46628892047027554,
+          "cash_and_short_term_investments": 3683800000.0,
+          "total_debt": 51286400000.0,
+          "stockholder_equity": -8472100000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 750000000.0,
+          "price": null
+        },
+        {
+          "date": "2020-12-31",
+          "revenue": 5313800000.0,
+          "net_income": 1377200000.0,
+          "gross_margin": 0.5232037336745832,
+          "free_cash_flow": 1529700000.0,
+          "operating_margin": 0.4032707290451278,
+          "cash_and_short_term_investments": 3449100000.0,
+          "total_debt": 51463200000.0,
+          "stockholder_equity": -7824900000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 751000000.0,
+          "price": null
+        },
+        {
+          "date": "2021-03-31",
+          "revenue": 5124600000.0,
+          "net_income": 1537200000.0,
+          "gross_margin": 0.5206845412324864,
+          "free_cash_flow": 1755300000.0,
+          "operating_margin": 0.4451664520157671,
+          "cash_and_short_term_investments": 3019700000.0,
+          "total_debt": 49552600000.0,
+          "stockholder_equity": -7235500000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 751000000.0,
+          "price": null
+        },
+        {
+          "date": "2021-06-30",
+          "revenue": 5887900000.0,
+          "net_income": 2219300000.0,
+          "gross_margin": 0.5467993681957913,
+          "free_cash_flow": 1250600000.0,
+          "operating_margin": 0.45705599619558757,
+          "cash_and_short_term_investments": 3049400000.0,
+          "total_debt": 49262000000.0,
+          "stockholder_equity": -5808000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 752100000.0,
+          "price": null
+        },
+        {
+          "date": "2021-09-30",
+          "revenue": 6201300000.0,
+          "net_income": 2149900000.0,
+          "gross_margin": 0.5533355909244836,
+          "free_cash_flow": 2116300000.0,
+          "operating_margin": 0.4815925692999855,
+          "cash_and_short_term_investments": 4305800000.0,
+          "total_debt": 48816100000.0,
+          "stockholder_equity": -5675000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 752600000.0,
+          "price": null
+        },
+        {
+          "date": "2021-12-31",
+          "revenue": 6009100000.0,
+          "net_income": 1638800000.0,
+          "gross_margin": 0.5426769399743722,
+          "free_cash_flow": 1979300000.0,
+          "operating_margin": 0.39891165066316087,
+          "cash_and_short_term_investments": 4709200000.0,
+          "total_debt": 49349100000.0,
+          "stockholder_equity": -4601000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 751600000.0,
+          "price": null
+        },
+        {
+          "date": "2022-03-31",
+          "revenue": 5665600000.0,
+          "net_income": 1104400000.0,
+          "gross_margin": 0.5383542784524146,
+          "free_cash_flow": 1732100000.0,
+          "operating_margin": 0.4081827167466817,
+          "cash_and_short_term_investments": 2335700000.0,
+          "total_debt": 47552500000.0,
+          "stockholder_equity": -5990800000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 747600000.0,
+          "price": null
+        },
+        {
+          "date": "2022-06-30",
+          "revenue": 5718400000.0,
+          "net_income": 1188000000.0,
+          "gross_margin": 0.5774517347509793,
+          "free_cash_flow": 180200000.0,
+          "operating_margin": 0.2993494683827644,
+          "cash_and_short_term_investments": 1872500000.0,
+          "total_debt": 47585500000.0,
+          "stockholder_equity": -6369800000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 742000000.0,
+          "price": null
+        },
+        {
+          "date": "2022-09-30",
+          "revenue": 5872100000.0,
+          "net_income": 1981600000.0,
+          "gross_margin": 0.5868598968001226,
+          "free_cash_flow": 1902700000.0,
+          "operating_margin": 0.47068340116823626,
+          "cash_and_short_term_investments": 2828300000.0,
+          "total_debt": 47287900000.0,
+          "stockholder_equity": -6566200000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 739500000.0,
+          "price": null
+        },
+        {
+          "date": "2022-12-31",
+          "revenue": 5926500000.0,
+          "net_income": 1903400000.0,
+          "gross_margin": 0.5751961528726904,
+          "free_cash_flow": 1672500000.0,
+          "operating_margin": 0.4357884079979752,
+          "cash_and_short_term_investments": 2583800000.0,
+          "total_debt": 48699000000.0,
+          "stockholder_equity": -6003400000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 736000000.0,
+          "price": null
+        },
+        {
+          "date": "2023-03-31",
+          "revenue": 5898000000.0,
+          "net_income": 1802000000.0,
+          "gross_margin": 0.5618853848762292,
+          "free_cash_flow": 1917400000.0,
+          "operating_margin": 0.42929806714140384,
+          "cash_and_short_term_investments": 3708100000.0,
+          "total_debt": 49919200000.0,
+          "stockholder_equity": -5776100000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 735500000.0,
+          "price": null
+        },
+        {
+          "date": "2023-06-30",
+          "revenue": 6497000000.0,
+          "net_income": 2310000000.0,
+          "gross_margin": 0.5742650454055718,
+          "free_cash_flow": 1146800000.0,
+          "operating_margin": 0.4777589656764661,
+          "cash_and_short_term_investments": 1625600000.0,
+          "total_debt": 48471500000.0,
+          "stockholder_equity": -4999100000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 734300000.0,
+          "price": null
+        },
+        {
+          "date": "2023-09-30",
+          "revenue": 6692000000.0,
+          "net_income": 2317000000.0,
+          "gross_margin": 0.5774058577405857,
+          "free_cash_flow": 2458700000.0,
+          "operating_margin": 0.4793783622235505,
+          "cash_and_short_term_investments": 3496300000.0,
+          "total_debt": 49749900000.0,
+          "stockholder_equity": -4854800000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 731600000.0,
+          "price": null
+        },
+        {
+          "date": "2023-12-31",
+          "revenue": 6406200000.0,
+          "net_income": 2039000000.0,
+          "gross_margin": 0.5704161593456339,
+          "free_cash_flow": 1731600000.0,
+          "operating_margin": 0.4373731697418126,
+          "cash_and_short_term_investments": 4579000000.0,
+          "total_debt": 53091000000.0,
+          "stockholder_equity": -4706000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 727800000.0,
+          "price": null
+        },
+        {
+          "date": "2024-03-31",
+          "revenue": 6169000000.0,
+          "net_income": 1929000000.0,
+          "gross_margin": 0.5574647430701897,
+          "free_cash_flow": 1843000000.0,
+          "operating_margin": 0.44350786189009567,
+          "cash_and_short_term_investments": 838000000.0,
+          "total_debt": 50881000000.0,
+          "stockholder_equity": -4832000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 725900000.0,
+          "price": 265.3275
+        },
+        {
+          "date": "2024-06-30",
+          "revenue": 6490000000.0,
+          "net_income": 2022000000.0,
+          "gross_margin": 0.5728813559322034,
+          "free_cash_flow": 1061000000.0,
+          "operating_margin": 0.44992295839753466,
+          "cash_and_short_term_investments": 792000000.0,
+          "total_debt": 51999000000.0,
+          "stockholder_equity": -4824000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 722000000.0,
+          "price": 241.3728
+        },
+        {
+          "date": "2024-09-30",
+          "revenue": 6874000000.0,
+          "net_income": 2255000000.0,
+          "gross_margin": 0.5638638347395984,
+          "free_cash_flow": 1942000000.0,
+          "operating_margin": 0.46377654931626416,
+          "cash_and_short_term_investments": 1221000000.0,
+          "total_debt": 53411000000.0,
+          "stockholder_equity": -5177000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 720000000.0,
+          "price": 290.1148
+        },
+        {
+          "date": "2024-12-31",
+          "revenue": 6388000000.0,
+          "net_income": 2016000000.0,
+          "gross_margin": 0.5759236067626801,
+          "free_cash_flow": 1824000000.0,
+          "operating_margin": 0.4489668127739512,
+          "cash_and_short_term_investments": 1085000000.0,
+          "total_debt": 51948000000.0,
+          "stockholder_equity": -3796000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 719700000.0,
+          "price": 277.8474
+        },
+        {
+          "date": "2025-03-31",
+          "revenue": 5955000000.0,
+          "net_income": 1868000000.0,
+          "gross_margin": 0.5602015113350126,
+          "free_cash_flow": 1877000000.0,
+          "operating_margin": 0.44466834592779175,
+          "cash_and_short_term_investments": 1238000000.0,
+          "total_debt": 52763000000.0,
+          "stockholder_equity": -3454000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 718200000.0,
+          "price": 301.1221
+        },
+        {
+          "date": "2025-06-30",
+          "revenue": 6843000000.0,
+          "net_income": 2253000000.0,
+          "gross_margin": 0.578985824930586,
+          "free_cash_flow": 1254000000.0,
+          "operating_margin": 0.47230746748502117,
+          "cash_and_short_term_investments": 1876000000.0,
+          "total_debt": 55867000000.0,
+          "stockholder_equity": -2760000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 717600000.0,
+          "price": 283.2469
+        },
+        {
+          "date": "2025-09-30",
+          "revenue": 7078000000.0,
+          "net_income": 2278000000.0,
+          "gross_margin": 0.579966092116417,
+          "free_cash_flow": 2417000000.0,
+          "operating_margin": 0.47428652161627577,
+          "cash_and_short_term_investments": 2413000000.0,
+          "total_debt": 55818000000.0,
+          "stockholder_equity": -2163000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 715900000.0,
+          "price": 296.2697
+        },
+        {
+          "date": "2025-12-31",
+          "revenue": 7009000000.0,
+          "net_income": 2164000000.0,
+          "gross_margin": 0.5752603795120559,
+          "free_cash_flow": 1638000000.0,
+          "operating_margin": 0.45027821372521043,
+          "cash_and_short_term_investments": 774000000.0,
+          "total_debt": 54814000000.0,
+          "stockholder_equity": -1791000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 714200000.0,
+          "price": 299.7541
+        },
+        {
+          "date": "2026-03-31",
+          "revenue": 6517000000.0,
+          "net_income": 1983000000.0,
+          "gross_margin": 0.5589995396654902,
+          "free_cash_flow": 1730000000.0,
+          "operating_margin": 0.44253490870032225,
+          "cash_and_short_term_investments": 1170000000.0,
+          "total_debt": 54881000000.0,
+          "stockholder_equity": -1286000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 713500000.0,
+          "price": 306.5177
+        },
+        {
+          "date": "2026-06-30",
+          "revenue": 7100000000.0,
+          "net_income": 2362000000.0,
+          "gross_margin": 0.5801408450704225,
+          "free_cash_flow": 1976000000.0,
+          "operating_margin": 0.46507042253521125,
+          "cash_and_short_term_investments": 822000000.0,
+          "total_debt": 54592000000.0,
+          "stockholder_equity": -1023000000.0,
+          "debt_to_equity": null,
+          "shares_outstanding": 713500000.0,
+          "price": 268.4022
+        }
+      ],
+      "valuation_metrics": {
+        "ttm": {
+          "revenue": 27704000000.0,
+          "gross_profit": 15899000000.0,
+          "net_income": 8787000000.0,
+          "free_cash_flow": 7761000000.0,
+          "roe": 0.0
+        },
+        "balance_sheet_latest": {
+          "total_assets": 59920000000.0,
+          "total_liabilities": 60943000000.0,
+          "total_stockholder_equity": -1023000000.0,
+          "shares_outstanding": 713500000.0
+        },
+        "valuation": {
+          "dcf_intrinsic_value_per_share": 235.44377227094887,
+          "current_price": 253.48,
+          "margin_of_safety": -0.07660524445002102,
+          "assumptions": {
+            "fcf_growth_rate_5yr": 0.1,
+            "wacc": 0.09,
+            "perpetual_growth": 0.025
+          }
+        },
+        "factor_scores": {
+          "value": 70,
+          "quality": 50,
+          "growth": 60,
+          "health": 10,
+          "momentum": 50
+        },
+        "data_quality_warnings": []
+      }
+    }
+  }
+}

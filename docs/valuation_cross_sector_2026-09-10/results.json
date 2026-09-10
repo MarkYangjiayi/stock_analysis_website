@@ -1,0 +1,3295 @@
+{
+  "evaluated_at_utc": "2026-09-10T14:37:48.298233+00:00",
+  "script_sha256": "a18156c0774615da864000079b393444b56a06f7b9af1b160a6729ec950a3789",
+  "summary": {
+    "all": {
+      "n": 33,
+      "available": 31,
+      "beta_fallbacks": [
+        "VZ",
+        "MCD",
+        "PG",
+        "KO",
+        "WMT",
+        "JNJ",
+        "PGR",
+        "XOM",
+        "SO",
+        "AMT",
+        "O"
+      ],
+      "base_cap_hits": [
+        "NVDA",
+        "LLY",
+        "BAC"
+      ],
+      "debt_discrepancies": [
+        "NVDA",
+        "MSFT",
+        "META",
+        "VZ",
+        "HD",
+        "MCD",
+        "PG",
+        "WMT",
+        "UNH",
+        "BAC",
+        "CVX",
+        "UNP",
+        "NEM",
+        "DUK",
+        "PLD",
+        "AMT",
+        "O"
+      ],
+      "above_bull": [
+        "NVDA",
+        "MSFT",
+        "GOOGL",
+        "META",
+        "HD",
+        "MCD",
+        "PG",
+        "KO",
+        "WMT",
+        "JNJ",
+        "CAT",
+        "SO"
+      ],
+      "median_value_to_price": 0.7970527973931453,
+      "median_wacc": 0.08894177567458847,
+      "median_growth": 0.08905720896151438,
+      "median_fade_change": 0.12159874582918273,
+      "median_wacc_minus_1pp_change": 0.1938011029389506
+    },
+    "fcff_available_excluding_financials_reits": {
+      "n": 25,
+      "available": 25,
+      "beta_fallbacks": [
+        "VZ",
+        "MCD",
+        "PG",
+        "KO",
+        "WMT",
+        "JNJ",
+        "XOM",
+        "SO"
+      ],
+      "base_cap_hits": [
+        "NVDA",
+        "LLY"
+      ],
+      "debt_discrepancies": [
+        "NVDA",
+        "MSFT",
+        "META",
+        "VZ",
+        "HD",
+        "MCD",
+        "PG",
+        "WMT",
+        "UNH",
+        "CVX",
+        "UNP",
+        "NEM",
+        "DUK"
+      ],
+      "above_bull": [
+        "NVDA",
+        "MSFT",
+        "GOOGL",
+        "META",
+        "HD",
+        "MCD",
+        "PG",
+        "KO",
+        "WMT",
+        "JNJ",
+        "CAT",
+        "SO"
+      ],
+      "median_value_to_price": 0.6864246182518576,
+      "median_wacc": 0.09268023705679439,
+      "median_growth": 0.06828243223121425,
+      "median_fade_change": 0.08194046931179888,
+      "median_wacc_minus_1pp_change": 0.1938011029389506
+    },
+    "sectors": {
+      "Technology": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [],
+        "base_cap_hits": [
+          "NVDA"
+        ],
+        "debt_discrepancies": [
+          "NVDA",
+          "MSFT"
+        ],
+        "above_bull": [
+          "NVDA",
+          "MSFT"
+        ],
+        "median_value_to_price": 0.4154070523123449,
+        "median_wacc": 0.10433820794830159,
+        "median_growth": 0.15347943269999997,
+        "median_fade_change": 0.17651285429399133,
+        "median_wacc_minus_1pp_change": 0.1521347540820488
+      },
+      "Communication Services": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [
+          "VZ"
+        ],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "META",
+          "VZ"
+        ],
+        "above_bull": [
+          "GOOGL",
+          "META"
+        ],
+        "median_value_to_price": 0.487623384323836,
+        "median_wacc": 0.11974330551678879,
+        "median_growth": 0.14833292345,
+        "median_fade_change": 0.1386510699509822,
+        "median_wacc_minus_1pp_change": 0.12521805944884767
+      },
+      "Consumer Discretionary": {
+        "n": 3,
+        "available": 2,
+        "beta_fallbacks": [
+          "MCD"
+        ],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "HD",
+          "MCD"
+        ],
+        "above_bull": [
+          "HD",
+          "MCD"
+        ],
+        "median_value_to_price": 0.6647699055131766,
+        "median_wacc": 0.09268023705679439,
+        "median_growth": 0.06632423246381432,
+        "median_fade_change": 0.04933989264972005,
+        "median_wacc_minus_1pp_change": 0.2521871376839082
+      },
+      "Consumer Staples": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [
+          "PG",
+          "KO",
+          "WMT"
+        ],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "PG",
+          "WMT"
+        ],
+        "above_bull": [
+          "PG",
+          "KO",
+          "WMT"
+        ],
+        "median_value_to_price": 0.5997687298470538,
+        "median_wacc": 0.10050674507865824,
+        "median_growth": 0.05129211965,
+        "median_fade_change": 0.033247081857869176,
+        "median_wacc_minus_1pp_change": 0.17155587532258254
+      },
+      "Health Care": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [
+          "JNJ"
+        ],
+        "base_cap_hits": [
+          "LLY"
+        ],
+        "debt_discrepancies": [
+          "UNH"
+        ],
+        "above_bull": [
+          "JNJ"
+        ],
+        "median_value_to_price": 1.0732035683644499,
+        "median_wacc": 0.07177116240468964,
+        "median_growth": 0.08905720896151438,
+        "median_fade_change": 0.0946222376844068,
+        "median_wacc_minus_1pp_change": 0.26844849850186603
+      },
+      "Financials": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [
+          "PGR"
+        ],
+        "base_cap_hits": [
+          "BAC"
+        ],
+        "debt_discrepancies": [
+          "BAC"
+        ],
+        "above_bull": [],
+        "median_value_to_price": 6.856690460816249,
+        "median_wacc": 0.10393500950584904,
+        "median_growth": 0.1659200165,
+        "median_fade_change": 0.17691419734060498,
+        "median_wacc_minus_1pp_change": 0.16462287388434804
+      },
+      "Energy": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [
+          "XOM"
+        ],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "CVX"
+        ],
+        "above_bull": [],
+        "median_value_to_price": 1.0354107143588915,
+        "median_wacc": 0.08383057869022804,
+        "median_growth": 0.07263307379672124,
+        "median_fade_change": 0.0648770452238443,
+        "median_wacc_minus_1pp_change": 0.2276260167287394
+      },
+      "Industrials": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "UNP"
+        ],
+        "above_bull": [
+          "CAT"
+        ],
+        "median_value_to_price": 0.7970527973931453,
+        "median_wacc": 0.07770770466855267,
+        "median_growth": 0.040251990097232127,
+        "median_fade_change": 0.02715723251356139,
+        "median_wacc_minus_1pp_change": 0.33528617631183266
+      },
+      "Materials": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "NEM"
+        ],
+        "above_bull": [],
+        "median_value_to_price": 0.942948954187654,
+        "median_wacc": 0.12314911171864902,
+        "median_growth": 0.082438561,
+        "median_fade_change": 0.07193783925904462,
+        "median_wacc_minus_1pp_change": 0.12723040802650232
+      },
+      "Utilities": {
+        "n": 3,
+        "available": 2,
+        "beta_fallbacks": [
+          "SO"
+        ],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "DUK"
+        ],
+        "above_bull": [
+          "SO"
+        ],
+        "median_value_to_price": 0.8814434573109435,
+        "median_wacc": 0.05326270766437555,
+        "median_growth": 0.0664832758,
+        "median_fade_change": 0.1308289474888803,
+        "median_wacc_minus_1pp_change": 0.7816365333804708
+      },
+      "Real Estate": {
+        "n": 3,
+        "available": 3,
+        "beta_fallbacks": [
+          "AMT",
+          "O"
+        ],
+        "base_cap_hits": [],
+        "debt_discrepancies": [
+          "PLD",
+          "AMT",
+          "O"
+        ],
+        "above_bull": [],
+        "median_value_to_price": 1.1660405984837456,
+        "median_wacc": 0.07960958932094203,
+        "median_growth": 0.10545535740371133,
+        "median_fade_change": 0.15257954147323116,
+        "median_wacc_minus_1pp_change": 0.37159490546512086
+      }
+    }
+  },
+  "rows": [
+    {
+      "ticker": "NVDA",
+      "panel_sector": "Technology",
+      "provider_sector": "Technology",
+      "industry": "Semiconductors",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-07-31",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 223.42,
+      "base_value": 78.27935815090524,
+      "bear_value": 66.0957856487749,
+      "bull_value": 92.45781512373473,
+      "position": "above_bull",
+      "wacc": 0.16326647939827427,
+      "beta": 1.9231684613,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.050660612194654925,
+      "growth": 0.2,
+      "raw_base_growth": 0.5,
+      "base_cap_hit": true,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.7634089110423059,
+          "winsorized_value": 0.5
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.8337529809100703,
+          "winsorized_value": 0.5
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 1.0004509499,
+          "winsorized_value": 0.5
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.6689858183,
+          "winsorized_value": 0.5
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 127394706460.234,
+      "reported_fcf": 127006000000.0,
+      "interest_adjustment": 388706460.23399955,
+      "debt_dcf": 1509000000.0,
+      "cash_dcf": 99369000000.0,
+      "shares_dcf": 24285000000.0,
+      "implied_growth": 0.533174464179305,
+      "debt_financial_view": 38860000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -1.5380275890467368,
+      "ttm_cross_view_fcf": 127006000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.3503686247914477,
+      "terminal_share_of_enterprise_value": 0.6118368552634267,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 92.65004611354782,
+          "relative_change": 0.18358208731015746
+        },
+        "wacc_minus_1pp": {
+          "value": 84.7556827095904,
+          "relative_change": 0.08273349081631776
+        },
+        "wacc_plus_1pp": {
+          "value": 72.69689992997594,
+          "relative_change": -0.07131456303164307
+        },
+        "terminal_plus_05pp": {
+          "value": 80.21370711369859,
+          "relative_change": 0.024710843426492435
+        },
+        "remove_20pct_cap_only": {
+          "value": 202.60565513660484,
+          "relative_change": 1.5882385845068643
+        }
+      },
+      "observed_local_beta": 1.9231684613
+    },
+    {
+      "ticker": "MSFT",
+      "panel_sector": "Technology",
+      "provider_sector": "Technology",
+      "industry": "Software - Infrastructure",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 491.65,
+      "base_value": 204.23487726936438,
+      "bear_value": 137.02126016305485,
+      "bull_value": 297.4101241470763,
+      "position": "above_bull",
+      "wacc": 0.10433820794830159,
+      "beta": 0.9582628447,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.04531609311707066,
+      "growth": 0.15347943269999997,
+      "raw_base_growth": 0.15347943269999997,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.06457108544776635,
+          "winsorized_value": -0.06457108544776635
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.17788686799846665,
+          "winsorized_value": 0.17788686799846665
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.1612397916,
+          "winsorized_value": 0.1612397916
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1457190738,
+          "winsorized_value": 0.1457190738
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 69446219924.78937,
+      "reported_fcf": 66987000000.0,
+      "interest_adjustment": 2459219924.789374,
+      "debt_dcf": 66504300000.0,
+      "cash_dcf": 76843000000.0,
+      "shares_dcf": 7453000000.0,
+      "implied_growth": 0.3974177426565886,
+      "debt_financial_view": 128808300000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -8.359586743593184,
+      "ttm_cross_view_fcf": 66987000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 2.842170943040401e-14,
+      "value_to_price": 0.4154070523123449,
+      "terminal_share_of_enterprise_value": 0.7377813718099479,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 240.2849584025629,
+          "relative_change": 0.17651285429399133
+        },
+        "wacc_minus_1pp": {
+          "value": 235.30610009771655,
+          "relative_change": 0.1521347540820488
+        },
+        "wacc_plus_1pp": {
+          "value": 180.1701992961914,
+          "relative_change": -0.11782844485192501
+        },
+        "terminal_plus_05pp": {
+          "value": 215.07998582552233,
+          "relative_change": 0.053101158338663135
+        },
+        "remove_20pct_cap_only": {
+          "value": 204.2348772693644,
+          "relative_change": 2.220446049250313e-16
+        }
+      },
+      "observed_local_beta": 0.9582628447
+    },
+    {
+      "ticker": "AAPL",
+      "panel_sector": "Technology",
+      "provider_sector": "Technology",
+      "industry": "Consumer Electronics",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 315.34,
+      "base_value": 222.55971432927444,
+      "bear_value": 145.362870667972,
+      "bull_value": 331.07504548352466,
+      "position": "between_base_bull",
+      "wacc": 0.08894177567458847,
+      "beta": 0.6928527595,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "Reported interest did not produce a usable debt cost; a configured spread was used."
+      ],
+      "debt_cost_source": "risk_free_plus_fallback_spread",
+      "cost_of_debt": 0.06308,
+      "growth": 0.11459876603468948,
+      "raw_base_growth": 0.11459876603468948,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.4210575563503285,
+          "winsorized_value": 0.4210575563503285
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.14242398286937896,
+          "winsorized_value": 0.14242398286937896
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0181253574,
+          "winsorized_value": 0.0181253574
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0867735492,
+          "winsorized_value": 0.0867735492
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 141381814651.4958,
+      "reported_fcf": 136683000000.0,
+      "interest_adjustment": 4698814651.495773,
+      "debt_dcf": 84307000000.0,
+      "cash_dcf": 62399000000.0,
+      "shares_dcf": 14750302000.0,
+      "implied_growth": 0.20196164654084514,
+      "debt_financial_view": 84307000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 136683000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.7057769846174746,
+      "terminal_share_of_enterprise_value": 0.7704883983516582,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 251.3438291193243,
+          "relative_change": 0.12933209802500079
+        },
+        "wacc_minus_1pp": {
+          "value": 265.6920324360656,
+          "relative_change": 0.1938011029389506
+        },
+        "wacc_plus_1pp": {
+          "value": 191.13623755537415,
+          "relative_change": -0.14119121633760556
+        },
+        "terminal_plus_05pp": {
+          "value": 238.11682311814081,
+          "relative_change": 0.06990083014686932
+        },
+        "remove_20pct_cap_only": {
+          "value": 222.55971432927444,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.6928527595
+    },
+    {
+      "ticker": "GOOGL",
+      "panel_sector": "Communication Services",
+      "provider_sector": "Communication Services",
+      "industry": "Internet Content & Information",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 330.65,
+      "base_value": 89.06036615379544,
+      "bear_value": 63.43635892573323,
+      "bull_value": 124.4920873049413,
+      "position": "above_bull",
+      "wacc": 0.11974330551678879,
+      "beta": 1.225,
+      "beta_source": "provider_fundamental_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.02324347975974224,
+      "growth": 0.14833292345,
+      "raw_base_growth": 0.14833292345,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.2016394916676657,
+          "winsorized_value": -0.2016394916676657
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.20050404012934875,
+          "winsorized_value": 0.20050404012934875
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.1251174561,
+          "winsorized_value": 0.1251174561
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1715483908,
+          "winsorized_value": 0.1715483908
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 54703456762.979126,
+      "reported_fcf": 53273000000.0,
+      "interest_adjustment": 1430456762.979126,
+      "debt_dcf": 112756000000.0,
+      "cash_dcf": 242474000000.0,
+      "shares_dcf": 12309000000.0,
+      "implied_growth": 0.5608930514384727,
+      "debt_financial_view": 112756000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 53273000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.2693493608159548,
+      "terminal_share_of_enterprise_value": 0.6945815612897999,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 101.40868121124542,
+          "relative_change": 0.1386510699509822
+        },
+        "wacc_minus_1pp": {
+          "value": 98.9608052135876,
+          "relative_change": 0.11116548794213821
+        },
+        "wacc_plus_1pp": {
+          "value": 81.06847490320467,
+          "relative_change": -0.08973566577067327
+        },
+        "terminal_plus_05pp": {
+          "value": 92.37989611274975,
+          "relative_change": 0.03727280834689051
+        },
+        "remove_20pct_cap_only": {
+          "value": 89.06036615379544,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 1.3712323265
+    },
+    {
+      "ticker": "META",
+      "panel_sector": "Communication Services",
+      "provider_sector": "Communication Services",
+      "industry": "Internet Content & Information",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 653.69,
+      "base_value": 318.7545300986484,
+      "bear_value": 214.40040991827934,
+      "bull_value": 461.4511216803612,
+      "position": "above_bull",
+      "wacc": 0.12477676216827546,
+      "beta": 1.379287731,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.02657272973610832,
+      "growth": 0.1920262331,
+      "raw_base_growth": 0.1920262331,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.1827193489837844,
+          "winsorized_value": -0.1827193489837844
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.27652625220912275,
+          "winsorized_value": 0.27652625220912275
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.1989383144,
+          "winsorized_value": 0.1989383144
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1851141518,
+          "winsorized_value": 0.1851141518
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 42749952744.390114,
+      "reported_fcf": 40976000000.0,
+      "interest_adjustment": 1773952744.3901103,
+      "debt_dcf": 114743000000.0,
+      "cash_dcf": 90260000000.0,
+      "shares_dcf": 2566000000.0,
+      "implied_growth": 0.3925497913877738,
+      "debt_financial_view": 112318000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 0.9450506625097428,
+      "ttm_cross_view_fcf": 40976000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.487623384323836,
+      "terminal_share_of_enterprise_value": 0.6969561518680852,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 390.48862100071415,
+          "relative_change": 0.22504492996496528
+        },
+        "wacc_minus_1pp": {
+          "value": 358.66835379813045,
+          "relative_change": 0.12521805944884767
+        },
+        "wacc_plus_1pp": {
+          "value": 286.20946420169537,
+          "relative_change": -0.10210071645689534
+        },
+        "terminal_plus_05pp": {
+          "value": 332.00042915613943,
+          "relative_change": 0.04155517116381602
+        },
+        "remove_20pct_cap_only": {
+          "value": 318.7545300986484,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 1.379287731
+    },
+    {
+      "ticker": "VZ",
+      "panel_sector": "Communication Services",
+      "provider_sector": "Communication Services",
+      "industry": "Telecom Services",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 49.74,
+      "base_value": 92.1431367485259,
+      "bear_value": 63.785495162108425,
+      "bull_value": 126.37407257293319,
+      "position": "below_bear",
+      "wacc": 0.07092300478995558,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.038928615419662714,
+      "growth": 0.014404366544160541,
+      "raw_base_growth": 0.014404366544160541,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.09272198704544299,
+          "winsorized_value": 0.09272198704544299
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.01383211678832108,
+          "winsorized_value": 0.01383211678832108
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0032923967,
+          "winsorized_value": 0.0032923967
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0149766163,
+          "winsorized_value": 0.0149766163
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 27059213414.634148,
+      "reported_fcf": 21425000000.0,
+      "interest_adjustment": 5634213414.634146,
+      "debt_dcf": 193293000000.0,
+      "cash_dcf": 1752000000.0,
+      "shares_dcf": 4171000000.0,
+      "implied_growth": -0.06452500411081319,
+      "debt_financial_view": 188458000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 1.1591944377847039,
+      "ttm_cross_view_fcf": 21425000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -2.842170943040401e-14,
+      "value_to_price": 1.8524957126764354,
+      "terminal_share_of_enterprise_value": 0.7997395520455183,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 90.06393962684214,
+          "relative_change": -0.022564861530145697
+        },
+        "wacc_minus_1pp": {
+          "value": 130.42185825342153,
+          "relative_change": 0.4154267247203087
+        },
+        "wacc_plus_1pp": {
+          "value": 67.55061001113667,
+          "relative_change": -0.26689482912337104
+        },
+        "terminal_plus_05pp": {
+          "value": 106.23828764865553,
+          "relative_change": 0.1529701657389595
+        },
+        "remove_20pct_cap_only": {
+          "value": 92.14313674852588,
+          "relative_change": -3.3306690738754696e-16
+        }
+      },
+      "observed_local_beta": -0.2943213708
+    },
+    {
+      "ticker": "AMZN",
+      "panel_sector": "Consumer Discretionary",
+      "provider_sector": "Consumer Cyclical",
+      "industry": "Internet Retail",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": false,
+      "unavailable_reasons": [
+        "Free cash flow must be positive for this DCF."
+      ],
+      "model_fit_review": "fcff_candidate",
+      "price": 252.4,
+      "base_value": null,
+      "bear_value": null,
+      "bull_value": null,
+      "position": "unavailable",
+      "wacc": 0.12578639656541424,
+      "beta": 1.4161737036,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.018449157506012868,
+      "growth": 0.131781948,
+      "raw_base_growth": 0.131781948,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.15766568463281194,
+          "winsorized_value": 0.15766568463281194
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.117312836,
+          "winsorized_value": 0.117312836
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.131781948,
+          "winsorized_value": 0.131781948
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": -9048362216.022776,
+      "reported_fcf": -11625000000.0,
+      "interest_adjustment": 2576637783.977225,
+      "debt_dcf": 223232000000.0,
+      "cash_dcf": 122988000000.0,
+      "shares_dcf": 10903000000.0,
+      "implied_growth": null,
+      "debt_financial_view": 223232000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": -11625000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "observed_local_beta": 1.4161737036
+    },
+    {
+      "ticker": "HD",
+      "panel_sector": "Consumer Discretionary",
+      "provider_sector": "Consumer Cyclical",
+      "industry": "Home Improvement Retail",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-07-31",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 310.45,
+      "base_value": 206.5757930670173,
+      "bear_value": 153.9995883202666,
+      "bull_value": 269.59036469315225,
+      "position": "above_bull",
+      "wacc": 0.09268023705679439,
+      "beta": 0.955,
+      "beta_source": "provider_fundamental_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.038551602261077005,
+      "growth": 0.035018495094456314,
+      "raw_base_growth": 0.035018495094456314,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.06120871398453964,
+          "winsorized_value": 0.06120871398453964
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.024973644988912636,
+          "winsorized_value": 0.024973644988912636
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0151851464,
+          "winsorized_value": 0.0151851464
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0450633452,
+          "winsorized_value": 0.0450633452
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 16934489731.690403,
+      "reported_fcf": 15101000000.0,
+      "interest_adjustment": 1833489731.6904037,
+      "debt_dcf": 64083000000.0,
+      "cash_dcf": 2085000000.0,
+      "shares_dcf": 996000000.0,
+      "implied_growth": 0.11331312803733296,
+      "debt_financial_view": 62567000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 1.5220883534136547,
+      "ttm_cross_view_fcf": 15101000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.6654076117475191,
+      "terminal_share_of_enterprise_value": 0.7304387628708349,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 210.0337305425637,
+          "relative_change": 0.016739315987641223
+        },
+        "wacc_minus_1pp": {
+          "value": 253.41575335480533,
+          "relative_change": 0.22674467125290043
+        },
+        "wacc_plus_1pp": {
+          "value": 171.80168632217527,
+          "relative_change": -0.16833582593852414
+        },
+        "terminal_plus_05pp": {
+          "value": 223.27356322349726,
+          "relative_change": 0.08083120441446345
+        },
+        "remove_20pct_cap_only": {
+          "value": 206.5757930670173,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.7022993966
+    },
+    {
+      "ticker": "MCD",
+      "panel_sector": "Consumer Discretionary",
+      "provider_sector": "Consumer Cyclical",
+      "industry": "Restaurants",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 253.48,
+      "base_value": 168.34422987319888,
+      "bear_value": 121.05968072050347,
+      "bull_value": 224.79851701808977,
+      "position": "above_bull",
+      "wacc": 0.08833652757006281,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.02916184374635477,
+      "growth": 0.06632423246381432,
+      "raw_base_growth": 0.06632423246381432,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.1252718573292737,
+          "winsorized_value": 0.1252718573292737
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06308518802762864,
+          "winsorized_value": 0.06308518802762864
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0506378595,
+          "winsorized_value": 0.0506378595
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0695632769,
+          "winsorized_value": 0.0695632769
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 9037609298.167189,
+      "reported_fcf": 7761000000.0,
+      "interest_adjustment": 1276609298.1671882,
+      "debt_dcf": 55282000000.0,
+      "cash_dcf": 822000000.0,
+      "shares_dcf": 713500000.0,
+      "implied_growth": 0.13877938742411322,
+      "debt_financial_view": 54592000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 0.9670637701471618,
+      "ttm_cross_view_fcf": 7761000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.6641321992788342,
+      "terminal_share_of_enterprise_value": 0.7564408201014803,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 182.13843507494215,
+          "relative_change": 0.08194046931179888
+        },
+        "wacc_minus_1pp": {
+          "value": 215.0815717679255,
+          "relative_change": 0.277629604114916
+        },
+        "wacc_plus_1pp": {
+          "value": 134.3754443318677,
+          "relative_change": -0.2017817038749551
+        },
+        "terminal_plus_05pp": {
+          "value": 185.18757459226126,
+          "relative_change": 0.10005299695599423
+        },
+        "remove_20pct_cap_only": {
+          "value": 168.34422987319888,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": -0.0309795863
+    },
+    {
+      "ticker": "PG",
+      "panel_sector": "Consumer Staples",
+      "provider_sector": "Consumer Defensive",
+      "industry": "Household & Personal Products",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 142.64,
+      "base_value": 86.55296209213796,
+      "bear_value": 65.55288853258195,
+      "bull_value": 112.3064757133228,
+      "position": "above_bull",
+      "wacc": 0.10050674507865824,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.036360373542789697,
+      "growth": 0.029882287131894496,
+      "raw_base_growth": 0.029882287131894496,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.056528024496567957,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.13308174309313592,
+          "winsorized_value": 0.13308174309313592
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.03260405296378899,
+          "winsorized_value": 0.03260405296378899
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0200256941,
+          "winsorized_value": 0.0200256941
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0271605213,
+          "winsorized_value": 0.0271605213
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 16956414045.247093,
+      "reported_fcf": 15913000000.0,
+      "interest_adjustment": 1043414045.2470924,
+      "debt_dcf": 35272000000.0,
+      "cash_dcf": 9942000000.0,
+      "shares_dcf": 2422500000.0,
+      "implied_growth": 0.14134092936463105,
+      "debt_financial_view": 35026000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 0.10154798761609907,
+      "ttm_cross_view_fcf": 15913000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": -1.4210854715202004e-14,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.6067930600963122,
+      "terminal_share_of_enterprise_value": 0.7030241714537758,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 87.1312269451818,
+          "relative_change": 0.006681052145023791
+        },
+        "wacc_minus_1pp": {
+          "value": 101.40163126561698,
+          "relative_change": 0.17155587532258254
+        },
+        "wacc_plus_1pp": {
+          "value": 75.17845797674087,
+          "relative_change": -0.1314166937844209
+        },
+        "terminal_plus_05pp": {
+          "value": 91.74563450301518,
+          "relative_change": 0.05999416178673922
+        },
+        "remove_20pct_cap_only": {
+          "value": 86.55296209213796,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": -0.0498939459
+    },
+    {
+      "ticker": "KO",
+      "panel_sector": "Consumer Staples",
+      "provider_sector": "Consumer Defensive",
+      "industry": "Beverages - Non-Alcoholic",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 87.55,
+      "base_value": 52.509752298109554,
+      "bear_value": 41.326176824120026,
+      "bull_value": 65.84055992226102,
+      "position": "above_bull",
+      "wacc": 0.09967059573697161,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.034672482315041345,
+      "growth": 0.06516935106880295,
+      "raw_base_growth": 0.06516935106880295,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06516935106880295,
+          "winsorized_value": 0.06516935106880295
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0368901411,
+          "winsorized_value": 0.0368901411
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0774615683,
+          "winsorized_value": 0.0774615683
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 15605983692.182693,
+      "reported_fcf": 14297000000.0,
+      "interest_adjustment": 1308983692.182694,
+      "debt_dcf": 43543000000.0,
+      "cash_dcf": 16371000000.0,
+      "shares_dcf": 4313000000.0,
+      "implied_growth": 0.182009155673589,
+      "debt_financial_view": 43543000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 14297000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.5997687298470538,
+      "terminal_share_of_enterprise_value": 0.720139551586006,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 55.53635575911268,
+          "relative_change": 0.05763888284637919
+        },
+        "wacc_minus_1pp": {
+          "value": 61.792736342058085,
+          "relative_change": 0.17678590428777818
+        },
+        "wacc_plus_1pp": {
+          "value": 45.42461997915863,
+          "relative_change": -0.1349298370086961
+        },
+        "terminal_plus_05pp": {
+          "value": 55.77056168660301,
+          "relative_change": 0.06209911960698489
+        },
+        "remove_20pct_cap_only": {
+          "value": 52.509752298109554,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": -0.2578612256
+    },
+    {
+      "ticker": "WMT",
+      "panel_sector": "Consumer Staples",
+      "provider_sector": "Consumer Defensive",
+      "industry": "Discount Stores",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-07-31",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 105.83,
+      "base_value": 27.50257433669329,
+      "bear_value": 22.138745868890865,
+      "bull_value": 33.90510972316709,
+      "position": "above_bull",
+      "wacc": 0.10311927931343848,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.04031239970043864,
+      "growth": 0.05129211965,
+      "raw_base_growth": 0.05129211965,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.017741583654475424,
+          "winsorized_value": -0.017741583654475424
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.061583806172663236,
+          "winsorized_value": 0.061583806172663236
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0527229093,
+          "winsorized_value": 0.0527229093
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.04986133,
+          "winsorized_value": 0.04986133
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 15316379758.493656,
+      "reported_fcf": 13509000000.0,
+      "interest_adjustment": 1807379758.4936554,
+      "debt_dcf": 16543000000.0,
+      "cash_dcf": 11529000000.0,
+      "shares_dcf": 7978000000.0,
+      "implied_growth": 0.40786989756690106,
+      "debt_financial_view": 73755000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -7.171220857357734,
+      "ttm_cross_view_fcf": 13509000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 3.552713678800501e-15,
+      "value_to_price": 0.2598750291665245,
+      "terminal_share_of_enterprise_value": 0.7039574644465155,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 28.416954676967464,
+          "relative_change": 0.033247081857869176
+        },
+        "wacc_minus_1pp": {
+          "value": 31.69152019109828,
+          "relative_change": 0.15231104561787134
+        },
+        "wacc_plus_1pp": {
+          "value": 24.26598511379104,
+          "relative_change": -0.1176831369776199
+        },
+        "terminal_plus_05pp": {
+          "value": 28.959941948162385,
+          "relative_change": 0.05299022533773168
+        },
+        "remove_20pct_cap_only": {
+          "value": 27.502574336693293,
+          "relative_change": 2.220446049250313e-16
+        }
+      },
+      "observed_local_beta": -0.0650268199
+    },
+    {
+      "ticker": "JNJ",
+      "panel_sector": "Health Care",
+      "provider_sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 267.08,
+      "base_value": 116.80845733518574,
+      "bear_value": 89.58870141898021,
+      "bull_value": 149.9932500128239,
+      "position": "above_bull",
+      "wacc": 0.10168111158629406,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.020470187255690237,
+      "growth": 0.06828243223121425,
+      "raw_base_growth": 0.06828243223121425,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05665602827049841,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.13996709524099682,
+          "winsorized_value": 0.13996709524099682
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.0805720149624285,
+          "winsorized_value": 0.0805720149624285
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0559928495,
+          "winsorized_value": 0.0559928495
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0266550387,
+          "winsorized_value": 0.0266550387
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 19552953325.92475,
+      "reported_fcf": 18708000000.0,
+      "interest_adjustment": 844953325.92475,
+      "debt_dcf": 49036000000.0,
+      "cash_dcf": 20758000000.0,
+      "shares_dcf": 2440100000.0,
+      "implied_growth": 0.268014902473666,
+      "debt_financial_view": 49036000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 18708000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 2.842170943040401e-14,
+      "value_to_price": 0.4373538165912301,
+      "terminal_share_of_enterprise_value": 0.7152125689769522,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 123.87819946698082,
+          "relative_change": 0.060524231661652994
+        },
+        "wacc_minus_1pp": {
+          "value": 136.50244707779726,
+          "relative_change": 0.16860071772114038
+        },
+        "wacc_plus_1pp": {
+          "value": 101.67041563233462,
+          "relative_change": -0.12959713746935297
+        },
+        "terminal_plus_05pp": {
+          "value": 123.69321138828928,
+          "relative_change": 0.05894054429079154
+        },
+        "remove_20pct_cap_only": {
+          "value": 116.80845733518576,
+          "relative_change": 2.220446049250313e-16
+        }
+      },
+      "observed_local_beta": -0.1811778425
+    },
+    {
+      "ticker": "UNH",
+      "panel_sector": "Health Care",
+      "provider_sector": "Healthcare",
+      "industry": "Healthcare Plans",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 393.06,
+      "base_value": 892.6686227674979,
+      "bear_value": 606.775629663745,
+      "bull_value": 1287.210775972827,
+      "position": "below_bear",
+      "wacc": 0.07177116240468964,
+      "beta": 0.4404552575,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.0648273393571372,
+      "growth": 0.08905720896151438,
+      "raw_base_growth": 0.08905720896151438,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.09133351425110006,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.06545051640220012,
+          "winsorized_value": -0.06545051640220012
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06459280352302876,
+          "winsorized_value": 0.06459280352302876
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.1135216144,
+          "winsorized_value": 0.1135216144
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1172165121,
+          "winsorized_value": 0.1172165121
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 26946548623.85321,
+      "reported_fcf": 23617000000.0,
+      "interest_adjustment": 3329548623.853211,
+      "debt_dcf": 3827000000.0,
+      "cash_dcf": 31468000000.0,
+      "shares_dcf": 906000000.0,
+      "implied_growth": -0.10021103318234337,
+      "debt_financial_view": 73328000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -76.71192052980132,
+      "ttm_cross_view_fcf": 23617000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 1.1368683772161603e-13,
+      "value_to_price": 2.271074703016074,
+      "terminal_share_of_enterprise_value": 0.8189851356214866,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 977.1349253644162,
+          "relative_change": 0.0946222376844068
+        },
+        "wacc_minus_1pp": {
+          "value": 1132.3041742091614,
+          "relative_change": 0.26844849850186603
+        },
+        "wacc_plus_1pp": {
+          "value": 737.577789164334,
+          "relative_change": -0.173738417199367
+        },
+        "terminal_plus_05pp": {
+          "value": 981.0448444669313,
+          "relative_change": 0.09900227189059785
+        },
+        "remove_20pct_cap_only": {
+          "value": 892.668622767498,
+          "relative_change": 2.220446049250313e-16
+        }
+      },
+      "observed_local_beta": 0.4404552575
+    },
+    {
+      "ticker": "LLY",
+      "panel_sector": "Health Care",
+      "provider_sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 1124.21,
+      "base_value": 1206.5061835909983,
+      "bear_value": 781.8513246201933,
+      "bull_value": 1793.7426539223015,
+      "position": "between_bear_base",
+      "wacc": 0.06487978393455096,
+      "beta": 0.3153451113,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.021378423854095968,
+      "growth": 0.2,
+      "raw_base_growth": 0.3168737488,
+      "base_cap_hit": true,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.4958438246952106,
+          "winsorized_value": 0.4958438246952106
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.3168737488,
+          "winsorized_value": 0.3168737488
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.2157585566,
+          "winsorized_value": 0.2157585566
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 20832738919.581837,
+      "reported_fcf": 20053900000.0,
+      "interest_adjustment": 778838919.581835,
+      "debt_dcf": 54908000000.0,
+      "cash_dcf": 8950000000.0,
+      "shares_dcf": 893700000.0,
+      "implied_growth": 0.1830580133435209,
+      "debt_financial_view": 54908000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 20053900000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 1.0732035683644499,
+      "terminal_share_of_enterprise_value": 0.8655104569280758,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 1593.4063814948308,
+          "relative_change": 0.3206781723673209
+        },
+        "wacc_minus_1pp": {
+          "value": 1646.3411752534207,
+          "relative_change": 0.3645526211505312
+        },
+        "wacc_plus_1pp": {
+          "value": 943.4569783297997,
+          "relative_change": -0.21802557569847603
+        },
+        "terminal_plus_05pp": {
+          "value": 1368.6505768554,
+          "relative_change": 0.13439168026623904
+        },
+        "remove_20pct_cap_only": {
+          "value": 1911.8497284627476,
+          "relative_change": 0.5846166016094441
+        }
+      },
+      "observed_local_beta": 0.3153451113
+    },
+    {
+      "ticker": "JPM",
+      "panel_sector": "Financials",
+      "provider_sector": "Financial Services",
+      "industry": "Banks - Diversified",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "equity_model_required",
+      "price": 354.71,
+      "base_value": 2432.1366733561313,
+      "bear_value": 1949.5696563927002,
+      "bull_value": 3040.1297792730784,
+      "position": "below_bear",
+      "wacc": 0.0805024915123628,
+      "beta": 0.7861982657,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.08771856187425375,
+      "growth": 0.1659200165,
+      "raw_base_growth": 0.1659200165,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.0701299075668306,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.08035717526633879,
+          "winsorized_value": 0.08035717526633879
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.2206169904,
+          "winsorized_value": 0.2206169904
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1659200165,
+          "winsorized_value": 0.1659200165
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 162292513266.10883,
+      "reported_fcf": 86115000000.0,
+      "interest_adjustment": 76177513266.10884,
+      "debt_dcf": 1237871000000.0,
+      "cash_dcf": 2622548000000.0,
+      "shares_dcf": 2793700000.0,
+      "implied_growth": null,
+      "debt_financial_view": 1237871000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 86115000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 6.856690460816249,
+      "terminal_share_of_enterprise_value": 0.8104549554630999,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 2862.4161807455803,
+          "relative_change": 0.17691419734060498
+        },
+        "wacc_minus_1pp": {
+          "value": 2879.098141869137,
+          "relative_change": 0.1837731708951369
+        },
+        "wacc_plus_1pp": {
+          "value": 2122.1964739895616,
+          "relative_change": -0.12743535458428001
+        },
+        "terminal_plus_05pp": {
+          "value": 2595.932993237004,
+          "relative_change": 0.06734667573383057
+        },
+        "remove_20pct_cap_only": {
+          "value": 2432.1366733561313,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.7861982657
+    },
+    {
+      "ticker": "BAC",
+      "panel_sector": "Financials",
+      "provider_sector": "Financial Services",
+      "industry": "Banks - Diversified",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "equity_model_required",
+      "price": 62.67,
+      "base_value": 466.94391224796675,
+      "bear_value": 376.85044965433144,
+      "bull_value": 572.4107259926608,
+      "position": "below_bear",
+      "wacc": 0.10777725865111454,
+      "beta": 0.7021529063,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.16246149123480205,
+      "growth": 0.2,
+      "raw_base_growth": 0.2088543962,
+      "base_cap_hit": true,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.17609736992739422,
+          "winsorized_value": 0.17609736992739422
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.2635969715,
+          "winsorized_value": 0.2635969715
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.2088543962,
+          "winsorized_value": 0.2088543962
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 151595623233.01413,
+      "reported_fcf": 94742000000.0,
+      "interest_adjustment": 56853623233.01414,
+      "debt_dcf": 392197000000.0,
+      "cash_dcf": 28620000000.0,
+      "shares_dcf": 7294200000.0,
+      "implied_growth": -0.16161936678943079,
+      "debt_financial_view": 732060000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -46.5935949110252,
+      "ttm_cross_view_fcf": 94742000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 7.450836321173875,
+      "terminal_share_of_enterprise_value": 0.742767536305952,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 596.2311158544238,
+          "relative_change": 0.2768795142526672
+        },
+        "wacc_minus_1pp": {
+          "value": 543.8135610250279,
+          "relative_change": 0.16462287388434804
+        },
+        "wacc_plus_1pp": {
+          "value": 406.8112085653738,
+          "relative_change": -0.12877928613117873
+        },
+        "terminal_plus_05pp": {
+          "value": 493.61322210975766,
+          "relative_change": 0.05711458948763082
+        },
+        "remove_20pct_cap_only": {
+          "value": 484.4472223151135,
+          "relative_change": 0.03748482335465542
+        }
+      },
+      "observed_local_beta": 0.7021529063
+    },
+    {
+      "ticker": "PGR",
+      "panel_sector": "Financials",
+      "provider_sector": "Financial Services",
+      "industry": "Insurance - Property & Casualty",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "equity_model_required",
+      "price": 215.5,
+      "base_value": 540.6901569206915,
+      "bear_value": 355.1651636518581,
+      "bull_value": 799.3991662617317,
+      "position": "below_bear",
+      "wacc": 0.10393500950584904,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.04018128931881215,
+      "growth": 0.13007358009797376,
+      "raw_base_growth": 0.13007358009797376,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.03168233887172267,
+          "winsorized_value": -0.03168233887172267
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.10515793779594751,
+          "winsorized_value": 0.10515793779594751
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.2090378285,
+          "winsorized_value": 0.2090378285
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1549892224,
+          "winsorized_value": 0.1549892224
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 16186007780.784843,
+      "reported_fcf": 15951000000.0,
+      "interest_adjustment": 235007780.78484437,
+      "debt_dcf": 7387000000.0,
+      "cash_dcf": 178000000.0,
+      "shares_dcf": 584300000.0,
+      "implied_growth": -0.07963236523710959,
+      "debt_financial_view": 7387000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 15951000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 2.509003048355877,
+      "terminal_share_of_enterprise_value": 0.7311845670364027,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 619.179810454149,
+          "relative_change": 0.1451656785846951
+        },
+        "wacc_minus_1pp": {
+          "value": 625.0948374756256,
+          "relative_change": 0.1561054505516264
+        },
+        "wacc_plus_1pp": {
+          "value": 475.3826445014605,
+          "relative_change": -0.12078546572988624
+        },
+        "terminal_plus_05pp": {
+          "value": 570.1420792647914,
+          "relative_change": 0.05447097929770517
+        },
+        "remove_20pct_cap_only": {
+          "value": 540.6901569206915,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": -0.5062106555
+    },
+    {
+      "ticker": "XOM",
+      "panel_sector": "Energy",
+      "provider_sector": "Energy",
+      "industry": "Oil & Gas Integrated",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "cycle_normalization_review",
+      "price": 164.23,
+      "base_value": 113.59173913996094,
+      "bear_value": 72.79748253748512,
+      "bull_value": 170.70945776460667,
+      "position": "between_base_bull",
+      "wacc": 0.10202546646158181,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.017788527609048182,
+      "growth": 0.07263307379672124,
+      "raw_base_growth": 0.07263307379672124,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.09668028835,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.049102084263296986,
+          "winsorized_value": 0.049102084263296986
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.09616406333014549,
+          "winsorized_value": 0.09616406333014549
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": -0.0668899155,
+          "winsorized_value": -0.0668899155
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1264706612,
+          "winsorized_value": 0.1264706612
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 31154657406.182476,
+      "reported_fcf": 30553000000.0,
+      "interest_adjustment": 601657406.1824757,
+      "debt_dcf": 42368000000.0,
+      "cash_dcf": 10588000000.0,
+      "shares_dcf": 4174000000.0,
+      "implied_growth": 0.15978409392290605,
+      "debt_financial_view": 42368000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 30553000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -1.4210854715202004e-14,
+      "value_to_price": 0.6916625411919926,
+      "terminal_share_of_enterprise_value": 0.7158719789806232,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 120.9612355371993,
+          "relative_change": 0.0648770452238443
+        },
+        "wacc_minus_1pp": {
+          "value": 132.127379034001,
+          "relative_change": 0.16317771023121286
+        },
+        "wacc_plus_1pp": {
+          "value": 99.32824939817043,
+          "relative_change": -0.1255680197326312
+        },
+        "terminal_plus_05pp": {
+          "value": 120.06777910250341,
+          "relative_change": 0.05701153984941709
+        },
+        "remove_20pct_cap_only": {
+          "value": 113.59173913996092,
+          "relative_change": -1.1102230246251565e-16
+        }
+      },
+      "observed_local_beta": -0.5608006674
+    },
+    {
+      "ticker": "CVX",
+      "panel_sector": "Energy",
+      "provider_sector": "Energy",
+      "industry": "Oil & Gas Integrated",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "cycle_normalization_review",
+      "price": 213.81,
+      "base_value": 460.29587722932985,
+      "bear_value": 294.5548503168197,
+      "bull_value": 693.4950510210018,
+      "position": "below_bear",
+      "wacc": 0.07255277272110713,
+      "beta": 0.491,
+      "beta_source": "provider_fundamental_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.0341992923045605,
+      "growth": 0.12744372176164193,
+      "raw_base_growth": 0.12744372176164193,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.6713278059646084,
+          "winsorized_value": 0.5
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.11172604082328386,
+          "winsorized_value": 0.11172604082328386
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": -0.0918613284,
+          "winsorized_value": -0.0918613284
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1431614027,
+          "winsorized_value": 0.1431614027
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 27988993766.928825,
+      "reported_fcf": 27012000000.0,
+      "interest_adjustment": 976993766.9288255,
+      "debt_dcf": 36674000000.0,
+      "cash_dcf": 8531000000.0,
+      "shares_dcf": 1975087000.0,
+      "implied_growth": -0.03891926425715608,
+      "debt_financial_view": 37075000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -0.2030290311262238,
+      "ttm_cross_view_fcf": 27012000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -5.684341886080802e-14,
+      "value_to_price": 2.152826702349422,
+      "terminal_share_of_enterprise_value": 0.8261383933835856,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 537.1926931817729,
+          "relative_change": 0.1670595366078662
+        },
+        "wacc_minus_1pp": {
+          "value": 590.9354820880715,
+          "relative_change": 0.28381658694208545
+        },
+        "wacc_plus_1pp": {
+          "value": 375.1577493949133,
+          "relative_change": -0.18496391570328752
+        },
+        "terminal_plus_05pp": {
+          "value": 508.4980964489895,
+          "relative_change": 0.104720075942901
+        },
+        "remove_20pct_cap_only": {
+          "value": 460.2958772293298,
+          "relative_change": -1.1102230246251565e-16
+        }
+      },
+      "observed_local_beta": -0.4972666093
+    },
+    {
+      "ticker": "SLB",
+      "panel_sector": "Energy",
+      "provider_sector": "Energy",
+      "industry": "Oil & Gas Equipment & Services",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "cycle_normalization_review",
+      "price": 57.05,
+      "base_value": 59.07018125417476,
+      "bear_value": 45.41274146193531,
+      "bull_value": 75.6613017390643,
+      "position": "between_bear_base",
+      "wacc": 0.08383057869022804,
+      "beta": 0.7133235549,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.04196033437141452,
+      "growth": 0.05413549392109137,
+      "raw_base_growth": 0.05413549392109137,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.0541282179974227,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.021907216494845394,
+          "winsorized_value": -0.021907216494845394
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.025000704642182736,
+          "winsorized_value": 0.025000704642182736
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0832702832,
+          "winsorized_value": 0.0832702832
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0863492195,
+          "winsorized_value": 0.0863492195
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 4968774885.145482,
+      "reported_fcf": 4554000000.0,
+      "interest_adjustment": 414774885.14548236,
+      "debt_dcf": 12798000000.0,
+      "cash_dcf": 4071000000.0,
+      "shares_dcf": 1515000000.0,
+      "implied_growth": 0.04677350598051433,
+      "debt_financial_view": 12798000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 4554000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 1.0354107143588915,
+      "terminal_share_of_enterprise_value": 0.7671013182037323,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 61.675842027024835,
+          "relative_change": 0.0441112709920104
+        },
+        "wacc_minus_1pp": {
+          "value": 72.51609132050721,
+          "relative_change": 0.2276260167287394
+        },
+        "wacc_plus_1pp": {
+          "value": 49.53555104646221,
+          "relative_change": -0.16141190030695385
+        },
+        "terminal_plus_05pp": {
+          "value": 63.95457996659679,
+          "relative_change": 0.0826880603498541
+        },
+        "remove_20pct_cap_only": {
+          "value": 59.07018125417476,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.7133235549
+    },
+    {
+      "ticker": "CAT",
+      "panel_sector": "Industrials",
+      "provider_sector": "Industrials",
+      "industry": "Farm & Heavy Construction Machinery",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 815.56,
+      "base_value": 206.73433953162518,
+      "bear_value": 138.38188281654095,
+      "bull_value": 292.41605708136046,
+      "position": "above_bull",
+      "wacc": 0.1388353208685967,
+      "beta": 1.7426325383,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.02525970349314198,
+      "growth": 0.13158476273798447,
+      "raw_base_growth": 0.13158476273798447,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.06986546661938023,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.16201550387596897,
+          "winsorized_value": 0.16201550387596897
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.18356324933876045,
+          "winsorized_value": 0.18356324933876045
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0438323161,
+          "winsorized_value": 0.0438323161
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1011540216,
+          "winsorized_value": 0.1011540216
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 9837249892.318737,
+      "reported_fcf": 8994000000.0,
+      "interest_adjustment": 843249892.3187366,
+      "debt_dcf": 45146000000.0,
+      "cash_dcf": 6713000000.0,
+      "shares_dcf": 462500000.0,
+      "implied_growth": 0.45903595844018685,
+      "debt_financial_view": 45146000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 8994000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.25348759077397764,
+      "terminal_share_of_enterprise_value": 0.640018016449952,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 241.8943987478695,
+          "relative_change": 0.17007362828982608
+        },
+        "wacc_minus_1pp": {
+          "value": 236.56134091690785,
+          "relative_change": 0.14427695685611952
+        },
+        "wacc_plus_1pp": {
+          "value": 181.77985650578705,
+          "relative_change": -0.12070797276531176
+        },
+        "terminal_plus_05pp": {
+          "value": 216.20274427225968,
+          "relative_change": 0.045799864512523714
+        },
+        "remove_20pct_cap_only": {
+          "value": 206.73433953162518,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 1.7426325383
+    },
+    {
+      "ticker": "UNP",
+      "panel_sector": "Industrials",
+      "provider_sector": "Industrials",
+      "industry": "Railroads",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 284.74,
+      "base_value": 357.6660288705025,
+      "bear_value": 273.8771743609544,
+      "bull_value": 458.5958825256729,
+      "position": "between_bear_base",
+      "wacc": 0.059058602448933135,
+      "beta": 0.2707476388,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.040046435166068046,
+      "growth": 0.040251990097232127,
+      "raw_base_growth": 0.040251990097232127,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.038811691423095374,
+          "winsorized_value": 0.038811691423095374
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.04169228877136888,
+          "winsorized_value": 0.04169228877136888
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": -0.0049152423,
+          "winsorized_value": -0.0049152423
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0464413014,
+          "winsorized_value": 0.0464413014
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 7494436382.754994,
+      "reported_fcf": 6504000000.0,
+      "interest_adjustment": 990436382.7549948,
+      "debt_dcf": 31402000000.0,
+      "cash_dcf": 2114000000.0,
+      "shares_dcf": 594000000.0,
+      "implied_growth": -0.002699728051504202,
+      "debt_financial_view": 31169000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 0.39225589225589225,
+      "ttm_cross_view_fcf": 6504000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 1.2561144513257796,
+      "terminal_share_of_enterprise_value": 0.8530557304543935,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 367.3792483787409,
+          "relative_change": 0.02715723251356139
+        },
+        "wacc_minus_1pp": {
+          "value": 527.554346382416,
+          "relative_change": 0.47499148311181605
+        },
+        "wacc_plus_1pp": {
+          "value": 264.91166158047736,
+          "relative_change": -0.25933233744043394
+        },
+        "terminal_plus_05pp": {
+          "value": 419.3871487975076,
+          "relative_change": 0.17256634666120907
+        },
+        "remove_20pct_cap_only": {
+          "value": 357.6660288705025,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.2707476388
+    },
+    {
+      "ticker": "HON",
+      "panel_sector": "Industrials",
+      "provider_sector": "Industrials",
+      "industry": "Conglomerates",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "fcff_candidate",
+      "price": 204.93,
+      "base_value": 163.34002976977726,
+      "bear_value": 71.47894801843111,
+      "bull_value": 299.1898569931605,
+      "position": "between_base_bull",
+      "wacc": 0.07770770466855267,
+      "beta": 0.901,
+      "beta_source": "provider_fundamental_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.040823523603303685,
+      "growth": -0.03914348466637907,
+      "raw_base_growth": -0.03914348466637907,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.20788461538461533,
+          "winsorized_value": -0.20788461538461533
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": -0.09652413103275814,
+          "winsorized_value": -0.09652413103275814
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0182371617,
+          "winsorized_value": 0.0182371617
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0278500504,
+          "winsorized_value": 0.0278500504
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 5286478887.134964,
+      "reported_fcf": 4119000000.0,
+      "interest_adjustment": 1167478887.1349645,
+      "debt_dcf": 33988000000.0,
+      "cash_dcf": 9196000000.0,
+      "shares_dcf": 319000000.0,
+      "implied_growth": -0.0043480543388279,
+      "debt_financial_view": 33988000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 4119000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.7970527973931453,
+      "terminal_share_of_enterprise_value": 0.7531681969345437,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 143.53196392893145,
+          "relative_change": -0.12126890064097984
+        },
+        "wacc_minus_1pp": {
+          "value": 218.1056837899468,
+          "relative_change": 0.33528617631183266
+        },
+        "wacc_plus_1pp": {
+          "value": 126.00090759932553,
+          "relative_change": -0.22859749825612297
+        },
+        "terminal_plus_05pp": {
+          "value": 183.3465677679828,
+          "relative_change": 0.12248398648147751
+        },
+        "remove_20pct_cap_only": {
+          "value": 163.34002976977726,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.7420798228
+    },
+    {
+      "ticker": "LIN",
+      "panel_sector": "Materials",
+      "provider_sector": "Basic Materials",
+      "industry": "Specialty Chemicals",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "cycle_normalization_review",
+      "price": 466.65,
+      "base_value": 440.02712947166873,
+      "bear_value": 336.2238481398228,
+      "bull_value": 565.6157972191779,
+      "position": "between_base_bull",
+      "wacc": 0.04842838872027968,
+      "beta": 0.0876222533,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.009896237214283076,
+      "growth": 0.02569961065,
+      "raw_base_growth": 0.02569961065,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.018544091536792262,
+          "winsorized_value": -0.018544091536792262
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06629568356143789,
+          "winsorized_value": 0.06629568356143789
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0061760606,
+          "winsorized_value": 0.0061760606
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0452231607,
+          "winsorized_value": 0.0452231607
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 5183425404.944587,
+      "reported_fcf": 4975000000.0,
+      "interest_adjustment": 208425404.94458652,
+      "debt_dcf": 28013000000.0,
+      "cash_dcf": 4898000000.0,
+      "shares_dcf": 464523000.0,
+      "implied_growth": 0.03710797009789113,
+      "debt_financial_view": 28013000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 4975000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.942948954187654,
+      "terminal_share_of_enterprise_value": 0.8932852423742915,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 440.5902562212969,
+          "relative_change": 0.0012797546149128092
+        },
+        "wacc_minus_1pp": {
+          "value": 804.8206623560518,
+          "relative_change": 0.8290250951626164
+        },
+        "wacc_plus_1pp": {
+          "value": 293.4881222780697,
+          "relative_change": -0.3330226646923914
+        },
+        "terminal_plus_05pp": {
+          "value": 561.4486633233382,
+          "relative_change": 0.275941017540118
+        },
+        "remove_20pct_cap_only": {
+          "value": 440.02712947166873,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 0.0876222533
+    },
+    {
+      "ticker": "FCX",
+      "panel_sector": "Materials",
+      "provider_sector": "Basic Materials",
+      "industry": "Copper",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "cycle_normalization_review",
+      "price": 76.23,
+      "base_value": 52.32614864933911,
+      "bear_value": 33.33859055136564,
+      "bull_value": 78.98206307813314,
+      "position": "between_base_bull",
+      "wacc": 0.12314911171864902,
+      "beta": 1.401,
+      "beta_source": "provider_fundamental_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.0408995991647265,
+      "growth": 0.082438561,
+      "raw_base_growth": 0.082438561,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.4356051418869755,
+          "winsorized_value": 0.4356051418869755
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.006693648816936459,
+          "winsorized_value": 0.006693648816936459
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0332658446,
+          "winsorized_value": 0.0332658446
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1316112774,
+          "winsorized_value": 0.1316112774
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 6212443876.015649,
+      "reported_fcf": 5919000000.0,
+      "interest_adjustment": 293443876.0156485,
+      "debt_dcf": 10359000000.0,
+      "cash_dcf": 4080000000.0,
+      "shares_dcf": 1443000000.0,
+      "implied_growth": 0.17349152349868824,
+      "debt_financial_view": 10359000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 5919000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.6864246182518576,
+      "terminal_share_of_enterprise_value": 0.6595567053900248,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 56.090378719920146,
+          "relative_change": 0.07193783925904462
+        },
+        "wacc_minus_1pp": {
+          "value": 58.98362589244994,
+          "relative_change": 0.12723040802650232
+        },
+        "wacc_plus_1pp": {
+          "value": 46.90627322867399,
+          "relative_change": -0.1035787184909428
+        },
+        "terminal_plus_05pp": {
+          "value": 54.52485719673166,
+          "relative_change": 0.042019307824985974
+        },
+        "remove_20pct_cap_only": {
+          "value": 52.32614864933911,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 2.2203500396
+    },
+    {
+      "ticker": "NEM",
+      "panel_sector": "Materials",
+      "provider_sector": "Basic Materials",
+      "industry": "Gold",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "cycle_normalization_review",
+      "price": 128.71,
+      "base_value": 207.91921715482297,
+      "bear_value": 144.91349882554607,
+      "bull_value": 293.83452638553536,
+      "position": "below_bear",
+      "wacc": 0.14015233703339786,
+      "beta": 1.6244943561,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.027489626556016597,
+      "growth": 0.18944557841131926,
+      "raw_base_growth": 0.18944557841131926,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 1.610509098343897,
+          "winsorized_value": 0.5
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.15145027272263856,
+          "winsorized_value": 0.15145027272263856
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.2274408841,
+          "winsorized_value": 0.2274408841
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1411855475,
+          "winsorized_value": 0.1411855475
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 12866841268.689215,
+      "reported_fcf": 12768000000.0,
+      "interest_adjustment": 98841268.68921468,
+      "debt_dcf": 5981000000.0,
+      "cash_dcf": 13131000000.0,
+      "shares_dcf": 1067000000.0,
+      "implied_growth": 0.05738983133318509,
+      "debt_financial_view": 5466000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 0.48266166822867856,
+      "ttm_cross_view_fcf": 12768000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 1.6154084154675081,
+      "terminal_share_of_enterprise_value": 0.6591737056524081,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 248.08883645652244,
+          "relative_change": 0.19319820385716424
+        },
+        "wacc_minus_1pp": {
+          "value": 228.9685866349818,
+          "relative_change": 0.10123821053291482
+        },
+        "wacc_plus_1pp": {
+          "value": 190.28964408313553,
+          "relative_change": -0.0847904936971744
+        },
+        "terminal_plus_05pp": {
+          "value": 214.616249709102,
+          "relative_change": 0.03220978150034215
+        },
+        "remove_20pct_cap_only": {
+          "value": 207.91921715482297,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": 1.6244943561
+    },
+    {
+      "ticker": "NEE",
+      "panel_sector": "Utilities",
+      "provider_sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": false,
+      "unavailable_reasons": [
+        "Free cash flow must be positive for this DCF."
+      ],
+      "model_fit_review": "capital_intensive_review",
+      "price": 82.65,
+      "base_value": null,
+      "bear_value": null,
+      "bull_value": null,
+      "position": "unavailable",
+      "wacc": 0.04705474874794036,
+      "beta": 0.1726638548,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable TTM effective tax rate was unavailable; the configured fallback was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.03483900719242527,
+      "growth": 0.0944981689,
+      "raw_base_growth": 0.0944981689,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.1205451947951659,
+          "winsorized_value": 0.1205451947951659
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0944981689,
+          "winsorized_value": 0.0944981689
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0883051347,
+          "winsorized_value": 0.0883051347
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": -7399730000.0,
+      "reported_fcf": -10175000000.0,
+      "interest_adjustment": 2775270000.0,
+      "debt_dcf": 110197000000.0,
+      "cash_dcf": 2866000000.0,
+      "shares_dcf": 2089000000.0,
+      "implied_growth": null,
+      "debt_financial_view": 110197000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": -10175000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "observed_local_beta": 0.1726638548
+    },
+    {
+      "ticker": "DUK",
+      "panel_sector": "Utilities",
+      "provider_sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "capital_intensive_review",
+      "price": 120.43,
+      "base_value": 153.03099689152387,
+      "bear_value": 97.86172871253268,
+      "bull_value": 219.26775281730124,
+      "position": "between_bear_base",
+      "wacc": 0.05326270766437555,
+      "beta": 0.364,
+      "beta_source": "provider_fundamental_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.04146939941912066,
+      "growth": 0.0664832758,
+      "raw_base_growth": 0.0664832758,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06734674298871157,
+          "winsorized_value": 0.06734674298871157
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0386797141,
+          "winsorized_value": 0.0386797141
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0664832758,
+          "winsorized_value": 0.0664832758
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 4812355573.505654,
+      "reported_fcf": 1541000000.0,
+      "interest_adjustment": 3271355573.5056543,
+      "debt_dcf": 92206000000.0,
+      "cash_dcf": 673000000.0,
+      "shares_dcf": 779000000.0,
+      "implied_growth": 0.0380794442717054,
+      "debt_financial_view": 91238000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 1.2426187419768935,
+      "ttm_cross_view_fcf": 1541000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -2.842170943040401e-14,
+      "value_to_price": 1.2707049480322499,
+      "terminal_share_of_enterprise_value": 0.88145266626911,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 171.63937418652273,
+          "relative_change": 0.12159874582918273
+        },
+        "wacc_minus_1pp": {
+          "value": 302.574331025181,
+          "relative_change": 0.9772094358090146
+        },
+        "wacc_plus_1pp": {
+          "value": 81.67944305767776,
+          "relative_change": -0.46625556444897054
+        },
+        "terminal_plus_05pp": {
+          "value": 205.69812563277412,
+          "relative_change": 0.34415987486890254
+        },
+        "remove_20pct_cap_only": {
+          "value": 153.03099689152384,
+          "relative_change": -2.220446049250313e-16
+        }
+      },
+      "observed_local_beta": -0.3048906011
+    },
+    {
+      "ticker": "SO",
+      "panel_sector": "Utilities",
+      "provider_sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "capital_intensive_review",
+      "price": 88.34,
+      "base_value": 43.47935492852855,
+      "bear_value": 22.138490636704255,
+      "bull_value": 69.00820604423141,
+      "position": "above_bull",
+      "wacc": 0.0782831152776293,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.043630144704657994,
+      "growth": 0.06399182032930217,
+      "raw_base_growth": 0.06399182032930217,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06399182032930217,
+          "winsorized_value": 0.06399182032930217
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0031097339,
+          "winsorized_value": 0.0031097339
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.077211029,
+          "winsorized_value": 0.077211029
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 5435066310.97561,
+      "reported_fcf": 2573000000.0,
+      "interest_adjustment": 2862066310.97561,
+      "debt_dcf": 77294000000.0,
+      "cash_dcf": 2984000000.0,
+      "shares_dcf": 1141000000.0,
+      "implied_growth": 0.14682793949857675,
+      "debt_financial_view": 77087000000.0,
+      "debt_discrepancy": false,
+      "ttm_cross_view_fcf": 2573000000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -2.1316282072803006e-14,
+      "value_to_price": 0.4921819665896372,
+      "terminal_share_of_enterprise_value": 0.7892694958127662,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 49.56903638534729,
+          "relative_change": 0.14005914914857787
+        },
+        "wacc_minus_1pp": {
+          "value": 68.96102354938955,
+          "relative_change": 0.5860636309519269
+        },
+        "wacc_plus_1pp": {
+          "value": 26.060586247820655,
+          "relative_change": -0.4006215986723102
+        },
+        "terminal_plus_05pp": {
+          "value": 52.81758441284883,
+          "relative_change": 0.21477387370788925
+        },
+        "remove_20pct_cap_only": {
+          "value": 43.47935492852853,
+          "relative_change": -4.440892098500626e-16
+        }
+      },
+      "observed_local_beta": -0.2505963054
+    },
+    {
+      "ticker": "PLD",
+      "panel_sector": "Real Estate",
+      "provider_sector": "Real Estate",
+      "industry": "REIT - Industrial",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "reit_cashflow_model_required",
+      "price": 135.66,
+      "base_value": 198.5553904180265,
+      "bear_value": 139.4913916109889,
+      "bull_value": 273.12532829485843,
+      "position": "below_bear",
+      "wacc": 0.06547557407398925,
+      "beta": 0.4572226455,
+      "beta_source": "local_one_year_beta",
+      "wacc_quality": "calculated",
+      "wacc_notes": [],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.0296459050958614,
+      "growth": 0.10545535740371133,
+      "raw_base_growth": 0.10545535740371133,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.06662144262865319,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.013186175442693626,
+          "winsorized_value": 0.013186175442693626
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.07349967040742267,
+          "winsorized_value": 0.07349967040742267
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.1374110444,
+          "winsorized_value": 0.1374110444
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.1464290607,
+          "winsorized_value": 0.1464290607
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 6225702258.412919,
+      "reported_fcf": 5240975000.0,
+      "interest_adjustment": 984727258.412919,
+      "debt_dcf": 35927943000.0,
+      "cash_dcf": 1765043000.0,
+      "shares_dcf": 957884000.0,
+      "implied_growth": 0.03389920885163589,
+      "debt_financial_view": 36442085000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": -0.5367476646441531,
+      "ttm_cross_view_fcf": 5240975000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -2.842170943040401e-14,
+      "value_to_price": 1.4636251689372437,
+      "terminal_share_of_enterprise_value": 0.8448316838014458,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 228.85088084504736,
+          "relative_change": 0.15257954147323116
+        },
+        "wacc_minus_1pp": {
+          "value": 277.2449469392754,
+          "relative_change": 0.3963103512605761
+        },
+        "wacc_plus_1pp": {
+          "value": 151.08627232105303,
+          "relative_change": -0.23907242204321355
+        },
+        "terminal_plus_05pp": {
+          "value": 227.5458456288548,
+          "relative_change": 0.14600689082171758
+        },
+        "remove_20pct_cap_only": {
+          "value": 198.55539041802646,
+          "relative_change": -1.1102230246251565e-16
+        }
+      },
+      "observed_local_beta": 0.4572226455
+    },
+    {
+      "ticker": "AMT",
+      "panel_sector": "Real Estate",
+      "provider_sector": "Real Estate",
+      "industry": "REIT - Specialty",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "reit_cashflow_model_required",
+      "price": 175.43,
+      "base_value": 147.9260624936997,
+      "bear_value": 100.30478270854948,
+      "bull_value": 204.93084814740192,
+      "position": "between_base_bull",
+      "wacc": 0.07960958932094203,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.031059441786629866,
+      "growth": 0.058079409390603076,
+      "raw_base_growth": 0.058079409390603076,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.05,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": 0.05845874208120616,
+          "winsorized_value": 0.05845874208120616
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.06651331435923424,
+          "winsorized_value": 0.06651331435923424
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.0334191401,
+          "winsorized_value": 0.0334191401
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.0577000767,
+          "winsorized_value": 0.0577000767
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 5206691363.040293,
+      "reported_fcf": 3959800000.0,
+      "interest_adjustment": 1246891363.0402923,
+      "debt_dcf": 45624000000.0,
+      "cash_dcf": 1762500000.0,
+      "shares_dcf": 466578000.0,
+      "implied_growth": 0.08330446245016887,
+      "debt_financial_view": 44980000000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 1.3802622498274673,
+      "ttm_cross_view_fcf": 3959800000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": 0.0,
+      "value_to_price": 0.8432198739879136,
+      "terminal_share_of_enterprise_value": 0.7828081425917244,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 159.27743370272916,
+          "relative_change": 0.07673679010764523
+        },
+        "wacc_minus_1pp": {
+          "value": 202.8946337018736,
+          "relative_change": 0.37159490546512086
+        },
+        "wacc_plus_1pp": {
+          "value": 109.9914713655728,
+          "relative_change": -0.2564429180945891
+        },
+        "terminal_plus_05pp": {
+          "value": 168.03075433051058,
+          "relative_change": 0.13591041022718464
+        },
+        "remove_20pct_cap_only": {
+          "value": 147.9260624936997,
+          "relative_change": 0.0
+        }
+      },
+      "observed_local_beta": -0.1250124738
+    },
+    {
+      "ticker": "O",
+      "panel_sector": "Real Estate",
+      "provider_sector": "Real Estate",
+      "industry": "REIT - Retail",
+      "price_date": "2026-09-09",
+      "financial_date": "2026-06-30",
+      "currency": "USD",
+      "available": true,
+      "unavailable_reasons": [],
+      "model_fit_review": "reit_cashflow_model_required",
+      "price": 60.11,
+      "base_value": 70.09070037485795,
+      "bear_value": 36.01648473060196,
+      "bull_value": 117.68965780720825,
+      "position": "between_bear_base",
+      "wacc": 0.08493944234116027,
+      "beta": 1.0,
+      "beta_source": "fallback_market_beta",
+      "wacc_quality": "estimated_with_fallbacks",
+      "wacc_notes": [
+        "A usable provider/local beta was unavailable; market beta 1.0 was used."
+      ],
+      "debt_cost_source": "ttm_interest_over_average_book_debt",
+      "cost_of_debt": 0.0402665671425406,
+      "growth": 0.1422483876537881,
+      "raw_base_growth": 0.1422483876537881,
+      "base_cap_hit": false,
+      "base_floor_hit": false,
+      "growth_method": "median_of_company_growth_signals",
+      "scenario_spread": 0.1,
+      "growth_signals": [
+        {
+          "source": "ttm_fcf_yoy",
+          "raw_value": -0.39251956304399216,
+          "winsorized_value": -0.25
+        },
+        {
+          "source": "ttm_revenue_yoy",
+          "raw_value": 0.08647173420757626,
+          "winsorized_value": 0.08647173420757626
+        },
+        {
+          "source": "sales_growth_3yr",
+          "raw_value": 0.1980250411,
+          "winsorized_value": 0.1980250411
+        },
+        {
+          "source": "sales_growth_5yr",
+          "raw_value": 0.2840478176,
+          "winsorized_value": 0.2840478176
+        }
+      ],
+      "terminal_growth": 0.025,
+      "fcff": 3338381335.345563,
+      "reported_fcf": 2181978000.0,
+      "interest_adjustment": 1156403335.345563,
+      "debt_dcf": 28417605000.0,
+      "cash_dcf": 552648000.0,
+      "shares_dcf": 934662000.0,
+      "implied_growth": 0.11636108833090697,
+      "debt_financial_view": 2760395000.0,
+      "debt_discrepancy": true,
+      "debt_bridge_delta_per_share": 27.450789697238147,
+      "ttm_cross_view_fcf": 2181978000.0,
+      "ttm_cross_view_difference": 0.0,
+      "production_reproduction_error": 0.0,
+      "independent_reproduction_error": -4.263256414560601e-14,
+      "value_to_price": 1.1660405984837456,
+      "terminal_share_of_enterprise_value": 0.7908366583722284,
+      "diagnostic_variants": {
+        "fade_10yr": {
+          "value": 87.73433270546866,
+          "relative_change": 0.2517257244719959
+        },
+        "wacc_minus_1pp": {
+          "value": 91.01596036708844,
+          "relative_change": 0.2985454543943542
+        },
+        "wacc_plus_1pp": {
+          "value": 55.17334629032513,
+          "relative_change": -0.21282929125764283
+        },
+        "terminal_plus_05pp": {
+          "value": 77.7015859611471,
+          "relative_change": 0.10858623962358416
+        },
+        "remove_20pct_cap_only": {
+          "value": 70.0907003748579,
+          "relative_change": -5.551115123125783e-16
+        }
+      },
+      "observed_local_beta": -0.038300473
+    }
+  ]
+}

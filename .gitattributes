@@ -1,0 +1,4 @@
+# Frozen machine-generated audit evidence stays in Git but is collapsed in PRs.
+docs/valuation_cross_sector_2026-09-10/snapshots/*.json linguist-generated=true
+docs/valuation_cross_sector_2026-09-10/results.json linguist-generated=true
+docs/valuation_repair_2026-09-10/regression_results.json linguist-generated=true

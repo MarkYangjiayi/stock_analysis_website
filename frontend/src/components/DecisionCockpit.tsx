@@ -1,5 +1,7 @@
 "use client";
 
+import OperatingForecastEditor from "./OperatingForecastEditor";
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
     AlertTriangle,
@@ -72,7 +74,7 @@ const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
 ];
 
 type ScenarioRateField = "fcf_growth_rate" | "wacc" | "perpetual_growth";
-type ScenarioDraft = {
+type ScenarioDraft = Pick<DecisionValuationScenarioInput, "operating_forecast" | "terminal_roic" | "forecast_as_of"> & {
     scenario: DecisionValuationScenarioInput["scenario"];
     fcf_growth_rate: string;
     wacc: string;
@@ -80,6 +82,7 @@ type ScenarioDraft = {
 };
 
 const toScenarioDrafts = (inputs: DecisionValuationScenarioInput[]): ScenarioDraft[] => inputs.map((item) => ({
+    operating_forecast: item.operating_forecast, terminal_roic: item.terminal_roic, forecast_as_of: item.forecast_as_of,
     scenario: item.scenario,
     fcf_growth_rate: (item.fcf_growth_rate * 100).toString(),
     wacc: (item.wacc * 100).toString(),
@@ -343,6 +346,14 @@ export default function DecisionCockpit({
             perpetual_growth: "terminal growth",
         };
         return scenarioDrafts.map((draft) => {
+            if (draft.operating_forecast) {
+                if (!draft.forecast_as_of || !Number.isFinite(draft.terminal_roic)) throw new Error(`Enter the forecast date and terminal ROIC for ${draft.scenario}.`);
+                for (const row of draft.operating_forecast) {
+                    if (!row.source.trim() || ![row.revenue, row.operating_margin, row.tax_rate, row.capex, row.depreciation, row.change_in_working_capital].every(Number.isFinite)) {
+                        throw new Error(`Complete all operating inputs and the source for ${draft.scenario}, year ${row.year}.`);
+                    }
+                }
+            }
             const parsed = {} as Record<ScenarioRateField, number>;
             for (const key of Object.keys(labels) as ScenarioRateField[]) {
                 const value = Number(draft[key]);
@@ -351,7 +362,7 @@ export default function DecisionCockpit({
                 }
                 parsed[key] = value / 100;
             }
-            return { scenario: draft.scenario, ...parsed };
+            return { scenario: draft.scenario, ...parsed, ...(draft.operating_forecast ? { operating_forecast: draft.operating_forecast, terminal_roic: draft.terminal_roic, forecast_as_of: draft.forecast_as_of } : {}) };
         });
     };
 
@@ -579,16 +590,17 @@ export default function DecisionCockpit({
                     </div>}
 
                     {activeTab === "valuation" && valuation && <div className="space-y-6">
+                        <p className="text-xs text-slate-500">Model {valuation.model_version || "legacy"} · {valuation.formula.forecast_years} forecast years · Values are conditional scenarios, not confidence intervals.</p>
                         <section className="overflow-hidden rounded-xl border">
                             <div className="surface-subtle grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                                 <div>
                                     <p className="eyebrow">Reverse DCF growth hurdle</p>
-                                    <h3 className="mt-1 text-base font-black">Market-implied 5Y FCF growth</h3>
-                                    {impliedGrowth?.available ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The current price is matched when TTM free cash flow compounds at this rate for five years, holding the Base discount and terminal assumptions fixed. This is a market hurdle, not a forecast, and inherits the scenario DCF&apos;s FCF, currency, and share-unit limits.</p> : <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The growth hurdle cannot be reverse-solved from the current DCF inputs.</p>}
+                                    <h3 className="mt-1 text-base font-black">Market-implied initial FCF growth</h3>
+                                    {impliedGrowth?.available ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The current price is matched when TTM free cash flow grows at this rate for the first five years, then fades toward mature growth in years 6–10, holding the Base discount and terminal assumptions fixed. This is a market hurdle, not a forecast, and inherits the scenario DCF&apos;s FCF, currency, and share-unit limits.</p> : <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The growth hurdle cannot be reverse-solved from the current DCF inputs.</p>}
                                 </div>
                                 <div className="min-w-[220px] rounded-xl border bg-white/80 p-4 dark:bg-slate-950/40">
                                     <p className="font-mono text-3xl font-black text-indigo-600 dark:text-indigo-300">{impliedGrowth?.available ? `${(impliedGrowth.implied_fcf_growth_rate! * 100).toFixed(1)}%` : "—"}</p>
-                                    <p className="mt-1 text-xs font-bold text-slate-500">5-year implied FCF CAGR</p>
+                                    <p className="mt-1 text-xs font-bold text-slate-500">Initial 5-year implied FCF CAGR</p>
                                 </div>
                             </div>
                             {impliedGrowth?.available ? <dl className="grid gap-px border-t bg-slate-200 text-xs dark:bg-slate-800 sm:grid-cols-3">
@@ -611,22 +623,30 @@ export default function DecisionCockpit({
                             </div>
                             {valuation.assumption_basis?.wacc && <dl className="mt-4 grid gap-px overflow-hidden rounded-lg bg-slate-200 text-xs dark:bg-slate-800 sm:grid-cols-4">
                                 <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Risk-free</dt><dd className="mt-1 font-mono font-black">{(valuation.assumption_basis.wacc.risk_free_rate * 100).toFixed(2)}%</dd></div>
-                                <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Beta</dt><dd className="mt-1 font-mono font-black">{valuation.assumption_basis.wacc.beta.toFixed(2)}</dd></div>
+                                <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Long-run Beta</dt><dd className="mt-1 font-mono font-black">{valuation.assumption_basis.wacc.beta.toFixed(2)}</dd></div>
                                 <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Cost of equity</dt><dd className="mt-1 font-mono font-black">{(valuation.assumption_basis.wacc.cost_of_equity * 100).toFixed(2)}%</dd></div>
                                 <div className="bg-white p-3 dark:bg-slate-950/60"><dt className="text-slate-500">Cost of debt</dt><dd className="mt-1 font-mono font-black">{valuation.assumption_basis.wacc.cost_of_debt == null ? "—" : `${(valuation.assumption_basis.wacc.cost_of_debt * 100).toFixed(2)}%`}</dd></div>
                             </dl>}
                             {valuation.assumption_basis?.wacc.notes.length ? <ul className="mt-3 space-y-1 text-xs text-amber-700 dark:text-amber-300">{valuation.assumption_basis.wacc.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}
                         </section>
+                        <OperatingForecastEditor scenarios={scenarioDrafts} disabled={valuationBusy} onChange={next => { setScenarioDrafts(next); setSaveMessage(""); }} />
+                        {valuation.assumption_basis?.growth.notes?.length ? <ul className="space-y-1 text-xs text-slate-500">{valuation.assumption_basis.growth.notes.map(note => <li key={note}>{note}</li>)}</ul> : null}
+                        <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-bold">Cash flow, debt and share sources</summary>
+                            <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2"><div><dt>Share basis</dt><dd>{valuation.inputs.shares_basis?.basis.replaceAll("_", " ") || "Provider statement basis unverified"} · {valuation.inputs.shares_basis?.as_of || "Date unavailable"}</dd></div><div><dt>Debt scope</dt><dd>{valuation.inputs.input_lineage?.debt?.scope.replaceAll("_", " ") || "Unavailable"}</dd></div><div><dt>Reported fiscal end</dt><dd>{valuation.inputs.reported_period_end || "Not supplied; period label shown"}</dd></div><div><dt>Filing date</dt><dd>{valuation.inputs.filing_date || "Unavailable"}</dd></div></dl>
+                            {valuation.inputs.equity_bridge && <p className="mt-3 text-xs">Cash bridge: {valuation.inputs.equity_bridge.cash_basis.replaceAll("_", " ")}. Other sourced equity adjustments: {valuation.inputs.equity_bridge.equity_adjustment.toLocaleString()}. {valuation.inputs.equity_bridge.complete ? "All bridge components sourced." : "Some bridge components remain unverified."}</p>}
+                            <ul className="mt-3 space-y-1 text-xs text-amber-700 dark:text-amber-300">{valuation.inputs.input_lineage?.notes?.map(note => <li key={note}>{note}</li>)}</ul>
+                        </details>
                         <div className="grid gap-4 lg:grid-cols-3">
                             {scenarioDrafts.map((scenario, index) => {
                                 const result = valuation.scenarios.find((item) => item.scenario === scenario.scenario);
-                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? formatMoney(result.intrinsic_value_per_share) : "Unavailable"}</span></div><label className="mt-4 block text-[10px] font-bold uppercase tracking-wide text-slate-500">5Y FCF growth<div className="relative mt-1"><input type="number" min={-20} max={50} step="0.1" value={scenario.fcf_growth_rate} disabled={valuationBusy} onChange={(event) => editScenario(index, "fcf_growth_rate", event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label={`${scenario.scenario} FCF growth`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
+                                return <article key={scenario.scenario} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-black capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-black">{result?.available ? formatMoney(result.intrinsic_value_per_share) : "Unavailable"}</span></div><label className="mt-4 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Initial 5Y FCF growth<div className="relative mt-1"><input type="number" min={-20} max={50} step="0.1" value={scenario.fcf_growth_rate} disabled={valuationBusy || !!scenario.operating_forecast} onChange={(event) => editScenario(index, "fcf_growth_rate", event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label={`${scenario.scenario} FCF growth`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>{result?.available ? <p className={`mt-3 text-xs font-bold ${(result.upside_downside ?? 0) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-rose-500">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
                             })}
                         </div>
                         <div className="flex flex-wrap items-center gap-2"><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void calculate()}><Calculator size={15} /> Calculate</button><button type="button" className="primary-button" disabled={valuationBusy} onClick={() => void save()}><Save size={15} /> {adminKey ? "Save scenarios" : "Unlock to save"}</button><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void reset()}><RotateCcw size={15} /> Reset defaults</button>{valuationBusy && <LoaderCircle className="animate-spin text-emerald-500" size={18} />}{saveMessage && <span className="text-xs font-bold text-emerald-600">{saveMessage}</span>}</div>
                         {valuationError && <div className="error-panel" role="alert">{valuationError}</div>}
                         <section className="overflow-hidden rounded-xl border"><header className="surface-subtle border-b p-4"><h3 className="text-sm font-black">Base-case WACC / terminal sensitivity</h3><p className="mt-1 text-xs text-slate-500">Intrinsic value per share · Base FCF growth {(valuation.sensitivity.fcf_growth_rate * 100).toFixed(1)}% · WACC ±1/2 points · terminal growth ±0.5/1 point</p></header><div className="overflow-x-auto p-3"><table className="w-full min-w-[620px] border-separate border-spacing-1 text-right font-mono text-xs"><thead><tr><th className="p-2 text-left text-slate-500">Terminal ↓ / WACC →</th>{valuation.sensitivity.wacc_values.map((wacc) => <th key={wacc} className="p-2 text-slate-500">{(wacc * 100).toFixed(1)}%</th>)}</tr></thead><tbody>{valuation.sensitivity.terminal_growth_values.map((terminal, rowIndex) => <tr key={`${terminal}-${rowIndex}`}><th className="p-2 text-left text-slate-500">{(terminal * 100).toFixed(1)}%</th>{valuation.sensitivity.values[rowIndex].map((value, columnIndex) => <td key={columnIndex} title={valuation.sensitivity.cell_reasons[rowIndex][columnIndex] || undefined} className={`rounded-lg border p-2.5 font-bold ${rowIndex === 2 && columnIndex === 2 ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 dark:bg-slate-900/50"}`}>{value == null ? "—" : formatMoney(value)}</td>)}</tr>)}</tbody></table></div></section>
-                        <p className="rounded-xl border p-4 text-xs leading-5 text-slate-500">Five-year FCFF forecast. Provider FCF is unlevered by adding after-tax interest, cash is added, debt is deducted, and terminal value uses <span className="font-mono">FCFF₅ × (1 + g) / (WACC − g)</span>. Inputs: reported FCF {compact(valuation.inputs.reported_fcf)}, after-tax interest {compact(valuation.inputs.after_tax_interest_adjustment)}, FCFF {compact(valuation.inputs.fcf)}, cash {compact(valuation.inputs.cash)}, debt {compact(valuation.inputs.debt)}, shares {compact(valuation.inputs.shares)}.</p>
+                        <div className="rounded-xl border p-4 text-xs text-slate-500">Base terminal value contribution: {valuation.scenarios[1]?.terminal_share_of_enterprise_value == null ? "—" : `${(valuation.scenarios[1].terminal_share_of_enterprise_value! * 100).toFixed(1)}% of enterprise value`}. Historical continuation assumes sustainable reinvestment within FCFF; an operating forecast explicitly links mature reinvestment to growth and terminal ROIC.</div>
+                        <p className="rounded-xl border p-4 text-xs leading-5 text-slate-500">Ten-year FCFF scenario: five initial growth years followed by five years of linear convergence to mature growth. A sourced operating forecast replaces this path when supplied. CFO less capex is adjusted using reported after-tax interest when available. Reported cash and debt retain their source qualifications. The continuation terminal value uses <span className="font-mono">FCFF₁₀ × (1 + g) / (WACC − g)</span>. Inputs: reported FCF {compact(valuation.inputs.reported_fcf)}, after-tax interest {compact(valuation.inputs.after_tax_interest_adjustment)}, FCFF {compact(valuation.inputs.fcf)}, cash {compact(valuation.inputs.cash)}, debt {compact(valuation.inputs.debt)}, shares {compact(valuation.inputs.shares)}.</p>
                     </div>}
 
                     {activeTab === "valuation" && !valuation && <div className="space-y-3">

@@ -61,9 +61,11 @@ def test_dcf_formula_and_base_sensitivity_cell_are_transparent():
     base = valuation["scenarios"][1]
 
     projected = [100 * (1.10 ** year) for year in range(1, 6)]
+    for growth in (0.085, 0.070, 0.055, 0.040, 0.025):
+        projected.append(projected[-1] * (1 + growth))
     explicit = sum(value / (1.09 ** year) for year, value in enumerate(projected, 1))
     terminal = projected[-1] * 1.025 / (0.09 - 0.025)
-    expected = (explicit + terminal / (1.09 ** 5) + 50 - 20) / 10
+    expected = (explicit + terminal / (1.09 ** 10) + 50 - 20) / 10
 
     assert base["intrinsic_value_per_share"] == pytest.approx(expected)
     assert valuation["sensitivity"]["values"][2][2] == pytest.approx(expected)
@@ -587,6 +589,9 @@ def _quarterly_statement(ticker: str, fiscal_date: date, scale: float = 1.0, *, 
             "grossProfit": 50 * scale,
             "operatingIncome": 25 * scale,
             "netIncome": 20 * scale,
+            "interestExpense": 1 * scale,
+            "incomeBeforeTax": 25 * scale,
+            "incomeTaxExpense": 5 * scale,
         },
         cash_flow={"freeCashFlow": fcf * scale},
         balance_sheet={
@@ -598,7 +603,7 @@ def _quarterly_statement(ticker: str, fiscal_date: date, scale: float = 1.0, *, 
     )
 
 
-def test_financial_context_prefers_debt_components_and_uses_four_quarter_average():
+def test_financial_context_uses_complete_total_without_duplicating_leases():
     records = []
     for fiscal_date, short_debt, long_debt, leases in (
         (date(2025, 12, 31), 10.0, 40.0, 5.0),
@@ -613,7 +618,7 @@ def test_financial_context_prefers_debt_components_and_uses_four_quarter_average
                 "longTermDebt": long_debt,
                 "capitalLeaseObligations": leases,
                 # Provider aggregates can overlap with the component fields.
-                "totalDebt": 999.0,
+                "totalDebt": short_debt + long_debt + leases,
             }
         )
         records.append(statement)

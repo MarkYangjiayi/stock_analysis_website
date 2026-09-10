@@ -1,0 +1,74 @@
+{
+  "locked_at_utc": "2026-09-10T14:28:37.652276+00:00",
+  "panel": {
+    "Technology": [
+      "NVDA",
+      "MSFT",
+      "AAPL"
+    ],
+    "Communication Services": [
+      "GOOGL",
+      "META",
+      "VZ"
+    ],
+    "Consumer Discretionary": [
+      "AMZN",
+      "HD",
+      "MCD"
+    ],
+    "Consumer Staples": [
+      "PG",
+      "KO",
+      "WMT"
+    ],
+    "Health Care": [
+      "JNJ",
+      "UNH",
+      "LLY"
+    ],
+    "Financials": [
+      "JPM",
+      "BAC",
+      "PGR"
+    ],
+    "Energy": [
+      "XOM",
+      "CVX",
+      "SLB"
+    ],
+    "Industrials": [
+      "CAT",
+      "UNP",
+      "HON"
+    ],
+    "Materials": [
+      "LIN",
+      "FCX",
+      "NEM"
+    ],
+    "Utilities": [
+      "NEE",
+      "DUK",
+      "SO"
+    ],
+    "Real Estate": [
+      "PLD",
+      "AMT",
+      "O"
+    ]
+  },
+  "selection": "Purposive large-cap diagnostic panel, equal count by 11 broad sectors; no claim of random sampling or market representation.",
+  "holdout_status": "All 33 are diagnostic observations. No model fitting. Future model selection requires new untouched names and point-in-time out-of-sample periods.",
+  "rules": {
+    "fade_years": 10,
+    "fade_excess_growth_retention": 0.7,
+    "wacc_perturbation_pp": [
+      -1,
+      1
+    ],
+    "terminal_perturbation_pp": 0.5,
+    "debt_difference_tolerance": 0.005
+  },
+  "price_role": "Descriptive diagnostic only; never an error label, calibration target, or proof of fair value.",
+  "source": "Public default API responses, no admin key or personal scenarios."
+}

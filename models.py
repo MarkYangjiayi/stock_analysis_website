@@ -720,6 +720,7 @@ class TickerValuationScenario(Base):
     fcf_growth_rate: Mapped[float] = mapped_column(Float)
     wacc: Mapped[float] = mapped_column(Float)
     perpetual_growth: Mapped[float] = mapped_column(Float)
+    forecast_inputs: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=utc_now,

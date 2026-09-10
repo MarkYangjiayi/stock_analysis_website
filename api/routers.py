@@ -381,7 +381,10 @@ async def calculate_stock_valuation(
     db: AsyncSession = Depends(get_db),
 ):
     scenarios = _scenario_dicts(request)
-    return await calculate_ticker_valuation(ticker, db, scenarios)
+    try:
+        return await calculate_ticker_valuation(ticker, db, scenarios)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
