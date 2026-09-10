@@ -25,7 +25,7 @@ test("captures the shared desktop shell across primary pages", async ({ page }, 
             await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /^(?!.*dark)/);
             await expect.poll(() => page.locator(".app-page").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
             await page.screenshot({
-                path: `../docs/frontend_redesign_acceptance/${item.name}-${theme}-1440x900.png`,
+                path: `../docs/frontend_redesign_visual_fix/${item.name}-${theme}-1440x900.png`,
                 animations: "disabled",
             });
         }

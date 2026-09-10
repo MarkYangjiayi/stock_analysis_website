@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent } from "react";
 import { BarChart3, Calculator, CalendarDays, ChartCandlestick, Landmark } from "lucide-react";
 
 export type AnalysisSection = "overview" | "valuation" | "financials" | "technical" | "events";
@@ -23,21 +23,28 @@ export default function AnalysisNavigation({
     active: AnalysisSection;
     onChange: (section: AnalysisSection) => void;
 }) {
+    const buttons = useRef<Array<HTMLButtonElement | null>>([]);
+    const activate = (index: number) => {
+        buttons.current[index]?.focus({ preventScroll: true });
+        buttons.current[index]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        onChange(SECTIONS[index].value);
+    };
     const move = (event: KeyboardEvent<HTMLButtonElement>, direction: -1 | 1) => {
         event.preventDefault();
-        const index = SECTIONS.findIndex((section) => section.value === active);
-        onChange(SECTIONS[(index + direction + SECTIONS.length) % SECTIONS.length].value);
+        const index = buttons.current.indexOf(event.currentTarget);
+        activate((index + direction + SECTIONS.length) % SECTIONS.length);
     };
 
     return (
         <nav className="analysis-navigation" aria-label="Security research sections">
             <div className="scrollbar-hide flex min-w-max items-stretch" role="tablist" aria-label="Security research sections">
-                {SECTIONS.map((section) => {
+                {SECTIONS.map((section, index) => {
                     const Icon = section.icon;
                     const selected = section.value === active;
                     return (
                         <button
                             key={section.value}
+                            ref={(element) => { buttons.current[index] = element; }}
                             id={`analysis-tab-${section.value}`}
                             type="button"
                             role="tab"
@@ -48,8 +55,8 @@ export default function AnalysisNavigation({
                             onKeyDown={(event) => {
                                 if (event.key === "ArrowLeft") move(event, -1);
                                 if (event.key === "ArrowRight") move(event, 1);
-                                if (event.key === "Home") { event.preventDefault(); onChange(SECTIONS[0].value); }
-                                if (event.key === "End") { event.preventDefault(); onChange(SECTIONS.at(-1)!.value); }
+                                if (event.key === "Home") { event.preventDefault(); activate(0); }
+                                if (event.key === "End") { event.preventDefault(); activate(SECTIONS.length - 1); }
                             }}
                             className="analysis-navigation-item"
                         >

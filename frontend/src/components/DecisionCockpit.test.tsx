@@ -183,6 +183,29 @@ describe("DecisionCockpit", () => {
         apiMocks.resetPersonalValuationScenarios.mockResolvedValue({ ticker: "AAA.US", is_saved: false, scenarios });
     });
 
+    it("keeps partial risk coverage visible in the compact overview", () => {
+        render(<DecisionCockpit {...props()} hideNavigation activeView="overview" decision={{
+            ...decision,
+            risks: { ...decision.risks, warnings: [] },
+            evidence: [{ id: "E27", kind: "fundamental_warning", label: "Revenue", value: null, source_date: null, available: false }],
+        }} />);
+        expect(screen.getByText("Risk coverage is limited")).toBeVisible();
+        expect(screen.getByText("1 warning check unavailable.")).toBeVisible();
+        expect(screen.queryByText("No triggered fundamental warnings")).not.toBeInTheDocument();
+    });
+
+    it("preserves currency and research navigation in the compact overview", async () => {
+        const onViewChange = vi.fn();
+        render(<DecisionCockpit {...props()} hideNavigation activeView="overview" onViewChange={onViewChange} decision={{ ...decision, metadata: { ...decision.metadata, currency: "JPY" } }} />);
+        expect(screen.getByText("¥80")).toBeVisible();
+        await userEvent.click(screen.getByRole("button", { name: "View assumptions" }));
+        expect(onViewChange).toHaveBeenLastCalledWith("valuation");
+        await userEvent.click(screen.getByRole("button", { name: "View all evidence" }));
+        expect(onViewChange).toHaveBeenLastCalledWith("risks");
+        expect(apiMocks.calculateDecisionValuation).not.toHaveBeenCalled();
+        expect(apiMocks.savePersonalValuationScenarios).not.toHaveBeenCalled();
+    });
+
     it("keeps personal saves locked while allowing stateless scenario calculation", async () => {
         const user = userEvent.setup();
         const componentProps = props();

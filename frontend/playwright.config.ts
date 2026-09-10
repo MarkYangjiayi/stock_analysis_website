@@ -18,7 +18,9 @@ export default defineConfig({
             reuseExistingServer: false,
         },
         {
-            command: "NEXT_PUBLIC_API_URL=http://127.0.0.1:8010 npm run dev -- --hostname 127.0.0.1 --port 3000",
+            command: process.env.PLAYWRIGHT_USE_PRODUCTION === "1"
+                ? "npm run start -- --hostname 127.0.0.1 --port 3000"
+                : "NEXT_PUBLIC_API_URL=http://127.0.0.1:8010 npm run dev -- --hostname 127.0.0.1 --port 3000",
             url: "http://127.0.0.1:3000/screener",
             timeout: 60_000,
             reuseExistingServer: false,
