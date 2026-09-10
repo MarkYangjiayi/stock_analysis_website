@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronUp, Clock3, Plus, Search, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronUp, Plus, Search, ShieldCheck } from "lucide-react";
 import {
     ApiError,
     DecisionSupportResponse,
@@ -35,13 +35,17 @@ import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
 import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
 import AnalysisNavigation, { isAnalysisSection, type AnalysisSection } from "@/components/analysis/AnalysisNavigation";
-import { DataState } from "@/components/ui/DataState";
+import FinancialSnapshot from "@/components/analysis/FinancialSnapshot";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { formatSignedPercent } from "@/lib/format";
 
 const StockChart = dynamic(() => import("@/components/StockChart"), {
     ssr: false,
     loading: () => <div className="h-[480px] animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />,
+});
+const OverviewStockChart = dynamic(() => import("@/components/StockChart"), {
+    ssr: false,
+    loading: () => <div className="h-[260px] animate-pulse bg-[var(--surface-muted)]" />,
 });
 const FinancialTrendChart = dynamic(() => import("@/components/FinancialTrendChart"), {
     ssr: false,
@@ -583,7 +587,7 @@ function AnalysisPage() {
                 <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} />
             </div>
 
-            <div className="app-page min-w-0 flex-1">
+            <div className="app-page analysis-workspace min-w-0 flex-1">
                 <div className="page-container">
                     <WatchlistSidebar compact currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} />
 
@@ -617,58 +621,39 @@ function AnalysisPage() {
                     {stockData && (
                         <>
                             {error && <div className="error-panel" role="alert">{error} The previous snapshot remains visible.</div>}
-                            <section className="stock-context-header surface-panel overflow-hidden p-4 sm:p-6">
-                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                            <section className="stock-context-header" aria-label="Stock identity">
+                                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start sm:gap-5">
                                     <div className="min-w-0">
-                                        <div className="flex flex-wrap items-start gap-3">
-                                            <h1 className="min-w-0 max-w-4xl text-2xl font-bold tracking-[-0.035em] sm:text-3xl">{stockData.profile.name || stockData.profile.ticker}</h1>
-                                            {watchlist.includes(stockData.profile.ticker) ? (
-                                                <span className="status-pill mt-1"><Check size={14} /> In watchlist</span>
-                                            ) : (
-                                                <button type="button" onClick={() => addToWatchlist(stockData.profile.ticker)} className="secondary-button min-h-9 px-3 py-1.5"><Plus size={15} /> {personal.isUnlocked ? "Add" : "Unlock to add"}</button>
-                                            )}
-                                        </div>
-                                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                            <span className="rounded-lg border px-2.5 py-1 font-mono text-emerald-700 dark:text-emerald-300">{stockData.profile.ticker}</span>
-                                            {stockData.profile.exchange && <span className="rounded-lg border px-2.5 py-1">{stockData.profile.exchange}</span>}
-                                            {stockData.profile.sector && <span className="rounded-lg border px-2.5 py-1">{stockData.profile.sector}</span>}
-                                            {stockData.profile.industry && <span className="rounded-lg border px-2.5 py-1">{stockData.profile.industry}</span>}
+                                        <div className="flex items-center gap-3">
+                                            <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-soft)] text-lg font-semibold text-[var(--brand-strong)] sm:flex" aria-hidden="true">{stockData.profile.ticker.split(".")[0].slice(0, 1)}</span>
+                                            <div className="min-w-0">
+                                                <h1 className="break-words text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">{stockData.profile.name || stockData.profile.ticker}</h1>
+                                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)]">
+                                                    <span className="font-semibold text-[var(--brand-strong)]">{stockData.profile.ticker}</span>
+                                                    {stockData.profile.exchange && <span>{stockData.profile.exchange}</span>}
+                                                    {stockData.profile.sector && <span>{stockData.profile.sector}</span>}
+                                                    {stockData.profile.description && <button type="button" className="inline-flex min-h-7 items-center gap-1 hover:text-[var(--text)]" aria-expanded={descriptionExpanded} aria-controls="company-description" onClick={() => setDescriptionExpanded((expanded) => !expanded)}>
+                                                        About {descriptionExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                                    </button>}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="surface-subtle min-w-0 rounded-xl border p-4 sm:min-w-[260px]">
-                                        <p className="eyebrow">Latest adjusted close</p>
-                                        <div className="mt-1 flex flex-wrap items-baseline gap-2">
-                                            <span className="text-sm font-semibold text-slate-500">{stockData.profile.currency || "USD"}</span>
-                                            <span className="font-mono text-3xl font-bold tracking-[-0.04em]">{latest?.close?.toFixed(2) ?? "—"}</span>
+                                    <div className="flex shrink-0 items-center justify-between gap-4 sm:items-start sm:gap-5">
+                                        <div className="sm:text-right">
+                                            <div className="flex items-baseline gap-1.5 sm:justify-end"><span className="text-xs text-[var(--text-muted)]">{stockData.profile.currency || "USD"}</span><span className="text-2xl font-semibold tracking-tight sm:text-[28px]">{latest?.close?.toFixed(2) ?? "—"}</span></div>
+                                            {change != null && <p className={`mt-0.5 flex items-center gap-1 text-sm font-medium sm:justify-end ${change > 0 ? "text-[var(--positive)]" : change < 0 ? "text-[var(--negative)]" : "text-[var(--neutral)]"}`}>{change > 0 ? <ArrowUpRight size={14} /> : change < 0 ? <ArrowDownRight size={14} /> : null}{change > 0 ? "+" : change < 0 ? "−" : ""}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${formatSignedPercent(changePct)})`}</p>}
+                                            <p className="mt-1 text-xs text-[var(--text-muted)]">Adjusted close · {latest?.date || "Date unavailable"}</p>
                                         </div>
-                                        {change != null && <p className={`mt-1 flex items-center gap-1 text-sm font-semibold ${change > 0 ? "text-[var(--positive)]" : change < 0 ? "text-[var(--negative)]" : "text-[var(--neutral)]"}`}>{change > 0 ? <ArrowUpRight size={15} /> : change < 0 ? <ArrowDownRight size={15} /> : null}{change > 0 ? "+" : change < 0 ? "−" : ""}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${formatSignedPercent(changePct)})`}</p>}
-                                        <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 size={12} /> {latest?.date ? `Price date ${latest.date}` : "Price date unavailable"} · adjusted</p>
+                                        {watchlist.includes(stockData.profile.ticker) ? <span className="research-link"><Check size={15} /> In watchlist</span> : <button type="button" onClick={() => addToWatchlist(stockData.profile.ticker)} className="secondary-button min-h-9 shrink-0 px-3 py-1.5 text-xs"><Plus size={14} /> {personal.isUnlocked ? "Watchlist" : "Unlock to add"}</button>}
                                     </div>
                                 </div>
-                                <div className="scrollbar-hide mt-4 flex flex-nowrap gap-2 overflow-x-auto border-t pt-3 sm:flex-wrap" aria-label="Data availability">
-                                    <DataState label={latest?.date ? `Price ${latest.date}` : "Price unavailable"} tone={latest?.date ? "ready" : "neutral"} />
-                                    <DataState label={stockData.historical_financials.length ? "Financials available" : "Financials unavailable"} tone={stockData.historical_financials.length ? "ready" : "neutral"} />
-                                    <DataState label={factorLoading ? "Factors loading" : factorError ? "Factors unavailable" : "Factors available"} tone={factorLoading ? "loading" : factorError ? "error" : "ready"} />
-                                    <DataState label={decisionLoading ? "Research loading" : decisionError ? "Research limited" : "Research available"} tone={decisionLoading ? "loading" : decisionError ? "error" : "ready"} />
-                                </div>
-                                {stockData.profile.description && <div className="mt-3 border-t pt-3 sm:mt-4 sm:pt-4">
-                                    <p id="company-description" className={`text-sm leading-6 text-slate-600 dark:text-slate-400 ${descriptionExpanded ? "" : "line-clamp-1 sm:line-clamp-2"}`}>{stockData.profile.description}</p>
-                                    <button type="button" className="mt-2 inline-flex min-h-8 items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300" aria-expanded={descriptionExpanded} aria-controls="company-description" onClick={() => setDescriptionExpanded((expanded) => !expanded)}>
-                                        {descriptionExpanded ? <><ChevronUp size={14} /> Show less</> : <><ChevronDown size={14} /> Show more</>}
-                                    </button>
-                                </div>}
+                                {descriptionExpanded && <div id="company-description" className="mt-3 border-t pt-3 text-sm leading-6 text-[var(--text-muted)]">{stockData.profile.description}{stockData.profile.industry && <p className="mt-2 text-xs">Industry · {stockData.profile.industry}</p>}</div>}
                             </section>
 
                             <AnalysisNavigation active={activeSection} onChange={selectSection} />
 
-                            <div id={`analysis-panel-${activeSection}`} role="tabpanel" aria-labelledby={`analysis-tab-${activeSection}`} className="space-y-6">
-                                {activeSection === "overview" && <StockSnapshotPanel
-                                    data={marketSnapshot}
-                                    loading={marketSnapshotLoading}
-                                    error={marketSnapshotError}
-                                    onRetry={() => void loadMarketSnapshot(stockData.profile.ticker)}
-                                />}
-
+                            <div id={`analysis-panel-${activeSection}`} role="tabpanel" aria-labelledby={`analysis-tab-${activeSection}`} className="space-y-4">
                                 {activeSection === "valuation" && <div className="flex justify-end">
                                     <SegmentedControl<CockpitTab>
                                         label="Valuation section"
@@ -701,8 +686,31 @@ function AnalysisPage() {
                                         activeView={cockpitView}
                                         onViewChange={handleCockpitViewChange}
                                         hideNavigation
+                                        overviewContent={<>
+                                            <div className="overview-grid">
+                                                <section className="research-panel overflow-hidden" aria-labelledby="overview-price-title" data-testid="overview-price-panel">
+                                                    <header className="flex flex-wrap items-start justify-between gap-2 px-4 pb-2 pt-4 sm:px-5">
+                                                        <div><h2 id="overview-price-title" className="text-lg font-semibold tracking-tight">Price &amp; volume</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Adjusted · logarithmic · {stockData.profile.currency || "USD"}</p></div>
+                                                        <SegmentedControl label="Price interval" value={chartInterval} options={[{ value: "1d", label: "Daily", disabled: chartLoading }, { value: "1wk", label: "Weekly", disabled: chartLoading }, { value: "1mo", label: "Monthly", disabled: chartLoading }]} onChange={(interval) => void handleIntervalChange(interval)} />
+                                                    </header>
+                                                    <div className="px-2 pb-2 sm:px-3"><OverviewStockChart data={stockData.historical_data} interval={chartInterval} isLoading={chartLoading} height={260} embedded /></div>
+                                                </section>
+                                                <FinancialSnapshot stock={stockData} snapshot={marketSnapshot} statementDate={decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials} onDetails={() => selectSection("financials")} />
+                                            </div>
+                                            <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-lg border px-4 py-3 text-xs text-[var(--text-muted)]" aria-label="Data sources">
+                                                <span className="font-medium text-[var(--text)]">Data sources</span>
+                                                <span>Price · {latest?.date || "Unavailable"}</span>
+                                                <span>Financials · {decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials || "Unavailable"}</span>
+                                                <span>Factors · {factorLoading ? "Loading" : factorError ? "Unavailable" : factorSnapshot?.as_of_date || "Unavailable"}</span>
+                                            </div>
+                                        </>}
                                     />
                                 </div>
+
+                                {activeSection === "overview" && <details className="research-details">
+                                    <summary>All company metrics · {marketSnapshot ? `${marketSnapshot.coverage.available}/${marketSnapshot.coverage.total} available` : marketSnapshotLoading ? "Loading" : "Unavailable"}</summary>
+                                    <StockSnapshotPanel data={marketSnapshot} loading={marketSnapshotLoading} error={marketSnapshotError} onRetry={() => void loadMarketSnapshot(stockData.profile.ticker)} />
+                                </details>}
 
                                 {activeSection === "financials" && <>
                                     <FinancialFlowPanel

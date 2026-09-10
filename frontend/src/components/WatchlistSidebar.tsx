@@ -27,7 +27,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
 
     if (compact) {
         return (
-            <section className="surface-panel p-3 xl:hidden" aria-label="Watchlist">
+            <section className="border-b pb-2 xl:hidden" aria-label="Watchlist">
                 <div className="flex items-center gap-2 overflow-x-auto">
                     <span className="flex shrink-0 items-center gap-1.5 px-1 text-xs font-black uppercase tracking-wide text-slate-500"><Star size={14} /> Watchlist</span>
                     {watchlist.map((ticker) => (
@@ -52,7 +52,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
     }
 
     return (
-        <aside className="flex h-full w-60 shrink-0 flex-col border-r bg-[var(--surface)]" aria-label="Watchlist">
+        <aside className="flex h-full w-56 shrink-0 flex-col border-r bg-[var(--surface)]" aria-label="Watchlist">
             <div className="border-b p-4">
                 <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm font-black"><Star className="text-emerald-500" size={17} /> Watchlist</span>{readOnly && <button type="button" onClick={onUnlock} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Unlock personal workspace"><LockKeyhole size={15} /></button>}</div>
                 <p className="mt-1 text-xs text-slate-500">{readOnly ? "Preview from this browser · locked" : "Synced to personal workspace"}</p>

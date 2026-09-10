@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
     AlertTriangle,
     BarChart3,
@@ -21,6 +21,7 @@ import AIReport from "@/components/AIReport";
 import EarningsQualityPanel from "@/components/EarningsQualityPanel";
 import EventsExpectationsPanel from "@/components/EventsExpectationsPanel";
 import PeerMultipleDistribution from "@/components/PeerMultipleDistribution";
+import DecisionOverview from "@/components/analysis/DecisionOverview";
 import {
     ApiError,
     calculateDecisionValuation,
@@ -61,6 +62,7 @@ interface DecisionCockpitProps {
     activeView?: CockpitTab;
     onViewChange?: (view: CockpitTab) => void;
     hideNavigation?: boolean;
+    overviewContent?: ReactNode;
 }
 
 const DEFAULT_SCENARIOS: DecisionValuationScenarioInput[] = [
@@ -246,6 +248,7 @@ export default function DecisionCockpit({
     activeView,
     onViewChange,
     hideNavigation = false,
+    overviewContent,
 }: DecisionCockpitProps) {
     const [internalActiveTab, setInternalActiveTab] = useState<CockpitTab>("overview");
     const activeTab = activeView ?? internalActiveTab;
@@ -472,20 +475,52 @@ export default function DecisionCockpit({
         }
     };
 
+    if (hideNavigation && activeTab === "overview") {
+        return <div className="space-y-4" aria-label="Decision overview">
+            {loading && !decision && <div className="overview-grid" aria-label="Loading decision summary"><div className="research-panel h-60 animate-pulse bg-[var(--surface-muted)]" /><div className="research-panel h-60 animate-pulse bg-[var(--surface-muted)]" /></div>}
+            {error && <div className="error-panel flex flex-wrap items-center justify-between gap-2" role="alert"><span>{error}{decision ? " The previous evidence remains visible." : ""}</span><button type="button" className="research-link" onClick={onRetry}>Retry research <RefreshCw size={14} /></button></div>}
+            {decision && <>
+                <DecisionOverview decision={decision} valuation={valuation || decision.valuation} working={briefIsOutOfSync} onValuation={() => setActiveTab("valuation")} onRisks={() => setActiveTab("risks")} />
+                {decision.summary.coverage.missing_data_reasons.length > 0 && <aside className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/20" aria-label="Coverage limits">
+                    <p className="font-medium">Coverage limits · {decision.summary.coverage.quarterly_statements}/8 quarterly statements</p>
+                    <ul className="mt-1 space-y-1 text-xs leading-5 text-[var(--text-muted)]">{decision.summary.coverage.missing_data_reasons.filter((reason) => !(valuation || decision.valuation).unavailable_reasons.includes(reason)).map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                </aside>}
+            </>}
+            {overviewContent}
+            {decision && <details className="research-details">
+                <summary>Research context &amp; coverage</summary>
+                <div className="space-y-5 p-4 sm:p-5">
+                    <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+                        <div><dt className="text-[var(--text-muted)]">Quarterly statements</dt><dd className="mt-1 font-semibold">{decision.summary.coverage.quarterly_statements}/8</dd></div>
+                        <div><dt className="text-[var(--text-muted)]">Peer metrics</dt><dd className="mt-1 font-semibold">{decision.summary.coverage.peer_metrics_available}/{decision.summary.coverage.peer_metrics_total}</dd></div>
+                        <div><dt className="text-[var(--text-muted)]">Published factors</dt><dd className="mt-1 font-semibold">{decision.summary.coverage.published_factor_count}</dd></div>
+                        <div><dt className="text-[var(--text-muted)]">Warnings</dt><dd className="mt-1 font-semibold">{decision.risks.high_count} high · {decision.risks.warning_count} warning</dd></div>
+                    </dl>
+                    <EventsExpectationsPanel data={eventsExpectations} loading={eventsExpectationsLoading} error={eventsExpectationsError} currency={decision.metadata.currency} />
+                    <div className="grid gap-5 xl:grid-cols-2">
+                        <section><h3 className="mb-3 text-sm font-semibold">Strongest peer positions</h3><div className="grid gap-3 sm:grid-cols-3">{decision.summary.strongest_peer_metrics.map((metric) => <SummaryMetricCard key={metric.key} metric={metric} tone="strong" />)}</div></section>
+                        <section><h3 className="mb-3 text-sm font-semibold">Weakest peer positions</h3><div className="grid gap-3 sm:grid-cols-3">{decision.summary.weakest_peer_metrics.map((metric) => <SummaryMetricCard key={metric.key} metric={metric} tone="weak" />)}</div></section>
+                    </div>
+                    <button type="button" className="research-link" onClick={() => setActiveTab("peers")}>Explore peer benchmarks <ChevronRight size={14} /></button>
+                </div>
+            </details>}
+        </div>;
+    }
+
     return (
         <section className="surface-panel overflow-hidden" aria-labelledby="decision-cockpit-title">
-            <header className="border-b p-5 sm:p-6">
+            <header className={`border-b ${hideNavigation ? "px-4 py-3 sm:px-5" : "p-5 sm:p-6"}`}>
                 <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
                     <div>
-                        <p className="eyebrow">Evidence-first personal research</p>
-                        <h2 id="decision-cockpit-title" className="mt-1 text-xl font-black sm:text-2xl">Decision Cockpit</h2>
-                        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">Transparent scenarios, peer context, and deterministic fundamental checks. No aggregate score.</p>
+                        {!hideNavigation && <p className="eyebrow">Evidence-first personal research</p>}
+                        <h2 id="decision-cockpit-title" className={hideNavigation ? "text-lg font-semibold" : "mt-1 text-xl font-bold sm:text-2xl"}>{hideNavigation ? tabs.find((tab) => tab.key === activeTab)?.label : "Decision Cockpit"}</h2>
+                        {!hideNavigation && <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">Transparent scenarios, peer context, and deterministic fundamental checks. No aggregate score.</p>}
                     </div>
                     <button type="button" onClick={adminKey ? undefined : onUnlock} className={adminKey ? "status-pill cursor-default" : "secondary-button min-h-9 px-3 py-1.5"}>
                         {adminKey ? <><CheckCircle2 size={14} /> Personal workspace unlocked</> : <><KeyRound size={14} /> Unlock personal workspace</>}
                     </button>
                 </div>
-                {decision && <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 border-t pt-3 font-mono text-[10px] text-slate-500">
+                {decision && <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t pt-3 text-xs text-[var(--text-muted)]">
                     <span>Price {decision.metadata.price_date || "unavailable"}</span>
                     <span>Screener {decision.metadata.screener_date || "unavailable"}</span>
                     <span>Financials {decision.metadata.financial_statement_date || "unavailable"}</span>

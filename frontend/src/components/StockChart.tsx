@@ -11,6 +11,8 @@ interface StockChartProps {
     interval?: string;
     onIntervalChange?: (interval: string) => void;
     isLoading?: boolean;
+    height?: number;
+    embedded?: boolean;
 }
 
 type ValidCandlePoint = HistoricalDataPoint & {
@@ -20,7 +22,7 @@ type ValidCandlePoint = HistoricalDataPoint & {
     close: number;
 };
 
-const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onIntervalChange, isLoading }) => {
+const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onIntervalChange, isLoading, height = 480, embedded = false }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const { resolvedTheme } = useTheme();
@@ -62,7 +64,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                 horzLines: { color: colors.grid },
             },
             width: chartContainerRef.current.clientWidth,
-            height: 480,
+            height,
             crosshair: {
                 mode: CrosshairMode.Normal,
             },
@@ -117,15 +119,20 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             }
         };
 
-        window.addEventListener('resize', handleResize);
+        const observer = new ResizeObserver(handleResize);
+        observer.observe(chartContainerRef.current);
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            observer.disconnect();
             chart.remove();
             chartRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only run once on mount
+
+    useEffect(() => {
+        chartRef.current?.applyOptions({ height });
+    }, [height]);
 
     // 2. Dynamic Theme Update (Applies options without recreating chart)
     useEffect(() => {
@@ -249,7 +256,7 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     }, [data]);
 
     return (
-        <div className="relative w-full overflow-hidden rounded-xl border bg-[var(--surface)]">
+        <div className={`relative w-full overflow-hidden bg-[var(--surface)] ${embedded ? "" : "rounded-xl border"}`}>
             {/* Interval Switcher UI */}
             {onIntervalChange && (
                 <div className="absolute left-3 top-3 z-20 flex gap-1 rounded-lg border bg-white/95 p-1 shadow-sm backdrop-blur-md dark:bg-slate-900/95">
