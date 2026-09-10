@@ -3,8 +3,8 @@
 import { BarChart3, CircleDollarSign, Gauge, Landmark, Scale, TrendingUp } from "lucide-react";
 import { ValuationMetrics } from "@/lib/api";
 
-const compact = (value: number, currency = true) => {
-    if (!Number.isFinite(value)) return "—";
+const compact = (value: number | null, currency = true) => {
+    if (value == null || !Number.isFinite(value)) return "—";
     const prefix = currency ? "$" : "";
     const absolute = Math.abs(value);
     if (absolute >= 1e12) return `${prefix}${(value / 1e12).toFixed(2)}T`;
@@ -18,7 +18,7 @@ export default function ValuationDashboard({ metrics }: { metrics: ValuationMetr
     const leverage = balance.total_stockholder_equity > 0 ? balance.total_liabilities / balance.total_stockholder_equity : null;
     const items = [
         { label: "Illustrative DCF", value: compact(valuation.dcf_intrinsic_value_per_share), sub: `Market ${compact(valuation.current_price)}`, icon: Scale, tone: "text-indigo-500" },
-        { label: "Margin of safety", value: `${(valuation.margin_of_safety * 100).toFixed(1)}%`, sub: valuation.margin_of_safety >= 0 ? "Below modeled value" : "Above modeled value", icon: Gauge, tone: valuation.margin_of_safety >= 0 ? "text-emerald-500" : "text-rose-500" },
+        { label: "Margin of safety", value: valuation.margin_of_safety == null ? "—" : `${(valuation.margin_of_safety * 100).toFixed(1)}%`, sub: valuation.margin_of_safety == null ? "Valuation unavailable" : valuation.margin_of_safety >= 0 ? "Below modeled value" : "Above modeled value", icon: Gauge, tone: (valuation.margin_of_safety ?? -1) >= 0 ? "text-emerald-500" : "text-rose-500" },
         { label: "TTM revenue", value: compact(ttm.revenue), sub: "Trailing twelve months", icon: BarChart3, tone: "text-sky-500" },
         { label: "TTM net income", value: compact(ttm.net_income), sub: "Trailing twelve months", icon: TrendingUp, tone: "text-violet-500" },
         { label: "Free cash flow", value: compact(ttm.free_cash_flow), sub: "Trailing twelve months", icon: CircleDollarSign, tone: "text-emerald-500" },

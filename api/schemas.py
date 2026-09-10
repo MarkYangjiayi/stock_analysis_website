@@ -39,6 +39,12 @@ class HistoricalFinancialPointModel(BaseModel):
     debt_to_equity: Optional[float] = None
     shares_outstanding: Optional[float] = None
     price: Optional[float] = None
+    shares_basis: Optional[str] = None
+    reported_period_end: Optional[str] = None
+    filing_date: Optional[str] = None
+    period_date_basis: Optional[str] = None
+    debt_basis: Optional[dict] = None
+    provider_free_cash_flow: Optional[float] = None
 
 class TTMDataModel(BaseModel):
     revenue: float
@@ -54,14 +60,20 @@ class BalanceSheetLatestModel(BaseModel):
     shares_outstanding: float
 
 class ValuationAssumptionsModel(BaseModel):
+    forecast_years: int = 10
     fcf_growth_rate_5yr: float
     wacc: float
     perpetual_growth: float
 
 class ValuationModel(BaseModel):
-    dcf_intrinsic_value_per_share: float
-    current_price: float
-    margin_of_safety: float
+    model_version: str
+    available: bool
+    unavailable_reasons: List[str] = Field(default_factory=list)
+    upside_downside: Optional[float] = None
+    margin_of_safety_definition: str
+    dcf_intrinsic_value_per_share: Optional[float]
+    current_price: Optional[float]
+    margin_of_safety: Optional[float]
     assumptions: ValuationAssumptionsModel
 
 class FactorScoresModel(BaseModel):
@@ -305,7 +317,21 @@ class EventsExpectationsResponse(BaseModel):
     data_quality_notes: List[str] = Field(default_factory=list)
 
 
+class OperatingForecastYear(BaseModel):
+    year: int
+    revenue: float
+    operating_margin: float
+    tax_rate: float
+    capex: float
+    depreciation: float
+    change_in_working_capital: float
+    source: str = Field(min_length=1, max_length=1000)
+
+
 class DecisionValuationScenarioInput(BaseModel):
+    operating_forecast: Optional[List[OperatingForecastYear]] = Field(default=None, min_length=10, max_length=10)
+    terminal_roic: Optional[float] = None
+    forecast_as_of: Optional[date] = None
     scenario: Literal["bear", "base", "bull"]
     fcf_growth_rate: float
     wacc: float

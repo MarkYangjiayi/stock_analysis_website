@@ -26,8 +26,8 @@ def test_company_wacc_matches_capm_and_after_tax_debt_formula():
         assumptions_as_of="2026-09-08",
     )
 
-    cost_of_equity = 0.04 + 1.2 * 0.06
-    expected = 0.9 * cost_of_equity + 0.1 * 0.05 * (1 - 0.20)
+    cost_of_equity = 0.04 + ((2 * 1.2 + 1) / 3) * 0.06
+    expected = (900 / 1010) * cost_of_equity + (110 / 1010) * 0.05 * (1 - 0.20)
     assert result["available"] is True
     assert result["quality"] == "calculated"
     assert result["wacc"] == pytest.approx(expected)
@@ -73,11 +73,11 @@ def test_growth_cases_use_robust_company_signal_median_and_shared_spread():
         fallback_growth=0.05,
     )
 
-    assert result["method"] == "median_of_company_growth_signals"
-    assert result["base_growth"] == pytest.approx(0.09)
-    assert result["scenario_spread"] == pytest.approx(0.07)
-    assert result["bear_growth"] == pytest.approx(0.02)
-    assert result["bull_growth"] == pytest.approx(0.16)
+    assert result["method"] == "historical_revenue_median_constant_cash_flow_margin"
+    assert result["base_growth"] == pytest.approx(0.08)
+    assert result["scenario_spread"] == pytest.approx(0.05)
+    assert result["bear_growth"] == pytest.approx(0.03)
+    assert result["bull_growth"] == pytest.approx(0.13)
 
 
 def test_reported_fcf_is_unlevered_before_wacc_discounting():

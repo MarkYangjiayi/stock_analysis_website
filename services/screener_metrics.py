@@ -1,6 +1,7 @@
 """Normalization and derived-metric helpers for the daily stock screener."""
 
 from __future__ import annotations
+from services.valuation_inputs import resolve_debt
 
 from datetime import date, timedelta
 from typing import Any, Iterable, Optional
@@ -326,11 +327,10 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         latest_balance.get("longTermDebtTotal"),
         latest_balance.get("longTermDebt"),
     ))
-    total_debt = safe_float(_first_present(
-        latest_balance.get("shortLongTermDebtTotal"),
-        latest_balance.get("totalDebt"),
-        highlights.get("TotalDebt"),
-    ))
+    debt_balance = dict(latest_balance)
+    if not any(safe_float(debt_balance.get(key)) is not None for key in ("totalDebt", "shortLongTermDebtTotal")):
+        debt_balance["totalDebt"] = highlights.get("TotalDebt")
+    total_debt = resolve_debt(debt_balance)["value"]
     invested_capital = safe_float(latest_balance.get("netInvestedCapital"))
     ebit = _first_present(
         _sum_metric(quarterly_income, "ebit", 0, 4),

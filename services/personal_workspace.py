@@ -152,6 +152,7 @@ async def get_saved_valuation_scenarios(
             "fcf_growth_rate": by_name[name].fcf_growth_rate,
             "wacc": shared_wacc,
             "perpetual_growth": shared_perpetual_growth,
+            **(by_name[name].forecast_inputs or {}),
         }
         for name in SCENARIO_NAMES
     ]
@@ -175,6 +176,7 @@ async def save_valuation_scenarios(
             fcf_growth_rate=float(scenario["fcf_growth_rate"]),
             wacc=float(scenario["wacc"]),
             perpetual_growth=float(scenario["perpetual_growth"]),
+            forecast_inputs={k: scenario[k] for k in ("operating_forecast", "terminal_roic", "forecast_as_of") if k in scenario} or None,
         )
         for scenario in scenarios
     )

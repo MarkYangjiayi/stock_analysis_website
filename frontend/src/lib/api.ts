@@ -95,9 +95,13 @@ export interface ValuationMetrics {
         shares_outstanding: number;
     };
     valuation: {
-        dcf_intrinsic_value_per_share: number;
-        current_price: number;
-        margin_of_safety: number;
+        dcf_intrinsic_value_per_share: number | null;
+        model_version: string;
+        available: boolean;
+        unavailable_reasons: string[];
+        upside_downside: number | null;
+        current_price: number | null;
+        margin_of_safety: number | null;
         assumptions: {
             fcf_growth_rate_5yr: number;
             wacc: number;
@@ -289,7 +293,21 @@ export interface EventsExpectationsResponse {
 
 export type ValuationScenarioName = "bear" | "base" | "bull";
 
+export interface OperatingForecastYear {
+    year: number;
+    revenue: number;
+    operating_margin: number;
+    tax_rate: number;
+    capex: number;
+    depreciation: number;
+    change_in_working_capital: number;
+    source: string;
+}
+
 export interface DecisionValuationScenarioInput {
+    operating_forecast?: OperatingForecastYear[];
+    terminal_roic?: number;
+    forecast_as_of?: string;
     scenario: ValuationScenarioName;
     fcf_growth_rate: number;
     wacc: number;
@@ -307,6 +325,9 @@ export interface DecisionValuationScenarioResult {
     projected_fcf?: number[];
     present_value_explicit_fcf?: number;
     present_value_terminal?: number;
+    terminal_share_of_enterprise_value?: number | null;
+    terminal_fcff?: number;
+    projected_growth_rates?: Array<number | null>;
     upside_downside?: number | null;
 }
 
@@ -326,6 +347,7 @@ export interface DecisionImpliedGrowth {
 }
 
 export interface DecisionValuation {
+    model_version?: string;
     available: boolean;
     unavailable_reasons: string[];
     inputs: {
@@ -338,6 +360,12 @@ export interface DecisionValuation {
         shares: number | null;
         financial_statement_date: string | null;
         model_input_reasons?: string[];
+        reported_period_end?: string | null;
+        filing_date?: string | null;
+        period_date_basis?: string;
+        shares_basis?: { value: number | null; source: string; basis: string; as_of: string | null } | null;
+        input_lineage?: { notes?: string[]; debt?: { source: string | null; scope: string }; fcf_source?: string | null };
+        equity_bridge?: { cash_basis: string; cash_added: number | null; equity_adjustment: number; complete: boolean };
     };
     current_price: number | null;
     scenario_source: "default" | "saved" | "request";
@@ -352,6 +380,8 @@ export interface DecisionValuation {
             risk_free_rate: number;
             equity_risk_premium: number;
             beta: number;
+            raw_beta?: number | null;
+            beta_policy?: string;
             beta_source: string;
             cost_of_equity: number;
             average_debt: number | null;
@@ -368,6 +398,8 @@ export interface DecisionValuation {
             signals: Array<{ source: string; raw_value: number; winsorized_value: number }>;
             base_growth: number;
             scenario_spread: number;
+            notes?: string[];
+            forecast_source?: string;
         };
         terminal_growth: { rate: number; configured_rate: number; method: string };
         cash_flow: {
@@ -390,6 +422,8 @@ export interface DecisionValuation {
     };
     formula: {
         forecast_years: number;
+        initial_growth_years?: number;
+        forecast_mode?: string;
         cash_flow_type: string;
         cash_treatment: string;
         debt_treatment: string;

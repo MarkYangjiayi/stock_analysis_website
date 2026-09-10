@@ -1,0 +1,256 @@
+{
+  "request": {
+    "columns": [
+      "ticker",
+      "name",
+      "sector",
+      "beta_1yr",
+      "market_cap"
+    ],
+    "limit": 500
+  },
+  "response_subset": {
+    "total": 2487,
+    "items": [
+      {
+        "ticker": "NVDA.US",
+        "name": "NVIDIA Corporation",
+        "sector": "Technology",
+        "beta_1yr": 1.9231684613,
+        "market_cap": 5418828431360.0
+      },
+      {
+        "ticker": "AAPL.US",
+        "name": "Apple Inc.",
+        "sector": "Technology",
+        "beta_1yr": 0.6928527595,
+        "market_cap": 4669700046848.0
+      },
+      {
+        "ticker": "GOOGL.US",
+        "name": "Alphabet Inc Class A",
+        "sector": "Communication Services",
+        "beta_1yr": 1.3712323265,
+        "market_cap": 4138120773632.0
+      },
+      {
+        "ticker": "MSFT.US",
+        "name": "Microsoft Corporation",
+        "sector": "Technology",
+        "beta_1yr": 0.9582628447,
+        "market_cap": 3689159589888.0
+      },
+      {
+        "ticker": "AMZN.US",
+        "name": "Amazon.com Inc",
+        "sector": "Consumer Cyclical",
+        "beta_1yr": 1.4161737036,
+        "market_cap": 2771758874624.0
+      },
+      {
+        "ticker": "META.US",
+        "name": "Meta Platforms Inc.",
+        "sector": "Communication Services",
+        "beta_1yr": 1.379287731,
+        "market_cap": 1473834123264.0
+      },
+      {
+        "ticker": "LLY.US",
+        "name": "Eli Lilly and Company",
+        "sector": "Healthcare",
+        "beta_1yr": 0.3153451113,
+        "market_cap": 1034491265024.0
+      },
+      {
+        "ticker": "JPM.US",
+        "name": "JPMorgan Chase & Co",
+        "sector": "Financial Services",
+        "beta_1yr": 0.7861982657,
+        "market_cap": 946899124224.0
+      },
+      {
+        "ticker": "WMT.US",
+        "name": "Walmart Inc.",
+        "sector": "Consumer Defensive",
+        "beta_1yr": -0.0650268199,
+        "market_cap": 850021580800.0
+      },
+      {
+        "ticker": "XOM.US",
+        "name": "Exxon Mobil Corp",
+        "sector": "Energy",
+        "beta_1yr": -0.5608006674,
+        "market_cap": 666993295360.0
+      },
+      {
+        "ticker": "JNJ.US",
+        "name": "Johnson & Johnson",
+        "sector": "Healthcare",
+        "beta_1yr": -0.1811778425,
+        "market_cap": 653540392960.0
+      },
+      {
+        "ticker": "BAC.US",
+        "name": "Bank of America Corp",
+        "sector": "Financial Services",
+        "beta_1yr": 0.7021529063,
+        "market_cap": 438305488896.0
+      },
+      {
+        "ticker": "CVX.US",
+        "name": "Chevron Corp",
+        "sector": "Energy",
+        "beta_1yr": -0.4972666093,
+        "market_cap": 411544387584.0
+      },
+      {
+        "ticker": "KO.US",
+        "name": "The Coca-Cola Company",
+        "sector": "Consumer Defensive",
+        "beta_1yr": -0.2578612256,
+        "market_cap": 379656929280.0
+      },
+      {
+        "ticker": "CAT.US",
+        "name": "Caterpillar Inc",
+        "sector": "Industrials",
+        "beta_1yr": 1.7426325383,
+        "market_cap": 374147776512.0
+      },
+      {
+        "ticker": "UNH.US",
+        "name": "UnitedHealth Group Incorporated",
+        "sector": "Healthcare",
+        "beta_1yr": 0.4404552575,
+        "market_cap": 358732759040.0
+      },
+      {
+        "ticker": "PG.US",
+        "name": "Procter & Gamble Company",
+        "sector": "Consumer Defensive",
+        "beta_1yr": -0.0498939459,
+        "market_cap": 342919348224.0
+      },
+      {
+        "ticker": "HD.US",
+        "name": "The Home Depot Inc",
+        "sector": "Consumer Cyclical",
+        "beta_1yr": 0.7022993966,
+        "market_cap": 312975228928.0
+      },
+      {
+        "ticker": "LIN.US",
+        "name": "Linde plc Ordinary Shares",
+        "sector": "Basic Materials",
+        "beta_1yr": 0.0876222533,
+        "market_cap": 224704790528.0
+      },
+      {
+        "ticker": "VZ.US",
+        "name": "Verizon Communications Inc",
+        "sector": "Communication Services",
+        "beta_1yr": -0.2943213708,
+        "market_cap": 208652812288.0
+      },
+      {
+        "ticker": "MCD.US",
+        "name": "McDonald\u2019s Corporation",
+        "sector": "Consumer Cyclical",
+        "beta_1yr": -0.0309795863,
+        "market_cap": 184659066880.0
+      },
+      {
+        "ticker": "NEE.US",
+        "name": "Nextera Energy Inc",
+        "sector": "Utilities",
+        "beta_1yr": 0.1726638548,
+        "market_cap": 172990169088.0
+      },
+      {
+        "ticker": "UNP.US",
+        "name": "Union Pacific Corporation",
+        "sector": "Industrials",
+        "beta_1yr": 0.2707476388,
+        "market_cap": 171776933888.0
+      },
+      {
+        "ticker": "PLD.US",
+        "name": "Prologis Inc",
+        "sector": "Real Estate",
+        "beta_1yr": 0.4572226455,
+        "market_cap": 132777959424.0
+      },
+      {
+        "ticker": "NEM.US",
+        "name": "Newmont Goldcorp Corp",
+        "sector": "Basic Materials",
+        "beta_1yr": 1.6244943561,
+        "market_cap": 131880132608.0
+      },
+      {
+        "ticker": "PGR.US",
+        "name": "Progressive Corp",
+        "sector": "Financial Services",
+        "beta_1yr": -0.5062106555,
+        "market_cap": 128643923968.0
+      },
+      {
+        "ticker": "FCX.US",
+        "name": "Freeport-McMoran Copper & Gold Inc",
+        "sector": "Basic Materials",
+        "beta_1yr": 2.2203500396,
+        "market_cap": 110027669504.0
+      },
+      {
+        "ticker": "SO.US",
+        "name": "Southern Company",
+        "sector": "Utilities",
+        "beta_1yr": -0.2505963054,
+        "market_cap": 102117720064.0
+      },
+      {
+        "ticker": "DUK.US",
+        "name": "Duke Energy Corporation",
+        "sector": "Utilities",
+        "beta_1yr": -0.3048906011,
+        "market_cap": 94531092480.0
+      },
+      {
+        "ticker": "SLB.US",
+        "name": "Schlumberger NV",
+        "sector": "Energy",
+        "beta_1yr": 0.7133235549,
+        "market_cap": 86273245184.0
+      },
+      {
+        "ticker": "AMT.US",
+        "name": "American Tower Corp",
+        "sector": "Real Estate",
+        "beta_1yr": -0.1250124738,
+        "market_cap": 81883160576.0
+      },
+      {
+        "ticker": "HON.US",
+        "name": "Honeywell International Inc",
+        "sector": "Industrials",
+        "beta_1yr": 0.7420798228,
+        "market_cap": 64950513664.0
+      },
+      {
+        "ticker": "O.US",
+        "name": "Realty Income Corporation",
+        "sector": "Real Estate",
+        "beta_1yr": -0.038300473,
+        "market_cap": 58059939840.0
+      }
+    ],
+    "limit": 500,
+    "offset": 0,
+    "as_of_date": "2026-09-09",
+    "freshness": {
+      "status": "current",
+      "lag_sessions": 0,
+      "latest_completed_session": "2026-09-09"
+    }
+  }
+}

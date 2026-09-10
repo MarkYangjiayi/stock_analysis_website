@@ -1,0 +1,32 @@
+{
+  "locked_at_utc": "2026-09-10T15:09:33.795378+00:00",
+  "baseline_panel": "../valuation_cross_sector_2026-09-10/manifest.json",
+  "additional_panel": [
+    "ORCL",
+    "DIS",
+    "NKE",
+    "PEP",
+    "ABT",
+    "COP",
+    "LMT",
+    "SHW",
+    "AEP",
+    "EQIX"
+  ],
+  "selection": "One additional name per non-financial broad sector, named before inspecting new DCF outputs. Model applicability remains held. Not a randomized population sample.",
+  "checks": [
+    "complete debt reconciliation",
+    "unavailable inputs do not become zero",
+    "beta continuity and monotonicity",
+    "independent DCF arithmetic",
+    "same default engine in both APIs",
+    "forecast and terminal constraints",
+    "forward/reverse/sensitivity parity"
+  ],
+  "not_accuracy_labels": [
+    "share price",
+    "SWS valuation",
+    "Alpha Spread valuation"
+  ],
+  "historical_accuracy_claim": false
+}

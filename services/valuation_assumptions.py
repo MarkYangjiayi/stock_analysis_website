@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from statistics import median
 from typing import Any
+from datetime import date
 
 
 def _number(value: Any) -> float | None:
@@ -46,16 +47,30 @@ def estimate_company_wacc(
     fallback_tax_rate: float,
     assumptions_as_of: str,
     beta_source: str | None = None,
+    valuation_date: str | None = None,
 ) -> dict[str, Any]:
     """Estimate one current WACC using the same broad structure as GuruFocus."""
 
     notes: list[str] = []
-    observed_beta = _number(beta)
+    raw_beta = _number(beta)
     resolved_beta_source = beta_source or "provided_beta"
-    if observed_beta is None or not 0 < observed_beta <= 3:
+    if raw_beta is None:
         observed_beta = 1.0
         resolved_beta_source = "fallback_market_beta"
-        notes.append("A usable provider/local beta was unavailable; market beta 1.0 was used.")
+        notes.append("Provider/local beta was unavailable; market beta 1.0 was used.")
+    else:
+        # One continuous policy for every company, including negative estimates.
+        observed_beta = min(max((2 * raw_beta + 1) / 3, 0.5), 2.5)
+        notes.append("Long-run beta uses two-thirds observed beta plus one-third market beta, bounded to 0.5–2.5.")
+    assumptions_age_days = None
+    try:
+        assumptions_age_days = (date.fromisoformat(valuation_date or date.today().isoformat()) - date.fromisoformat(assumptions_as_of)).days
+        if assumptions_age_days < 0:
+            notes.append("Market-assumption date is later than the valuation date; this is not a point-in-time estimate.")
+        elif assumptions_age_days > 90:
+            notes.append("Market assumptions are over 90 days old and require review.")
+    except (TypeError, ValueError):
+        notes.append("Market-assumption as-of date is invalid or unavailable.")
 
     equity_value = _number(market_cap)
     equity_source = "screener_market_cap"
@@ -105,13 +120,13 @@ def estimate_company_wacc(
     if average_book_debt == 0:
         cost_of_debt = 0.0
         debt_cost_source = "debt_free"
-        interest_for_fcff = 0.0
+        interest_for_fcff = reported_interest if reported_interest is not None else 0.0
     elif (
         average_book_debt is not None
         and average_book_debt > 0
         and reported_interest is not None
-        and reported_interest > 0
-        and 0 < reported_interest / average_book_debt <= 0.25
+        and reported_interest >= 0
+        and 0 <= reported_interest / average_book_debt <= 0.25
     ):
         cost_of_debt = reported_interest / average_book_debt
         debt_cost_source = "ttm_interest_over_average_book_debt"
@@ -119,13 +134,16 @@ def estimate_company_wacc(
     elif average_book_debt is not None and average_book_debt > 0:
         cost_of_debt = risk_free_rate + fallback_debt_spread
         debt_cost_source = "risk_free_plus_fallback_spread"
-        interest_for_fcff = average_book_debt * cost_of_debt
+        interest_for_fcff = reported_interest
         notes.append("Reported interest did not produce a usable debt cost; a configured spread was used.")
     else:
         cost_of_debt = None
         debt_cost_source = "unavailable"
         interest_for_fcff = None
 
+    # Debt weights describe current capital structure; average debt is only
+    # the denominator of the historical borrowing-cost estimate.
+    capital_debt = latest_debt_value if latest_debt_value is not None and latest_debt_value >= 0 else average_book_debt
     cost_of_equity = risk_free_rate + observed_beta * equity_risk_premium
     unavailable_reasons: list[str] = []
     if equity_value is None or equity_value <= 0:
@@ -139,12 +157,12 @@ def estimate_company_wacc(
     equity_weight = None
     debt_weight = None
     if not unavailable_reasons:
-        total_capital = equity_value + average_book_debt
+        total_capital = equity_value + capital_debt
         if total_capital <= 0:
             unavailable_reasons.append("Positive debt plus equity capital is required to estimate WACC.")
         else:
             equity_weight = equity_value / total_capital
-            debt_weight = average_book_debt / total_capital
+            debt_weight = capital_debt / total_capital
             wacc = equity_weight * cost_of_equity + debt_weight * cost_of_debt * (1 - tax_rate)
             if not 0.03 <= wacc <= 0.25:
                 unavailable_reasons.append("Estimated WACC is outside the supported 3% to 25% range.")
@@ -163,6 +181,13 @@ def estimate_company_wacc(
         "risk_free_rate": risk_free_rate,
         "equity_risk_premium": equity_risk_premium,
         "beta": observed_beta,
+        "raw_beta": raw_beta,
+        "beta_policy": "two_thirds_observed_plus_one_third_market_clipped_0.5_2.5",
+        "assumptions_age_days": assumptions_age_days,
+        "risk_free_source": "configured_nominal_government_yield",
+        "erp_source": "configured_forward_policy_not_fitted_to_prices",
+        "capital_structure_debt": capital_debt,
+        "interest_expense_source": "reported" if reported_interest is not None else ("debt_free" if capital_debt == 0 else "unavailable"),
         "beta_source": resolved_beta_source,
         "cost_of_equity": cost_of_equity,
         "equity_value": equity_value,
@@ -191,41 +216,41 @@ def derive_growth_scenarios(
     sales_growth_5yr: Any,
     fallback_growth: float,
 ) -> dict[str, Any]:
-    """Build robust five-year FCF growth cases from company growth evidence."""
+    """Revenue-led historical scenarios, not analyst cash-flow forecasts.
 
+    FCF growth is retained as diagnostic evidence, never mixed into the
+    revenue-growth median. Limits apply once and raw dispersion remains visible.
+    """
     candidates = (
-        ("ttm_fcf_yoy", _growth(current_fcf, previous_fcf)),
         ("ttm_revenue_yoy", _growth(current_revenue, previous_revenue)),
         ("sales_growth_3yr", _number(sales_growth_3yr)),
         ("sales_growth_5yr", _number(sales_growth_5yr)),
     )
     signals = [
-        {"source": source, "raw_value": value, "winsorized_value": min(max(value, -0.25), 0.50)}
-        for source, value in candidates
-        if value is not None and -0.75 <= value <= 2.0
+        {"source": source, "raw_value": value, "winsorized_value": min(max(value, -0.20), 0.50)}
+        for source, value in candidates if value is not None
     ]
-    if signals:
-        raw_base = median(item["winsorized_value"] for item in signals)
-        base_growth = min(max(raw_base, -0.05), 0.20)
-        method = "median_of_company_growth_signals"
-    else:
-        raw_base = fallback_growth
-        base_growth = fallback_growth
-        method = "configured_fallback"
-
-    if len(signals) >= 2:
-        values = [item["winsorized_value"] for item in signals]
-        spread = min(max((max(values) - min(values)) / 2, 0.05), 0.10)
-    else:
-        spread = 0.05
+    raw_base = median(item["raw_value"] for item in signals) if signals else fallback_growth
+    # Keep the established conservative default ceiling until PIT forecast
+    # outcomes justify another policy; editable scenarios can still reach 50%.
+    base_growth = min(max(raw_base, -0.20), 0.20)
+    values = [item["raw_value"] for item in signals]
+    spread = min(max((max(values) - min(values)) / 2, 0.05), 0.20) if len(values) >= 2 else 0.10
     return {
-        "method": method,
+        "method": "historical_revenue_median_constant_cash_flow_margin",
         "signals": signals,
+        "fcf_growth_diagnostic": _growth(current_fcf, previous_fcf),
         "raw_base_growth": raw_base,
         "base_growth": base_growth,
         "scenario_spread": spread,
         "bear_growth": max(base_growth - spread, -0.20),
         "bull_growth": min(base_growth + spread, 0.50),
+        "growth_limit_applied": raw_base != base_growth,
+        "forecast_source": "historical_scenario_not_analyst_consensus",
+        "analyst_count": None,
+        "notes": ["Historical revenue growth assumes a constant cash-flow margin during the initial phase.",
+                  "Default base growth retains a 20% ceiling; editable cases support -20% to 50%. Raw signals and dispersion are preserved.",
+                  "Bear/Base/Bull are assumption scenarios, not statistical confidence intervals."],
     }
 
 
@@ -234,6 +259,7 @@ def convert_reported_fcf_to_fcff(
     *,
     interest_expense_for_fcff: Any,
     tax_rate: Any,
+    interest_income: Any = None,
 ) -> dict[str, Any]:
     """Convert CFO-minus-capex style provider FCF to an FCFF estimate."""
 
@@ -245,9 +271,13 @@ def convert_reported_fcf_to_fcff(
     if interest is None or effective_tax is None:
         return {"available": False, "fcff": None, "reported_fcf": fcf, "after_tax_interest_adjustment": None, "reason": "After-tax interest is required to align free cash flow with WACC."}
     adjustment = abs(interest) * (1 - min(max(effective_tax, 0.0), 1.0))
+    investment_interest = _number(interest_income)
+    nonoperating_adjustment = max(investment_interest or 0.0, 0.0) * (1 - min(max(effective_tax, 0.0), 1.0))
     return {
         "available": True,
-        "fcff": fcf + adjustment,
+        "fcff": fcf + adjustment - nonoperating_adjustment,
+        "after_tax_interest_income_deduction": nonoperating_adjustment,
+        "interest_income_complete": investment_interest is not None,
         "reported_fcf": fcf,
         "after_tax_interest_adjustment": adjustment,
         "reason": None,

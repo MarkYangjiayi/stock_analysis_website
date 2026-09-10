@@ -1,3 +1,4 @@
+from services.valuation_inputs import resolve_debt, statement_inputs
 import logging
 import math
 from typing import Optional, Dict, Any
@@ -273,24 +274,8 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
         ni = _safe_float(inc_stmt.get('netIncome', rec.net_income))
         gp = _safe_float(inc_stmt.get('grossProfit', 0.0))
         operating_income = _optional_float(inc_stmt.get('operatingIncome'))
-        total_debt = _first_optional(
-            balance_stmt,
-            'shortLongTermDebtTotal',
-            'totalDebt',
-        )
-        if total_debt is None:
-            short_debt = _first_optional(
-                balance_stmt,
-                'shortTermDebt',
-                'shortTermDebtTotal',
-            )
-            long_debt = _first_optional(
-                balance_stmt,
-                'longTermDebt',
-                'longTermDebtTotal',
-            )
-            if short_debt is not None or long_debt is not None:
-                total_debt = (short_debt or 0.0) + (long_debt or 0.0)
+        normalized = statement_inputs(inc_stmt, balance_stmt, cash_flow_stmt)
+        total_debt = normalized["debt"]["value"]
         stockholder_equity = _first_optional(
             balance_stmt,
             'totalStockholderEquity',
@@ -311,11 +296,7 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             if operating_income is not None and rev > 0
             else None
         )
-        reported_shares = _first_optional(
-            balance_stmt,
-            'commonStockSharesOutstanding',
-            'sharesOutstanding',
-        )
+        reported_shares = normalized["shares"]
         share_adjustment_factor = share_split_adjustment_factor(
             rec.fiscal_date,
             share_reference_date,
@@ -332,7 +313,13 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             "revenue": rev,
             "net_income": ni,
             "gross_margin": gross_margin,
-            "free_cash_flow": _optional_float(cash_flow_stmt.get('freeCashFlow')),
+            "free_cash_flow": normalized["fcf"],
+            "provider_free_cash_flow": normalized["provider_fcf"],
+            "debt_basis": normalized["debt"],
+            "shares_basis": normalized["shares_basis"],
+            "reported_period_end": normalized["reported_period_end"],
+            "filing_date": inc_stmt.get("filing_date") or balance_stmt.get("filing_date"),
+            "period_date_basis": "provider_period_label",
             "operating_margin": operating_margin,
             "cash_and_short_term_investments": _first_optional(
                 balance_stmt,
@@ -393,7 +380,7 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             # Clean NaN for JSON compatibility
             historical_financials = []
             for record in df_merged.drop(columns=['date_dt']).to_dict(orient='records'):
-                historical_financials.append({k: (None if pd.isna(v) else v) for k, v in record.items()})
+                historical_financials.append({k: (v if isinstance(v, (dict, list)) else None if pd.isna(v) else v) for k, v in record.items()})
             price_matched = True
 
     if not price_matched:
@@ -497,7 +484,7 @@ def calculate_ttm(flow_records: list[FinancialStatement], latest_bs_record: Opti
     total_equity = _safe_float(latest_bs.get('totalStockholderEquity'))
     shares_out = _safe_float(latest_bs.get('commonStockSharesOutstanding'))
     cash_equiv = _safe_float(latest_bs.get('cashAndCashEquivalents'))
-    total_debt = _safe_float(latest_bs.get('totalDebt'))
+    total_debt = resolve_debt(latest_bs)["value"]
     
     # ROE 计算
     roe = (ttm_net_income / total_equity) if total_equity > 0 else 0.0
@@ -743,43 +730,21 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
     cash_equiv = ttm_data['cash_equiv']
     total_debt = ttm_data['total_debt']
 
-    # DCF 模型参数
-    fcf_growth_rate = 0.10      # 10% 未来5年复合增长率
-    wacc = 0.09                 # 9% 折现率
-    perpetual_growth = 0.025    # 2.5% 永续增长率
-    
-    dcf_5yr_sum = 0.0
-    
-    # 计算前5年自由现金流折现
-    if ttm_fcf > 0:
-        for i in range(1, 6):
-            proj_fcf = ttm_fcf * ((1 + fcf_growth_rate) ** i)
-            pv_fcf = proj_fcf / ((1 + wacc) ** i)
-            dcf_5yr_sum += pv_fcf
-            
-        # 计算终值折现 (Terminal Value)
-        terminal_value = (ttm_fcf * ((1 + fcf_growth_rate) ** 5) * (1 + perpetual_growth)) / (wacc - perpetual_growth)
-        pv_tv = terminal_value / ((1 + wacc) ** 5)
-        
-        # 企业价值 与 股权价值
-        enterprise_value = dcf_5yr_sum + pv_tv
-        equity_value = enterprise_value + cash_equiv - total_debt
-    else:
-        equity_value = 0.0
-        
-    intrinsic_value_per_share = (equity_value / shares_out) if shares_out > 0 else 0.0
+    # Compatibility response delegates to the canonical public default engine.
+    # Missing/negative cash flow must not become a zero-value stock.
+    from services.decision_support import get_default_ticker_valuation
+    canonical = await get_default_ticker_valuation(ticker, db)
+    base = canonical["scenarios"][1]
+    intrinsic_value_per_share = base.get("intrinsic_value_per_share") if base["available"] else None
+    current_price = canonical["current_price"]
+    margin_of_safety = ((intrinsic_value_per_share - current_price) / intrinsic_value_per_share
+                        if intrinsic_value_per_share is not None and intrinsic_value_per_share > 0
+                        and current_price is not None and current_price > 0 else None)
+    assumptions = base["assumptions"]
+    fcf_growth_rate, wacc, perpetual_growth = (assumptions[k] for k in ("fcf_growth_rate", "wacc", "perpetual_growth"))
 
-    # 获取最新股价以计算安全边际
-    price_stmt = select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(60)
-    price_result = await db.execute(price_stmt)
+    price_result = await db.execute(select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date.desc()).limit(60))
     price_records = list(price_result.scalars().all())
-    _, current_price = _latest_effective_price(price_records)
-    margin_of_safety = 0.0
-    
-    if intrinsic_value_per_share > 0 and current_price > 0:
-        # 安全边际 = (内在价值 - 当前股价) / 内在价值
-        margin_of_safety = (intrinsic_value_per_share - current_price) / intrinsic_value_per_share
-
     factor_scores = _calculate_factor_scores(ttm_data, records_y, price_records)
 
     return {
@@ -798,12 +763,18 @@ async def get_fundamental_valuation(ticker: str, db: AsyncSession) -> Optional[D
         },
         "valuation": {
             "dcf_intrinsic_value_per_share": intrinsic_value_per_share,
+            "model_version": canonical["model_version"],
+            "available": base["available"],
+            "unavailable_reasons": base.get("reasons", []),
+            "upside_downside": base.get("upside_downside"),
+            "margin_of_safety_definition": "(intrinsic - price) / intrinsic; null for nonpositive intrinsic",
             "current_price": current_price,
             "margin_of_safety": margin_of_safety,
             "assumptions": {
                 "fcf_growth_rate_5yr": fcf_growth_rate,
                 "wacc": wacc,
-                "perpetual_growth": perpetual_growth
+                "perpetual_growth": perpetual_growth,
+                "forecast_years": canonical["formula"]["forecast_years"]
             }
         },
         "factor_scores": factor_scores,
