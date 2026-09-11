@@ -36,6 +36,15 @@ conflicting/invalid factors disable the calculation. A `sharesBasis` of
 price panel keeps existing dividend-adjusted OHLC; the multiple calculation
 never uses `adjusted_close`.
 
+Split normalization requires a stored EODHD split response covering the full
+range of price dates and statement share vintages. Recent-only backfills and
+an empty corporate-actions table do not prove historical coverage. A verified
+empty provider response does establish no splits in its requested range.
+Calculations use the verified raw response, so missing normalized action rows
+cannot silently inflate multiples. Unreadable or invalid responses disable all
+six multiples. The response includes `split_history_verified`, the source
+snapshot ID and its coverage horizon.
+
 ## Availability and gaps
 
 Versioned quarterly statements are selected by availability. Legacy statements
@@ -67,7 +76,11 @@ carry forward an earlier valid observation.
 ## API and implementation
 
 - `GET /api/stocks/{ticker}` includes `valuation_history` after the existing
-  stock synchronization. The stock interval applies to both histories.
+  stock synchronization. It also repairs missing split coverage independently
+  of price/fundamental freshness, under the existing ticker lock and external
+  request rate limit. Failed or rate-limited repair keeps cached prices usable
+  while leaving unverified multiples unavailable. The stock interval applies
+  to both histories.
 - `GET /api/stocks/{ticker}/valuation-history?interval=1d|1wk|1mo` is a local,
   read-only endpoint. It does not synchronize data or call external APIs.
 - Six metric summaries report latest value/reason, median and coverage.

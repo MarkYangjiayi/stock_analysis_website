@@ -11,7 +11,7 @@ from sqlalchemy.dialects.sqlite import insert
 
 from models import Ticker, DailyPrice, FinancialStatement, FundamentalVersion
 from services import eodhd_client
-from services.corporate_actions import upsert_corporate_actions
+from services.split_history import persist_full_split_history
 from services.financial_flow import ensure_latest_financial_flow_jobs
 from services.raw_store import persist_snapshot
 from services.security_master import upsert_security
@@ -35,11 +35,12 @@ async def sync_ticker_data(ticker: str, db: AsyncSession) -> bool:
 
     #并发拉取基本面、历史日 K 线和拆股数据
     #这里为了满足单实例 httpx 限制，由于 EODHD 内部使用独立连接获取，这没有问题
+    split_through = utc_now().date()
     async with eodhd_client.create_http_client() as client:
         fundamentals, eod_data, splits = await asyncio.gather(
             eodhd_client.get_fundamental_data(ticker, client=client),
             eodhd_client.get_eod_historical_data(ticker, client=client),
-            eodhd_client.get_splits(ticker, client=client),
+            eodhd_client.get_splits(ticker, to_date=split_through.isoformat(), client=client),
         )
 
     if not fundamentals or not eod_data or splits is None:
@@ -57,25 +58,6 @@ async def sync_ticker_data(ticker: str, db: AsyncSession) -> bool:
             except (KeyError, TypeError, ValueError):
                 eod_as_of = None
         await persist_snapshot(db, "EODHD", "eod_prices", eod_data, as_of_date=eod_as_of, details={"ticker": ticker})
-        split_as_of = None
-        if splits:
-            try:
-                split_as_of = max(
-                    datetime.strptime(row["date"], "%Y-%m-%d").date()
-                    for row in splits
-                    if row.get("date")
-                )
-            except (KeyError, TypeError, ValueError):
-                split_as_of = None
-        await persist_snapshot(
-            db,
-            "EODHD",
-            "splits",
-            splits,
-            as_of_date=split_as_of,
-            details={"ticker": ticker},
-        )
-
         # 1. 插入或更新基础股票信息 (Tickers 表)
         await _upsert_ticker_info(ticker, fundamentals, db)
 
@@ -86,7 +68,7 @@ async def sync_ticker_data(ticker: str, db: AsyncSession) -> bool:
         await _upsert_daily_prices(ticker, eod_data, db)
 
         # 4. 保存拆股记录，供每股估值和历史股本同比统一归一化
-        await upsert_corporate_actions(db, ticker, splits, [])
+        await persist_full_split_history(db, ticker, splits, split_through)
 
         # 提交整个会话 (事务控制)
         await db.commit()

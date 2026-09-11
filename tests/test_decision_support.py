@@ -1061,8 +1061,9 @@ async def test_cold_ticker_sync_fetches_and_persists_splits(
             "volume": 1_000,
         }]
 
-    async def fake_splits(requested_ticker, *, client=None):
+    async def fake_splits(requested_ticker, *, to_date=None, client=None):
         assert client is not None
+        assert to_date is not None
         requested_splits.append(requested_ticker)
         return [{"date": "2025-05-01", "split": "2/1"}]
 

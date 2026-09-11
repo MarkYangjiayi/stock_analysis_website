@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import CorporateAction, DailyPrice, FinancialStatement, FundamentalVersion, Ticker
 from services.events_expectations import load_latest_fundamentals_snapshot
 from services.valuation_inputs import field, number, resolve_debt
+from services.split_history import UNVERIFIED_REASON, load_split_history
 
 
 METRICS = (
@@ -191,13 +192,16 @@ def build_valuation_history(
     *, interval: str = "1d", currency: str | None = None, sector: str | None = None,
     fallback_vintage: date | None = None,
     fundamentals: dict | None = None,
+    split_history_verified: bool = False,
 ) -> dict:
     if interval not in {"1d", "1wk", "1mo"}:
         raise ValueError("Unsupported interval")
     prices = sorted(prices, key=lambda row: row.date)
     reference = prices[-1].date if prices else None
     warnings = []
-    basis_error = None
+    basis_error = None if split_history_verified else UNVERIFIED_REASON
+    if basis_error:
+        warnings.append(basis_error)
     fundamentals = fundamentals or {}
     general = fundamentals.get("General") or {}
     category = str(general.get("HomeCategory") or "").upper()
@@ -207,6 +211,7 @@ def build_valuation_history(
         splits = _split_table(actions)
     except ValueError as exc:
         splits, basis_error = ([], [1.0]), str(exc)
+        split_history_verified = False
         warnings.append(basis_error)
     events = []
     if reference and not basis_error:
@@ -280,7 +285,7 @@ def build_valuation_history(
                         "latest_value": latest_value, "latest_date": last["price_date"] if last else None,
                         "latest_reason": latest_reason, "median": median(valid) if valid else None})
     return {"ticker": ticker, "interval": interval, "currency": currency, "price_basis": "split_only",
-            "history_basis": "reconstructed_estimates", "split_reference_date": reference.isoformat() if reference else None,
+            "history_basis": "reconstructed_estimates", "split_history_verified": split_history_verified, "split_reference_date": reference.isoformat() if reference else None,
             "methodology": METHODOLOGY, "warnings": warnings, "metrics": metrics, "bases": bases, "points": points}
 
 
@@ -298,11 +303,21 @@ async def get_valuation_history(ticker: str, db: AsyncSession, interval: str = "
     ))).scalars().all()
     covered = {row.period_end for row in versions}
     statements = [*versions, *(row for row in legacy if row.fiscal_date not in covered)]
-    actions = (await db.execute(select(CorporateAction).where(
-        CorporateAction.ticker == ticker, CorporateAction.action_type == "split",
-    ))).scalars().all()
-    return build_valuation_history(ticker, prices, statements, actions, interval=interval,
-                                   currency=profile.currency if profile else None,
-                                   sector=profile.sector if profile else None,
-                                   fallback_vintage=_date(snapshot.fetched_at) if snapshot else _date(profile.last_updated) if profile else None,
-                                   fundamentals=fundamentals)
+    vintage = _date(snapshot.fetched_at) if snapshot else _date(profile.last_updated) if profile else None
+    # Cover both quote dates and every statement share vintage, including
+    # revisions fetched after the final price observation.
+    required_dates = [row.date for row in prices]
+    for row in statements:
+        required_dates.extend(filter(None, (
+            _date(getattr(row, "period_end", None) or getattr(row, "fiscal_date", None)),
+            _date(getattr(row, "fetched_at", None)) or vintage,
+        )))
+    coverage = await load_split_history(db, ticker, min(required_dates), max(required_dates)) if required_dates else None
+    result = build_valuation_history(ticker, prices, statements, coverage.actions if coverage else [], interval=interval,
+                                     currency=profile.currency if profile else None,
+                                     sector=profile.sector if profile else None,
+                                     fallback_vintage=vintage, fundamentals=fundamentals,
+                                     split_history_verified=coverage is not None)
+    result["split_history_snapshot_id"] = coverage.snapshot_id if coverage else None
+    result["split_history_through"] = coverage.through_date.isoformat() if coverage else None
+    return result

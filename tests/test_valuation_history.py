@@ -27,6 +27,7 @@ def statements():
 
 
 def calculate(rows=None, prices=None, splits=(), **kwargs):
+    kwargs.setdefault("split_history_verified", True)
     return build_valuation_history("TEST.US", prices or [price("2024-11-04")], rows if rows is not None else statements(), splits, currency="USD", **kwargs)
 
 
@@ -195,6 +196,8 @@ async def test_database_service_and_read_only_endpoint(db_session, monkeypatch):
         values = vars(row).copy()
         values.pop("raw_snapshot_id")
         db_session.add(FundamentalVersion(ticker="TEST.US", period_type="Quarterly", **values))
+    from services.split_history import persist_full_split_history
+    await persist_full_split_history(db_session, "TEST.US", [], date(2025, 2, 1))
     await db_session.commit()
     async def fresh(*args, **kwargs):
         return SimpleNamespace(needs_sync=False)
