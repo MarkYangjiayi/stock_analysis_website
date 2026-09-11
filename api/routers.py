@@ -22,6 +22,7 @@ from api.schemas import (
     MarketOverviewResponse,
     PeerMultiplesResponse,
     StockDataResponse,
+    ValuationHistoryResponse,
 )
 from database import database_ready, get_db
 from sqlalchemy import and_, select, func
@@ -87,6 +88,7 @@ from services.market_breadth import (
     get_market_overview,
 )
 from services.stock_snapshot import get_market_snapshot
+from services.valuation_history import get_valuation_history
 import pandas as pd
 
 router = APIRouter()
@@ -503,7 +505,7 @@ async def sync_stock_data(ticker: str, db: AsyncSession = Depends(get_db)):
     return {"message": f"Successfully synchronized data for {ticker}", "ticker": ticker}
 
 @router.get("/api/stocks/{ticker}", response_model=StockDataResponse, tags=["Stocks Analysis Read"])
-async def read_stock_analysis(ticker: str, request: Request, interval: str = "1d", financial_period: str = "Yearly", db: AsyncSession = Depends(get_db)):
+async def read_stock_analysis(ticker: str, request: Request, interval: Literal["1d", "1wk", "1mo"] = "1d", financial_period: str = "Yearly", db: AsyncSession = Depends(get_db)):
     """
     读取指定股票的基础 Profile 以及经过量化分析 (MA, RSI, MACD等) 后的全量历史时间序列。
     实现了 Read-Through 策略: 如果本地数据陈旧或不存在，自动触发获取。
@@ -543,8 +545,22 @@ async def read_stock_analysis(ticker: str, request: Request, interval: str = "1d
         
     valuation = await get_fundamental_valuation(ticker, db)
     data["valuation_metrics"] = valuation
+    data["valuation_history"] = await get_valuation_history(ticker, db, interval)
     
     return data
+
+
+@router.get(
+    "/api/stocks/{ticker}/valuation-history",
+    response_model=ValuationHistoryResponse,
+    tags=["Stocks Analysis Read"],
+)
+async def read_valuation_history(
+    ticker: str,
+    interval: Literal["1d", "1wk", "1mo"] = "1d",
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_valuation_history(canonicalize_ticker(ticker), db, interval)
 
 
 @router.get(

@@ -137,6 +137,55 @@ export interface StockDataResponse {
     historical_data: HistoricalDataPoint[];
     historical_financials: HistoricalFinancialPoint[];
     valuation_metrics?: ValuationMetrics | null;
+    valuation_history?: ValuationHistoryResponse | null;
+}
+
+export type MultipleKey = "pe" | "ps" | "pb" | "pfcf" | "ev_revenue" | "ev_ebitda";
+
+export interface ValuationHistoryMetric {
+    key: MultipleKey;
+    label: string;
+    description: string;
+    formula: string;
+    valid_points: number;
+    total_points: number;
+    latest_value: number | null;
+    latest_date: string | null;
+    latest_reason: string | null;
+    median: number | null;
+}
+
+export interface ValuationHistoryPoint {
+    date: string;
+    price_date: string;
+    basis_id: number | null;
+    values: Record<MultipleKey, number | null>;
+    reason: string | null;
+    ev_reason: string | null;
+}
+
+export interface ValuationHistoryResponse {
+    ticker: string;
+    interval: "1d" | "1wk" | "1mo";
+    currency: string | null;
+    price_basis: "split_only";
+    history_basis: "reconstructed_estimates";
+    split_reference_date: string | null;
+    methodology: string[];
+    warnings: string[];
+    metrics: ValuationHistoryMetric[];
+    bases: Array<{
+        id: number;
+        period_end: string;
+        available_from: string;
+        periods: string[];
+        source: string;
+        raw_snapshot_ids: number[];
+        share_reference_dates: string[];
+        inputs: Record<string, number | null>;
+        reasons: Partial<Record<MultipleKey, string>>;
+    }>;
+    points: ValuationHistoryPoint[];
 }
 
 export interface FinancialFlowSummaryCard {

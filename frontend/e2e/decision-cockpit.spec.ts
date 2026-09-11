@@ -357,7 +357,7 @@ for (const fixture of [
         await expect(page.getByRole("heading", { name: "Price & volume" })).toBeVisible();
         await page.getByRole("tab", { name: "Price & Factors" }).click();
         await expect(page).toHaveURL(/section=technical/);
-        await expect(page.getByRole("heading", { name: "Price & volume" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Price & valuation history" })).toBeVisible();
         await page.goBack();
         await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
 

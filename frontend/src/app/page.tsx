@@ -39,7 +39,7 @@ import FinancialSnapshot from "@/components/analysis/FinancialSnapshot";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { formatSignedPercent } from "@/lib/format";
 
-const StockChart = dynamic(() => import("@/components/StockChart"), {
+const StockValuationChart = dynamic(() => import("@/components/StockValuationChart"), {
     ssr: false,
     loading: () => <div className="h-[480px] animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />,
 });
@@ -654,7 +654,8 @@ function AnalysisPage() {
                             <AnalysisNavigation active={activeSection} onChange={selectSection} />
 
                             <div id={`analysis-panel-${activeSection}`} role="tabpanel" aria-labelledby={`analysis-tab-${activeSection}`} className="space-y-4">
-                                {activeSection === "valuation" && <div className="flex justify-end">
+                                {activeSection === "valuation" && <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <button type="button" className="secondary-button text-xs" onClick={() => selectSection("technical")}>Historical multiples →</button>
                                     <SegmentedControl<CockpitTab>
                                         label="Valuation section"
                                         value={cockpitView === "peers" ? "peers" : "valuation"}
@@ -732,13 +733,7 @@ function AnalysisPage() {
                                 </>}
 
                                 {activeSection === "technical" && <>
-                                    <section className="surface-panel overflow-hidden">
-                                        <header className="section-header">
-                                            <div><p className="eyebrow">Market history</p><h2 className="section-title">Price & volume</h2><p className="section-description">Adjusted data · logarithmic price scale · moving averages and volume.</p></div>
-                                            <span className="text-xs text-slate-500">Currency {stockData.profile.currency || "USD"}</span>
-                                        </header>
-                                        <div className="p-2 sm:p-4"><StockChart data={stockData.historical_data} interval={chartInterval} onIntervalChange={handleIntervalChange} isLoading={chartLoading} /></div>
-                                    </section>
+                                    <StockValuationChart key={stockData.profile.ticker} data={stockData.historical_data} history={stockData.valuation_history} interval={chartInterval} onIntervalChange={handleIntervalChange} isLoading={chartLoading} />
                                     <PointInTimeFactorPanel snapshot={factorSnapshot} loading={factorLoading} error={factorError} />
                                 </>}
 
