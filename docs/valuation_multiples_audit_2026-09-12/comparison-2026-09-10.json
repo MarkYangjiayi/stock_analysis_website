@@ -1,0 +1,3234 @@
+[
+  {
+    "ticker": "MSFT",
+    "sector": "Technology",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-08-27",
+    "split_verified": true,
+    "split_snapshot": 57802,
+    "price_yahoo": 492.44000244140625,
+    "price_implied": 492.44,
+    "online": {
+      "pe": 27.450932902162414,
+      "ps": 11.060048155882823,
+      "pb": 8.296254908033012,
+      "pfcf": 54.789068326690256,
+      "ev_revenue": 11.216646084396348,
+      "ev_ebitda": 17.936288339862855
+    },
+    "sec_values": {
+      "eps": 17.95,
+      "revenue": 331839000000,
+      "cfo": 182935000000,
+      "capex": 115948000000,
+      "book": 442387000000,
+      "shares": 7427000000,
+      "debt_total": null,
+      "cash": 76843000000,
+      "op_income": 155237000000,
+      "da": null,
+      "fcf": 66987000000
+    },
+    "sec_ratios": {
+      "pe": 27.43398342291957,
+      "ps": 11.021464921640687,
+      "pb": 8.267313230570347,
+      "pfcf": 54.59793539242426
+    },
+    "same_share_ratios": {
+      "ps": 11.060048210716042,
+      "pb": 8.29625494916397,
+      "pfcf": 54.789068598322075
+    },
+    "online_inputs": {
+      "eps": 17.938916748479926,
+      "revenue": 331839000000.0,
+      "fcf": 66987000000.0,
+      "ebitda": 207519000000.0,
+      "shares": 7453000000.0,
+      "book": 442387000000.0,
+      "debt": 128808300000.0,
+      "cash": 76843000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 17.95,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 17.95,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 331839000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 331839000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "RevenueFromContractWithCustomerExcludingAssessedTax"
+      },
+      "cfo": {
+        "value": 182935000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 182935000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 115948000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 115948000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "PaymentsToAcquirePropertyPlantAndEquipment"
+      },
+      "book": {
+        "value": 442387000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 442387000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": {
+        "value": 7427000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 7427000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CommonStockSharesOutstanding"
+      },
+      "debt_total": null,
+      "cash": {
+        "value": 76843000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 76843000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashCashEquivalentsAndShortTermInvestments"
+      },
+      "op_income": {
+        "value": 155237000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 155237000000,
+            "accn": "0001193125-26-323660",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-07-29",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "OperatingIncomeLoss"
+      },
+      "da": null
+    },
+    "sec_cik": 789019,
+    "history_start": "1986-03-13",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 10121,
+        "total_points": 10202,
+        "latest_value": 27.450932902162414,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 30.042727272123702
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 10121,
+        "total_points": 10202,
+        "latest_value": 11.060048155882823,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 7.476846802181457
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 9553,
+        "total_points": 10202,
+        "latest_value": 8.296254908033012,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 7.931363355953115
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 9109,
+        "total_points": 10202,
+        "latest_value": 54.789068326690256,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 24.92500258730087
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 5508,
+        "total_points": 10202,
+        "latest_value": 11.216646084396348,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 6.167522202422053
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 5445,
+        "total_points": 10202,
+        "latest_value": 17.936288339862855,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 15.534882977804646
+      }
+    ]
+  },
+  {
+    "ticker": "JPM",
+    "sector": "Financial Services",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-08-17",
+    "split_verified": true,
+    "split_snapshot": 57801,
+    "price_yahoo": 353.55999755859375,
+    "price_implied": 353.56,
+    "online": {
+      "pe": 15.342112921514111,
+      "ps": 3.3186527434793858,
+      "pb": 2.6368015098852635,
+      "pfcf": 11.470017674040527,
+      "ev_revenue": null,
+      "ev_ebitda": null
+    },
+    "sec_values": {
+      "eps": 23.339999999999996,
+      "revenue": 199408000000,
+      "cfo": -162534000000,
+      "capex": null,
+      "book": 374598000000,
+      "shares": null,
+      "debt_total": 460523000000,
+      "cash": null,
+      "op_income": null,
+      "da": 9262000000,
+      "fcf": null
+    },
+    "sec_ratios": {
+      "pe": 15.148243254438466,
+      "ps": null,
+      "pb": null,
+      "pfcf": null
+    },
+    "same_share_ratios": {
+      "ps": 4.953364785662779,
+      "pb": 2.636801491677594,
+      "pfcf": null
+    },
+    "online_inputs": {
+      "eps": 23.045065683502166,
+      "revenue": 297633000000.0,
+      "fcf": 86115000000.0,
+      "ebitda": 93160000000.0,
+      "shares": 2793700000.0,
+      "book": 374598000000.0,
+      "debt": 1237871000000.0,
+      "cash": 2622548000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 23.339999999999996,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 20.02,
+            "accn": "0001628280-26-008131",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 13.63,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 10.31,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 199408000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 182447000000,
+            "accn": "0001628280-26-008131",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 107183000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 90222000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          }
+        ],
+        "tag": "RevenuesNetOfInterestExpense"
+      },
+      "cfo": {
+        "value": -162534000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": -147782000000,
+            "accn": "0001628280-26-008131",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": -237044000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": -222292000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": null,
+      "book": {
+        "value": 374598000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 374598000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": null,
+      "debt_total": {
+        "value": 460523000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 460523000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities"
+      },
+      "cash": null,
+      "op_income": null,
+      "da": {
+        "value": 9262000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 8821000000,
+            "accn": "0001628280-26-008131",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 4681000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 4240000000,
+            "accn": "0001628280-26-054343",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-06"
+          }
+        ],
+        "tag": "DepreciationAmortizationAndAccretionNet"
+      }
+    },
+    "sec_cik": 19617,
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 648,
+        "total_points": 668,
+        "latest_value": 15.342112921514111,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 13.215423415598607
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 648,
+        "total_points": 668,
+        "latest_value": 3.3186527434793858,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.7446478315094947
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 648,
+        "total_points": 668,
+        "latest_value": 2.6368015098852635,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.141853256786751
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 200,
+        "total_points": 668,
+        "latest_value": 11.470017674040527,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 8.681721806933883
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 0,
+        "total_points": 668,
+        "latest_value": null,
+        "latest_date": "2026-09-10",
+        "latest_reason": "Simplified enterprise value is zero or negative; EV multiples are not meaningful.",
+        "median": null
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 0,
+        "total_points": 668,
+        "latest_value": null,
+        "latest_date": "2026-09-10",
+        "latest_reason": "Simplified enterprise value is zero or negative; EV multiples are not meaningful.",
+        "median": null
+      }
+    ]
+  },
+  {
+    "ticker": "XOM",
+    "sector": "Energy",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-08-17",
+    "split_verified": true,
+    "split_snapshot": 57803,
+    "price_yahoo": 165.22999572753906,
+    "price_implied": 165.23,
+    "online": {
+      "pe": 21.30175391474019,
+      "ps": 1.9101257962665485,
+      "pb": 2.6589174955663504,
+      "pfcf": 22.572906752201092,
+      "ev_revenue": 1.9981444081316124,
+      "ev_ebitda": 10.044553010790114
+    },
+    "sec_values": {
+      "eps": null,
+      "revenue": null,
+      "cfo": null,
+      "capex": null,
+      "book": 259380000000,
+      "shares": 4112000000,
+      "debt_total": null,
+      "cash": 10588000000,
+      "op_income": null,
+      "da": null,
+      "fcf": null
+    },
+    "sec_ratios": {
+      "pe": null,
+      "ps": null,
+      "pb": 2.619422247018431,
+      "pfcf": null
+    },
+    "same_share_ratios": {
+      "ps": null,
+      "pb": 2.6589174268129696,
+      "pfcf": null
+    },
+    "online_inputs": {
+      "eps": 7.756638287219423,
+      "revenue": 361060000000.0,
+      "fcf": 30553000000.0,
+      "ebitda": 71825000000.0,
+      "shares": 4174000000.0,
+      "book": 259380000000.0,
+      "debt": 42368000000.0,
+      "cash": 10588000000.0
+    },
+    "sec_evidence": {
+      "eps": null,
+      "revenue": null,
+      "cfo": null,
+      "capex": null,
+      "book": {
+        "value": 259380000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 259380000000,
+            "accn": "0000034088-26-000093",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-03",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": {
+        "value": 4112000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 4112000000,
+            "accn": "0000034088-26-000093",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-03",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CommonStockSharesOutstanding"
+      },
+      "debt_total": null,
+      "cash": {
+        "value": 10588000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 10588000000,
+            "accn": "0000034088-26-000093",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-03",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashAndCashEquivalentsAtCarryingValue"
+      },
+      "op_income": null,
+      "da": null
+    },
+    "sec_cik": "2115436",
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 662,
+        "total_points": 668,
+        "latest_value": 21.30175391474019,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 14.656664752171276
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 662,
+        "total_points": 668,
+        "latest_value": 1.9101257962665485,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 1.4761440715272403
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 662,
+        "total_points": 668,
+        "latest_value": 2.6589174955663504,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 1.9838982234486358
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 662,
+        "total_points": 668,
+        "latest_value": 22.572906752201092,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 16.423947340406656
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 662,
+        "total_points": 668,
+        "latest_value": 1.9981444081316124,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 1.5374707584247556
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 662,
+        "total_points": 668,
+        "latest_value": 10.044553010790114,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 7.09979445776677
+      }
+    ]
+  },
+  {
+    "ticker": "JNJ",
+    "sector": "Healthcare",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-08-17",
+    "split_verified": true,
+    "split_snapshot": 57804,
+    "price_yahoo": 266.3500061035156,
+    "price_implied": 266.35,
+    "online": {
+      "pe": 30.871005851961307,
+      "ps": 6.636651400504447,
+      "pb": 7.648734685951678,
+      "pfcf": 34.74025203121659,
+      "ev_revenue": 6.925411624748542,
+      "ev_ebitda": 20.10549730226491
+    },
+    "sec_values": {
+      "eps": 8.62,
+      "revenue": 97929000000,
+      "cfo": 27608000000,
+      "capex": 5364000000,
+      "book": 84971000000,
+      "shares": null,
+      "debt_total": null,
+      "cash": 20758000000,
+      "op_income": null,
+      "da": 7751000000,
+      "fcf": 22244000000
+    },
+    "sec_ratios": {
+      "pe": 30.89907263381852,
+      "ps": null,
+      "pb": null,
+      "pfcf": null
+    },
+    "same_share_ratios": {
+      "ps": 6.636651552585939,
+      "pb": 7.648734861225459,
+      "pfcf": 29.217795805304284
+    },
+    "online_inputs": {
+      "eps": 8.627836788903274,
+      "revenue": 97929000000.0,
+      "fcf": 18708000000.0,
+      "ebitda": 33732000000.0,
+      "shares": 2440100000.0,
+      "book": 84971000000.0,
+      "debt": 49036000000.0,
+      "cash": 20758000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 8.62,
+        "facts": [
+          {
+            "start": "2024-12-30",
+            "end": "2025-12-28",
+            "val": 11.03,
+            "accn": "0000200406-26-000016",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-11",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-29",
+            "end": "2026-06-28",
+            "val": 4.41,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          },
+          {
+            "start": "2024-12-30",
+            "end": "2025-06-29",
+            "val": 6.82,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 97929000000,
+        "facts": [
+          {
+            "start": "2024-12-30",
+            "end": "2025-12-28",
+            "val": 94193000000,
+            "accn": "0000200406-26-000016",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-11",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-29",
+            "end": "2026-06-28",
+            "val": 49372000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          },
+          {
+            "start": "2024-12-30",
+            "end": "2025-06-29",
+            "val": 45636000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          }
+        ],
+        "tag": "RevenueFromContractWithCustomerExcludingAssessedTax"
+      },
+      "cfo": {
+        "value": 27608000000,
+        "facts": [
+          {
+            "start": "2024-12-30",
+            "end": "2025-12-28",
+            "val": 24530000000,
+            "accn": "0000200406-26-000016",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-11",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-29",
+            "end": "2026-06-28",
+            "val": 11130000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          },
+          {
+            "start": "2024-12-30",
+            "end": "2025-06-29",
+            "val": 8052000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 5364000000,
+        "facts": [
+          {
+            "start": "2024-12-30",
+            "end": "2025-12-28",
+            "val": 4832000000,
+            "accn": "0000200406-26-000016",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-11",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-29",
+            "end": "2026-06-28",
+            "val": 2370000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          },
+          {
+            "start": "2024-12-30",
+            "end": "2025-06-29",
+            "val": 1838000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          }
+        ],
+        "tag": "PaymentsToAcquirePropertyPlantAndEquipment"
+      },
+      "book": {
+        "value": 84971000000,
+        "facts": [
+          {
+            "end": "2026-06-28",
+            "val": 84971000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": null,
+      "debt_total": null,
+      "cash": {
+        "value": 20758000000,
+        "facts": [
+          {
+            "end": "2026-06-28",
+            "val": 20758000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashCashEquivalentsAndShortTermInvestments"
+      },
+      "op_income": null,
+      "da": {
+        "value": 7751000000,
+        "facts": [
+          {
+            "start": "2024-12-30",
+            "end": "2025-12-28",
+            "val": 7503000000,
+            "accn": "0000200406-26-000016",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-11",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-29",
+            "end": "2026-06-28",
+            "val": 3963000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          },
+          {
+            "start": "2024-12-30",
+            "end": "2025-06-29",
+            "val": 3715000000,
+            "accn": "0000200406-26-000153",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-23"
+          }
+        ],
+        "tag": "DepreciationDepletionAndAmortization"
+      }
+    },
+    "sec_cik": 200406,
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 30.871005851961307,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 19.721493271638323
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 6.636651400504447,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 4.570257062987196
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 7.648734685951678,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 5.540960195867606
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 34.74025203121659,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 21.892082848014983
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 6.925411624748542,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 4.707312151083044
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 20.10549730226491,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 14.898771374633533
+      }
+    ]
+  },
+  {
+    "ticker": "WMT",
+    "sector": "Consumer Defensive",
+    "anchor": "2026-09-10",
+    "period_end": "2026-07-31",
+    "available_from": "2026-09-08",
+    "split_verified": true,
+    "split_snapshot": 57805,
+    "price_yahoo": 105.7300033569336,
+    "price_implied": 105.72999999999999,
+    "online": {
+      "pe": 38.30619308404298,
+      "ps": 1.146327924548815,
+      "pb": 8.586432337791893,
+      "pfcf": 62.44088681619661,
+      "ev_revenue": 1.230892503805175,
+      "ev_ebitda": 21.142882420224563
+    },
+    "sec_values": {
+      "eps": 2.76,
+      "revenue": 735840000000,
+      "cfo": 42923000000,
+      "capex": 29414000000,
+      "book": 98238000000,
+      "shares": null,
+      "debt_total": null,
+      "cash": 11529000000,
+      "op_income": 32280000000,
+      "da": 15093000000,
+      "fcf": 13509000000
+    },
+    "sec_ratios": {
+      "pe": 38.307972230773046,
+      "ps": null,
+      "pb": null,
+      "pfcf": null
+    },
+    "same_share_ratios": {
+      "ps": 1.1463279609447927,
+      "pb": 8.586432610411615,
+      "pfcf": 62.44088879869837
+    },
+    "online_inputs": {
+      "eps": 2.7601281016892125,
+      "revenue": 735840000000.0,
+      "fcf": 13509000000.0,
+      "ebitda": 42839000000.0,
+      "shares": 7978000000.0,
+      "book": 98238000000.0,
+      "debt": 73755000000.0,
+      "cash": 11529000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 2.76,
+        "facts": [
+          {
+            "start": "2025-02-01",
+            "end": "2026-01-31",
+            "val": 2.73,
+            "accn": "0000104169-26-000055",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-03-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-02-01",
+            "end": "2026-07-31",
+            "val": 1.46,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          },
+          {
+            "start": "2025-02-01",
+            "end": "2025-07-31",
+            "val": 1.43,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 735840000000,
+        "facts": [
+          {
+            "start": "2025-02-01",
+            "end": "2026-01-31",
+            "val": 713163000000,
+            "accn": "0000104169-26-000055",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-03-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-02-01",
+            "end": "2026-07-31",
+            "val": 365688000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          },
+          {
+            "start": "2025-02-01",
+            "end": "2025-07-31",
+            "val": 343011000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          }
+        ],
+        "tag": "Revenues"
+      },
+      "cfo": {
+        "value": 42923000000,
+        "facts": [
+          {
+            "start": "2025-02-01",
+            "end": "2026-01-31",
+            "val": 41565000000,
+            "accn": "0000104169-26-000055",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-03-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-02-01",
+            "end": "2026-07-31",
+            "val": 19710000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          },
+          {
+            "start": "2025-02-01",
+            "end": "2025-07-31",
+            "val": 18352000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 29414000000,
+        "facts": [
+          {
+            "start": "2025-02-01",
+            "end": "2026-01-31",
+            "val": 26642000000,
+            "accn": "0000104169-26-000055",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-03-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-02-01",
+            "end": "2026-07-31",
+            "val": 14181000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          },
+          {
+            "start": "2025-02-01",
+            "end": "2025-07-31",
+            "val": 11409000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          }
+        ],
+        "tag": "PaymentsToAcquirePropertyPlantAndEquipment"
+      },
+      "book": {
+        "value": 98238000000,
+        "facts": [
+          {
+            "end": "2026-07-31",
+            "val": 98238000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": null,
+      "debt_total": null,
+      "cash": {
+        "value": 11529000000,
+        "facts": [
+          {
+            "end": "2026-07-31",
+            "val": 11529000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashAndCashEquivalentsAtCarryingValue"
+      },
+      "op_income": {
+        "value": 32280000000,
+        "facts": [
+          {
+            "start": "2025-02-01",
+            "end": "2026-01-31",
+            "val": 29825000000,
+            "accn": "0000104169-26-000055",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-03-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-02-01",
+            "end": "2026-07-31",
+            "val": 16876000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          },
+          {
+            "start": "2025-02-01",
+            "end": "2025-07-31",
+            "val": 14421000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          }
+        ],
+        "tag": "OperatingIncomeLoss"
+      },
+      "da": {
+        "value": 15093000000,
+        "facts": [
+          {
+            "start": "2025-02-01",
+            "end": "2026-01-31",
+            "val": 14203000000,
+            "accn": "0000104169-26-000055",
+            "fy": 2026,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-03-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-02-01",
+            "end": "2026-07-31",
+            "val": 7746000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          },
+          {
+            "start": "2025-02-01",
+            "end": "2025-07-31",
+            "val": 6856000000,
+            "accn": "0000104169-26-000154",
+            "fy": 2027,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-28"
+          }
+        ],
+        "tag": "DepreciationAmortizationAndAccretionNet"
+      }
+    },
+    "sec_cik": 104169,
+    "history_start": "1972-08-25",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 10093,
+        "total_points": 13622,
+        "latest_value": 38.30619308404298,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 25.035026050089137
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 10093,
+        "total_points": 13622,
+        "latest_value": 1.146327924548815,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 0.7091279442545637
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 9646,
+        "total_points": 13622,
+        "latest_value": 8.586432337791893,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 4.8732492814752
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 7531,
+        "total_points": 13622,
+        "latest_value": 62.44088681619661,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 27.57804189881881
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 9585,
+        "total_points": 13622,
+        "latest_value": 1.230892503805175,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 0.7883512644090898
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 9393,
+        "total_points": 13622,
+        "latest_value": 21.142882420224563,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 12.828514078340337
+      }
+    ]
+  },
+  {
+    "ticker": "CAT",
+    "sector": "Industrials",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-09-02",
+    "split_verified": true,
+    "split_snapshot": 57806,
+    "price_yahoo": 805.0,
+    "price_implied": 804.9999999999999,
+    "online": {
+      "pe": 34.62694561564945,
+      "ps": 4.98216890363848,
+      "pb": 19.196313482856407,
+      "pfcf": 41.395652657327105,
+      "ev_revenue": 5.496467234942258,
+      "ev_ebitda": 23.603350189633375
+    },
+    "sec_values": {
+      "eps": 23.22,
+      "revenue": 74729000000,
+      "cfo": 13569000000,
+      "capex": 4575000000,
+      "book": 19395000000,
+      "shares": 459700000,
+      "debt_total": null,
+      "cash": 6713000000,
+      "op_income": 13092000000,
+      "da": 2379000000,
+      "fcf": 8994000000
+    },
+    "sec_ratios": {
+      "pe": 34.66838931955211,
+      "ps": 4.952006583789426,
+      "pb": 19.080097963392628,
+      "pfcf": 41.145041138536804
+    },
+    "same_share_ratios": {
+      "ps": 4.98216890363848,
+      "pb": 19.196313482856407,
+      "pfcf": 41.395652657327105
+    },
+    "online_inputs": {
+      "eps": 23.247791154764307,
+      "revenue": 74729000000.0,
+      "fcf": 8994000000.0,
+      "ebitda": 17402000000.0,
+      "shares": 462500000.0,
+      "book": 19395000000.0,
+      "debt": 45146000000.0,
+      "cash": 6713000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 23.22,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 18.81,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 13.23,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 8.82,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 74729000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 67589000000,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 37958000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 30818000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          }
+        ],
+        "tag": "Revenues"
+      },
+      "cfo": {
+        "value": 13569000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 11739000000,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 6241000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 4411000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 4575000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 2821000000,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 1315000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 1265000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 1465000000,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 847000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 608000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          }
+        ],
+        "tag": "PaymentsToAcquirePropertyPlantAndEquipment + PaymentsToAcquireEquipmentOnLease"
+      },
+      "book": {
+        "value": 19395000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 19394000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05",
+            "frame": "CY2026Q2I"
+          },
+          {
+            "end": "2026-06-30",
+            "val": -1000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest - MinorityInterest"
+      },
+      "shares": {
+        "value": 459700000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 459700000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CommonStockSharesOutstanding"
+      },
+      "debt_total": null,
+      "cash": {
+        "value": 6713000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 6713000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashAndCashEquivalentsAtCarryingValue"
+      },
+      "op_income": {
+        "value": 13092000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 11151000000,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 7380000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 5439000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          }
+        ],
+        "tag": "OperatingIncomeLoss"
+      },
+      "da": {
+        "value": 2379000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 2262000000,
+            "accn": "0000018230-26-000008",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-13"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 1211000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 1094000000,
+            "accn": "0000018230-26-000046",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-08-05"
+          }
+        ],
+        "tag": "DepreciationDepletionAndAmortization"
+      }
+    },
+    "sec_cik": 18230,
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 664,
+        "total_points": 668,
+        "latest_value": 34.62694561564945,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 18.23553888991528
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 664,
+        "total_points": 668,
+        "latest_value": 4.98216890363848,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.8934546271756534
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 664,
+        "total_points": 668,
+        "latest_value": 19.196313482856407,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 10.27751472313724
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 664,
+        "total_points": 668,
+        "latest_value": 41.395652657327105,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 20.657789867887235
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 664,
+        "total_points": 668,
+        "latest_value": 5.496467234942258,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 3.3954006072203473
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 664,
+        "total_points": 668,
+        "latest_value": 23.603350189633375,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 13.914319238758758
+      }
+    ]
+  },
+  {
+    "ticker": "NEE",
+    "sector": "Utilities",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-08-17",
+    "split_verified": true,
+    "split_snapshot": 57807,
+    "price_yahoo": 82.44000244140625,
+    "price_implied": 82.44,
+    "online": {
+      "pe": 18.454945315684654,
+      "ps": 5.934225560800799,
+      "pb": 3.0146896334418654,
+      "pfcf": null,
+      "ev_revenue": 9.63261638124117,
+      "ev_ebitda": 15.791896960795391
+    },
+    "sec_values": {
+      "eps": null,
+      "revenue": null,
+      "cfo": null,
+      "capex": null,
+      "book": null,
+      "shares": null,
+      "debt_total": null,
+      "cash": null,
+      "op_income": null,
+      "da": null,
+      "fcf": null
+    },
+    "sec_ratios": {
+      "pe": null,
+      "ps": null,
+      "pb": null,
+      "pfcf": null
+    },
+    "same_share_ratios": {
+      "ps": null,
+      "pb": null,
+      "pfcf": null
+    },
+    "online_inputs": {
+      "eps": 4.467095328098055,
+      "revenue": 29021000000.0,
+      "fcf": -10175000000.0,
+      "ebitda": 17702000000.0,
+      "shares": 2089000000.0,
+      "book": 57126000000.0,
+      "debt": 110197000000.0,
+      "cash": 2866000000.0
+    },
+    "sec_evidence": {
+      "eps": null,
+      "revenue": null,
+      "cfo": null,
+      "capex": null,
+      "book": null,
+      "shares": null,
+      "debt_total": null,
+      "cash": null,
+      "op_income": null,
+      "da": null
+    },
+    "sec_cik": 753308,
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 18.454945315684654,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 23.569299990805725
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 5.934225560800799,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 6.020772127329673
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 3.0146896334418654,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 3.0911919095042197
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 609,
+        "total_points": 668,
+        "latest_value": null,
+        "latest_date": "2026-09-10",
+        "latest_reason": "FCF is zero or negative; this multiple is not meaningful.",
+        "median": 45.92256305220884
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 9.63261638124117,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 9.34440189889358
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 15.791896960795391,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 16.57989837398374
+      }
+    ]
+  },
+  {
+    "ticker": "AMT",
+    "sector": "Real Estate",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-09-10",
+    "split_verified": true,
+    "split_snapshot": 57808,
+    "price_yahoo": 172.97999572753906,
+    "price_implied": 172.98,
+    "online": {
+      "pe": 23.954772232520643,
+      "ps": 7.376042993968196,
+      "pb": 21.6976268086136,
+      "pfcf": 20.382004757816052,
+      "ev_revenue": 11.32573226466825,
+      "ev_ebitda": 17.6377220175913
+    },
+    "sec_values": {
+      "eps": 7.270000000000001,
+      "revenue": 10941500000,
+      "cfo": 5774900000,
+      "capex": 1815100000,
+      "book": 3719700000,
+      "shares": 465959000,
+      "debt_total": 37189600000,
+      "cash": 1762500000,
+      "op_income": 4902000000,
+      "da": 2071400000,
+      "fcf": 3959800000
+    },
+    "sec_ratios": {
+      "pe": 23.79367203955145,
+      "ps": 7.366593778659999,
+      "pb": 21.668840451974184,
+      "pfcf": 20.354963843933625
+    },
+    "same_share_ratios": {
+      "ps": 7.376379879044347,
+      "pb": 21.69762627270041,
+      "pfcf": 20.382004254397625
+    },
+    "online_inputs": {
+      "eps": 7.221108108269338,
+      "revenue": 10942000000.0,
+      "fcf": 3959800000.0,
+      "ebitda": 7026200000.0,
+      "shares": 466578000.0,
+      "book": 3719700000.0,
+      "debt": 44980000000.0,
+      "cash": 1762500000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 7.270000000000001,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 5.4,
+            "accn": "0001053507-26-000035",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-24",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 3.7,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 1.83,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 10941500000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 10644600000,
+            "accn": "0001053507-26-000035",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-24",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 5486600000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 5189700000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          }
+        ],
+        "tag": "Revenues"
+      },
+      "cfo": {
+        "value": 5774900000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 5464000000,
+            "accn": "0001053507-26-000035",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-24",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 2887400000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 2576500000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 1815100000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 1680400000,
+            "accn": "0001053507-26-000035",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-24",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 770400000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 635700000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          }
+        ],
+        "tag": "PaymentsToAcquirePropertyPlantAndEquipment"
+      },
+      "book": {
+        "value": 3719700000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 3719700000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": {
+        "value": 465959000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 465959000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CommonStockSharesOutstanding"
+      },
+      "debt_total": {
+        "value": 37189600000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 37189600000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities"
+      },
+      "cash": {
+        "value": 1762500000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 1762500000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashAndCashEquivalentsAtCarryingValue"
+      },
+      "op_income": {
+        "value": 4902000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 4845800000,
+            "accn": "0001053507-26-000035",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-24",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 2508000000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 2451800000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          }
+        ],
+        "tag": "OperatingIncomeLoss"
+      },
+      "da": {
+        "value": 2071400000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 2041600000,
+            "accn": "0001053507-26-000035",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-24",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 1032600000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 1002800000,
+            "accn": "0001053507-26-000133",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-28"
+          }
+        ],
+        "tag": "DepreciationAmortizationAndAccretionNet"
+      }
+    },
+    "sec_cik": 1053507,
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 638,
+        "total_points": 668,
+        "latest_value": 23.954772232520643,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 44.58973252133505
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 638,
+        "total_points": 668,
+        "latest_value": 7.376042993968196,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 8.404680497424351
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 638,
+        "total_points": 668,
+        "latest_value": 21.6976268086136,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 23.766032376657765
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 638,
+        "total_points": 668,
+        "latest_value": 20.382004757816052,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 26.276760569390852
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 638,
+        "total_points": 668,
+        "latest_value": 11.32573226466825,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 12.52119958505742
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 638,
+        "total_points": 668,
+        "latest_value": 17.6377220175913,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 20.278433701608506
+      }
+    ]
+  },
+  {
+    "ticker": "AMZN",
+    "sector": "Consumer Cyclical",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-08-03",
+    "split_verified": true,
+    "split_snapshot": 57809,
+    "price_yahoo": 251.88999938964844,
+    "price_implied": 251.89,
+    "online": {
+      "pe": 20.260385542452205,
+      "ps": 3.5405794528671617,
+      "pb": 4.978711196113267,
+      "pfcf": null,
+      "ev_revenue": 3.669813157487624,
+      "ev_ebitda": 11.207221620727804
+    },
+    "sec_values": {
+      "eps": 12.43,
+      "revenue": 775680000000,
+      "cfo": 161403000000,
+      "capex": 173028000000,
+      "book": 551620000000,
+      "shares": 10783000000,
+      "debt_total": null,
+      "cash": 78213000000,
+      "op_income": 93712000000,
+      "da": 75200000000,
+      "fcf": -11625000000
+    },
+    "sec_ratios": {
+      "pe": 20.26468217133133,
+      "ps": 3.5016113131943314,
+      "pb": 4.923914766358325,
+      "pfcf": null
+    },
+    "same_share_ratios": {
+      "ps": 3.540579444288027,
+      "pb": 4.978711184049413,
+      "pfcf": null
+    },
+    "online_inputs": {
+      "eps": 12.432636065696142,
+      "revenue": 775680000000.0,
+      "fcf": -11625000000.0,
+      "ebitda": 253997000000.0,
+      "shares": 10903000000.0,
+      "book": 551620000000.0,
+      "debt": 223232000000.0,
+      "cash": 122988000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": 12.43,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 7.17,
+            "accn": "0001018724-26-000004",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-06",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 8.53,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 3.27,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 775680000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 716924000000,
+            "accn": "0001018724-26-000004",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-06",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 382125000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 323369000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31"
+          }
+        ],
+        "tag": "RevenueFromContractWithCustomerExcludingAssessedTax"
+      },
+      "cfo": {
+        "value": 161403000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 161403000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 173028000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 173028000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "PaymentsToAcquireProductiveAssets"
+      },
+      "book": {
+        "value": 551620000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 551620000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": {
+        "value": 10783000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 10783000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CommonStockSharesOutstanding"
+      },
+      "debt_total": null,
+      "cash": {
+        "value": 78213000000,
+        "facts": [
+          {
+            "end": "2026-06-30",
+            "val": 78213000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashAndCashEquivalentsAtCarryingValue"
+      },
+      "op_income": {
+        "value": 93712000000,
+        "facts": [
+          {
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+            "val": 79975000000,
+            "accn": "0001018724-26-000004",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-02-06",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2026-01-01",
+            "end": "2026-06-30",
+            "val": 51313000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31"
+          },
+          {
+            "start": "2025-01-01",
+            "end": "2025-06-30",
+            "val": 37576000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31"
+          }
+        ],
+        "tag": "OperatingIncomeLoss"
+      },
+      "da": {
+        "value": 75200000000,
+        "facts": [
+          {
+            "start": "2025-07-01",
+            "end": "2026-06-30",
+            "val": 75200000000,
+            "accn": "0001018724-26-000026",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "frame": "CY2026"
+          }
+        ],
+        "tag": "DepreciationDepletionAndAmortization"
+      }
+    },
+    "sec_cik": 1018724,
+    "history_start": "1997-05-15",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 5700,
+        "total_points": 7376,
+        "latest_value": 20.260385542452205,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 84.20365366652621
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 7374,
+        "total_points": 7376,
+        "latest_value": 3.5405794528671617,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.7651787456622126
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 6058,
+        "total_points": 7376,
+        "latest_value": 4.978711196113267,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 16.805539705724684
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 5601,
+        "total_points": 7376,
+        "latest_value": null,
+        "latest_date": "2026-09-10",
+        "latest_reason": "FCF is zero or negative; this multiple is not meaningful.",
+        "median": 56.27315627223145
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 7058,
+        "total_points": 7376,
+        "latest_value": 3.669813157487624,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.930722533171517
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 5818,
+        "total_points": 7376,
+        "latest_value": 11.207221620727804,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 34.42533653201762
+      }
+    ]
+  },
+  {
+    "ticker": "INTC",
+    "sector": "Technology",
+    "anchor": "2026-09-10",
+    "period_end": "2026-06-30",
+    "available_from": "2026-09-03",
+    "split_verified": true,
+    "split_snapshot": 57810,
+    "price_yahoo": 100.31999969482422,
+    "price_implied": 100.32,
+    "online": {
+      "pe": null,
+      "ps": 8.977999719455743,
+      "pb": 5.849001393616778,
+      "pfcf": 180.86657718120804,
+      "ev_revenue": 9.342882592228925,
+      "ev_ebitda": 145.109825708061
+    },
+    "sec_values": {
+      "eps": -2.0900000000000003,
+      "revenue": 57032000000,
+      "cfo": 14936000000,
+      "capex": 12105000000,
+      "book": 87542000000,
+      "shares": 5043000000,
+      "debt_total": null,
+      "cash": 12874000000,
+      "op_income": -77000000,
+      "da": null,
+      "fcf": 2831000000
+    },
+    "sec_ratios": {
+      "pe": null,
+      "ps": 8.870699930933485,
+      "pb": 5.779097558440503,
+      "pfcf": 178.70496589932833
+    },
+    "same_share_ratios": {
+      "ps": 8.97799969214446,
+      "pb": 5.849001375823979,
+      "pfcf": 180.86657663100772
+    },
+    "online_inputs": {
+      "eps": -2.1200566380450017,
+      "revenue": 57032000000.0,
+      "fcf": 2831000000.0,
+      "ebitda": 3672000000.0,
+      "shares": 5104000000.0,
+      "book": 87542000000.0,
+      "debt": 50537000000.0,
+      "cash": 29727000000.0
+    },
+    "sec_evidence": {
+      "eps": {
+        "value": -2.0900000000000003,
+        "facts": [
+          {
+            "start": "2024-12-29",
+            "end": "2025-12-27",
+            "val": -0.06,
+            "accn": "0000050863-26-000011",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-01-23",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-28",
+            "end": "2026-06-27",
+            "val": -2.89,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          },
+          {
+            "start": "2024-12-29",
+            "end": "2025-06-28",
+            "val": -0.86,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          }
+        ],
+        "tag": "EarningsPerShareDiluted"
+      },
+      "revenue": {
+        "value": 57032000000,
+        "facts": [
+          {
+            "start": "2024-12-29",
+            "end": "2025-12-27",
+            "val": 52853000000,
+            "accn": "0000050863-26-000011",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-01-23",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-28",
+            "end": "2026-06-27",
+            "val": 29705000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          },
+          {
+            "start": "2024-12-29",
+            "end": "2025-06-28",
+            "val": 25526000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          }
+        ],
+        "tag": "RevenueFromContractWithCustomerExcludingAssessedTax"
+      },
+      "cfo": {
+        "value": 14936000000,
+        "facts": [
+          {
+            "start": "2024-12-29",
+            "end": "2025-12-27",
+            "val": 9697000000,
+            "accn": "0000050863-26-000011",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-01-23",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-28",
+            "end": "2026-06-27",
+            "val": 8102000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          },
+          {
+            "start": "2024-12-29",
+            "end": "2025-06-28",
+            "val": 2863000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          }
+        ],
+        "tag": "NetCashProvidedByUsedInOperatingActivities"
+      },
+      "capex": {
+        "value": 12105000000,
+        "facts": [
+          {
+            "start": "2024-12-29",
+            "end": "2025-12-27",
+            "val": 14646000000,
+            "accn": "0000050863-26-000011",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-01-23",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-28",
+            "end": "2026-06-27",
+            "val": 6192000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          },
+          {
+            "start": "2024-12-29",
+            "end": "2025-06-28",
+            "val": 8733000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          }
+        ],
+        "tag": "PaymentsToAcquirePropertyPlantAndEquipment"
+      },
+      "book": {
+        "value": 87542000000,
+        "facts": [
+          {
+            "end": "2026-06-27",
+            "val": 87542000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "StockholdersEquity"
+      },
+      "shares": {
+        "value": 5043000000,
+        "facts": [
+          {
+            "end": "2026-06-27",
+            "val": 5043000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CommonStockSharesOutstanding"
+      },
+      "debt_total": null,
+      "cash": {
+        "value": 12874000000,
+        "facts": [
+          {
+            "end": "2026-06-27",
+            "val": 12874000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24",
+            "frame": "CY2026Q2I"
+          }
+        ],
+        "tag": "CashAndCashEquivalentsAtCarryingValue"
+      },
+      "op_income": {
+        "value": -77000000,
+        "facts": [
+          {
+            "start": "2024-12-29",
+            "end": "2025-12-27",
+            "val": -2214000000,
+            "accn": "0000050863-26-000011",
+            "fy": 2025,
+            "fp": "FY",
+            "form": "10-K",
+            "filed": "2026-01-23",
+            "frame": "CY2025"
+          },
+          {
+            "start": "2025-12-28",
+            "end": "2026-06-27",
+            "val": -1340000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          },
+          {
+            "start": "2024-12-29",
+            "end": "2025-06-28",
+            "val": -3477000000,
+            "accn": "0000050863-26-000157",
+            "fy": 2026,
+            "fp": "Q2",
+            "form": "10-Q",
+            "filed": "2026-07-24"
+          }
+        ],
+        "tag": "OperatingIncomeLoss"
+      },
+      "da": null
+    },
+    "sec_cik": 50863,
+    "history_start": "2024-01-11",
+    "history_end": "2026-09-10",
+    "same_basis_jumps": [],
+    "latest_metrics": [
+      {
+        "key": "pe",
+        "label": "P/E",
+        "description": "TTM \u00b7 reported earnings estimate",
+        "formula": "Split-only price / sum of four quarterly reported earnings per provider share",
+        "valid_points": 246,
+        "total_points": 668,
+        "latest_value": null,
+        "latest_date": "2026-09-10",
+        "latest_reason": "EPS is zero or negative; this multiple is not meaningful.",
+        "median": 97.63754019426119
+      },
+      {
+        "key": "ps",
+        "label": "P/S",
+        "description": "TTM \u00b7 equity value estimate",
+        "formula": "Equity value proxy / TTM revenue",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 8.977999719455743,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.436348242758403
+      },
+      {
+        "key": "pb",
+        "label": "P/B",
+        "description": "Latest quarter \u00b7 equity value estimate",
+        "formula": "Equity value proxy / latest stockholders' equity",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 5.849001393616778,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 1.2819307748200015
+      },
+      {
+        "key": "pfcf",
+        "label": "P/FCF",
+        "description": "TTM \u00b7 CFO less capex",
+        "formula": "Equity value proxy / TTM (operating cash flow \u2212 absolute capex)",
+        "valid_points": 33,
+        "total_points": 668,
+        "latest_value": 180.86657718120804,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 166.10085482161782
+      },
+      {
+        "key": "ev_revenue",
+        "label": "EV/Revenue",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM revenue",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 9.342882592228925,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 2.995094842977172
+      },
+      {
+        "key": "ev_ebitda",
+        "label": "EV/EBITDA",
+        "description": "TTM \u00b7 simplified EV estimate",
+        "formula": "(Equity value proxy + debt \u2212 cash and short-term investments) / TTM EBITDA",
+        "valid_points": 668,
+        "total_points": 668,
+        "latest_value": 145.109825708061,
+        "latest_date": "2026-09-10",
+        "latest_reason": null,
+        "median": 33.957441507140686
+      }
+    ]
+  }
+]
