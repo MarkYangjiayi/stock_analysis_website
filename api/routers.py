@@ -89,6 +89,7 @@ from services.market_breadth import (
 )
 from services.stock_snapshot import get_market_snapshot
 from services.valuation_history import get_valuation_history
+from services.split_history import sync_full_split_history
 import pandas as pd
 
 router = APIRouter()
@@ -545,7 +546,24 @@ async def read_stock_analysis(ticker: str, request: Request, interval: Literal["
         
     valuation = await get_fundamental_valuation(ticker, db)
     data["valuation_metrics"] = valuation
-    data["valuation_history"] = await get_valuation_history(ticker, db, interval)
+    history = await get_valuation_history(ticker, db, interval)
+    if history["points"] and not history["split_history_verified"]:
+        # Old databases can have fresh prices/fundamentals but only recent (or
+        # no) splits. Repair that independently of general ticker freshness.
+        async with ticker_sync_lock(ticker):
+            await db.rollback()
+            history = await get_valuation_history(ticker, db, interval)
+            if not history["split_history_verified"]:
+                try:
+                    await limit_expensive_requests(request)
+                except HTTPException as exc:
+                    if exc.status_code != 429:
+                        raise
+                    # Keep cached stock data usable; unverified ratios stay null.
+                else:
+                    if await sync_full_split_history(db, ticker):
+                        history = await get_valuation_history(ticker, db, interval)
+    data["valuation_history"] = history
     
     return data
 

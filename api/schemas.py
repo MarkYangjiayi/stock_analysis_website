@@ -134,6 +134,9 @@ class ValuationHistoryResponse(BaseModel):
     price_basis: Literal["split_only"]
     history_basis: Literal["reconstructed_estimates"]
     split_reference_date: Optional[str] = None
+    split_history_verified: bool = False
+    split_history_snapshot_id: Optional[int] = None
+    split_history_through: Optional[str] = None
     methodology: List[str]
     warnings: List[str]
     metrics: List[ValuationHistoryMetricModel]
