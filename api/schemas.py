@@ -90,11 +90,63 @@ class ValuationMetricsModel(BaseModel):
     factor_scores: FactorScoresModel
     data_quality_warnings: List[dict] = Field(default_factory=list)
 
+MultipleKey = Literal["pe", "ps", "pb", "pfcf", "ev_revenue", "ev_ebitda"]
+
+
+class ValuationHistoryMetricModel(BaseModel):
+    key: MultipleKey
+    label: str
+    description: str
+    formula: str
+    valid_points: int
+    total_points: int
+    latest_value: Optional[float] = None
+    latest_date: Optional[str] = None
+    latest_reason: Optional[str] = None
+    median: Optional[float] = None
+
+
+class ValuationHistoryPointModel(BaseModel):
+    date: str
+    price_date: str
+    basis_id: Optional[int] = None
+    values: Dict[MultipleKey, Optional[float]]
+    reason: Optional[str] = None
+    ev_reason: Optional[str] = None
+
+
+class ValuationHistoryBasisModel(BaseModel):
+    id: int
+    period_end: str
+    available_from: str
+    periods: List[str]
+    source: str
+    raw_snapshot_ids: List[int]
+    share_reference_dates: List[str]
+    inputs: Dict[str, Optional[float]]
+    reasons: Dict[MultipleKey, str]
+
+
+class ValuationHistoryResponse(BaseModel):
+    ticker: str
+    interval: Literal["1d", "1wk", "1mo"]
+    currency: Optional[str] = None
+    price_basis: Literal["split_only"]
+    history_basis: Literal["reconstructed_estimates"]
+    split_reference_date: Optional[str] = None
+    methodology: List[str]
+    warnings: List[str]
+    metrics: List[ValuationHistoryMetricModel]
+    bases: List[ValuationHistoryBasisModel]
+    points: List[ValuationHistoryPointModel]
+
+
 class StockDataResponse(BaseModel):
     profile: StockProfileModel
     historical_data: List[HistoricalDataPointModel]
     historical_financials: List[HistoricalFinancialPointModel]
     valuation_metrics: Optional[ValuationMetricsModel] = None
+    valuation_history: Optional[ValuationHistoryResponse] = None
 
 
 class FinancialFlowSummaryCardModel(BaseModel):

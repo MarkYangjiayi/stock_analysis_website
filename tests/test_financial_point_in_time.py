@@ -69,3 +69,20 @@ async def test_invalid_split_factor_does_not_crash_ingestion(db_session):
     ).scalar_one_or_none()
     assert count == 0
     assert row is None
+
+
+@pytest.mark.asyncio
+async def test_section_currency_is_preserved_without_changing_the_raw_payload(db_session):
+    db_session.add(Ticker(ticker="AAA.US"))
+    await db_session.flush()
+    payload = fundamental_payload(100)
+    for section in payload["Financials"].values():
+        section["currency_symbol"] = "USD"
+    payload["Financials"]["Balance_Sheet"]["quarterly"]["2025-03-31"]["currency_symbol"] = "EUR"
+    await _upsert_financials("AAA.US", payload, db_session)
+    await db_session.flush()
+    row = (await db_session.execute(select(FundamentalVersion))).scalar_one()
+    assert row.income_statement["currency_symbol"] == "USD"
+    assert row.cash_flow["currency_symbol"] == "USD"
+    assert row.balance_sheet["currency_symbol"] == "EUR"
+    assert "currency_symbol" not in payload["Financials"]["Income_Statement"]["quarterly"]["2025-03-31"]

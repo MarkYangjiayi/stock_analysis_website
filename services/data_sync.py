@@ -173,9 +173,17 @@ async def _upsert_financials(
     version_values = []
     
     for period_key, period_name in [("yearly", "Yearly"), ("quarterly", "Quarterly")]:
-        income_statement = financials_data.get("Income_Statement", {}).get(period_key, {})
-        balance_sheet = financials_data.get("Balance_Sheet", {}).get(period_key, {})
-        cash_flow = financials_data.get("Cash_Flow", {}).get(period_key, {})
+        def reports(section_name):
+            section = financials_data.get(section_name, {})
+            currency = section.get("currency_symbol")
+            return {
+                day: {**entry, **({"currency_symbol": currency} if currency and not entry.get("currency_symbol") else {})}
+                for day, entry in section.get(period_key, {}).items()
+            }
+
+        income_statement = reports("Income_Statement")
+        balance_sheet = reports("Balance_Sheet")
+        cash_flow = reports("Cash_Flow")
         
         # 以 Income_Statement 的键 (日期) 作为核心维度遍历
         # 如果有的日期仅在其它的表中存在，需要做并集处理
