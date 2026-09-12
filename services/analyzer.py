@@ -123,7 +123,9 @@ async def get_analyzed_stock_data(ticker: str, db: AsyncSession, interval: str =
             df['adjusted_close'].notna(),
             df['close'] * df['adj_factor'],
         )
-        df['volume'] = df['volume'] / df['adj_factor']
+        # EODHD volume already uses its split-adjusted share basis. Preserve
+        # those observations: the OHLC adjustment also contains dividends and
+        # must not be applied to share volume a second time.
 
         # Drop rows only after the effective close has been selected.
         df.dropna(subset=['close'], inplace=True)

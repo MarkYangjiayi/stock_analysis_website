@@ -133,9 +133,14 @@ def test_fx_mismatch_and_financial_sector_are_explicit():
     result = calculate(rows)
     assert result["points"][0]["values"]["pe"] is None
     assert "currencies" in result["metrics"][0]["latest_reason"]
-    result = calculate(sector="Financial Services")
+    rows = statements()
+    for row in rows:
+        row.income_statement["netIncomeApplicableToCommonShares"] = 10
+    result = calculate(rows, sector="Financial Services")
     assert result["points"][0]["values"]["ev_revenue"] is None
     assert result["points"][0]["values"]["pe"] == 10
+    assert result["points"][0]["values"]["ps"] is None
+    assert result["points"][0]["values"]["pfcf"] is None
 
 
 def test_stale_statement_and_missing_raw_close_are_gaps():

@@ -14,8 +14,25 @@ const MULTIPLES: Array<{ key: MultipleKey; label: string }> = [
     { key: "pb", label: "P/B" }, { key: "pfcf", label: "P/FCF" },
     { key: "ev_revenue", label: "EV/Revenue" }, { key: "ev_ebitda", label: "EV/EBITDA" },
 ];
+const DENOMINATORS: Record<MultipleKey, { input: string; label: string }> = {
+    pe: { input: "eps", label: "TTM earnings / share" },
+    ps: { input: "revenue", label: "TTM revenue" },
+    pb: { input: "book", label: "Quarter-end equity" },
+    pfcf: { input: "fcf", label: "TTM free cash flow" },
+    ev_revenue: { input: "revenue", label: "TTM revenue" },
+    ev_ebitda: { input: "ebitda", label: "TTM EBITDA" },
+};
 const multiple = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "N/M" : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}×`;
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+const denominatorAmount = (value: number | null | undefined, currency: string | null | undefined, perShare: boolean) => {
+    if (value == null || !Number.isFinite(value) || !currency) return "Unavailable";
+    const magnitude = Math.abs(value);
+    const [divisor, unit]: [number, string] = !perShare && magnitude >= 1e9 ? [1e9, " billion"]
+        : !perShare && magnitude >= 1e6 ? [1e6, " million"] : [1, ""];
+    // Significant digits keep a small positive EPS visible instead of rounding
+    // it to zero, which would obscure the cause of a high historical P/E.
+    return `${currency} ${(value / divisor).toLocaleString(undefined, { maximumSignificantDigits: 6 })}${unit}${perShare ? " per share" : ""}`;
+};
 
 interface Props {
     data: HistoricalDataPoint[];
@@ -80,11 +97,15 @@ export function valuationChartOption(
                 const point = points.get(candle.date);
                 const basis = point?.basis_id != null ? bases.get(point.basis_id) : null;
                 const value = point?.values[key];
+                const denominator = DENOMINATORS[key];
+                const denominatorValue = basis?.reasons[key] ? null : basis?.inputs[denominator.input];
                 const reason = point?.reason || (key.startsWith("ev_") ? point?.ev_reason : null) || basis?.reasons[key] || "No matching historical inputs.";
                 return `<strong>${escapeHtml(point?.price_date || candle.date)}</strong>`
                     + `<div>Adjusted close: ${candle.close?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "—"}</div>`
                     + `<div style="margin-top:6px"><strong>${label}: ${multiple(value)}</strong></div>`
                     + (value == null ? `<div style="max-width:260px;white-space:normal">${escapeHtml(reason)}</div>` : "")
+                    + (basis ? `<div style="max-width:280px;white-space:normal">${denominator.label}: ${escapeHtml(denominatorAmount(denominatorValue, history?.currency, key === "pe"))}</div>` : "")
+                    + (basis && key !== "pb" ? `<div style="max-width:280px;white-space:normal">TTM quarters: ${basis.periods.map((period) => `<span style="white-space:nowrap">${escapeHtml(period)}</span>`).join(" · ")}</div>` : "")
                     + (basis ? `<div style="margin-top:6px">Statement: ${escapeHtml(basis.period_end)}<br/>In use from: ${escapeHtml(basis.available_from)}<br/>${escapeHtml(basis.source)} · reconstructed estimate</div>` : "");
             },
         },
@@ -137,7 +158,7 @@ export default function StockValuationChart({ data, history, interval, onInterva
         <div className="grid grid-cols-3 gap-3 border-b px-4 py-3 text-xs sm:px-5" aria-label="Historical valuation summary">
             <div><p className="text-[var(--text-muted)]">Latest {selectedLabel}</p><p className="mt-1 font-mono text-lg font-bold" aria-label={`Latest ${selectedLabel}`}>{multiple(metadata?.latest_value)}</p><p className="text-[10px] text-[var(--text-muted)]">{metadata?.latest_date || "No observations"}</p></div>
             <div><p className="text-[var(--text-muted)]">Full-history median</p><p className="mt-1 font-mono text-lg font-bold">{multiple(metadata?.median)}</p><p className="text-[10px] text-[var(--text-muted)]">Dashed line · selected frequency</p></div>
-            <div><p className="text-[var(--text-muted)]">Coverage</p><p className="mt-1 font-mono text-lg font-bold">{metadata?.total_points ? `${Math.round(metadata.valid_points / metadata.total_points * 100)}%` : "—"}</p><p className="text-[10px] text-[var(--text-muted)]">{metadata ? `${metadata.valid_points.toLocaleString()} / ${metadata.total_points.toLocaleString()} observations` : "No observations"}</p></div>
+            <div><p className="text-[var(--text-muted)]">Coverage</p><p className="mt-1 font-mono text-lg font-bold">{metadata?.total_points ? `${Math.round(metadata.valid_points / metadata.total_points * 100)}%` : "—"}</p><p className="text-[10px] text-[var(--text-muted)]">{metadata ? `${metadata.valid_points.toLocaleString()} / ${metadata.total_points.toLocaleString()} available observations` : "No observations"}</p></div>
         </div>
         {(!metadata || metadata.latest_reason) && <p role="status" className="flex gap-2 border-b bg-[var(--surface-subtle)] px-4 py-3 text-xs text-[var(--text-muted)]"><Info size={15} className="shrink-0" />{metadata?.latest_reason || "Historical multiples are unavailable. Refresh stock data to load eligible quarterly statements."}</p>}
         <div className={`relative h-[600px] w-full sm:h-[660px] ${isLoading ? "opacity-50" : ""}`} role="img" aria-label={`Linked stock price, volume and ${selectedLabel} chart`}>

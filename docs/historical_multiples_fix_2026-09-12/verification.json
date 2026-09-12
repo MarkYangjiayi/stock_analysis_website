@@ -1,0 +1,2085 @@
+{
+  "limitations": [
+    "Except AAPL, long-history prices are recovered from the prior API basis, with empty split actions preserving the normalized share/price basis. No independent historical price audit is claimed.",
+    "Anchor runs use independent Yahoo closes and SEC facts published before the anchor. Same-share comparisons isolate financial mapping from weighted-average-versus-period-end share differences.",
+    "The lack of a comparable SEC EBITDA/debt bridge is reported as unverified, never as a passing EV comparison."
+  ],
+  "stocks": {
+    "AAPL": {
+      "history_start": "1980-12-12",
+      "history_end": "2026-09-11",
+      "price_count": 11529,
+      "old_coverage": {
+        "pe": 9359,
+        "ps": 10062,
+        "pb": 9494,
+        "pfcf": 7954,
+        "ev_revenue": 7987,
+        "ev_ebitda": 7232
+      },
+      "coverage": {
+        "pe": 5491,
+        "ps": 7345,
+        "pb": 8114,
+        "pfcf": 3145,
+        "ev_revenue": 6003,
+        "ev_ebitda": 4617
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 222.1300048828125,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 35.370589668261864,
+              "old": 35.37058889075341,
+              "sec_same_share_reference": 35.25873093377976,
+              "sec_period_end_share_reference": 35.25873093377976,
+              "sec_denominator": 6.300000000000001,
+              "relative_error": 0.0031725116451919444,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 8.503794512908916,
+              "old": 8.503794325980392,
+              "sec_same_share_reference": 8.503794512908916,
+              "sec_period_end_share_reference": 8.44197910468736,
+              "sec_denominator": 395760000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 50.412860128057055,
+              "old": 50.41285901989275,
+              "sec_same_share_reference": 50.412860128057055,
+              "sec_period_end_share_reference": 50.04640118743925,
+              "sec_denominator": 66758000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 34.23698833588168,
+              "old": 34.23698758329179,
+              "sec_same_share_reference": 34.23698833588168,
+              "sec_period_end_share_reference": 33.98811432945472,
+              "sec_denominator": 98299000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 8.612506863828667,
+              "old": 8.612506676900141,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 395760000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 24.860585514856115,
+              "old": 24.860584975274243,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 326.57000732421875,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 37.557172465350966,
+              "old": 37.55717162302944,
+              "sec_same_share_reference": 37.450688913327845,
+              "sec_period_end_share_reference": 37.450688913327845,
+              "sec_denominator": 8.719999999999999,
+              "relative_error": 0.0028433002199119706,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 10.31869944748746,
+              "old": 10.318699216062619,
+              "sec_same_share_reference": 10.31869944748746,
+              "sec_period_end_share_reference": 10.219824545725555,
+              "sec_denominator": 466823000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 44.801025224836664,
+              "old": 44.801024220052085,
+              "sec_same_share_reference": 44.801025224836664,
+              "sec_period_end_share_reference": 44.37173692251898,
+              "sec_denominator": 107520000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 35.24217519497259,
+              "old": 35.24217440457116,
+              "sec_same_share_reference": 35.24217519497259,
+              "sec_period_end_share_reference": 34.90448083455324,
+              "sec_denominator": 136683000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 10.365629440225607,
+              "old": 10.365629208800765,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 466823000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 28.78438532246601,
+              "old": 28.784384679820832,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "MSFT": {
+      "history_start": "1986-03-13",
+      "history_end": "2026-09-10",
+      "price_count": 10202,
+      "old_coverage": {
+        "pe": 10121,
+        "ps": 10121,
+        "pb": 9553,
+        "pfcf": 9109,
+        "ev_revenue": 5508,
+        "ev_ebitda": 5445
+      },
+      "coverage": {
+        "pe": 7166,
+        "ps": 6994,
+        "pb": 8193,
+        "pfcf": 5785,
+        "ev_revenue": 4049,
+        "ev_ebitda": 3294
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 375.3900146484375,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 30.235300137645446,
+              "old": 30.23529895780611,
+              "sec_same_share_reference": 30.24899392815773,
+              "sec_period_end_share_reference": 30.24899392815773,
+              "sec_denominator": 12.410000000000002,
+              "relative_error": -0.00045270234589644964,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 10.708140615406037,
+              "old": 10.708140197553877,
+              "sec_same_share_reference": 10.708140615406037,
+              "sec_period_end_share_reference": 10.660822907812518,
+              "sec_denominator": 261802000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 9.261509537304981,
+              "old": 9.261509175903138,
+              "sec_same_share_reference": 9.261509537304981,
+              "sec_period_end_share_reference": 9.220584280913569,
+              "sec_denominator": 302695000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 40.031023823657115,
+              "old": 40.03102226156987,
+              "sec_same_share_reference": 40.031023823657115,
+              "sec_period_end_share_reference": 39.85413258287234,
+              "sec_denominator": 70031000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 10.82791815721244,
+              "old": 10.82791773936028,
+              "sec_same_share_reference": 10.827902878490352,
+              "sec_period_end_share_reference": 10.780585170896833,
+              "sec_denominator": 261802000000,
+              "relative_error": 1.411050898791899e-06,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 19.836749094814955,
+              "old": 19.836748329309682,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 492.44000244140625,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 27.450933038257936,
+              "old": 27.450932902162414,
+              "sec_same_share_reference": 27.43398342291957,
+              "sec_period_end_share_reference": 27.43398342291957,
+              "sec_denominator": 17.95,
+              "relative_error": 0.0006178328198669369,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 11.060048210716042,
+              "old": 11.060048155882823,
+              "sec_same_share_reference": 11.060048210716042,
+              "sec_period_end_share_reference": 11.021464921640687,
+              "sec_denominator": 331839000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 8.29625494916397,
+              "old": 8.296254908033012,
+              "sec_same_share_reference": 8.29625494916397,
+              "sec_period_end_share_reference": 8.267313230570347,
+              "sec_denominator": 442387000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 54.789068598322075,
+              "old": 54.789068326690256,
+              "sec_same_share_reference": 54.789068598322075,
+              "sec_period_end_share_reference": 54.59793539242426,
+              "sec_denominator": 66987000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 11.216646139229569,
+              "old": 11.216646084396348,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 331839000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 17.936288427545435,
+              "old": 17.936288339862855,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "AMZN": {
+      "history_start": "1997-05-15",
+      "history_end": "2026-09-10",
+      "price_count": 7376,
+      "old_coverage": {
+        "pe": 5700,
+        "ps": 7374,
+        "pb": 6058,
+        "pfcf": 5601,
+        "ev_revenue": 7058,
+        "ev_ebitda": 5818
+      },
+      "coverage": {
+        "pe": 4392,
+        "ps": 6853,
+        "pb": 5994,
+        "pfcf": 3884,
+        "ev_revenue": 6537,
+        "ev_ebitda": 3845
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 190.25999450683594,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 34.45489696024487,
+              "old": 34.454897955022574,
+              "sec_same_share_reference": 34.40506229780035,
+              "sec_period_end_share_reference": 34.40506229780035,
+              "sec_denominator": 5.53,
+              "relative_error": 0.0014484688913847243,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 3.2122603503252245,
+              "old": 3.2122604430692254,
+              "sec_same_share_reference": 3.2122603503252245,
+              "sec_period_end_share_reference": 3.1591749968429212,
+              "sec_denominator": 637959000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 7.166102740962793,
+              "old": 7.166102947861664,
+              "sec_same_share_reference": 7.166102740962793,
+              "sec_period_end_share_reference": 7.047676755641897,
+              "sec_denominator": 285970000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 62.33014176145538,
+              "old": 62.33014356104386,
+              "sec_same_share_reference": 62.33014176145538,
+              "sec_period_end_share_reference": 61.300082785172854,
+              "sec_denominator": 32878000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 3.2588119312261914,
+              "old": 3.2588120239701923,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 637959000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 16.708096124995016,
+              "old": 16.708096600498273,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 251.88999938964844,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 20.260385493359514,
+              "old": 20.260385542452205,
+              "sec_same_share_reference": 20.26468217133133,
+              "sec_period_end_share_reference": 20.26468217133133,
+              "sec_denominator": 12.43,
+              "relative_error": -0.00021202789836471947,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 3.540579444288027,
+              "old": 3.5405794528671617,
+              "sec_same_share_reference": 3.540579444288027,
+              "sec_period_end_share_reference": 3.5016113131943314,
+              "sec_denominator": 775680000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 4.978711184049413,
+              "old": 4.978711196113267,
+              "sec_same_share_reference": 4.978711184049413,
+              "sec_period_end_share_reference": 4.923914766358325,
+              "sec_denominator": 551620000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": -11625000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "FCF is zero or negative; this multiple is not meaningful.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 3.669813148908489,
+              "old": 3.669813157487624,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 775680000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 11.207221594528033,
+              "old": 11.207221620727804,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "WMT": {
+      "history_start": "1972-08-25",
+      "history_end": "2026-09-10",
+      "price_count": 13622,
+      "old_coverage": {
+        "pe": 10093,
+        "ps": 10093,
+        "pb": 9646,
+        "pfcf": 7531,
+        "ev_revenue": 9585,
+        "ev_ebitda": 9393
+      },
+      "coverage": {
+        "pe": 2679,
+        "ps": 7036,
+        "pb": 7839,
+        "pfcf": 2548,
+        "ev_revenue": 6974,
+        "ev_ebitda": 6724
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 87.79000091552734,
+          "new_period_end": "2025-01-31",
+          "reference_period_end": "2025-01-31",
+          "comparisons": {
+            "pe": {
+              "new": 36.5018308483042,
+              "old": 36.501830467640985,
+              "sec_same_share_reference": 36.42738627200305,
+              "sec_period_end_share_reference": 36.42738627200305,
+              "sec_denominator": 2.41,
+              "relative_error": 0.0020436430916366266,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 1.0413850927636144,
+              "old": 1.0413850819034194,
+              "sec_same_share_reference": 1.0413850927636144,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 680985000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 7.791937716541922,
+              "old": 7.7919376352828715,
+              "sec_same_share_reference": 7.791937716541922,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 91013000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 56.01640026821721,
+              "old": 56.01639968404423,
+              "sec_same_share_reference": 56.01640026821721,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 12660000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 1.1163896817046335,
+              "old": 1.1163896708444385,
+              "sec_same_share_reference": 1.1163896817046335,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 680985000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 18.096753806132586,
+              "old": 18.096753630088074,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": {
+            "scope": "Provider EBIT plus D&A; D&A independently matches SEC, EBIT remains provider definition, not GAAP EBITDA certification",
+            "provider_ebit": 29037000000.0,
+            "provider_da": 12973000000.0,
+            "sec_da": 12973000000,
+            "new_ebitda": 42010000000.0,
+            "component_sum": 42010000000.0,
+            "da_matches": true,
+            "sum_matches": true
+          }
+        },
+        "2026-09-10": {
+          "price_yahoo": 105.7300033569336,
+          "new_period_end": "2026-07-31",
+          "reference_period_end": "2026-07-31",
+          "comparisons": {
+            "pe": {
+              "new": 38.306194300266824,
+              "old": 38.30619308404298,
+              "sec_same_share_reference": 38.307972230773046,
+              "sec_period_end_share_reference": 38.307972230773046,
+              "sec_denominator": 2.76,
+              "relative_error": -4.641150138440242e-05,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 1.1463279609447927,
+              "old": 1.146327924548815,
+              "sec_same_share_reference": 1.1463279609447927,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 735840000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 8.586432610411615,
+              "old": 8.586432337791893,
+              "sec_same_share_reference": 8.586432610411615,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 98238000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 62.44088879869837,
+              "old": 62.44088681619661,
+              "sec_same_share_reference": 62.44088879869837,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 13509000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 1.2308925402011528,
+              "old": 1.230892503805175,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 735840000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 21.142883045393596,
+              "old": 21.142882420224563,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "CAT": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 664,
+        "ps": 664,
+        "pb": 664,
+        "pfcf": 664,
+        "ev_revenue": 664,
+        "ev_ebitda": 664
+      },
+      "coverage": {
+        "pe": 642,
+        "ps": 668,
+        "pb": 668,
+        "pfcf": 642,
+        "ev_revenue": 668,
+        "ev_ebitda": 668
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 329.79998779296875,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 14.97602891558368,
+              "old": 14.97602946989799,
+              "sec_same_share_reference": 14.956915546166382,
+              "sec_period_end_share_reference": 14.956915546166382,
+              "sec_denominator": 22.05,
+              "relative_error": 0.0012778951220457913,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 2.4767185739455613,
+              "old": 2.4767186656174296,
+              "sec_same_share_reference": 2.4767185739455613,
+              "sec_period_end_share_reference": 2.4319371409257937,
+              "sec_denominator": 64809000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 8.23527033291457,
+              "old": 8.235270637730235,
+              "sec_same_share_reference": 8.23527033291457,
+              "sec_period_end_share_reference": 8.08636879412343,
+              "sec_denominator": 19491000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 18.198826990797947,
+              "old": 18.198827664399094,
+              "sec_same_share_reference": 18.198826990797947,
+              "sec_period_end_share_reference": 17.869774848782285,
+              "sec_denominator": 8820000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 2.9630707781147354,
+              "old": 2.9630708697866037,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 64809000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 11.973665922112351,
+              "old": 11.973666292555182,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": {
+            "scope": "Provider EBIT plus D&A; D&A independently matches SEC, EBIT remains provider definition, not GAAP EBITDA certification",
+            "provider_ebit": 13885000000.0,
+            "provider_da": 2153000000.0,
+            "sec_da": 2153000000,
+            "new_ebitda": 16038000000.0,
+            "component_sum": 16038000000.0,
+            "da_matches": true,
+            "sum_matches": true
+          }
+        },
+        "2026-09-10": {
+          "price_yahoo": 805.0,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 34.62694561564945,
+              "old": 34.62694561564945,
+              "sec_same_share_reference": 34.66838931955211,
+              "sec_period_end_share_reference": 34.66838931955211,
+              "sec_denominator": 23.22,
+              "relative_error": -0.0011954320554283804,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 4.98216890363848,
+              "old": 4.98216890363848,
+              "sec_same_share_reference": 4.98216890363848,
+              "sec_period_end_share_reference": 4.952006583789426,
+              "sec_denominator": 74729000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 19.196313482856407,
+              "old": 19.196313482856407,
+              "sec_same_share_reference": 19.196313482856407,
+              "sec_period_end_share_reference": 19.080097963392628,
+              "sec_denominator": 19395000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 41.395652657327105,
+              "old": 41.395652657327105,
+              "sec_same_share_reference": 41.395652657327105,
+              "sec_period_end_share_reference": 41.145041138536804,
+              "sec_denominator": 8994000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 5.496467234942258,
+              "old": 5.496467234942258,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 74729000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 23.603350189633375,
+              "old": 23.603350189633375,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "INTC": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 246,
+        "ps": 668,
+        "pb": 668,
+        "pfcf": 33,
+        "ev_revenue": 668,
+        "ev_ebitda": 668
+      },
+      "coverage": {
+        "pe": 246,
+        "ps": 668,
+        "pb": 668,
+        "pfcf": 33,
+        "ev_revenue": 668,
+        "ev_ebitda": 403
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 22.709999084472656,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": -4.38,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "EPS is zero or negative; this multiple is not meaningful.",
+              "scope_note": null
+            },
+            "ps": {
+              "new": 1.847130676368381,
+              "old": 1.8471307508333177,
+              "sec_same_share_reference": 1.847130676368381,
+              "sec_period_end_share_reference": 1.8518351073570478,
+              "sec_denominator": 53101000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 0.9880576815335691,
+              "old": 0.9880577213659716,
+              "sec_same_share_reference": 0.9880576815335691,
+              "sec_period_end_share_reference": 0.9905741516648192,
+              "sec_denominator": 99270000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": -15656000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "FCF is zero or negative; this multiple is not meaningful.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 2.3734672801988173,
+              "old": 2.373467354663754,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 53101000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 104.76599006304023,
+              "old": 104.76599334995844,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 100.31999969482422,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": -2.0900000000000003,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "EPS is zero or negative; this multiple is not meaningful.",
+              "scope_note": null
+            },
+            "ps": {
+              "new": 8.97799969214446,
+              "old": 8.977999719455743,
+              "sec_same_share_reference": 8.97799969214446,
+              "sec_period_end_share_reference": 8.870699930933485,
+              "sec_denominator": 57032000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 5.849001375823979,
+              "old": 5.849001393616778,
+              "sec_same_share_reference": 5.849001375823979,
+              "sec_period_end_share_reference": 5.779097558440503,
+              "sec_denominator": 87542000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 180.86657663100772,
+              "old": 180.86657718120804,
+              "sec_same_share_reference": 180.86657663100772,
+              "sec_period_end_share_reference": 178.70496589932833,
+              "sec_denominator": 2831000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 9.34288256491764,
+              "old": 9.342882592228925,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 57032000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 145.1098252838733,
+              "old": 145.109825708061,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "XOM": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 662,
+        "ps": 662,
+        "pb": 662,
+        "pfcf": 662,
+        "ev_revenue": 662,
+        "ev_ebitda": 662
+      },
+      "coverage": {
+        "pe": 391,
+        "ps": 445,
+        "pb": 647,
+        "pfcf": 391,
+        "ev_revenue": 445,
+        "ev_ebitda": 445
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 118.93000030517578,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 15.186021200276342,
+              "old": 15.186021161308835,
+              "sec_same_share_reference": 15.16964289606834,
+              "sec_period_end_share_reference": 15.16964289606834,
+              "sec_denominator": 7.84,
+              "relative_error": 0.0010796763193579029,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 1.5642457011018354,
+              "old": 1.5642456970879624,
+              "sec_same_share_reference": 1.5179875033588235,
+              "sec_period_end_share_reference": 1.4809053344063108,
+              "sec_denominator": 349585000000,
+              "relative_error": 0.030473371908963154,
+              "status": "declared_scope_difference",
+              "reason": null,
+              "scope_note": "Actual P/S matches the same-share equity value divided by verified sales/operating revenue 339.247b; SEC Revenues is 349.585b including additional income categories. Other numerical differences are not exempted."
+            },
+            "pb": {
+              "new": 2.0123458461602715,
+              "old": 2.012345840996568,
+              "sec_same_share_reference": 2.0123458461602715,
+              "sec_period_end_share_reference": 1.9631872407744646,
+              "sec_denominator": 263705000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 17.276522377968952,
+              "old": 17.276522333637192,
+              "sec_same_share_reference": 17.276522377968952,
+              "sec_period_end_share_reference": 16.854482723285265,
+              "sec_denominator": 30716000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 1.6193117739042477,
+              "old": 1.619311769890375,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 349585000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 7.493372909409152,
+              "old": 7.493372890834936,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 165.22999572753906,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 21.301753363926714,
+              "old": 21.30175391474019,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 1.9101257468751678,
+              "old": 1.9101257962665485,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 2.6589174268129696,
+              "old": 2.6589174955663504,
+              "sec_same_share_reference": 2.6589174268129696,
+              "sec_period_end_share_reference": 2.619422247018431,
+              "sec_denominator": 259380000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 22.572906168518575,
+              "old": 22.572906752201092,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 1.9981443587402317,
+              "old": 1.9981444081316124,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 10.044552762502583,
+              "old": 10.044553010790114,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "JNJ": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 668,
+        "ps": 668,
+        "pb": 668,
+        "pfcf": 668,
+        "ev_revenue": 668,
+        "ev_ebitda": 668
+      },
+      "coverage": {
+        "pe": 668,
+        "ps": 642,
+        "pb": 668,
+        "pfcf": 385,
+        "ev_revenue": 642,
+        "ev_ebitda": 394
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 165.83999633789062,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 28.605739686565723,
+              "old": 28.60574031824294,
+              "sec_same_share_reference": 28.64248641414346,
+              "sec_period_end_share_reference": 28.64248641414346,
+              "sec_denominator": 5.79,
+              "relative_error": -0.001282944750201298,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 4.531701456994341,
+              "old": 4.531701557064208,
+              "sec_same_share_reference": 4.531701456994341,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 88821000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 5.630301512263174,
+              "old": 5.63030163659253,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": 22.288624176310982,
+              "sec_same_share_reference": 20.285770341280834,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 19842000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Quarterly capex does not reconcile with the disclosed 2024-12-31 annual statement.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 4.668065605112466,
+              "old": 4.668065705182333,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 88821000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 16.731457774573034,
+              "old": 16.731458133247244,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 266.3500061035156,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 30.871006559382618,
+              "old": 30.871005851961307,
+              "sec_same_share_reference": 30.89907263381852,
+              "sec_period_end_share_reference": 30.89907263381852,
+              "sec_denominator": 8.62,
+              "relative_error": -0.0009083144587705982,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 6.636651552585939,
+              "old": 6.636651400504447,
+              "sec_same_share_reference": 6.636651552585939,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 97929000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 7.648734861225459,
+              "old": 7.648734685951678,
+              "sec_same_share_reference": 7.648734861225459,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 84971000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": 34.74025203121659,
+              "sec_same_share_reference": 29.217795805304284,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 22244000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "2026-06-30: Cash-flow ending cash is below same-period balance-sheet cash and equivalents; cash-flow inputs require reconciliation.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 6.9254117768300345,
+              "old": 6.925411624748542,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 97929000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 20.105497743780045,
+              "old": 20.10549730226491,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "JPM": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 648,
+        "ps": 648,
+        "pb": 648,
+        "pfcf": 200,
+        "ev_revenue": 0,
+        "ev_ebitda": 0
+      },
+      "coverage": {
+        "pe": 95,
+        "ps": 0,
+        "pb": 668,
+        "pfcf": 0,
+        "ev_revenue": 0,
+        "ev_ebitda": 0
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 245.3000030517578,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": null,
+              "old": 12.152179871350544,
+              "sec_same_share_reference": 12.420253319076345,
+              "sec_period_end_share_reference": 12.420253319076345,
+              "sec_denominator": 19.75,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Disclosed earnings attributable to common shareholders are required for financial companies.",
+              "scope_note": null
+            },
+            "ps": {
+              "new": null,
+              "old": 2.57500090481695,
+              "sec_same_share_reference": 3.9268778789470162,
+              "sec_period_end_share_reference": 3.8649850668949384,
+              "sec_denominator": 177556000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable.",
+              "scope_note": null
+            },
+            "pb": {
+              "new": 2.022406234733687,
+              "old": 2.022406209573092,
+              "sec_same_share_reference": 2.022406234733687,
+              "sec_period_end_share_reference": 1.9905304257989593,
+              "sec_denominator": 344758000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 177556000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Enterprise-value multiples are not comparable for financial companies.",
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Enterprise-value multiples are not comparable for financial companies.",
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 353.55999755859375,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": null,
+              "old": 15.342112921514111,
+              "sec_same_share_reference": 15.148243254438466,
+              "sec_period_end_share_reference": 15.148243254438466,
+              "sec_denominator": 23.339999999999996,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Disclosed earnings attributable to common shareholders are required for financial companies.",
+              "scope_note": null
+            },
+            "ps": {
+              "new": null,
+              "old": 3.3186527434793858,
+              "sec_same_share_reference": 4.953364785662779,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 199408000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable.",
+              "scope_note": null
+            },
+            "pb": {
+              "new": 2.636801491677594,
+              "old": 2.6368015098852635,
+              "sec_same_share_reference": 2.636801491677594,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 374598000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": 11.470017674040527,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 199408000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Enterprise-value multiples are not comparable for financial companies.",
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Enterprise-value multiples are not comparable for financial companies.",
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "NEE": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 668,
+        "ps": 668,
+        "pb": 668,
+        "pfcf": 609,
+        "ev_revenue": 668,
+        "ev_ebitda": 668
+      },
+      "coverage": {
+        "pe": 534,
+        "ps": 668,
+        "pb": 668,
+        "pfcf": 0,
+        "ev_revenue": 668,
+        "ev_ebitda": 642
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 70.88999938964844,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 21.01414383546663,
+              "old": 21.01414401639505,
+              "sec_same_share_reference": 21.035608127492118,
+              "sec_period_end_share_reference": 21.035608127492118,
+              "sec_denominator": 3.37,
+              "relative_error": -0.0010203789638691951,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 5.905590608494468,
+              "old": 5.9055906593406595,
+              "sec_same_share_reference": 5.905352027691798,
+              "sec_period_end_share_reference": 5.891032551387987,
+              "sec_denominator": 24753000000,
+              "relative_error": 4.04007756948932e-05,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 2.9176100026238014,
+              "old": 2.917610027743957,
+              "sec_same_share_reference": 2.9176100026238014,
+              "sec_period_end_share_reference": 2.9105352935970705,
+              "sec_denominator": 50101000000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": 30.799658659924148,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": -11469000000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Utility capital-investment coverage is not verified; provider capex can omit generating-project investments.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 9.171831720323816,
+              "old": 9.171831771170007,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 24753000000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 16.178818325360254,
+              "old": 16.17881841505131,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 82.44000244140625,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 18.45494586221569,
+              "old": 18.454945315684654,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 5.934225736538977,
+              "old": 5.934225560800799,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 3.014689722719911,
+              "old": 3.0146896334418654,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "SEC_reference_unavailable",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": null,
+              "old": null,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Utility capital-investment coverage is not verified; provider capex can omit generating-project investments.",
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 9.632616556979348,
+              "old": 9.63261638124117,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": 15.791897248903947,
+              "old": 15.791896960795391,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    },
+    "AMT": {
+      "history_start": "2024-01-11",
+      "history_end": "2026-09-10",
+      "price_count": 668,
+      "old_coverage": {
+        "pe": 638,
+        "ps": 638,
+        "pb": 638,
+        "pfcf": 638,
+        "ev_revenue": 638,
+        "ev_ebitda": 638
+      },
+      "coverage": {
+        "pe": 592,
+        "ps": 137,
+        "pb": 668,
+        "pfcf": 592,
+        "ev_revenue": 137,
+        "ev_ebitda": 0
+      },
+      "anchors": {
+        "2025-03-31": {
+          "price_yahoo": 217.60000610351562,
+          "new_period_end": "2024-12-31",
+          "reference_period_end": "2024-12-31",
+          "comparisons": {
+            "pe": {
+              "new": 45.15177830586702,
+              "old": 45.15177703939377,
+              "sec_same_share_reference": 45.14522948205718,
+              "sec_period_end_share_reference": 45.14522948205718,
+              "sec_denominator": 4.82,
+              "relative_error": 0.00014506125863067432,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": null,
+              "old": 9.433999129976028,
+              "sec_same_share_reference": 10.06475231643461,
+              "sec_period_end_share_reference": 10.042535079062874,
+              "sec_denominator": 10127200000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Quarterly revenue does not reconcile with the disclosed 2024-12-31 annual statement.",
+              "scope_note": null
+            },
+            "pb": {
+              "new": 30.13652642037626,
+              "old": 30.13652557506948,
+              "sec_same_share_reference": 30.13652642037626,
+              "sec_period_end_share_reference": 30.070002144369212,
+              "sec_denominator": 3382200000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 27.544320945546975,
+              "old": 27.5443201729496,
+              "sec_same_share_reference": 27.544320945546975,
+              "sec_period_end_share_reference": 27.483518781971505,
+              "sec_denominator": 3700500000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": null,
+              "old": 13.317128994937201,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 10127200000,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Quarterly revenue does not reconcile with the disclosed 2024-12-31 annual statement.",
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": null,
+              "old": 19.31201771716955,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Quarterly ebitda does not reconcile with the disclosed 2024-12-31 annual statement.",
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        },
+        "2026-09-10": {
+          "price_yahoo": 172.97999572753906,
+          "new_period_end": "2026-06-30",
+          "reference_period_end": "2026-06-30",
+          "comparisons": {
+            "pe": {
+              "new": 23.954771640857857,
+              "old": 23.954772232520643,
+              "sec_same_share_reference": 23.79367203955145,
+              "sec_period_end_share_reference": 23.79367203955145,
+              "sec_denominator": 7.270000000000001,
+              "relative_error": 0.006770691007197849,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ps": {
+              "new": 7.376042811786119,
+              "old": 7.376042993968196,
+              "sec_same_share_reference": 7.376379879044347,
+              "sec_period_end_share_reference": 7.366593778659999,
+              "sec_denominator": 10941500000,
+              "relative_error": -4.5695485286101345e-05,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pb": {
+              "new": 21.69762627270041,
+              "old": 21.6976268086136,
+              "sec_same_share_reference": 21.69762627270041,
+              "sec_period_end_share_reference": 21.668840451974184,
+              "sec_denominator": 3719700000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "pfcf": {
+              "new": 20.382004254397625,
+              "old": 20.382004757816052,
+              "sec_same_share_reference": 20.382004254397625,
+              "sec_period_end_share_reference": 20.354963843933625,
+              "sec_denominator": 3959800000,
+              "relative_error": 0.0,
+              "status": "within_2pct",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_revenue": {
+              "new": 11.325732082486175,
+              "old": 11.32573226466825,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": 10941500000,
+              "relative_error": null,
+              "status": "unverified_SEC_EV_bridge",
+              "reason": null,
+              "scope_note": null
+            },
+            "ev_ebitda": {
+              "new": null,
+              "old": 17.6377220175913,
+              "sec_same_share_reference": null,
+              "sec_period_end_share_reference": null,
+              "sec_denominator": null,
+              "relative_error": null,
+              "status": "gap",
+              "reason": "Quarterly ebitda does not reconcile with the disclosed 2025-12-31 annual statement.",
+              "scope_note": null
+            }
+          },
+          "ebitda_component_check": null
+        }
+      }
+    }
+  },
+  "regressions": [
+    {
+      "label": "Loss quarters must not turn into a positive P/E",
+      "ticker": "AMZN",
+      "date": "2002-01-25",
+      "metric": "pe",
+      "expectation": "gap",
+      "value": null,
+      "reason": "2001-09-30: Common-share earnings are zero while reported net income is negative; earnings require reconciliation.",
+      "passed": true
+    },
+    {
+      "label": "The formerly 7,890x loss-period P/E is unavailable",
+      "ticker": "AMZN",
+      "date": "2003-10-24",
+      "metric": "pe",
+      "expectation": "gap",
+      "value": null,
+      "reason": "2003-06-30: Common-share earnings are zero while reported net income is negative; earnings require reconciliation.",
+      "passed": true
+    },
+    {
+      "label": "Disclosed annual revenue conflicts with four quarters",
+      "ticker": "AMZN",
+      "date": "2002-01-25",
+      "metric": "ps",
+      "expectation": "gap",
+      "value": null,
+      "reason": "Quarterly revenue does not reconcile with the disclosed 2001-12-31 annual statement.",
+      "passed": true
+    },
+    {
+      "label": "Annual conflict is not backdated before that annual disclosure",
+      "ticker": "AMZN",
+      "date": "2001-10-31",
+      "metric": "ps",
+      "expectation": 0,
+      "value": 0.7334685571042731,
+      "reason": null,
+      "passed": true
+    },
+    {
+      "label": "Incomplete debt is not treated as total debt",
+      "ticker": "WMT",
+      "date": "1996-06-13",
+      "metric": "ev_revenue",
+      "expectation": "gap",
+      "value": null,
+      "reason": "Reported total debt equals short-term debt but long-term debt is missing; complete debt scope is unverified.",
+      "passed": true
+    },
+    {
+      "label": "Both EV multiples reject incomplete debt",
+      "ticker": "WMT",
+      "date": "1996-06-13",
+      "metric": "ev_ebitda",
+      "expectation": "gap",
+      "value": null,
+      "reason": "Reported total debt equals short-term debt but long-term debt is missing; complete debt scope is unverified.",
+      "passed": true
+    },
+    {
+      "label": "Old EBITDA revenue placeholders are unavailable",
+      "ticker": "MSFT",
+      "date": "1990-01-02",
+      "metric": "ev_ebitda",
+      "expectation": "gap",
+      "value": null,
+      "reason": "No eligible quarterly statements had been disclosed.",
+      "passed": true
+    },
+    {
+      "label": "Same-day fiscal-end filing placeholders are excluded",
+      "ticker": "MSFT",
+      "date": "1991-10-01",
+      "metric": "ps",
+      "expectation": "gap",
+      "value": null,
+      "reason": "No eligible quarterly statements had been disclosed.",
+      "passed": true
+    },
+    {
+      "label": "Near-zero positive earnings are not mechanically capped",
+      "ticker": "AAPL",
+      "date": "1998-08-11",
+      "metric": "pe",
+      "expectation": 100,
+      "value": 260.59850068095244,
+      "reason": null,
+      "passed": true
+    },
+    {
+      "label": "Same-period ending cash contradicts the balance sheet",
+      "ticker": "JNJ",
+      "date": "2026-09-10",
+      "metric": "pfcf",
+      "expectation": "gap",
+      "value": null,
+      "reason": "2026-06-30: Cash-flow ending cash is below same-period balance-sheet cash and equivalents; cash-flow inputs require reconciliation.",
+      "passed": true
+    },
+    {
+      "label": "A valid consolidated versus parent-income bridge preserves P/E",
+      "ticker": "WMT",
+      "date": "2026-09-10",
+      "metric": "pe",
+      "expectation": 0,
+      "value": 38.30619308404298,
+      "reason": null,
+      "passed": true
+    },
+    {
+      "label": "A valid consolidated versus parent-income bridge preserves P/FCF",
+      "ticker": "WMT",
+      "date": "2026-09-10",
+      "metric": "pfcf",
+      "expectation": 0,
+      "value": 62.44088681619661,
+      "reason": null,
+      "passed": true
+    },
+    {
+      "label": "Conflicting statement scope cannot produce positive FCF valuation",
+      "ticker": "NEE",
+      "date": "2025-03-31",
+      "metric": "pfcf",
+      "expectation": "gap",
+      "value": null,
+      "reason": "Utility capital-investment coverage is not verified; provider capex can omit generating-project investments.",
+      "passed": true
+    },
+    {
+      "label": "Financial-sector revenue requires a dedicated scope",
+      "ticker": "JPM",
+      "date": "2025-03-31",
+      "metric": "ps",
+      "expectation": "gap",
+      "value": null,
+      "reason": "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable.",
+      "passed": true
+    },
+    {
+      "label": "Financial-sector cash flows are not an industrial FCF proxy",
+      "ticker": "JPM",
+      "date": "2025-03-31",
+      "metric": "pfcf",
+      "expectation": "gap",
+      "value": null,
+      "reason": "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable.",
+      "passed": true
+    },
+    {
+      "label": "Isolated observed EBITDA placeholder, with synthetic disclosed metadata and zero long-term debt",
+      "ticker": "MSFT",
+      "date": "1989-09-01",
+      "metric": "ev_ebitda",
+      "expectation": "gap",
+      "value": null,
+      "reason": "1989-03-31: EBITDA and operating income equal revenue while cost of revenue is missing; EBITDA may contain a placeholder.",
+      "passed": true
+    }
+  ],
+  "summary": {
+    "passed": true,
+    "symbols": 11,
+    "historical_points": 47405,
+    "regressions_passed": 16,
+    "regressions_total": 16,
+    "healthy_valid_external_comparisons": 44,
+    "healthy_minimum_required": 32,
+    "healthy_coverage_passed": true,
+    "unexplained_external_failures": 0,
+    "reference_period_failures": 0,
+    "declared_scope_differences": 1,
+    "explicit_gaps": 22,
+    "unverified_EV_values": 35
+  }
+}

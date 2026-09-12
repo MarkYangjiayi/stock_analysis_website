@@ -25,7 +25,11 @@ factor dataset and not inputs to DCF, peer comparisons or backtests.
   short-term investments (cash/equivalents when the wider total is unavailable).
   EV/Revenue and EV/EBITDA use complete TTM denominators. The proxy excludes
   preferred equity and noncontrolling interests; debt lease scope remains
-  provider-qualified. EV multiples are unavailable for financial companies.
+  provider-qualified. Financial-company P/S, P/FCF and EV multiples are unavailable
+  until sector-specific revenue/cash-flow definitions are supported. Financial
+  P/E requires common-share earnings and does not fall back to total net income.
+  Utility P/FCF is unavailable until group-wide capital investment coverage is
+  verified; a provider capex field can omit generating-project investments.
 
 EODHD historical statement shares are treated as split-adjusted to their
 payload vintage, **not** as unadjusted fiscal-date shares. Each recorded version
@@ -34,7 +38,8 @@ date using corporate actions. Duplicate identical splits are deduplicated and
 conflicting/invalid factors disable the calculation. A `sharesBasis` of
 `period_end` explicitly identifies unadjusted period-end shares. The chart's
 price panel keeps existing dividend-adjusted OHLC; the multiple calculation
-never uses `adjusted_close`.
+never uses `adjusted_close`. Provider volume is already split-adjusted and is
+preserved as supplied, with no additional price or dividend adjustment.
 
 Split normalization requires a stored EODHD split response covering the full
 range of price dates and statement share vintages. Recent-only backfills and
@@ -51,7 +56,9 @@ Versioned quarterly statements are selected by availability. Legacy statements
 are used only for periods without versions. Inputs start on the first observed
 price session **strictly after** all known filing/availability dates for that
 statement, a conservative rule for unknown intraday timing. Estimated/missing
-dates are excluded. Later captured revisions do not replace earlier values
+dates and filing dates on/before the fiscal period end are excluded. A later
+recorded availability cannot validate a fiscal-end filing placeholder.
+Later captured revisions do not replace earlier values
 before their availability date. Initial historical payloads can already be
 restated, so this cannot establish exact historical information availability.
 
@@ -63,6 +70,23 @@ unknown share basis, currency mismatch, known ADR conversions and incomplete
 debt/cash bridges produce null observations and explicit reasons. Negative
 simplified EV is also shown as unavailable. Other valid metrics remain usable.
 
+Input quality checks reject conflicting common/total earnings, unexplained
+income/cash-flow net-income differences, cash-flow ending cash materially below
+the same-date balance-sheet cash, EBITDA revenue placeholders and debt totals
+that merely repeat short-term debt without a known long-term component/scope.
+Explicit minority-income bridges are respected. With no minority-income field,
+positive consolidated cash-flow earnings may exceed nonnegative parent earnings
+when they exactly reconcile to pretax income less tax and any disclosed common
+earnings agree with parent earnings. These checks do not cap high multiples or
+infer replacements for disputed fields.
+
+Already disclosed annual statements validate the sum of four corresponding
+quarters for revenue, net/common income, EBITDA, CFO and capex (2% monetary
+rounding tolerance). Disagreement makes overlapping TTM windows unavailable
+for that input. Annual statements/revisions follow the same availability rules;
+they are never backdated or substituted as quarterly facts. This is a quality
+check, not an independent verification of every provider field or its scope.
+
 Statement currency can inherit its section's explicit currency at ingestion.
 For older rows, the read path can recover it from an exactly matching statement
 in the latest immutable raw snapshot. It is never inferred from the quote's
@@ -70,7 +94,8 @@ currency. Legacy share vintage uses the raw snapshot's fetch date when present.
 
 Weekly/monthly values use the last actual price session's ratio, including null
 values. Labels match existing Friday/month-end price buckets; the tooltip shows
-the actual session date. Lines do not connect gaps. The latest summary does not
+the actual session date, denominator and constituent periods. Lines do not
+connect gaps. The latest summary does not
 carry forward an earlier valid observation.
 
 ## API and implementation
