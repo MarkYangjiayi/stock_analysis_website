@@ -88,6 +88,8 @@ from services.market_breadth import (
     get_market_overview,
 )
 from services.stock_snapshot import get_market_snapshot
+from services.similar_stocks import get_similar_stocks
+from api.schemas import SimilarStocksResponse
 from services.valuation_history import get_valuation_history
 from services.split_history import sync_full_split_history
 import pandas as pd
@@ -1083,3 +1085,8 @@ async def read_pipeline_runs(limit: int = 50, db: AsyncSession = Depends(get_db)
         }
         for row in result.scalars().all()
     ]
+
+
+@router.get("/api/stocks/{ticker}/similar", response_model=SimilarStocksResponse, tags=["Stocks Analysis Read"])
+async def read_similar_stocks(ticker: str, db: AsyncSession = Depends(get_db)):
+    return await get_similar_stocks(ticker, db)

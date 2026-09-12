@@ -527,3 +527,22 @@ class AnomalyScanResponse(BaseModel):
     created_at: datetime
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+
+
+class SimilarStockMatch(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    industry: Optional[str] = None
+    correlation: float
+    returns: list[float]
+
+
+class SimilarStocksResponse(BaseModel):
+    ticker: str
+    window_days: int
+    as_of: Optional[str] = None
+    status: str
+    dates: list[str]
+    target_returns: list[float]
+    matches: list[SimilarStockMatch]
+    eligible_count: int

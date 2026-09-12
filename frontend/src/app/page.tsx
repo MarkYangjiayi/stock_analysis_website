@@ -30,6 +30,7 @@ import DecisionCockpit, { type CockpitTab } from "@/components/DecisionCockpit";
 import NewsFeed from "@/components/NewsFeed";
 import PersonalUnlockDialog from "@/components/PersonalUnlockDialog";
 import PointInTimeFactorPanel from "@/components/PointInTimeFactorPanel";
+import SimilarStocksPanel from "@/components/SimilarStocksPanel";
 import StockSnapshotPanel from "@/components/StockSnapshotPanel";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
@@ -698,6 +699,7 @@ function AnalysisPage() {
                                                 </section>
                                                 <FinancialSnapshot stock={stockData} snapshot={marketSnapshot} statementDate={decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials} onDetails={() => selectSection("financials")} />
                                             </div>
+                                            <SimilarStocksPanel key={stockData.profile.ticker} ticker={stockData.profile.ticker} watchlist={watchlist} unlocked={personal.isUnlocked} onSelect={selectTicker} onAdd={addToWatchlist} onRemove={removeFromWatchlist} />
                                             <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-lg border px-4 py-3 text-xs text-[var(--text-muted)]" aria-label="Data sources">
                                                 <span className="font-medium text-[var(--text)]">Data sources</span>
                                                 <span>Price · {latest?.date || "Unavailable"}</span>

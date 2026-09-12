@@ -1,0 +1,40 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, expect, it, vi } from "vitest";
+import SimilarStocksPanel from "./SimilarStocksPanel";
+import { fetchSimilarStocks, type SimilarStocksResponse } from "@/lib/api";
+vi.mock("@/lib/api", () => ({ fetchSimilarStocks: vi.fn() }));
+const data: SimilarStocksResponse = { ticker: "A.US", window_days: 60, as_of: "2026-09-11", status: "ok", dates: ["2026-06-15", "2026-09-11"], target_returns: [0, .1], eligible_count: 20, matches: [{ ticker: "B.US", name: "Beta", industry: "Software", correlation: .8, returns: [0, .2] }] };
+const props = { ticker: "A.US", watchlist: [] as string[], unlocked: true, onSelect: vi.fn(), onAdd: vi.fn(), onRemove: vi.fn() };
+beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchSimilarStocks).mockResolvedValue(data); });
+it("compares in place, inspects dates, navigates and uses shared watchlist state", async () => {
+    const { rerender } = render(<SimilarStocksPanel {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: /B Beta/ }));
+    expect(props.onSelect).toHaveBeenCalledWith("B.US");
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    expect(screen.getByText("A vs B")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "0" } });
+    expect(screen.getByText("B +0.0%")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add B to watchlist" }));
+    expect(props.onAdd).toHaveBeenCalledWith("B.US");
+    rerender(<SimilarStocksPanel {...props} watchlist={["B.US"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove B from watchlist" }));
+    expect(props.onRemove).toHaveBeenCalledWith("B.US");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByText("A vs B")).not.toBeInTheDocument();
+});
+it("shows failure and retries", async () => {
+    vi.mocked(fetchSimilarStocks).mockRejectedValueOnce(new Error("offline"));
+    render(<SimilarStocksPanel {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Software")).toBeInTheDocument();
+});
+it("aborts old requests and hides old recommendations when ticker changes", async () => {
+    const { rerender } = render(<SimilarStocksPanel {...props} />);
+    await screen.findByText("Software");
+    const signal = vi.mocked(fetchSimilarStocks).mock.calls[0][1];
+    vi.mocked(fetchSimilarStocks).mockResolvedValue({ ...data, ticker: "C.US", matches: [] });
+    rerender(<SimilarStocksPanel {...props} ticker="C.US" />);
+    await waitFor(() => expect(screen.getByText(/No strong matches/)).toBeInTheDocument());
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText("Software")).not.toBeInTheDocument();
+});

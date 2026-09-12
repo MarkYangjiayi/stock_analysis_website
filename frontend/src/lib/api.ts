@@ -1217,3 +1217,23 @@ export const fetchBacktest = (runId: number, adminKey: string, signal?: AbortSig
         headers: personalHeaders(adminKey),
         signal,
     });
+
+export interface SimilarStockMatch {
+    ticker: string;
+    name: string | null;
+    industry: string | null;
+    correlation: number;
+    returns: number[];
+}
+export interface SimilarStocksResponse {
+    ticker: string;
+    window_days: number;
+    as_of: string | null;
+    status: "ok" | "insufficient_history" | "unsupported_market" | "unsupported_security";
+    dates: string[];
+    target_returns: number[];
+    matches: SimilarStockMatch[];
+    eligible_count: number;
+}
+export const fetchSimilarStocks = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<SimilarStocksResponse>(`/api/stocks/${encodeURIComponent(ticker)}/similar`, { signal });
