@@ -25,8 +25,18 @@ test("similar stocks stay fixed and compare within overview", async ({ page }, t
     await page.getByRole("button", { name: "Weekly", exact: true }).click();
     await expect(page.getByRole("button", { name: "Weekly", exact: true })).toBeEnabled();
     expect(requests).toBe(initialRequests);
+    const firstRow = panel.locator("li").first();
+    const positions = () => firstRow.evaluate(row => Array.from(row.children).map(child => {
+        const box = child.getBoundingClientRect();
+        return { x: box.x, width: box.width };
+    }));
+    const beforeCompare = await positions();
     await panel.getByRole("button", { name: "Compare", exact: true }).first().click();
     await expect(panel.getByText("TEST vs BETA")).toBeVisible();
+    expect(await positions()).toEqual(beforeCompare);
+    await firstRow.getByRole("button", { name: "Close", exact: true }).click();
+    expect(await positions()).toEqual(beforeCompare);
+    await firstRow.getByRole("button", { name: "Compare", exact: true }).click();
     await panel.getByRole("slider").fill("20");
     await panel.getByRole("button", { name: "Compare", exact: true }).first().click();
     await expect(panel.getByText("TEST vs GAMMA")).toBeVisible();
