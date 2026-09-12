@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import CorporateAction, DailyPrice, FinancialStatement, FundamentalVersion, Ticker
 from services.events_expectations import load_latest_fundamentals_snapshot
 from services.valuation_inputs import field, number, resolve_debt
+from services.valuation_history_quality import statement_quality
 from services.split_history import UNVERIFIED_REASON, load_split_history
 
 
@@ -35,10 +36,12 @@ METRICS = (
 KEYS = tuple(row[0] for row in METRICS)
 METHODOLOGY = [
     "Reconstructed history, not a point-in-time backtest dataset: initial provider payloads may contain later restatements. Recorded revisions become effective only after their availability date.",
-    "Statements become effective on the first price session strictly after the latest known filing/availability date. Unknown or estimated filing dates are excluded. Quarterly inputs expire 180 days after period end.",
+    "Statements become effective on the first price session after the reported filing date and recorded availability. Missing, estimated and fiscal-end placeholder filing dates are excluded. Quarterly inputs expire 180 days after period end.",
     "Price and provider statement shares use the same split basis, without dividend adjustments. Provider shares may be weighted averages; equity value and P/E are estimates, not exact historical market cap or verified GAAP diluted P/E.",
     "P/E uses reported net income per quarterly provider share, never the non-GAAP Earnings.History EPS. TTM metrics require four consecutive quarters; missing or non-positive denominators remain gaps.",
-    "EV is a simplified equity + debt − cash/short-term-investments estimate. Preferred equity and noncontrolling interests are excluded; lease scope follows reported debt. EV multiples are unavailable for financial companies.",
+    "Conflicting financial inputs and quarterly totals that disagree with an already disclosed annual statement remain gaps. Annual checks never backdate later filings or revisions.",
+    "EV is a simplified equity + debt − cash/short-term-investments estimate. Preferred equity and noncontrolling interests are excluded; lease scope follows reported debt. Financial companies require separate revenue and cash-flow definitions; P/S, P/FCF and EV multiples are unavailable.",
+    "Utility P/FCF is unavailable until group-wide capital-investment coverage is verified; provider capex can omit generating-project investments.",
 ]
 
 
@@ -78,17 +81,20 @@ def _split_factor(start: date, end: date, table: tuple[list[date], list[float]])
     return cumulative[bisect_right(dates, end)] / cumulative[bisect_right(dates, start)]
 
 
-def _statement(row: Any, reference_date: date, splits: tuple, fallback_vintage: date | None, fundamentals: dict) -> dict | None:
+def _statement(row: Any, reference_date: date, splits: tuple, fallback_vintage: date | None, fundamentals: dict, *, annual: bool = False) -> dict | None:
     income, balance, cash = row.income_statement or {}, row.balance_sheet or {}, row.cash_flow or {}
     period_end = _date(getattr(row, "period_end", None) or getattr(row, "fiscal_date", None))
     if period_end is None or getattr(row, "availability_estimated", False):
         return None
-    filing_dates = [_date(part.get("filing_date") or part.get("filingDate")) for part in (income, balance, cash)]
+    filing_dates = [_date(part.get("filing_date") or part.get("filingDate") or part.get("dateFiled")) for part in (income, balance, cash)]
     filed = _date(getattr(row, "filing_at", None))
     available = _date(getattr(row, "available_at", None))
-    known_dates = [d for d in [*filing_dates, filed, available] if d is not None]
-    if not known_dates or max(known_dates) < period_end:
+    # A later fetch/revision date cannot turn a fiscal-end placeholder into
+    # evidence that the financials were disclosed on that date.
+    known_filings = [d for d in [*filing_dates, filed] if d is not None]
+    if not known_filings or any(d <= period_end for d in known_filings):
         return None
+    known_dates = [*known_filings, *([available] if available else [])]
     vintage = _date(getattr(row, "fetched_at", None)) or fallback_vintage
     shares, _ = field(balance, "commonStockSharesOutstanding", "sharesOutstanding")
     source = getattr(row, "source", "EODHD")
@@ -108,20 +114,25 @@ def _statement(row: Any, reference_date: date, splits: tuple, fallback_vintage: 
     # recover it from a matching source statement, never from today's quote.
     for index, (name, part) in enumerate(zip(("Income_Statement", "Balance_Sheet", "Cash_Flow"), (income, balance, cash))):
         section = fundamentals.get("Financials", {}).get(name, {})
-        original = section.get("quarterly", {}).get(period_end.isoformat())
+        original = section.get("yearly" if annual else "quarterly", {}).get(period_end.isoformat())
         if not currencies[index] and original and part == original:
             currencies[index] = str(section.get("currency_symbol") or "").upper()
     net_income, _ = field(income, "netIncomeApplicableToCommonShares", "netIncome")
     cfo, _ = field(cash, "totalCashFromOperatingActivities", "operatingCashFlow")
     capex, _ = field(cash, "capitalExpenditures", "capitalExpenditure")
     cash_value, _ = field(balance, "cashAndShortTermInvestments", "cashAndCashEquivalents", "cashAndEquivalents", "cash")
+    quality = statement_quality(*(dict(part, currency_symbol=currencies[index]) for index, part in enumerate((income, balance, cash))))
     return {
+        "annual": annual, "quality": quality,
         "period_end": period_end, "available_after": max(known_dates),
         "revision": getattr(row, "revision", 1), "source": source,
         "raw_snapshot_id": getattr(row, "raw_snapshot_id", None),
         "share_reference_date": share_reference, "shares": shares,
         "currencies": currencies,
         "eps": net_income / shares if net_income is not None and shares else None,
+        "net_income": number(income.get("netIncome")),
+        "common_income": number(income.get("netIncomeApplicableToCommonShares")),
+        "cfo": cfo, "capex": abs(capex) if capex is not None else None,
         "revenue": number(income.get("totalRevenue")), "ebitda": number(income.get("ebitda")),
         "fcf": cfo - abs(capex) if cfo is not None and capex is not None else None,
         "book": number(balance.get("totalStockholderEquity")),
@@ -130,13 +141,49 @@ def _statement(row: Any, reference_date: date, splits: tuple, fallback_vintage: 
     }
 
 
-def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency: str | None, sector: str | None) -> dict:
-    recent = sorted(rows.values(), key=lambda row: row["period_end"], reverse=True)[:4]
-    latest = recent[0]
-    complete = len(recent) == 4 and all(
+def _consecutive(recent: Sequence[dict]) -> bool:
+    return len(recent) == 4 and all(
         60 <= (left["period_end"] - right["period_end"]).days <= 130
         for left, right in zip(recent, recent[1:])
     ) and 240 <= (recent[0]["period_end"] - recent[-1]["period_end"]).days <= 310
+
+
+def _annual_conflicts(rows: dict[date, dict], annuals: dict[date, dict], recent: Sequence[dict]) -> tuple[dict, list[dict]]:
+    """Validate overlapping quarters against annual facts available this session.
+
+    We cannot identify which quarter is wrong from an annual discrepancy, so
+    every overlapping TTM window for that input is unavailable until it agrees.
+    """
+    reasons, checked = {}, []
+    parts = {"net_income": 0, "common_income": 0, "revenue": 0, "ebitda": 0, "cfo": 2, "capex": 2}
+    affected = {"net_income": ("pe",), "common_income": ("pe",), "revenue": ("ps", "ev_revenue"),
+                "ebitda": ("ev_ebitda",), "cfo": ("pfcf",), "capex": ("pfcf",)}
+    for end, annual in annuals.items():
+        quarters = sorted((r for day, r in rows.items() if day <= end), key=lambda r: r["period_end"], reverse=True)[:4]
+        if not _consecutive(quarters) or quarters[0]["period_end"] != end:
+            continue
+        if not {r["period_end"] for r in recent}.intersection(r["period_end"] for r in quarters):
+            continue
+        checked.append(annual)
+        for key, part in parts.items():
+            values, total = [r[key] for r in quarters], annual[key]
+            if total is None or any(v is None for v in values):
+                continue
+            if not annual["currencies"][part] or any(r["currencies"][part] != annual["currencies"][part] for r in quarters):
+                continue
+            # Allow source rounding, including loss/profit cancellations. This
+            # tests monetary totals, never the non-additive annual diluted EPS.
+            tolerance = max(1.0, .02 * max(abs(total), sum(abs(v) for v in values)))
+            if abs(sum(values) - total) > tolerance:
+                for metric in affected[key]:
+                    reasons[metric] = f"Quarterly {key.replace('_', ' ')} does not reconcile with the disclosed {end.isoformat()} annual statement."
+    return reasons, checked
+
+
+def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency: str | None, sector: str | None, annuals: dict[date, dict]) -> dict:
+    recent = sorted(rows.values(), key=lambda row: row["period_end"], reverse=True)[:4]
+    latest = recent[0]
+    complete = _consecutive(recent)
     values = {key: None for key in ("eps", "revenue", "fcf", "ebitda")}
     reasons: dict[str, str] = {}
     required_parts = {"pe": [0, 1], "ps": [0, 1], "pb": [1], "pfcf": [1, 2], "ev_revenue": [0, 1], "ev_ebitda": [0, 1]}
@@ -162,9 +209,25 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
             }.get(field_name, f"Complete {field_name.upper()} inputs are unavailable.")
         elif key not in reasons and denominator <= 0:
             reasons[key] = f"{field_name.upper()} is zero or negative; this multiple is not meaningful."
+        for row in ([latest] if key == "pb" else recent):
+            if field_name in row["quality"]:
+                reasons[key] = f"{row['period_end'].isoformat()}: {row['quality'][field_name]}"
+                break
+    annual_reasons, checked_annuals = _annual_conflicts(rows, annuals, recent)
+    reasons.update(annual_reasons)
+    financial = (sector or "").lower() in {"financial services", "financials", "financial"}
+    if financial:
+        for key in ("ps", "pfcf"):
+            reasons[key] = "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable."
+        if any(row["common_income"] is None for row in recent):
+            reasons["pe"] = "Disclosed earnings attributable to common shareholders are required for financial companies."
+    if (sector or "").lower() == "utilities":
+        reasons["pfcf"] = "Utility capital-investment coverage is not verified; provider capex can omit generating-project investments."
     for key in ("ev_revenue", "ev_ebitda"):
-        if (sector or "").lower() in {"financial services", "financials", "financial"}:
+        if financial:
             reasons[key] = "Enterprise-value multiples are not comparable for financial companies."
+        elif "debt" in latest["quality"]:
+            reasons[key] = latest["quality"]["debt"]
         elif latest["debt"] is None or latest["cash"] is None:
             reasons[key] = "A complete, consistent debt total and cash balance are required for EV."
     return {
@@ -172,7 +235,7 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
         "available_from": available_from.isoformat(),
         "periods": [row["period_end"].isoformat() for row in recent],
         "source": ", ".join(sorted({row["source"] for row in recent})),
-        "raw_snapshot_ids": sorted({row["raw_snapshot_id"] for row in recent if row["raw_snapshot_id"] is not None}),
+        "raw_snapshot_ids": sorted({row["raw_snapshot_id"] for row in [*recent, *checked_annuals] if row["raw_snapshot_id"] is not None}),
         "share_reference_dates": sorted({row["share_reference_date"].isoformat() for row in recent if row["share_reference_date"]}),
         "inputs": {**values, "shares": latest["shares"], "book": latest["book"], "debt": latest["debt"], "cash": latest["cash"]},
         "reasons": reasons,
@@ -193,6 +256,7 @@ def build_valuation_history(
     fallback_vintage: date | None = None,
     fundamentals: dict | None = None,
     split_history_verified: bool = False,
+    annual_statements: Sequence[Any] = (),
 ) -> dict:
     if interval not in {"1d", "1wk", "1mo"}:
         raise ValueError("Unsupported interval")
@@ -204,6 +268,7 @@ def build_valuation_history(
         warnings.append(basis_error)
     fundamentals = fundamentals or {}
     general = fundamentals.get("General") or {}
+    sector = sector or general.get("Sector")
     category = str(general.get("HomeCategory") or "").upper()
     if category.startswith("ADR") or "DEPOSITARY" in str(general.get("Type") or "").upper():
         basis_error = "Depositary-receipt share conversion is not available; company shares cannot be multiplied by receipt prices."
@@ -215,30 +280,32 @@ def build_valuation_history(
         warnings.append(basis_error)
     events = []
     if reference and not basis_error:
-        for row in statements:
-            event = _statement(row, reference, splits, fallback_vintage, fundamentals)
-            if event:
-                events.append(event)
+        for annual, source_rows in ((False, statements), (True, annual_statements)):
+            for row in source_rows:
+                event = _statement(row, reference, splits, fallback_vintage, fundamentals, annual=annual)
+                if event:
+                    events.append(event)
     events.sort(key=lambda row: (row["available_after"], row["revision"], row["period_end"]))
-    if len(events) < len(statements):
-        warnings.append("Some statements were excluded because filing dates or split inputs could not be verified.")
+    if len(events) < len(statements) + len(annual_statements):
+        warnings.append("Some statements were excluded because filing dates or split inputs could not be verified; fiscal-end filing placeholders are not disclosure evidence.")
     if not prices:
         warnings.append("No local daily prices are available.")
-    if not events:
+    if not any(not event["annual"] for event in events):
         warnings.append("No eligible quarterly statements are available.")
-    states, bases, sampled = {}, [], {}
+    states, annuals, bases, sampled = {}, {}, [], {}
     cursor, active = 0, None
     for price in prices:
         changed = False
         while cursor < len(events) and events[cursor]["available_after"] < price.date:
             event = events[cursor]
-            previous = states.get(event["period_end"])
+            target = annuals if event["annual"] else states
+            previous = target.get(event["period_end"])
             if previous is None or event["revision"] >= previous["revision"]:
-                states[event["period_end"]] = event
+                target[event["period_end"]] = event
                 changed = True
             cursor += 1
-        if changed:
-            active = _basis(states, len(bases), price.date, currency, sector)
+        if changed and states:
+            active = _basis(states, len(bases), price.date, currency, sector, annuals)
             bases.append(active)
         reason = basis_error
         close = number(price.close)
@@ -294,15 +361,17 @@ async def get_valuation_history(ticker: str, db: AsyncSession, interval: str = "
     snapshot, fundamentals = await load_latest_fundamentals_snapshot(ticker, db)
     prices = (await db.execute(select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date))).scalars().all()
     versions = list((await db.execute(select(FundamentalVersion).where(
-        FundamentalVersion.ticker == ticker, FundamentalVersion.period_type == "Quarterly",
+        FundamentalVersion.ticker == ticker, FundamentalVersion.period_type.in_(("Quarterly", "Yearly")),
     ))).scalars().all())
     # Legacy-only periods can still be reconstructed when their payload carries
     # a filing date. Never mix a mutable statement into an already versioned period.
     legacy = (await db.execute(select(FinancialStatement).where(
-        FinancialStatement.ticker == ticker, FinancialStatement.period == "Quarterly",
+        FinancialStatement.ticker == ticker, FinancialStatement.period.in_(("Quarterly", "Yearly")),
     ))).scalars().all()
-    covered = {row.period_end for row in versions}
-    statements = [*versions, *(row for row in legacy if row.fiscal_date not in covered)]
+    covered = {(row.period_type, row.period_end) for row in versions}
+    all_statements = [*versions, *(row for row in legacy if (row.period, row.fiscal_date) not in covered)]
+    statements = [row for row in all_statements if (getattr(row, "period_type", None) or row.period) == "Quarterly"]
+    annual_statements = [row for row in all_statements if (getattr(row, "period_type", None) or row.period) == "Yearly"]
     vintage = _date(snapshot.fetched_at) if snapshot else _date(profile.last_updated) if profile else None
     # Cover both quote dates and every statement share vintage, including
     # revisions fetched after the final price observation.
@@ -317,7 +386,8 @@ async def get_valuation_history(ticker: str, db: AsyncSession, interval: str = "
                                      currency=profile.currency if profile else None,
                                      sector=profile.sector if profile else None,
                                      fallback_vintage=vintage, fundamentals=fundamentals,
-                                     split_history_verified=coverage is not None)
+                                     split_history_verified=coverage is not None,
+                                     annual_statements=annual_statements)
     result["split_history_snapshot_id"] = coverage.snapshot_id if coverage else None
     result["split_history_through"] = coverage.through_date.isoformat() if coverage else None
     return result

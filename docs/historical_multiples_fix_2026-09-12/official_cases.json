@@ -1,0 +1,120 @@
+{
+  "reviewed_on": "2026-09-12",
+  "purpose": "External evidence for regression cases; this file is audit evidence and is never loaded by the production valuation service.",
+  "cases": [
+    {
+      "ticker": "AMZN",
+      "filing": "2001 10-K",
+      "url": "https://www.sec.gov/Archives/edgar/data/1018724/000103221002000059/d10k405.htm",
+      "location": "Note 10 and Note 17 quarterly results",
+      "facts_usd_millions": {
+        "2001_Q1_net_income": -234.131,
+        "2001_Q2_net_income": -168.359,
+        "2001_Q3_net_income": -169.874,
+        "2001_Q4_net_income": 5.087,
+        "2001_annual_net_income": -567.277,
+        "2001_Q3_revenue": 639.281,
+        "2001_annual_revenue": 3122.433
+      },
+      "provider_conflicts": "Loss quarters have netIncomeApplicableToCommonShares=0; 2001 Q3 totalRevenue=1162.199 million."
+    },
+    {
+      "ticker": "WMT",
+      "filing": "1996-06-12 10-Q",
+      "url": "https://stock.walmart.com/sec-filings/all-sec-filings/content/0000104169-96-000006/10-Q.txt",
+      "location": "Condensed consolidated balance sheets, April 30, 1996",
+      "facts_usd_millions": {
+        "commercial_paper": 1575,
+        "long_term_debt": 8508,
+        "capital_lease_obligations": 2111,
+        "sum_including_capital_leases": 12194
+      },
+      "provider_conflicts": "shortLongTermDebtTotal=1575 million equals shortTermDebt; long-term fields are missing."
+    },
+    {
+      "ticker": "MSFT",
+      "filing": "2025-01-29 10-Q",
+      "url": "https://www.sec.gov/Archives/edgar/data/789019/000095017025010491/msft-20241231.htm",
+      "lease_note_url": "https://www.sec.gov/Archives/edgar/data/789019/000095017025010491/R22.htm",
+      "location": "Debt and lease notes; balance sheet at December 31, 2024",
+      "facts_usd_millions": {
+        "debt_including_current_maturities": 44970,
+        "finance_lease_liabilities": 36077,
+        "operating_lease_liabilities": 21862,
+        "commercial_paper": 0,
+        "debt_plus_both_lease_types": 102909,
+        "cash_and_short_term_investments": 71555
+      },
+      "scope": "Provider total debt includes both finance and operating leases. EV/Revenue is compared under this explicitly matched scope."
+    },
+    {
+      "ticker": "WMT",
+      "filing": "2025-03-14 10-K",
+      "url": "https://www.sec.gov/Archives/edgar/data/104169/000010416925000021/wmt-20250131.htm",
+      "location": "Debt and lease notes; balance sheet and cash flow statement at January 31, 2025",
+      "facts_usd_millions": {
+        "debt_including_current_maturities": 35999,
+        "short_term_borrowings": 3068,
+        "finance_lease_liabilities": 6723,
+        "operating_lease_liabilities": 14324,
+        "debt_plus_both_lease_types": 60114,
+        "cash_and_equivalents": 9037,
+        "annual_depreciation_amortization_accretion": 12973
+      },
+      "scope": "Provider debt includes both lease types. D&A is independently verified; provider EBIT is retained as a qualified input, not certified as GAAP EBITDA."
+    },
+    {
+      "ticker": "WMT",
+      "filing": "2026-08-28 10-Q",
+      "url": "https://www.sec.gov/Archives/edgar/data/104169/000010416926000154/wmt-20260731.htm",
+      "location": "Consolidated statements of income and Note 3 earnings per common share, three months ended July 31, 2026",
+      "facts_usd_millions": {
+        "consolidated_net_income": 6529,
+        "noncontrolling_interest": 163,
+        "net_income_attributable_to_Walmart": 6366,
+        "pretax_income": 8012,
+        "income_tax": 1483
+      },
+      "provider_values_usd_millions": {
+        "income_netIncome": 6366,
+        "cash_flow_netIncome": 6529,
+        "income_minorityInterest": null,
+        "income_netIncomeFromContinuingOps": null
+      },
+      "conclusion": "The official minority-interest bridge exactly explains the difference. The final implementation preserves P/E and P/FCF using the provider's exact pretax-income-less-tax bridge to consolidated cash-flow net income; neither reported profit is replaced."
+    },
+    {
+      "ticker": "JNJ",
+      "filing": "2026-07-23 10-Q",
+      "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000153/jnj-20260628.htm",
+      "location": "Page 7 consolidated cash flows; page 1 balance sheet; current and comparative six-month columns",
+      "facts_usd_millions": {
+        "2026_H1_CFO": 11130,
+        "2025_H1_CFO": 8052,
+        "2026_H1_capex": 2370,
+        "2025_H1_capex": 1838,
+        "2026_H1_net_income": 10769,
+        "2026_H1_cash_begin": 19709,
+        "2026_H1_cash_end": 20422,
+        "2026_H1_cash_increase": 713,
+        "2025_H1_cash_end": 18577
+      },
+      "supporting_2026_Q1_filing": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000087/jnj-20260329.htm",
+      "supporting_facts_usd_millions": {
+        "2026_Q1_CFO": 2514,
+        "2026_Q1_capex": 1049,
+        "2026_Q1_cash_end": 21688,
+        "2026_Q2_CFO_by_YTD_subtraction": 8616
+      },
+      "provider_conflicts_usd_millions": {
+        "2026_Q2_CFO": 4711,
+        "2026_Q2_cash_flow_begin_cash": 21688,
+        "2026_Q2_cash_flow_end_cash": 9907,
+        "2026_Q2_balance_sheet_cash": 20422,
+        "2026_Q2_cash_flow_net_income": 5534,
+        "2026_Q2_income_statement_net_income": 5534
+      },
+      "conclusion": "The same-period cash-flow ending cash contradicts balance-sheet cash by 10515 million. Current-year YTD CFO is understated by 3905 million in provider quarterly data; the independent SEC extraction is the consolidated statement, not a segment or restated prior-year figure."
+    }
+  ]
+}

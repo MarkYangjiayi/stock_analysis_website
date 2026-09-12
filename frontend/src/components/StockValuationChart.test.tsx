@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { makeValuationHistoryFixture } from "@/test/valuationHistoryFixture";
-import type { HistoricalDataPoint } from "@/lib/api";
+import type { HistoricalDataPoint, MultipleKey } from "@/lib/api";
 
 const chart = vi.hoisted(() => ({ option: {} as Record<string, unknown>, onEvents: {} as Record<string, (event: { start: number; end: number }) => void> }));
 vi.mock("next-themes", () => ({ useTheme: () => ({ resolvedTheme: "light" }) }));
@@ -45,11 +45,13 @@ describe("StockValuationChart", () => {
         const history = makeValuationHistoryFixture(prices);
         history.metrics[0].latest_value = null;
         history.metrics[0].latest_reason = "EPS is zero or negative.";
+        history.metrics[0].valid_points = 2;
         history.points[2].values.pe = null;
         render(<StockValuationChart data={prices} history={history} interval="1d" onIntervalChange={vi.fn()} />);
         expect(screen.getByLabelText("Latest P/E")).toHaveTextContent("N/M");
         expect(screen.getByRole("status")).toHaveTextContent("EPS is zero or negative.");
         expect(screen.getByText("21×")).toBeVisible();
+        expect(screen.getByText("2 / 3 available observations")).toBeVisible();
     });
 
     it("uses the actual trading date and escapes evidence in the shared tooltip", () => {
@@ -64,6 +66,40 @@ describe("StockValuationChart", () => {
         expect(tooltip).toContain("P/E: N/M");
         expect(tooltip).toContain("&lt;img src=x&gt;");
         expect(tooltip).not.toContain("<img");
+    });
+
+    it.each<[MultipleKey, string]>([
+        ["pe", "TTM earnings / share: USD 0.000000123456 per share"],
+        ["ps", "TTM revenue: USD 1.25 billion"],
+        ["pb", "Quarter-end equity: USD 750 million"],
+        ["pfcf", "TTM free cash flow: USD 125 million"],
+        ["ev_revenue", "TTM revenue: USD 1.25 billion"],
+        ["ev_ebitda", "TTM EBITDA: USD 250 million"],
+    ])("explains the %s denominator with its units and relevant quarters", (metric, expected) => {
+        const history = makeValuationHistoryFixture(prices);
+        history.bases[0].inputs = { eps: 0.000000123456, revenue: 1.25e9, book: 750e6, fcf: 125e6, ebitda: 250e6 };
+        const option = valuationChartOption(prices, history, metric, false, { start: 0, end: 100 });
+        const tooltip = option.tooltip.formatter([{ dataIndex: 0 }]);
+        expect(tooltip).toContain(expected);
+        if (metric === "pb") {
+            expect(tooltip).not.toContain("TTM quarters");
+            expect(tooltip).toContain("Statement: 2024-09-30");
+        } else {
+            const text = new DOMParser().parseFromString(tooltip, "text/html").body.textContent;
+            expect(text).toContain("TTM quarters: 2024-09-30 · 2024-06-30 · 2024-03-31 · 2023-12-31");
+        }
+    });
+
+    it("does not assign quote currency to a denominator whose inputs failed validation", () => {
+        const history = makeValuationHistoryFixture(prices);
+        history.points[0].values.pe = null;
+        history.bases[0].inputs.eps = 15;
+        history.bases[0].reasons.pe = "Matching price and statement currencies are required.";
+        const option = valuationChartOption(prices, history, "pe", false, { start: 0, end: 100 });
+        const tooltip = option.tooltip.formatter([{ dataIndex: 0 }]);
+        expect(tooltip).toContain("TTM earnings / share: Unavailable");
+        expect(tooltip).toContain("Matching price and statement currencies are required.");
+        expect(tooltip).not.toContain("USD 15");
     });
 
     it("keeps the price chart available when valuation history is missing", () => {

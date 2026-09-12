@@ -27,6 +27,7 @@ const fixtures: Record<string, StockDataResponse> = process.env.VALUATION_QA_FIX
         const data = sample(interval);
         const history = makeValuationHistoryFixture(data);
         history.interval = interval as "1d" | "1wk" | "1mo";
+        history.bases[0].inputs = { eps: 0.000000123456, revenue: 1.25e9, book: 750e6, fcf: 125e6, ebitda: 250e6 };
         return [interval, {
             profile: { ticker: "TEST.US", name: "Test Company", currency: "USD", exchange: "NASDAQ", sector: "Technology", industry: "Software", description: "", last_updated: "2025-08-22" },
             historical_data: data, historical_financials: [], valuation_history: history,
@@ -76,6 +77,23 @@ test("historical multiples share the price timeline on desktop and mobile", asyn
         await page.setViewportSize({ width: originalViewport.width, height: Math.ceil(height) + 250 });
         await historyPanel.evaluate((node) => node.scrollIntoView({ block: "start" }));
         await historyPanel.screenshot({ path: testInfo.outputPath(`valuation-${theme}.png`), animations: "disabled", scale: "css" });
+        const canvas = chart.locator("canvas").first();
+        const canvasBox = (await canvas.boundingBox())!;
+        await canvas.hover({ position: { x: 12 + (canvasBox.width - 90) * 0.9, y: canvasBox.height * 0.78 } });
+        const denominator = chart.getByText(/^TTM earnings \/ share:/);
+        await expect(denominator).toBeVisible();
+        await expect(denominator).not.toContainText("Unavailable");
+        if (!process.env.VALUATION_QA_FIXTURE) {
+            await expect(denominator).toHaveText("TTM earnings / share: USD 0.000000123456 per share");
+        }
+        await expect(chart.getByText(/^TTM quarters:/)).toBeVisible();
+        const denominatorBox = (await denominator.boundingBox())!;
+        const chartBox = (await chart.boundingBox())!;
+        expect(denominatorBox.x).toBeGreaterThanOrEqual(chartBox.x);
+        expect(denominatorBox.x + denominatorBox.width).toBeLessThanOrEqual(chartBox.x + chartBox.width);
+        await historyPanel.screenshot({ path: testInfo.outputPath(`valuation-tooltip-${theme}.png`), animations: "disabled", scale: "css" });
+        await page.mouse.move(0, 0);
+        await expect(denominator).toBeHidden();
         await page.setViewportSize(originalViewport);
     }
     await panel.getByText("Calculation & data coverage", { exact: true }).click();
