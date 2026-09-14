@@ -15,6 +15,7 @@ class NotificationManager:
         title: str,
         content: str,
         channels: list[str] | None = None,
+        card_layout: str | None = None,
     ) -> bool:
         """
         Broadcast a message and report whether every requested channel accepted it.
@@ -25,7 +26,8 @@ class NotificationManager:
             notifier = cls._channels.get(channel)
             if notifier:
                 logger.info(f"Broadcasting to {channel}: {title}")
-                success = await notifier.send(title, content)
+                options = {"card_layout": card_layout} if card_layout else {}
+                success = await notifier.send(title, content, **options)
                 if not success:
                     logger.warning(f"Failed to broadcast to channel: {channel}")
                 return success

@@ -2581,6 +2581,11 @@ def test_deploy_waits_for_service_health_and_fails_closed():
     assert 'if [ "$attempt" -ge 60 ]' in script
     assert "docker compose logs --tail=200 backend worker frontend" in script
     assert "exit 1" in script
+    assert "backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=2" in script
+    assert script.index("create_backup(") < script.index("docker compose stop backend")
+    assert "docker compose exec -T backend alembic current" in script
+    assert "docker compose exec -T worker python -c" in script
+    assert "REPORT_RENDERER_VERSION" in script
 
 
 def test_screener_fundamental_refresh_selection_is_bounded(monkeypatch):

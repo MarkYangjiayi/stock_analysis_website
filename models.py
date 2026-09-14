@@ -328,6 +328,7 @@ class DailyReportRun(Base):
     renderer_version: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, index=True)
     source_results: Mapped[Optional[Any]] = mapped_column(JSON)
+    market_context: Mapped[Optional[Any]] = mapped_column(JSON)
     content: Mapped[str] = mapped_column(Text)
     notification_delivered: Mapped[bool] = mapped_column(Boolean, default=False)
     error_message: Mapped[Optional[str]] = mapped_column(Text)

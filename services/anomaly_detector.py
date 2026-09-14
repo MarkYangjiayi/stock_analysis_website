@@ -102,7 +102,7 @@ async def _analyze_candidate(
         if not sources:
             return {
                 **base_result,
-                "ai_analysis": "缺乏明确新闻催化剂，可能为资金面或技术面行为。",
+                "ai_analysis": "本次未检索到可用新闻，无法确认异动原因。",
                 "attribution_status": "no_news",
                 "news": [],
                 "top_news_links": [],

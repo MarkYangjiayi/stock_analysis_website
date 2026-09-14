@@ -71,7 +71,7 @@ async def _fetch_from_eodhd(
     params["api_token"] = EODHD_API_KEY
     params["fmt"] = "json"  # 强制要求 JSON 格式返回
 
-    url = f"{EODHD_BASE_URL}/{endpoint}/{ticker}"
+    url = f"{EODHD_BASE_URL}/{endpoint}" + (f"/{ticker}" if ticker else "")
     
     async def execute(http_client: httpx.AsyncClient) -> Optional[Any]:
         for attempt in range(1, MAX_RETRIES + 1):
@@ -331,6 +331,47 @@ async def get_bulk_realtime_prices(
     if isinstance(response_data, list):
         return response_data
     return []
+
+
+async def get_live_quotes(
+    tickers: list[str],
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[Dict[str, Any]]:
+    """Fetch up to 20 named delayed snapshots, including non-US instruments.
+
+    The provider charges per symbol, not per HTTP batch. A missing symbol is
+    deliberately not replaced with another instrument.
+    """
+    symbols = list(dict.fromkeys(tickers))
+    if not symbols:
+        return []
+    if len(symbols) > 20:
+        raise ValueError("Live quote batches must contain at most 20 symbols")
+    payload = await _fetch_from_eodhd(
+        "real-time", symbols[0],
+        params={"s": ",".join(symbols[1:])} if len(symbols) > 1 else {},
+        client=client,
+    )
+    if isinstance(payload, dict) and payload.get("code"):
+        return [payload]
+    return [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+
+
+async def get_report_calendar(
+    kind: str, from_date: str, to_date: str,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[list[dict]]:
+    """Bounded calendar window; an unavailable feed is distinct from no events."""
+    if kind not in {"economic", "earnings"}:
+        raise ValueError(f"Unsupported calendar: {kind}")
+    params = {"from": from_date, "to": to_date}
+    if kind == "economic":
+        params.update({"country": "US", "limit": 1000})
+        payload = await _fetch_from_eodhd("economic-events", "", params=params, client=client)
+    else:
+        payload = await _fetch_from_eodhd("calendar", "earnings", params=params, client=client)
+        payload = payload.get("earnings") if isinstance(payload, dict) else None
+    return payload if isinstance(payload, list) else None
 
 
 async def get_splits(

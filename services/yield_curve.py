@@ -354,6 +354,7 @@ async def get_yield_curve(
     *,
     now: Optional[datetime] = None,
     client: Optional[httpx.AsyncClient] = None,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     """Return official curve snapshots and history, with a resilient disk cache."""
     if period not in PERIOD_YEARS:
@@ -364,10 +365,10 @@ async def get_yield_curve(
 
     cache = await asyncio.to_thread(_read_cache)
     refresh_failed = False
-    if not _cache_is_fresh(cache, current_time):
+    if force_refresh or not _cache_is_fresh(cache, current_time):
         async with _refresh_lock:
             cache = await asyncio.to_thread(_read_cache)
-            if not _cache_is_fresh(cache, current_time):
+            if force_refresh or not _cache_is_fresh(cache, current_time):
                 try:
                     observations, provider_name = await fetch_treasury_observations(
                         current_time.date(), client=client

@@ -76,6 +76,11 @@ jobs:
             gzip -t images.tar.gz
             trap 'sudo rm -f images.tar.gz' EXIT
 
+            # Fail before downtime if a consistent, integrity-checked backup
+            # cannot be made. Keep deployment snapshots separate from weekly
+            # backups, retaining the two most recent deployment snapshots.
+            sudo docker compose exec -T backend python -c "from pathlib import Path; from core.config import settings; from scripts.backup_sqlite import create_backup; print(create_backup(backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=2))"
+
             # Keep the shared WARP service running, but release the application
             # containers and their old images before unpacking the new release.
             sudo docker compose stop backend worker frontend
@@ -99,4 +104,7 @@ jobs:
               fi
               sleep 3
             done
+            sudo docker compose exec -T backend alembic current
+            sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE)"
+            sudo docker compose ps
             sudo docker image prune -af

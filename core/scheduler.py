@@ -194,24 +194,24 @@ def start_scheduler():
         id="weekly_sqlite_backup",
         replace_existing=True,
     )
-    # 2. Morning Briefing: Mon-Fri 09:35 EST
+    # The delayed feed needs 15-20 minutes before the open is observable.
     scheduler.add_job(
         scheduled_morning_briefing,
         'cron',
         day_of_week='mon-fri',
-        hour=9,
-        minute=35,
+        hour=settings.DAILY_REPORT_MORNING_HOUR,
+        minute=settings.DAILY_REPORT_MORNING_MINUTE,
         id="morning_briefing",
         replace_existing=True
     )
     
-    # 3. Post Market Summary: Mon-Fri 16:05 EST
+    # Allow delayed quotes to reach the regular-session close.
     scheduler.add_job(
         scheduled_post_market_summary,
         'cron',
         day_of_week='mon-fri',
-        hour=16,
-        minute=5,
+        hour=settings.DAILY_REPORT_CLOSE_HOUR,
+        minute=settings.DAILY_REPORT_CLOSE_MINUTE,
         id="post_market_summary",
         replace_existing=True
     )

@@ -131,3 +131,23 @@ def test_yield_curve_route_and_unavailable_state(monkeypatch):
         response = client.get("/api/v1/yield-curve")
         assert response.status_code == 503
         assert response.json()["detail"] == "Treasury is offline"
+
+
+@pytest.mark.asyncio
+async def test_report_refresh_bypasses_fresh_morning_cache(monkeypatch):
+    cache = {"schema_version": 1, "fetched_at": "2026-09-14T14:00:00+00:00", "provider_name": "EODHD",
+             "observations": _payload()["observations"]}
+    calls = []
+    async def refresh(*args, **kwargs):
+        calls.append(True)
+        return [*cache["observations"], _observation("2026-09-14", 4, 4.5, 4.8, 5.1)], "EODHD"
+    monkeypatch.setattr("services.yield_curve._read_cache", lambda: cache)
+    monkeypatch.setattr("services.yield_curve._write_cache", lambda payload: None)
+    monkeypatch.setattr("services.yield_curve.fetch_treasury_observations", refresh)
+    now = datetime(2026, 9, 14, 20, 30, tzinfo=timezone.utc)
+    cached = await get_yield_curve(now=now)
+    assert cached["latest"]["date"] == "2026-09-11"
+    assert not calls
+    updated = await get_yield_curve(now=now, force_refresh=True)
+    assert updated["latest"]["date"] == "2026-09-14"
+    assert len(calls) == 1

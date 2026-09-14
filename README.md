@@ -45,7 +45,7 @@
     内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
     构建了企业级高可用推送路由，完美支持**飞书 (Lark) 富文本卡片**穿透。
-    *   **Scheduled Daily Reporter**: 依托 `APScheduler` 时钟锁死美东时区，在每个工作日开盘与收盘后，自动唤醒 AI 撰写大盘异动速递并投递至群聊。
+    *   **Scheduled Daily Reporter**: 美股交易日默认美东 10:00 / 16:30 生成并推送开盘、盘后报告，包含全球股票市场、外汇、商品/债券 ETF 代理、VIX/加密资产、日频美债收益率与 bp 变化、板块/已发布市场宽度、固定核心资产与自选股、事件日历、带新闻引用的个股异动，以及盘后相对早报的变化。逐项标注数据日期、延迟和缺失状态，并保存可重放证据。配置与本地预览见 [Daily Report v2](docs/daily_report_v2/README.md)。
     *   **Daily RSI Monitor**: 可选监控服务端 watchlist（或独立配置的一批股票），在日线 RSI(14) 进入超卖/超买区时汇总飞书提醒，并按股票与交易日去重。
     *   **Real-time WebSocket Monitor**: 独立 Worker 可选挂载盯盘 Daemon，避免多 Uvicorn worker 重复调度。直接接入 WebSocket 行情流，基于滑动时间窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）与告警冷却**。
 ---

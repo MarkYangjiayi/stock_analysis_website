@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +42,17 @@ class Settings(BaseSettings):
     
     # Notifications
     FEISHU_WEBHOOK_URL: str = ""
+
+    # Delayed global snapshots need time to include the open/close. All times
+    # below use America/New_York, including daylight-saving changes.
+    DAILY_REPORT_MORNING_HOUR: int = Field(default=10, ge=0, le=23)
+    DAILY_REPORT_MORNING_MINUTE: int = Field(default=0, ge=0, le=59)
+    DAILY_REPORT_CLOSE_HOUR: int = Field(default=16, ge=0, le=23)
+    DAILY_REPORT_CLOSE_MINUTE: int = Field(default=30, ge=0, le=59)
+    DAILY_REPORT_CORE_SYMBOLS: str = "AAPL.US,MSFT.US,NVDA.US,AMZN.US,0700.HK,9988.HK,2330.TW,ASML.AS"
+    DAILY_REPORT_INCLUDE_WATCHLIST: bool = True
+    DAILY_REPORT_WATCHLIST_LIMIT: int = Field(default=12, ge=0, le=30)
+    DAILY_REPORT_EVENTS_ENABLED: bool = True
 
     # Daily RSI(14) monitor. The personal watchlist is used when no explicit
     # comma-separated symbol list is configured.
