@@ -83,7 +83,15 @@ export function valuationChartOption(
             { type: "value", gridIndex: 2, position: "right", scale: true, axisLabel: { ...text, formatter: (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}×` }, splitLine: { lineStyle: { color: colors.grid, type: "dashed" } }, splitNumber: 3 },
         ],
         dataZoom: [
-            { id: "history-inside", type: "inside", xAxisIndex: [0, 1, 2], filterMode: "filter", ...zoom },
+            {
+                id: "history-inside",
+                type: "inside",
+                xAxisIndex: [0, 1, 2],
+                filterMode: "filter",
+                zoomOnMouseWheel: false,
+                moveOnMouseWheel: false,
+                ...zoom,
+            },
             { id: "history-slider", type: "slider", xAxisIndex: [0, 1, 2], filterMode: "filter", ...zoom, bottom: 4, height: 22, left: 12, right: 78, showDataShadow: false, borderColor: colors.grid, textStyle: text, fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.12)" },
         ],
         tooltip: {

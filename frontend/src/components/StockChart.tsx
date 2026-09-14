@@ -68,6 +68,13 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             crosshair: {
                 mode: CrosshairMode.Normal,
             },
+            handleScroll: {
+                mouseWheel: false,
+                vertTouchDrag: false,
+            },
+            handleScale: {
+                mouseWheel: false,
+            },
             timeScale: {
                 timeVisible: true,
                 borderColor: colors.grid,

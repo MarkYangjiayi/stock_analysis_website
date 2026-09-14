@@ -24,6 +24,11 @@ describe("StockValuationChart", () => {
         expect(option.yAxis[0].type).toBe("log");
         expect(option.axisPointer.link[0].xAxisIndex).toBe("all");
         expect(option.dataZoom.every((zoom) => zoom.xAxisIndex.join() === "0,1,2")).toBe(true);
+        expect(option.dataZoom[0]).toMatchObject({
+            type: "inside",
+            zoomOnMouseWheel: false,
+            moveOnMouseWheel: false,
+        });
         const series = option.series.find((item) => item.id === "multiple")!;
         expect(series).toMatchObject({ data: [20, null, 22], smooth: false, connectNulls: false });
         expect(option.xAxis.every((axis) => axis.data === option.xAxis[0].data)).toBe(true);

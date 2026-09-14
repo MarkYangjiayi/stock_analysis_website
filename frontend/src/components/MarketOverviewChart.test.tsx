@@ -17,6 +17,10 @@ vi.mock("echarts-for-react", () => ({
         const xAxes = option.xAxis as unknown[];
         const yAxes = option.yAxis as Array<{ min?: number; max?: number }>;
         const axisPointer = option.axisPointer as { link?: Array<{ xAxisIndex?: string }> };
+        const dataZoom = option.dataZoom as Array<{
+            zoomOnMouseWheel?: boolean;
+            moveOnMouseWheel?: boolean;
+        }>;
         const tooltip = option.tooltip as {
             formatter?: (params: Array<{ dataIndex: number }>) => string;
         };
@@ -28,6 +32,8 @@ vi.mock("echarts-for-react", () => ({
                 data-x-axis-count={xAxes.length}
                 data-breadth-range={`${yAxes[1].min}-${yAxes[1].max}`}
                 data-linked={axisPointer.link?.[0]?.xAxisIndex}
+                data-wheel-zoom={String(dataZoom[0].zoomOnMouseWheel)}
+                data-wheel-move={String(dataZoom[0].moveOnMouseWheel)}
                 data-tooltip={tooltip.formatter?.([{ dataIndex: 0 }]) || ""}
             />
         );
@@ -57,6 +63,8 @@ describe("MarketOverviewChart", () => {
         expect(chart).toHaveAttribute("data-x-axis-count", "3");
         expect(chart).toHaveAttribute("data-breadth-range", "0-100");
         expect(chart).toHaveAttribute("data-linked", "all");
+        expect(chart).toHaveAttribute("data-wheel-zoom", "false");
+        expect(chart).toHaveAttribute("data-wheel-move", "false");
     });
 
     it("adds SPY without replacing the fixed RSP/SPY proxy in absolute mode", () => {

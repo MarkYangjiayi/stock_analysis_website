@@ -78,6 +78,18 @@ const chartData = [{
 }];
 
 describe("FinancialTrendChart earnings-quality overlay", () => {
+    it("leaves mouse-wheel scrolling to the page", () => {
+        render(<FinancialTrendChart data={chartData} timePeriod="annual" onTimePeriodChange={vi.fn()} />);
+        const option = chartState.props?.option as {
+            dataZoom: Array<{ type: string; zoomOnMouseWheel?: boolean; moveOnMouseWheel?: boolean }>;
+        };
+        expect(option.dataZoom[0]).toMatchObject({
+            type: "inside",
+            zoomOnMouseWheel: false,
+            moveOnMouseWheel: false,
+        });
+    });
+
     it("keeps reported bars and only adds a normalized line after verification", () => {
         const { rerender } = render(<FinancialTrendChart data={chartData} timePeriod="annual" onTimePeriodChange={vi.fn()} selectedMetric="net_income" earningsQuality={earningsQuality(false)} />);
         let option = chartState.props?.option as { series: Array<{ name: string; data?: unknown[] }> };

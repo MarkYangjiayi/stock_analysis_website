@@ -294,7 +294,15 @@ export default function MarketOverviewChart({
                 }),
             ],
             dataZoom: [
-                { type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none", start: 0, end: 100 },
+                {
+                    type: "inside",
+                    xAxisIndex: [0, 1, 2],
+                    filterMode: "none",
+                    start: 0,
+                    end: 100,
+                    zoomOnMouseWheel: false,
+                    moveOnMouseWheel: false,
+                },
                 {
                     type: "slider",
                     xAxisIndex: [0, 1, 2],

@@ -300,7 +300,13 @@ export default function FinancialTrendChart({
             legend: { top: 0, textStyle: { color: textColor, fontWeight: "bold" } },
             grid: { left: "3%", right: "5%", bottom: 52, top: 54, containLabel: true },
             dataZoom: [
-                { type: "inside", startValue: Math.max(0, dates.length - 20), endValue: dates.length - 1 },
+                {
+                    type: "inside",
+                    startValue: Math.max(0, dates.length - 20),
+                    endValue: dates.length - 1,
+                    zoomOnMouseWheel: false,
+                    moveOnMouseWheel: false,
+                },
                 { type: "slider", bottom: 4, height: 24, startValue: Math.max(0, dates.length - 20), endValue: dates.length - 1, borderColor: gridColor, textStyle: { color: textColor }, fillerColor: "rgba(16,185,129,.16)" },
             ],
             xAxis: { type: "category", data: dates, axisLabel: { color: textColor }, axisLine: { lineStyle: { color: gridColor } } },
