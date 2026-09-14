@@ -10,7 +10,7 @@ const NAV_LINKS = [
     { name: "Analysis", path: "/" },
     { name: "Screener", path: "/screener" },
     { name: "Anomalies", path: "/anomalies" },
-    { name: "Market", path: "/market", aliases: ["/rrg"] },
+    { name: "Market", path: "/market", aliases: ["/rrg", "/market/yield-curve"] },
     { name: "Factor Lab", path: "/research" },
 ];
 

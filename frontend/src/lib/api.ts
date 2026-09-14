@@ -828,6 +828,36 @@ export interface QuantCoverage {
 
 export type MarketUniverse = "SP500" | "RUSSELL2000" | "SP500_RUSSELL2000";
 export type MarketPeriod = "3m" | "6m" | "1y";
+export type YieldCurvePeriod = "1y" | "3y" | "5y";
+
+export interface TreasuryYieldObservation {
+    date: string;
+    yields: Record<string, number | null>;
+}
+
+export interface TreasuryYieldCurveResponse {
+    meta: {
+        period: YieldCurvePeriod;
+        as_of_date: string;
+        fetched_at: string;
+        source_name: string;
+        provider_name: string;
+        source_url: string;
+        stale: boolean;
+        warnings: string[];
+    };
+    maturities: Array<{
+        key: string;
+        label: string;
+        years: number;
+    }>;
+    latest: TreasuryYieldObservation;
+    snapshots: Array<TreasuryYieldObservation & {
+        key: string;
+        label: string;
+    }>;
+    observations: TreasuryYieldObservation[];
+}
 
 export interface MarketOverviewResponse {
     meta: {
@@ -1163,6 +1193,15 @@ export const fetchMarketOverview = (
     `/api/v1/market-overview?universe=${encodeURIComponent(universe)}&period=${encodeURIComponent(period)}`,
     { signal },
     90_000,
+);
+
+export const fetchTreasuryYieldCurve = (
+    period: YieldCurvePeriod,
+    signal?: AbortSignal,
+) => apiRequest<TreasuryYieldCurveResponse>(
+    `/api/v1/yield-curve?period=${encodeURIComponent(period)}`,
+    { signal },
+    60_000,
 );
 
 export const fetchStockNews = (ticker: string, signal?: AbortSignal) =>

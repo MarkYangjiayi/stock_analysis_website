@@ -1,10 +1,11 @@
 import Link from "next/link";
 
-type MarketTab = "overview" | "rotation";
+type MarketTab = "overview" | "rotation" | "rates";
 
 const TABS: Array<{ id: MarketTab; href: string; label: string }> = [
     { id: "overview", href: "/market", label: "Overview" },
     { id: "rotation", href: "/rrg", label: "Rotation" },
+    { id: "rates", href: "/market/yield-curve", label: "Yield Curve" },
 ];
 
 export default function MarketTabs({ active }: { active: MarketTab }) {

@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     VALUATION_TERMINAL_GROWTH_RATE: float = 0.025
     VALUATION_MARKET_ASSUMPTIONS_AS_OF: str = "2026-09-09"
 
+    # Official U.S. Treasury par yield curve. Public reads share a disk cache so
+    # the upstream site is not contacted for every page view.
+    TREASURY_YIELD_CACHE_HOURS: int = 12
+
     # DeepSeek API 配置
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"

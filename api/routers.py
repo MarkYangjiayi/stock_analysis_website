@@ -20,6 +20,7 @@ from api.schemas import (
     FinancialFlowResponse,
     MarketSnapshotResponse,
     MarketOverviewResponse,
+    TreasuryYieldCurveResponse,
     PeerMultiplesResponse,
     StockDataResponse,
     ValuationHistoryResponse,
@@ -87,6 +88,7 @@ from services.market_breadth import (
     MarketOverviewUniverseUnavailable,
     get_market_overview,
 )
+from services.yield_curve import YieldCurveUnavailable, get_yield_curve
 from services.stock_snapshot import get_market_snapshot
 from services.similar_stocks import get_similar_stocks
 from api.schemas import SimilarStocksResponse
@@ -793,6 +795,20 @@ async def market_overview(
     except MarketOverviewUniverseUnavailable as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except MarketOverviewUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/yield-curve",
+    response_model=TreasuryYieldCurveResponse,
+    tags=["Market Analysis Read"],
+)
+async def treasury_yield_curve(
+    period: Literal["1y", "3y", "5y"] = "1y",
+):
+    try:
+        return await get_yield_curve(period)
+    except YieldCurveUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 

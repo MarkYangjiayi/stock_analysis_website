@@ -454,6 +454,41 @@ class MarketOverviewResponse(BaseModel):
     breadth: MarketBreadthSeries
 
 
+class TreasuryYieldCurveMeta(BaseModel):
+    period: Literal["1y", "3y", "5y"]
+    as_of_date: date
+    fetched_at: datetime
+    source_name: str
+    provider_name: str
+    source_url: str
+    stale: bool
+    warnings: List[str] = Field(default_factory=list)
+
+
+class TreasuryMaturity(BaseModel):
+    key: str
+    label: str
+    years: float
+
+
+class TreasuryYieldObservation(BaseModel):
+    date: date
+    yields: dict[str, Optional[float]]
+
+
+class TreasuryYieldSnapshot(TreasuryYieldObservation):
+    key: str
+    label: str
+
+
+class TreasuryYieldCurveResponse(BaseModel):
+    meta: TreasuryYieldCurveMeta
+    maturities: List[TreasuryMaturity]
+    latest: TreasuryYieldObservation
+    snapshots: List[TreasuryYieldSnapshot]
+    observations: List[TreasuryYieldObservation]
+
+
 class FactorComputeRequest(BaseModel):
     as_of_date: date
 
