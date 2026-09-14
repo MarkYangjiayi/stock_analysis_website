@@ -49,5 +49,7 @@ export default function BacktestEquityChart({ data }: { data: EquityCurvePoint[]
         };
     }, [data, resolvedTheme]);
 
-    return <ReactECharts option={option} style={{ height: 360, width: "100%" }} />;
+    return <div onWheelCapture={(event) => event.stopPropagation()}>
+        <ReactECharts option={option} style={{ height: 360, width: "100%" }} />
+    </div>;
 }

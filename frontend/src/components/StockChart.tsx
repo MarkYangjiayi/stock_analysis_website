@@ -263,7 +263,10 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     }, [data]);
 
     return (
-        <div className={`relative w-full overflow-hidden bg-[var(--surface)] ${embedded ? "" : "rounded-xl border"}`}>
+        <div
+            className={`relative w-full overflow-hidden bg-[var(--surface)] ${embedded ? "" : "rounded-xl border"}`}
+            onWheelCapture={(event) => event.stopPropagation()}
+        >
             {/* Interval Switcher UI */}
             {onIntervalChange && (
                 <div className="absolute left-3 top-3 z-20 flex gap-1 rounded-lg border bg-white/95 p-1 shadow-sm backdrop-blur-md dark:bg-slate-900/95">

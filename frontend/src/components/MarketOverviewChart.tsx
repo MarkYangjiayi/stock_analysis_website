@@ -320,7 +320,7 @@ export default function MarketOverviewChart({
         };
     }, [dark, data, lowerMetric, trendMode]);
 
-    return (
+    return <div onWheelCapture={(event) => event.stopPropagation()}>
         <ReactECharts
             option={option}
             notMerge
@@ -328,5 +328,5 @@ export default function MarketOverviewChart({
             style={{ width: "100%", height: "940px" }}
             opts={{ renderer: "canvas" }}
         />
-    );
+    </div>;
 }

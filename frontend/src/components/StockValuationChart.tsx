@@ -169,7 +169,12 @@ export default function StockValuationChart({ data, history, interval, onInterva
             <div><p className="text-[var(--text-muted)]">Coverage</p><p className="mt-1 font-mono text-lg font-bold">{metadata?.total_points ? `${Math.round(metadata.valid_points / metadata.total_points * 100)}%` : "—"}</p><p className="text-[10px] text-[var(--text-muted)]">{metadata ? `${metadata.valid_points.toLocaleString()} / ${metadata.total_points.toLocaleString()} available observations` : "No observations"}</p></div>
         </div>
         {(!metadata || metadata.latest_reason) && <p role="status" className="flex gap-2 border-b bg-[var(--surface-subtle)] px-4 py-3 text-xs text-[var(--text-muted)]"><Info size={15} className="shrink-0" />{metadata?.latest_reason || "Historical multiples are unavailable. Refresh stock data to load eligible quarterly statements."}</p>}
-        <div className={`relative h-[600px] w-full sm:h-[660px] ${isLoading ? "opacity-50" : ""}`} role="img" aria-label={`Linked stock price, volume and ${selectedLabel} chart`}>
+        <div
+            className={`relative h-[600px] w-full sm:h-[660px] ${isLoading ? "opacity-50" : ""}`}
+            role="img"
+            aria-label={`Linked stock price, volume and ${selectedLabel} chart`}
+            onWheelCapture={(event) => event.stopPropagation()}
+        >
             <ReactECharts option={option} onEvents={chartEvents} style={{ width: "100%", height: "100%" }} />
         </div>
         <div className="border-t px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">

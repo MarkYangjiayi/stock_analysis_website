@@ -57,7 +57,7 @@ test("historical multiples share the price timeline on desktop and mobile", asyn
     await pageScroller.evaluate((node) => { node.scrollTop = 0; });
     await expect.poll(() => pageScroller.evaluate((node) => node.scrollTop)).toBe(0);
     const scrollTopBeforeWheel = await pageScroller.evaluate((node) => node.scrollTop);
-    await chart.hover({ position: { x: 120, y: 20 } });
+    await chart.hover({ position: { x: 120, y: 180 } });
     await page.mouse.wheel(0, 300);
     await expect.poll(() => pageScroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(scrollTopBeforeWheel);
     await expect(panel.getByRole("combobox", { name: "Historical valuation multiple" }).locator("option")).toHaveCount(6);

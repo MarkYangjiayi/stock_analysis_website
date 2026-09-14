@@ -188,7 +188,11 @@ function PeerBars({ data }: { data: PeerMultiplesResponse }) {
     }, [dark, data, members]);
 
     return (
-        <div className="overflow-x-auto rounded-xl border" aria-label="Representative peer multiples">
+        <div
+            className="overflow-x-auto rounded-xl border"
+            aria-label="Representative peer multiples"
+            onWheelCapture={(event) => event.stopPropagation()}
+        >
             <div className="min-w-[640px] p-2">
                 <ReactECharts option={option} style={{ height: Math.max(360, members.length * 42 + 76), width: "100%" }} />
             </div>

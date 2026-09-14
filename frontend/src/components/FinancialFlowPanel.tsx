@@ -294,7 +294,7 @@ export default function FinancialFlowPanel({
                         ))}
 
                         {data.chart_available && data.links.length ? (
-                            <div className="mt-5 overflow-x-auto">
+                            <div className="mt-5 overflow-x-auto" onWheelCapture={(event) => event.stopPropagation()}>
                                 <div className="mx-auto min-w-[960px] max-w-[1480px]"><ReactECharts option={option} style={{ height: sankeyLayout.chartHeight }} opts={{ renderer: "canvas" }} /></div>
                             </div>
                         ) : !data.unsupported_reason && (

@@ -344,7 +344,7 @@ export default function FinancialTrendChart({
                     </select>
                 </div>
             </header>
-            <div className="h-[420px] p-2 sm:h-[470px] sm:p-4">
+            <div className="h-[420px] p-2 sm:h-[470px] sm:p-4" onWheelCapture={(event) => event.stopPropagation()}>
                 <ReactECharts option={options} onEvents={chartEvents} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
             </div>
             {timePeriod === "ttm" && dataQualityWarnings.length > 0 && <div className="mx-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"><AlertTriangle className="mr-1.5 inline" size={14} /><strong>Reported data-quality warning:</strong> {dataQualityWarnings.map((warning) => warning.message).join(" ")}</div>}

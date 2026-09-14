@@ -345,7 +345,10 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
     }
 
     return (
-        <div className="relative h-[520px] w-full rounded-xl bg-white p-2 dark:bg-[#121920] sm:h-[600px] sm:p-4">
+        <div
+            className="relative h-[520px] w-full rounded-xl bg-white p-2 dark:bg-[#121920] sm:h-[600px] sm:p-4"
+            onWheelCapture={(event) => event.stopPropagation()}
+        >
             <ReactECharts
                 option={option}
                 style={{ height: '100%', width: '100%' }}
