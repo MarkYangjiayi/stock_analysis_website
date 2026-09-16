@@ -23,3 +23,11 @@
 行情/卡片/原始响应/业务回执JSON均保留在本地此目录，不提交含供应商完整响应的JSON。当前与历史回放证据没有被混为同一报告。
 
 版本为`cross-asset-v2.2`，无新增迁移、密钥或定时任务；正式触发仍为纽约10:00/16:30。此文件记录发布前验证；是否已部署以对应GitHub Actions运行和生产worker版本输出为准。
+
+## 实际发布与恢复
+
+- 应用提交`eb240b7`的[首次流水线](https://github.com/MarkYangjiayi/stock_analysis_website/actions/runs/35101841100)中，CI 672项通过，前端检查与构建成功。备份于13:44:05 UTC完成：`/app/data/backups/predeploy/quantify_local-20260916T133535Z.db`。两份新镜像均成功加载。
+- 服务器步骤原有10分钟超时在容器启动过程中耗尽，导致前端/worker尚未启动完整；期间首页出现502，API随后先行恢复。未跳过或取消备份。
+- 工作流修复提交`2377186`将常规部署超时增加至30分钟，并增加只恢复已加载镜像的手动入口。修复提交使用一次性skip-ci避免重新构建/再次停服；应用代码已通过上述CI。YAML、shell语法、备份先于停服的顺序，以及恢复流程不删镜像/不停服的约束均已检查。
+- [恢复运行](https://github.com/MarkYangjiayi/stock_analysis_website/actions/runs/35104224334)成功（恢复job耗时19秒）。13:48 UTC确认API内部ready和前端健康通过，backend healthy，frontend及worker running；迁移`0020_daily_report_market_context (head)`，worker输出`cross-asset-v2.2`及纽约调度`10 0 16 30`。
+- 恢复后外部首页和`/api/market/anomalies`均返回200。此轮没有补发正式日报；下一次原有定时触发使用新版。
