@@ -114,14 +114,14 @@ async def prepare(case, directory):
             response.raise_for_status()
             scan = response.json()
         if scan.get("status") == "completed":
-            keys = ("ticker", "date", "quote_timestamp", "price_change", "attribution_status", "ai_analysis", "news")
+            keys = ("ticker", "company_name", "date", "quote_timestamp", "price_change", "attribution_status", "ai_analysis", "news")
             anomalies = [{k: row.get(k) for k in keys} for row in scan.get("results", []) if row.get("date") == context["report_date"]]
         notice += f"个股异动复用生产已保存扫描 #{scan.get('id')}（最晚报价 {scan.get('quote_as_of')}），不是本次重新扫描，不能作为当前涨跌。"
         scan = {k: scan.get(k) for k in ("id", "status", "trigger", "quote_as_of", "finished_at")}
     context.setdefault("warnings", []).append(notice)
     label = {"morning": "开盘模板·真实采集", "post": "盘后模板·盘中验收", "degraded": "异常分支·人为故障注入"}[case]
     title = f"🧪 Quantify QA {directory.name}｜{label}"
-    content = f"**测试卡片，请勿作为正式报送或交易依据**\n{notice}\n\n" + render_daily_report(anomalies, report_type=report_type, market_context=context)
+    content = "**测试卡片，请勿作为正式报送或交易依据**\n\n" + render_daily_report(anomalies, report_type=report_type, market_context=context)
     if case == "degraded":
         for expected in ("数据不可用", "验收注入过期", "美债曲线暂不可用", "日历暂不可用", "归因引用无法与已保存新闻匹配"):
             assert expected in content, expected
@@ -146,7 +146,7 @@ async def main(args):
             context = deepcopy(original["market_context"])
             context["warnings"] = [warning for warning in context.get("warnings", []) if not warning.startswith("手动验收，")]
             context["warnings"].append("历史回放验收：仅使用已保存数据，不是当前行情或正式定时报送。")
-            title = f"Quantify QA 修正版历史回放｜{args.case}"
+            title = f"Quantify QA {REPORT_RENDERER_VERSION}｜历史回放·{args.case}"
             content = render_daily_report(original["anomalies"], report_type=original["report_type"], market_context=context)
             card = build_daily_report_card(title, content)
             save(path, {"title": title, "content": content, "card": card, "renderer_version": REPORT_RENDERER_VERSION,

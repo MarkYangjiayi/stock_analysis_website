@@ -5,7 +5,7 @@ import pytest
 
 from services import ai_assistant, daily_reporter
 from services.notifications.feishu_bot import FeishuNotifier
-from services.notifications.report_card import build_daily_report_card
+from services.notifications.report_card import _color_section, build_daily_report_card
 from services.report_renderer import value
 
 
@@ -74,7 +74,7 @@ def test_report_places_quality_upfront_and_breaks_stock_news_from_quote_line():
 
 
 def test_headline_markdown_and_mention_are_not_executable():
-    row = {"news": [{"title": "<at id=all></at> **Fake** [link](x)", "link": "https://example.com/a(b)"}]}
+    row = {"ticker": "TEST.US", "news": [{"title": "TEST <at id=all></at> **Fake** [link](x)", "link": "https://example.com/a(b)"}]}
     text = daily_reporter._grounded_analysis(row)
     assert "<at " not in text and "**Fake**" not in text
     assert "a%28b%29" in text
@@ -127,6 +127,87 @@ def test_card_is_bounded_grouped_and_keeps_all_details_without_callbacks():
     for expected in ("SPY 100.00", "AAPL 200.00", "报价 09-14 16:00 EDT", "https://example.com/news", "微降", "日历暂不可用", "https://example.com/quotes"):
         assert expected in encoded
     assert "callback" not in encoded and "behaviors" not in encoded
+
+
+@pytest.mark.parametrize("move,color", [("+1.25%", "green"), ("-2.50%", "red"),
+    ("微升（不足 0.01%）", "green"), ("微降（不足 0.01%）", "red"),
+    ("+0.00%", "grey"), ("-0.00%", "grey")])
+def test_card_colors_only_changes_and_keeps_the_exact_signed_text(move, color):
+    body = f"- 黄金（GLD.US）：100.00 USD / {move}；09-14 20:00 UTC"
+    colored = _color_section("贵金属（ETF代理）", body)
+    assert f"<font color='{color}'>{move}</font>" in colored
+    assert "100.00 USD" in colored
+    assert "<font color='green'>100.00" not in colored
+
+
+def test_news_calendar_links_and_rate_levels_are_not_colored():
+    news = "  新闻线索：销售 +20.00% [1](https://example.com/+20.00%)。"
+    stock = "- **TEST -5.00%** · 报价 09-14 16:00 EDT<br>\n" + news
+    assert "**TEST <font color='red'>-5.00%</font>**" in _color_section("个股异动与新闻线索", stock)
+    assert _color_section("个股异动与新闻线索", stock).endswith(news)
+    for heading in ("今明交易日关注", "数据提示", "未知章节"):
+        assert _color_section(heading, "- 预期 +3.00%") == "- 预期 +3.00%"
+    assert _color_section("核心变化", "- [收益 +3.00%](https://example.com/+3.00%)") == "- [收益 +3.00%](https://example.com/+3.00%)"
+    rates = _color_section("美债收益率（日频）", "- 2Y：4.00% / +2.00 bp\n- 10Y−2Y：+40.00 bp；变化 -1.00 bp")
+    assert "4.00% / <font color='green'>+2.00 bp</font>" in rates
+    assert "10Y−2Y：+40.00 bp；变化 <font color='red'>-1.00 bp</font>" in rates
+
+
+def test_card_has_color_legend_neutral_zero_and_plain_audit_text():
+    plain = sample_report()
+    card = build_daily_report_card("Quantify", plain)
+    encoded = json.dumps(card, ensure_ascii=False)
+    assert "<font color='green'>+1.00%</font>" in encoded
+    assert "<font color='red'>微降（不足 0.01%）</font>" in encoded
+    assert "上涨 +" in encoded and "下跌 −" in encoded
+    assert "贵金属 / BTC" in encoded
+    assert "<font" not in plain and plain == sample_report()
+    assert _color_section("核心变化", "- SPY 0.00%；BTC 涨跌未知") == "- SPY 0.00%；BTC 涨跌未知"
+
+
+def test_empty_anomaly_result_does_not_create_an_empty_card_panel():
+    report = daily_reporter.render_daily_report([], report_type="morning_briefing", market_context=CONTEXT)
+    card = build_daily_report_card("Quantify", report)
+    elements = card["body"]["elements"]
+    assert "个股异动：无可展示结果" in elements[1]["content"]
+    assert not any("个股异动" in element.get("header", {}).get("title", {}).get("content", "") for element in elements)
+
+
+def test_repeated_stock_causality_notice_and_duplicate_headlines_are_deduplicated():
+    news = [{"title": "AAA BBB Same report", "link": "https://example.com/news"}] * 2
+    rows = [{"ticker": f"{ticker}.US", "price_change": -5, "news": news} for ticker in ("AAA", "BBB")]
+    report = daily_reporter.render_daily_report(rows, report_type="morning_briefing", market_context=CONTEXT)
+    assert report.count("尚未验证为此次涨跌原因") == 1
+    assert report.count("Same report") == 2  # Once per stock, not twice per stock.
+    assert report.count("https://example.com/news") == 2
+
+
+@pytest.mark.parametrize("ticker,name,title,expected", [
+    ("FDS.US", "FactSet Research Systems Inc", "Enova Withdraws Regulatory Applications", False),
+    ("FDS.US", "FactSet Research Systems Inc", "FactSet reports earnings", True),
+    ("VAL.US", "Valaris Ltd", "/C O R R E C T I O N -- Crock-Pot/", False),
+    ("VAL.US", "Valaris Ltd", "Offshore stocks rally: Valaris rises 6%", True),
+    ("PYPL.US", "PayPal Holdings Inc", "Stripe and Advent abandon PayPal pursuit", True),
+    ("ON.US", "ON Semiconductor", "ON THE MARKET TODAY", False),
+    ("ON.US", "ON Semiconductor", "Earnings for (ON)", True),
+    ("ABC.US", None, "ABC earnings", True),
+    ("ABC.US", None, "General market outlook", False),
+    ("UAL.US", "United Holdings Inc", "United States markets rally", False),
+])
+def test_saved_company_identity_gates_headlines(ticker, name, title, expected):
+    assert daily_reporter._headline_mentions_company(title, {"ticker": ticker, "company_name": name}) is expected
+
+
+def test_irrelevant_cited_headline_does_not_crowd_out_related_saved_headline():
+    row = {"ticker": "VAL.US", "company_name": "Valaris Ltd", "ai_analysis": "原因[1]",
+           "news": [{"title": "Crock-Pot correction", "link": "https://example.com/1"},
+                    {"title": "Valaris rises", "link": "https://example.com/2"}]}
+    rendered = daily_reporter._grounded_analysis(row)
+    assert "Crock-Pot" not in rendered
+    assert "Valaris rises [2](https://example.com/2)" in rendered
+    assert len(row["news"]) == 2  # Raw evidence is not mutated.
+    row["news"].pop()
+    assert "不展示关联不明条目" in daily_reporter._grounded_analysis(row)
 
 
 @pytest.mark.asyncio

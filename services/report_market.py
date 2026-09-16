@@ -47,6 +47,15 @@ class Instrument:
     proxy: str | None = None
 
 
+PRECIOUS_METALS = (
+    Instrument("GLD.US", "黄金", "commodity", proxy="GLD ETF"),
+    Instrument("SLV.US", "白银", "commodity", proxy="SLV ETF"),
+    Instrument("PPLT.US", "铂金", "commodity", proxy="PPLT ETF"),
+    Instrument("PALL.US", "钯金", "commodity", proxy="PALL ETF"),
+)
+PRECIOUS_METAL_TICKERS = frozenset(asset.ticker for asset in PRECIOUS_METALS)
+
+
 MARKET_INSTRUMENTS = (
     Instrument("SPY.US", "标普500", "equity", proxy="SPY ETF"),
     Instrument("QQQ.US", "纳斯达克100", "equity", proxy="QQQ ETF"),
@@ -61,15 +70,15 @@ MARKET_INSTRUMENTS = (
     Instrument("USDCNH.FOREX", "USD/CNH", "fx", "CNH/USD", None),
     Instrument("USDJPY.FOREX", "USD/JPY", "fx", "JPY/USD", None),
     Instrument("EURUSD.FOREX", "EUR/USD", "fx", "USD/EUR", None),
-    Instrument("GLD.US", "黄金", "commodity", proxy="GLD ETF"),
+    *PRECIOUS_METALS,
     Instrument("USO.US", "WTI原油", "commodity", proxy="USO期货ETF"),
     Instrument("CPER.US", "铜", "commodity", proxy="CPER期货ETF"),
     Instrument("TLT.US", "长期美债价格", "credit", proxy="TLT ETF"),
     Instrument("HYG.US", "高收益公司债价格", "credit", proxy="HYG ETF，非信用利差"),
     Instrument("LQD.US", "投资级公司债价格", "credit", proxy="LQD ETF，非信用利差"),
     Instrument("VIX.INDX", "VIX", "risk", "点"),
-    Instrument("BTC-USD.CC", "比特币", "risk", calendar=None),
-    Instrument("ETH-USD.CC", "以太坊", "risk", calendar=None),
+    Instrument("BTC-USD.CC", "BTC 比特币", "risk", calendar=None),
+    Instrument("ETH-USD.CC", "ETH 以太坊", "risk", calendar=None),
     Instrument("RSP.US", "标普等权", "structure", proxy="RSP ETF"),
 )
 CORE_NAMES = {
@@ -427,7 +436,9 @@ async def collect_events(assets: list[Instrument], now: datetime) -> dict:
                            "session": row.get("before_after_market"), "source_url": EARNINGS_SOURCE})
     return {"from": today.isoformat(), "to": next_day.isoformat(),
             "economic_available": isinstance(economic, list), "earnings_available": isinstance(earnings, list),
-            "items": sorted(events, key=lambda item: item["date"])[:12], "total": len(events),
+            # Retain bounded evidence before presentation grouping. Truncating
+            # at 12 here let repeated projections crowd out the next session.
+            "items": sorted(events, key=lambda item: item["date"])[:100], "total": len(events),
             "timezone_note": "经济日历时间按供应商原文展示，接口未提供时区；财报日期按上市市场。"}
 
 

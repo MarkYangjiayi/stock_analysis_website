@@ -20,7 +20,7 @@ from services.report_renderer import compact, instant, number, quality_summary, 
 
 
 logger = logging.getLogger(__name__)
-REPORT_RENDERER_VERSION = "cross-asset-v2.1"
+REPORT_RENDERER_VERSION = "cross-asset-v2.2"
 _CITATION_PATTERN = re.compile(r"\[(\d+)]")
 _NO_CATALYST = "本次未检索到可用新闻，无法确认异动原因。"
 _INVALID_CITATIONS = "归因引用无法与已保存新闻匹配，本次仅展示行情异动。"
@@ -76,6 +76,34 @@ def _source_links(news: Any) -> dict[int, str]:
     return links
 
 
+def _headline_mentions_company(title: str, anomaly: dict[str, Any]) -> bool:
+    """Conservative display gate, not proof of relevance or price causality.
+
+    Use only the saved company identity. Do not infer aliases from the article
+    or a provider's symbol tags (which also include sector peers/data vendors).
+    """
+    ticker = _display_ticker(anomaly.get("ticker"))
+    if ticker:
+        symbol = re.escape(ticker)
+        # Short symbols such as A/IT/ON can be ordinary words in headlines.
+        pattern = (rf"(?:\${symbol}\b|\({symbol}\)|(?:NYSE|NASDAQ):\s*{symbol}\b)" if len(ticker) <= 2
+                   else rf"(?<![A-Za-z0-9]){symbol}(?![A-Za-z0-9])")
+        if re.search(pattern, title):
+            return True
+    words = re.findall(r"[a-z0-9]+", str(anomaly.get("company_name") or "").casefold())
+    if words[:1] == ["the"]:
+        words.pop(0)
+    suffixes = {"inc", "incorporated", "corp", "corporation", "co", "company", "ltd", "limited", "plc",
+                "holdings", "holding", "group", "technologies", "technology", "systems", "solutions", "enterprise", "research"}
+    while words and words[-1] in suffixes:
+        words.pop()
+    # Broad adjectives alone are not sufficiently distinctive company names.
+    if not words or (len(words) == 1 and words[0] in {"american", "united", "general", "national", "international", "global", "first"}):
+        return False
+    normalized_title = " " + " ".join(re.findall(r"[a-z0-9]+", title.casefold())) + " "
+    return " " + " ".join(words) + " " in normalized_title
+
+
 def _grounded_analysis(anomaly: dict[str, Any]) -> str:
     status = _compact_text(anomaly.get("attribution_status"))
     analysis = _compact_text(anomaly.get("ai_analysis"))
@@ -95,14 +123,24 @@ def _grounded_analysis(anomaly: dict[str, Any]) -> str:
     # A valid citation only proves the article exists, not that the model's
     # causal claim follows from it. Render the saved headline evidence instead
     # of laundering old/free-form model conclusions as verified facts.
-    indices = sorted(citation_numbers) if citation_numbers else list(links)
-    headlines = []
+    indices = list(links)
+    headlines, seen = [], set()
     news = anomaly.get("news", [])
-    for index in indices[:3]:
+    for index in indices:
         title = compact(news[index - 1].get("title")) or "标题未提供"
+        if not _headline_mentions_company(title, anomaly):
+            continue
+        identity = (title.casefold(), links[index])
+        if identity in seen:
+            continue
+        seen.add(identity)
         title = title[:120] + ("…" if len(title) > 120 else "")
         title = re.sub(r"([\\`*_\[\]()!~])", r"\\\1", title)
         headlines.append(f"{title} [{index}]({links[index]})")
+        if len(headlines) == 3:
+            break
+    if not headlines:
+        return "未找到标题明确提及该公司的新闻；不展示关联不明条目。"
     return "新闻线索（原标题）：" + "；".join(headlines) + "。关联判断：尚未验证为此次涨跌原因。"
 
 
@@ -168,19 +206,21 @@ def render_daily_report(
     lines.extend(["**个股异动与新闻线索**", ""])
     if not anomalies:
         lines.append("- 本次扫描没有可展示的个股异动；不据此判断整体市场平稳。")
+    else:
+        lines.append("新闻原标题仅为线索，尚未验证为此次涨跌原因。")
     for anomaly in anomalies:
         ticker = _display_ticker(anomaly.get("ticker")) or "UNKNOWN"
         move = _format_move(anomaly.get("price_change"))
+        news = _grounded_analysis(anomaly).removesuffix("。关联判断：尚未验证为此次涨跌原因。")
+        news = news.replace(_NO_CATALYST, "本次未检索到可用新闻。")
         lines.append(
             f"- **{ticker} {move}** · {anomaly_observation(anomaly, market_context)[0]}<br>\n"
-            f"  {_grounded_analysis(anomaly)}"
+            f"  {news}"
         )
     if market_context:
         lines.extend(render_events_and_quality(market_context))
-    lines.extend([
-        "",
-        "说明：新闻标题仅为已保存线索，不证明涨跌因果；不推测资金行为，也不生成交易建议。",
-    ])
+    if not market_context:
+        lines.extend(["", "说明：不推测资金行为，也不生成交易建议。"])
     return "\n".join(lines)
 
 

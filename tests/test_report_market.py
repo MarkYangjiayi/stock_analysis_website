@@ -5,11 +5,29 @@ import pytest
 
 from services import eodhd_client, report_market as market
 from services.daily_reporter import render_daily_report
-from services.report_renderer import morning_comparison, render_market_sections
+from services.report_renderer import grouped_events, morning_comparison, quality_summary, quote_line, render_events_and_quality, render_market_sections
 
 
 NOW = datetime(2026, 9, 14, 14, 0, tzinfo=timezone.utc)  # Monday 10:00 EDT
 SPY = market.MARKET_INSTRUMENTS[0]
+
+
+@pytest.mark.parametrize("observed,display", [("2026-09-14", True), ("2026-09-07", True),
+    ("2026-09-06", False), ("2026-08-06", False), ("2026-09-15", False), (None, False), ("invalid", False)])
+def test_old_or_unverifiable_breadth_is_not_repeated_as_useful_context(observed, display):
+    breadth = {"as_of": observed, "universe": "S&P 500", "advances": 321, "declines": 100, "unchanged": 10,
+               "coverage_pct": 99, "pct_above_ma20": 80, "pct_above_ma50": 70, "pct_above_ma200": 60}
+    context = {"report_date": "2026-09-14", "quotes": [], "breadth": breadth}
+    detail = "\n".join(render_market_sections(context, "morning_briefing"))
+    notice = "\n".join(quality_summary(context))
+    assert ("涨 321" in detail) is display
+    assert ("不展示" in notice) is not display
+    assert context["breadth"] == breadth
+
+
+def test_watchlist_ticker_is_not_repeated_as_its_own_name():
+    row = {"name": "MELI.US", "ticker": "MELI.US", "price": None}
+    assert quote_line(row, "morning_briefing") == "- MELI.US：数据不可用"
 
 
 def quote(asset=SPY, *, when=NOW - timedelta(minutes=15), close=102, previous=100, opens=101):
@@ -191,6 +209,114 @@ def test_stale_quotes_are_excluded_from_highlights():
     lines = render_market_sections({"quotes": [row]}, "morning_briefing")
     assert "当前交易日有效报价不足" in lines[2]
     assert "899.00%" not in "\n".join(lines[:5])
+
+
+@pytest.mark.asyncio
+async def test_default_pool_includes_four_metals_and_one_btc_without_duplicates(monkeypatch):
+    monkeypatch.setattr(market.settings, "DAILY_REPORT_INCLUDE_WATCHLIST", False)
+    monkeypatch.setattr(market.settings, "DAILY_REPORT_CORE_SYMBOLS", "AAPL.US,MSFT.US,NVDA.US,AMZN.US,0700.HK,9988.HK,2330.TW,ASML.AS")
+    assets, warnings = await market.report_instruments()
+    tickers = [asset.ticker for asset in assets]
+    assert len(tickers) == len(set(tickers)) == 45
+    assert {"GLD.US", "SLV.US", "PPLT.US", "PALL.US", "BTC-USD.CC"} <= set(tickers)
+    assert not warnings
+    assert all(asset.proxy and asset.calendar == "XNYS" for asset in market.PRECIOUS_METALS)
+
+
+def test_metals_and_btc_are_visible_in_summary_and_separate_details():
+    focus = [asset for asset in market.MARKET_INSTRUMENTS if asset.ticker in {*market.PRECIOUS_METAL_TICKERS, "BTC-USD.CC", "ETH-USD.CC"}]
+    rows = [market.normalize_quote(asset, quote(asset, when=NOW - timedelta(minutes=1)), NOW) for asset in focus]
+    content = "\n".join(render_market_sections({"quotes": rows}, "morning_briefing"))
+    summary = content.split("\n\n**", 1)[0]
+    for label in ("黄金 +2.00%", "白银 +2.00%", "铂金 +2.00%", "钯金 +2.00%", "BTC 比特币 102.00 USD / +2.00%"):
+        assert label in summary
+    assert "非24小时涨跌" in summary
+    metals = content.split("**贵金属（ETF代理）**")[1].split("\n\n**", 1)[0]
+    assert all(asset.ticker in metals for asset in market.PRECIOUS_METALS)
+    crypto = content.split("**加密资产（BTC / ETH）**")[1].split("**美债收益率（日频）**")[0]
+    assert "BTC-USD.CC" in crypto and "ETH-USD.CC" in crypto
+    assert "BTC-USD.CC" not in metals
+
+
+def test_focus_summary_discloses_stale_missing_and_unknown_moves():
+    rows = [
+        {"ticker": "GLD.US", "name": "黄金", "price": 999, "change_pct": 899, "fresh": False},
+        {"ticker": "SLV.US", "name": "白银", "price": None, "fresh": False},
+        {"ticker": "BTC-USD.CC", "name": "比特币", "price": 100, "fresh": True, "change_pct": None},
+    ]
+    summary = "\n".join(render_market_sections({"quotes": rows}, "morning_briefing")).split("\n\n**", 1)[0]
+    assert "黄金 历史／待更新" in summary and "899.00%" not in summary
+    assert "白银 数据不可用" in summary and "铂金 未纳入快照" in summary
+    assert "BTC 比特币 100.00 USD / 涨跌未知" in summary
+
+
+def test_open_return_is_not_shown_for_prior_day_or_non_equity_quotes():
+    before_open = NOW.replace(hour=12)
+    yesterday = datetime(2026, 9, 11, 20, tzinfo=timezone.utc)
+    row = market.normalize_quote(SPY, quote(when=yesterday), before_open)
+    text = quote_line(row, "morning_briefing", "2026-09-14")
+    assert "开盘以来" not in text and "前一交易日" in text
+    assert "09-11 20:00 UTC" in text
+    current = market.normalize_quote(SPY, quote(), NOW)
+    assert "开盘以来" in quote_line(current, "morning_briefing", "2026-09-14")
+    assert "开盘以来" not in quote_line(current, "post_market_summary", "2026-09-14")
+    assert "开盘以来" not in quote_line({**current, "group": "commodity"}, "morning_briefing", "2026-09-14")
+
+
+def test_missing_modules_and_warnings_appear_once_without_empty_sections():
+    context = {"report_date": "2026-09-14", "quotes": [], "events": None,
+               "warnings": ["市场宽度暂不可用。", "市场宽度暂不可用。", "验收注入过期"]}
+    report = render_daily_report([], report_type="morning_briefing", market_context=context)
+    assert report.count("市场宽度暂不可用") == 1
+    assert report.count("验收注入过期") == 1
+    assert report.count("当期可用") == 1
+    assert "**美债收益率（日频）**" not in report
+    assert "**今明交易日关注**" not in report
+    assert "**贵金属（ETF代理）**" not in report
+    assert "事件日历暂不可用" in report
+
+
+def test_calendar_groups_variants_keeps_zero_and_important_non_numeric_events():
+    base = {"kind": "economic", "date": "2026-09-16 18:00:00", "actual": None, "estimate": None}
+    rows = [{**base, "name": "Interest Rate Projection - Current"},
+            {**base, "name": "Interest Rate Projection - 1st Yr", "estimate": 4},
+            {**base, "name": "Fed Interest Rate Decision", "actual": 0, "estimate": 0},
+            {**base, "name": "Fed Press Conference"},
+            {**base, "name": "Retail Sales", "period": "Aug", "comparison": "yoy", "estimate": 4.7},
+            {**base, "name": "Retail Sales", "period": "Aug", "comparison": "mom", "estimate": 0.8}]
+    lines = grouped_events([*rows, rows[0]])
+    text = "\n".join(lines)
+    assert len(lines) == 4 and text.count("美联储利率预测") == 1
+    assert "Current；1st Yr 预期 4.00" in text
+    assert "实际 0.00 / 预期 0.00" in text
+    assert "Fed Press Conference。" in text and "实际 —" not in text and "预期 —" not in text
+    assert "yoy 预期 4.70；mom 预期 0.80" in text
+    # Different dates/periods must not collapse together.
+    assert len(grouped_events([rows[4], {**rows[4], "period": "Sep"}, {**rows[4], "date": "2026-09-17 18:00:00"}])) == 3
+
+
+@pytest.mark.asyncio
+async def test_calendar_keeps_evidence_before_grouping_and_display_limit(monkeypatch):
+    async def calendar(kind, *args, **kwargs):
+        if kind == "earnings":
+            return []
+        return [{"country": "US", "type": "Interest Rate Projection - Current", "date": "2026-09-14 18:00:00"}] * 14 + [
+            {"country": "US", "type": "Initial Jobless Claims", "date": "2026-09-15 12:30:00"}]
+    monkeypatch.setattr(eodhd_client, "get_report_calendar", calendar)
+    events = await market.collect_events([], NOW)
+    assert len(events["items"]) == events["total"] == 15
+    text = "\n".join(render_events_and_quality({"events": events}))
+    assert "Initial Jobless Claims" in text
+    assert "合并为 2 组" in text
+
+
+@pytest.mark.parametrize("ticker", ["SLV.US", "PPLT.US", "PALL.US", "BTC-USD.CC"])
+def test_focus_assets_support_same_session_morning_comparison(ticker):
+    asset = next(asset for asset in market.MARKET_INSTRUMENTS if asset.ticker == ticker)
+    morning = {"report_date": "2026-09-14", "quotes": [market.normalize_quote(asset, quote(asset, when=NOW, close=100), NOW)]}
+    later = NOW + timedelta(hours=1)
+    current = {"report_date": "2026-09-14", "quotes": [market.normalize_quote(asset, quote(asset, when=later, close=103), later)]}
+    assert "+3.00%" in morning_comparison(current, morning)[0]
 
 
 def test_morning_comparison_needs_same_date_fresh_newer_quotes():

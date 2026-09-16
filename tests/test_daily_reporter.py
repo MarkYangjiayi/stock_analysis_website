@@ -94,7 +94,7 @@ def test_uncited_analysis_gets_source_links_and_rejects_unsafe_urls():
     anomaly["ai_analysis"] = "收购溢价消失导致股价下跌。"
     anomaly["news"] = [
         {"title": "Unsafe", "link": "javascript:alert(1)"},
-        {"title": "Evidence", "link": "https://example.com/evidence"},
+        {"title": "PayPal Evidence", "link": "https://example.com/evidence"},
     ]
 
     content = daily_reporter.render_daily_report(
