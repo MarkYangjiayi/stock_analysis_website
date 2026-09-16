@@ -1,12 +1,16 @@
 name: Build and Deploy
 
 on:
+  # Resume already-loaded images after an interrupted server-side deployment;
+  # manual recovery does not build, prune images, or repeat the database backup.
+  workflow_dispatch:
   push:
     branches:
       - main # 如果你的主分支叫 master，请改成 master
 
 jobs:
   test:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -66,6 +70,8 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # A verified SQLite backup alone can take more than eight minutes.
+          command_timeout: 30m
           script: |
             set -eu
             cd /home/admin/stock_analysis_website
@@ -108,3 +114,35 @@ jobs:
             sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE)"
             sudo docker compose ps
             sudo docker image prune -af
+
+  recover:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resume loaded services and verify health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script: |
+            set -eu
+            cd /home/admin/stock_analysis_website
+            sudo docker image inspect quantify-backend:latest > /dev/null
+            sudo docker image inspect quantify-frontend:latest > /dev/null
+            sudo docker compose up -d --no-build --pull never --remove-orphans
+            attempt=0
+            until curl -fsS http://127.0.0.1:8000/health/ready > /dev/null \
+              && curl -fsS http://127.0.0.1:3000/ > /dev/null; do
+              attempt=$((attempt + 1))
+              if [ "$attempt" -ge 60 ]; then
+                sudo docker compose ps
+                sudo docker compose logs --tail=100 backend worker frontend
+                exit 1
+              fi
+              sleep 3
+            done
+            sudo docker compose exec -T backend alembic current
+            sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE)"
+            sudo docker compose ps
