@@ -21,9 +21,9 @@ export const makeIndexValuationFixture = (
         "index_pe is the aggregate sum(equity) / sum(TTM earnings) including loss-makers.",
     ],
     points: [
-        { date: "2026-07-31", index_pe: 27.8, index_pe_earners: 26.1, median_pe: 24.5, member_count: 503, covered_count: 498, loss_maker_count: 24, coverage_pct: 99.0 },
-        { date: "2026-08-31", index_pe: null, index_pe_earners: null, median_pe: null, member_count: 503, covered_count: 210, loss_maker_count: 5, coverage_pct: 41.7 },
-        { date: "2026-09-30", index_pe: 28.4, index_pe_earners: 26.6, median_pe: 25.0, member_count: 503, covered_count: 499, loss_maker_count: 25, coverage_pct: 99.2 },
+        { date: "2026-07-31", index_pe: 27.8, index_pe_earners: 26.1, median_pe: 24.5, member_count: 503, covered_count: 498, loss_maker_count: 24, coverage_pct: 99.0, reason: null },
+        { date: "2026-08-31", index_pe: null, index_pe_earners: null, median_pe: null, member_count: 503, covered_count: 210, loss_maker_count: 5, coverage_pct: 41.7, reason: "insufficient-coverage" },
+        { date: "2026-09-30", index_pe: 28.4, index_pe_earners: 26.6, median_pe: 25.0, member_count: 503, covered_count: 499, loss_maker_count: 25, coverage_pct: 99.2, reason: null },
     ],
     stats: {
         months_total: 3,

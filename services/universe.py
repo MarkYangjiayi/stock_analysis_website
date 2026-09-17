@@ -229,8 +229,15 @@ async def replace_historical_memberships(
 
 async def refresh_historical_universe_memberships(
     target_date: Optional[date] = None,
+    *,
+    force: bool = False,
 ) -> dict:
-    """Atomically publish every enabled strict Market Overview history."""
+    """Atomically publish every enabled strict Market Overview history.
+
+    ``force`` re-runs and replaces provider intervals even when the target
+    session is already published; the one-time index-valuation backfill uses
+    it to rebuild membership history recorded by an older parser version.
+    """
     reference = target_date or date.today()
     target = (
         reference
@@ -238,7 +245,7 @@ async def refresh_historical_universe_memberships(
         else latest_completed_us_session(reference)
     )
     published = await latest_published_date(HISTORICAL_UNIVERSE_DATASET)
-    if published is not None and published >= target:
+    if published is not None and published >= target and not force:
         return {
             "status": "skipped",
             "reason": "already-published",

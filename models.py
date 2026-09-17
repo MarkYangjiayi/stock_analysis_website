@@ -166,6 +166,7 @@ class IndexValuationSnapshot(Base):
     index_pe: Mapped[Optional[float]] = mapped_column(Float)
     index_pe_earners: Mapped[Optional[float]] = mapped_column(Float)
     median_pe: Mapped[Optional[float]] = mapped_column(Float)
+    reason: Mapped[Optional[str]] = mapped_column(String)
 
     __table_args__ = (
         Index(

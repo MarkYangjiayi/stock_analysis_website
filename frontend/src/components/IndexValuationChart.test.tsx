@@ -36,6 +36,17 @@ describe("IndexValuationChart", () => {
         expect(primary.markLine!.data).toEqual([]);
     });
 
+    it("explains gap months from the stored reason in the tooltip", () => {
+        const fixture = makeIndexValuationFixture();
+        const option = indexValuationChartOption(fixture, false);
+        const formatter = option.tooltip.formatter as (params: Array<{ dataIndex?: number }>) => string;
+        const gap = formatter([{ dataIndex: 1 }]);
+        expect(gap).toContain("Company coverage fell below the publication gate");
+        const valid = formatter([{ dataIndex: 2 }]);
+        expect(valid).toContain("Index P/E: 28.4×");
+        expect(valid).not.toContain("publication gate");
+    });
+
     it("renders the linked chart inside the page", () => {
         render(<IndexValuationChart data={makeIndexValuationFixture()} />);
         expect(screen.getByTestId("index-pe-chart")).toBeInTheDocument();

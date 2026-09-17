@@ -332,6 +332,64 @@ async def test_historical_membership_publication_preserves_explicit_session_date
 
 
 @pytest.mark.asyncio
+async def test_forced_membership_refresh_replaces_already_published_history(db_session, monkeypatch):
+    target = date(2025, 1, 10)
+    run = PipelineRun(
+        pipeline_name="historical_universe_sync",
+        target_date=target,
+        status="published",
+        stage="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset=HISTORICAL_UNIVERSE_DATASET,
+        as_of_date=target,
+        pipeline_run_id=run.id,
+        status="published",
+    ))
+    db_session.add(UniverseMembership(
+        universe="SP500",
+        ticker="STALE.US",
+        effective_from=date(2010, 1, 1),
+        source=HISTORICAL_UNIVERSE_SOURCE,
+    ))
+    await db_session.commit()
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_history(index_ticker, client=None):
+        assert index_ticker == "GSPC.INDX"
+        return [
+            {"Code": "FRESH", "StartDate": "2020-01-01", "EndDate": None},
+            {"Code": "FRESH2", "StartDate": "2020-01-01", "EndDate": None},
+        ]
+
+    monkeypatch.setattr("services.universe.eodhd_client.create_http_client", fake_client)
+    monkeypatch.setattr("services.universe.eodhd_client.get_index_component_history", fake_history)
+
+    # Without force the same-session publication short-circuits the refresh.
+    assert (await refresh_historical_universe_memberships(target))["status"] == "skipped"
+    # force rebuilds provider intervals recorded by an older parser version.
+    result = await refresh_historical_universe_memberships(target, force=True)
+    assert result["status"] == "published"
+    db_session.expire_all()
+    memberships = list((await db_session.execute(
+        select(UniverseMembership).where(
+            UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE
+        )
+    )).scalars())
+    assert sorted(row.ticker for row in memberships) == ["FRESH.US", "FRESH2.US"]
+    publications = list((await db_session.execute(
+        select(DataPublication).where(DataPublication.dataset == HISTORICAL_UNIVERSE_DATASET)
+    )).scalars())
+    assert len(publications) == 1
+    assert publications[0].as_of_date == target
+
+
+@pytest.mark.asyncio
 async def test_historical_and_live_memberships_can_share_a_start_date(db_session):
     target = date(2025, 1, 10)
     run = PipelineRun(

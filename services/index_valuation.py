@@ -15,7 +15,7 @@ import calendar
 import gzip
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 from statistics import median
 from typing import Any, Optional
 
@@ -43,23 +43,27 @@ logger = logging.getLogger(__name__)
 INDEX_VALUATION_DATASET = "index_valuation"
 INDEX_VALUATION_UNIVERSES = ("SP500",)
 INDEX_VALUATION_RETENTION_RUNS = 5
-# Known multi-class S&P 500 members whose SEC company-ticker entries may be
-# missing after delisting. The SEC file remains the primary grouping source.
+# Known multi-class S&P 500 members (verified against the provider's GSPC
+# membership history) whose SEC company-ticker entries may be missing after
+# delisting. The SEC file remains the primary grouping source.
 STATIC_COMPANY_GROUPS = (
     ("GOOG", "GOOGL"),
     ("FOXA", "FOX"),
     ("NWSA", "NWS"),
+    ("CMCSA", "CMCSK"),
+    ("TFCFA", "TFCF"),
+    ("UAA", "UA"),
     ("LBRDA", "LBRDK"),
     ("MOB.A", "MOB.B"),
 )
 METHODOLOGY = [
     "Reconstructed history, not a point-in-time backtest dataset: initial provider payloads may contain later restatements. Recorded revisions become effective only after their availability date.",
-    "Membership is point-in-time: every month-end uses the index constituents whose provider membership interval covers that date, and the underlying price session must also fall inside the interval.",
-    "Multi-class members are grouped into one company by SEC CIK (cached official company-tickers file) with a documented fallback list. Company equity sums the classes; company-wide earnings are counted exactly once.",
+    "Membership is point-in-time: every month-end uses the index constituents whose provider membership interval covers that date, and the underlying price session must also fall inside the interval. Only completed months are published, and prices are capped at the publication's target session.",
+    "Multi-class members are grouped into one company by SEC CIK (cached official company-tickers file) with a documented fallback list. The provider reports company-wide statement shares on every class, so company equity uses the primary (largest) class's equity proxy instead of summing classes; company-wide earnings are counted exactly once and must agree across classes.",
     "Member earnings follow the per-stock P/E gates: currency match, four consecutive disclosed quarters, a latest statement no older than 180 days, annual reconciliation and earnings-quality quarantines. A non-positive TTM total stays a valid negative contribution instead of becoming a gap.",
-    "index_pe is the aggregate sum(equity) / sum(TTM earnings) including loss-makers; index_pe_earners repeats the ratio over profitable companies only; median_pe is the median of company-level P/E ratios.",
+    "index_pe is the aggregate sum(company equity) / sum(TTM earnings) including loss-makers; index_pe_earners repeats the ratio over profitable companies only; median_pe is the median of company-level P/E ratios.",
     "Provider statement shares are split-adjusted weighted-average proxies, so equity totals are estimates of market capitalization, not verified historical market caps.",
-    "Months with insufficient member or input coverage remain gaps with the reason in the quality report; gaps are never interpolated and failed runs publish nothing.",
+    "Months with insufficient member or input coverage remain gaps with the reason stored on the month and aggregated in the quality report; gaps are never interpolated and failed runs publish nothing.",
 ]
 
 
@@ -113,12 +117,30 @@ def company_keys(tickers: list[str], cik_map: dict[str, str]) -> dict[str, str]:
     return resolved
 
 
-def month_end_labels(start: date, end: date) -> list[date]:
-    """Calendar month-end labels for every month from start to end inclusive."""
+def _last_session_of_month(year: int, month: int) -> Optional[date]:
+    day = calendar.monthrange(year, month)[1]
+    cursor = date(year, month, day)
+    for _ in range(7):
+        if is_us_market_session(cursor):
+            return cursor
+        cursor -= timedelta(days=1)
+    return None
+
+
+def completed_month_end_labels(start: date, target: date) -> list[date]:
+    """Calendar month-end labels for every month fully traded by ``target``.
+
+    A month is complete when its final US session closed at or before the
+    target; the running month therefore never appears with a future label,
+    and a month whose final session was observed is included even when that
+    session precedes the calendar month-end (e.g. the 29th).
+    """
     labels: list[date] = []
     year, month = start.year, start.month
-    while (year, month) <= (end.year, end.month):
-        labels.append(date(year, month, calendar.monthrange(year, month)[1]))
+    while (year, month) <= (target.year, target.month):
+        last_session = _last_session_of_month(year, month)
+        if last_session is not None and last_session <= target:
+            labels.append(date(year, month, calendar.monthrange(year, month)[1]))
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     return labels
 
@@ -137,6 +159,7 @@ def build_index_valuation_rows(
     *,
     min_members: int,
     min_coverage: float,
+    cik_map: Optional[dict[str, str]] = None,
 ) -> list[dict]:
     """Aggregate one row per sample month. Pure; safe to run in a worker thread.
 
@@ -145,7 +168,9 @@ def build_index_valuation_rows(
     """
     keys = company_keys(
         sorted({interval["ticker"] for interval in memberships}),
-        load_cik_map(settings.INDEX_VALUATION_SEC_TICKERS_PATH),
+        cik_map if cik_map is not None else load_cik_map(
+            settings.INDEX_VALUATION_SEC_TICKERS_PATH
+        ),
     )
     rows: list[dict] = []
     for day in sample_dates:
@@ -175,7 +200,7 @@ def build_index_valuation_rows(
         covered: dict[str, dict] = {}
         multi_class_conflicts = 0
         for company, class_rows in companies.items():
-            primary = max(class_rows, key=lambda row: row["equity"])
+            primary = max(class_rows, key=lambda row: (row["equity"], row["ticker"]))
             conflict = any(
                 other["earnings_ttm"] != primary["earnings_ttm"]
                 and abs(other["earnings_ttm"] - primary["earnings_ttm"])
@@ -184,12 +209,16 @@ def build_index_valuation_rows(
                 if other is not primary
             )
             if conflict:
-                # Both classes carry company-wide earnings that disagree;
+                # The classes carry company-wide earnings that disagree;
                 # which one is right is unknown, so the company stays a gap.
                 multi_class_conflicts += 1
                 continue
+            # The provider reports company-wide statement shares on every
+            # class, so each class's equity already approximates the whole
+            # company. Summing classes would double-count the numerator while
+            # earnings count once; the primary class stands in for the company.
             covered[company] = {
-                "equity": sum(row["equity"] for row in class_rows),
+                "equity": primary["equity"],
                 "earnings_ttm": primary["earnings_ttm"],
             }
         covered_count = len(covered)
@@ -273,8 +302,14 @@ def validate_index_valuation_rows(rows: list[dict], min_month_coverage: float) -
 async def _load_member_points(
     tickers: list[str],
     concurrency: int,
+    through: date,
 ) -> tuple[dict[str, dict[str, dict]], list[str]]:
-    """Reconstruct month-end points for every ever-member, one session each."""
+    """Reconstruct month-end points for every ever-member, one session each.
+
+    ``through`` caps every loaded price at the publication's target session so
+    a database that carries later sessions can never leak future prices or a
+    future split reference into the series.
+    """
     semaphore = asyncio.Semaphore(max(1, concurrency))
     per_ticker: dict[str, dict[str, dict]] = {}
     warnings: list[str] = []
@@ -283,7 +318,9 @@ async def _load_member_points(
         async with semaphore:
             try:
                 async with async_session_maker() as db:
-                    history = await get_valuation_history(ticker, db, interval="1mo")
+                    history = await get_valuation_history(
+                        ticker, db, interval="1mo", through=through
+                    )
                 per_ticker[ticker] = {
                     point["date"]: point for point in history["points"]
                 }
@@ -390,10 +427,13 @@ async def refresh_index_valuation(target_date: date) -> dict:
     try:
         await update_pipeline_run(run_id, "reconstructing_members", len(ever_members))
         per_ticker, load_warnings = await _load_member_points(
-            ever_members, settings.INDEX_VALUATION_COMPUTE_CONCURRENCY
+            ever_members, settings.INDEX_VALUATION_COMPUTE_CONCURRENCY, through=target
         )
         await update_pipeline_run(run_id, "aggregating_months")
-        sample_dates = month_end_labels(history_start, target)
+        sample_dates = completed_month_end_labels(history_start, target)
+        cik_map = await asyncio.to_thread(
+            load_cik_map, settings.INDEX_VALUATION_SEC_TICKERS_PATH
+        )
         rows = await asyncio.to_thread(
             build_index_valuation_rows,
             per_ticker,
@@ -401,11 +441,19 @@ async def refresh_index_valuation(target_date: date) -> dict:
             sample_dates,
             min_members=settings.PIPELINE_MIN_SP500_SIZE,
             min_coverage=settings.PIPELINE_MIN_INDEX_VALUATION_COVERAGE,
+            cik_map=cik_map,
         )
         quality = validate_index_valuation_rows(
             rows, settings.INDEX_VALUATION_MIN_MONTH_COVERAGE
         )
+        quality["metrics"]["cik_map_available"] = bool(cik_map)
         quality["warnings"] = load_warnings[:200]
+        if not cik_map:
+            quality["warnings"].append(
+                "SEC company-tickers cache is unavailable; multi-class grouping "
+                "falls back to the documented static list. Run "
+                "scripts/backfill_index_valuation.py to download it."
+            )
         if not quality["passed"]:
             raise ValueError(
                 "Index valuation quality gate failed: " + "; ".join(quality["errors"])
@@ -415,7 +463,7 @@ async def refresh_index_valuation(target_date: date) -> dict:
                 "universe", "date", "member_count", "covered_count",
                 "loss_maker_count", "coverage_pct", "equity_total",
                 "earnings_ttm_total", "earnings_ttm_earners",
-                "index_pe", "index_pe_earners", "median_pe",
+                "index_pe", "index_pe_earners", "median_pe", "reason",
             )}
             for row in rows
         ]
@@ -545,6 +593,7 @@ async def get_index_valuation(db: AsyncSession, universe: str) -> dict:
                 "covered_count": row.covered_count,
                 "loss_maker_count": row.loss_maker_count,
                 "coverage_pct": row.coverage_pct,
+                "reason": row.reason,
             }
             for row in snapshot_rows
         ],

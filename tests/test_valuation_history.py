@@ -83,6 +83,29 @@ def test_revisions_apply_after_availability_and_keep_their_own_split_vintage():
     assert [point["values"]["pe"] for point in result["points"]] == [10, 10, 8]
 
 
+def test_loss_maker_with_annual_conflict_still_blocks_aggregate_earnings():
+    # A negative TTM total is normally a valid negative contribution, but it
+    # must never exempt the company from an annual reconciliation conflict:
+    # the conflict implicates the earnings totals themselves.
+    rows = statements()
+    for row in rows:
+        row.income_statement["netIncome"] = -10
+        row.income_statement["netIncomeApplicableToCommonShares"] = -10
+    annual = SimpleNamespace(
+        period_end=date(2024, 9, 30), filing_at=datetime.fromisoformat("2024-12-15"),
+        available_at=datetime.fromisoformat("2024-12-15"), availability_estimated=False,
+        fetched_at=datetime(2025, 2, 1), revision=1, source="EODHD", raw_snapshot_id=1,
+        income_statement={"currency_symbol": "USD", "netIncome": -60, "totalRevenue": 400, "ebitda": 80},
+        balance_sheet={"currency_symbol": "USD", "commonStockSharesOutstanding": 10, "totalStockholderEquity": 200},
+        cash_flow={"currency_symbol": "USD"},
+    )
+    result = calculate(rows, [price("2024-12-20")], annual_statements=[annual])
+    point = result["points"][0]
+    assert point["values"]["pe"] is None
+    assert point["earnings_ttm"] is None
+    assert "does not reconcile" in point["earnings_reason"]
+
+
 @pytest.mark.parametrize("kind", ["missing_quarter", "estimated_date", "missing_date"])
 def test_incomplete_or_unknown_disclosure_windows_do_not_fabricate_ttm(kind):
     rows = statements()

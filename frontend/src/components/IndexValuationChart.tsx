@@ -11,6 +11,10 @@ const multiple = (value: number | null | undefined) =>
     value == null || !Number.isFinite(value) ? "N/M" : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}×`;
 const escapeHtml = (value: string) =>
     value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+const GAP_REASONS: Record<string, string> = {
+    "insufficient-members": "Fewer index members on record than the publication gate requires.",
+    "insufficient-coverage": "Company coverage fell below the publication gate this month.",
+};
 
 // Month-end points stay gaps when coverage failed the gate; no smoothing,
 // interpolation or forward-fill ever bridges a missing month.
@@ -93,7 +97,7 @@ export function indexValuationChartOption(
                     + `<div>Earning companies only: ${multiple(point.index_pe_earners)}</div>`
                     + `<div>Median company P/E: ${multiple(point.median_pe)}</div>`
                     + (point.index_pe == null
-                        ? `<div style="max-width:260px;white-space:normal">No valid aggregate: coverage or member gate failed this month.</div>`
+                        ? `<div style="max-width:260px;white-space:normal">${escapeHtml(GAP_REASONS[point.reason ?? ""] ?? "No valid aggregate this month.")}</div>`
                         : "")
                     + `<div style="margin-top:6px">Loss makers: ${point.loss_maker_count.toLocaleString()}</div>`
                     + `<div>Coverage: ${escapeHtml(coverage)}</div>`;

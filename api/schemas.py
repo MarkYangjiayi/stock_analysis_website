@@ -498,6 +498,7 @@ class IndexValuationPoint(BaseModel):
     covered_count: int
     loss_maker_count: int
     coverage_pct: Optional[float] = None
+    reason: Optional[str] = None
 
 
 class IndexValuationStats(BaseModel):

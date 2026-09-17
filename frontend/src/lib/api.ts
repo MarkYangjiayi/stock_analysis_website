@@ -868,6 +868,7 @@ export interface IndexValuationPoint {
     covered_count: number;
     loss_maker_count: number;
     coverage_pct: number | null;
+    reason: string | null;
 }
 
 export interface IndexValuationResponse {

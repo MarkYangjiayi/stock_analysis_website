@@ -38,6 +38,7 @@ def upgrade() -> None:
             sa.Column("index_pe", sa.Float(), nullable=True),
             sa.Column("index_pe_earners", sa.Float(), nullable=True),
             sa.Column("median_pe", sa.Float(), nullable=True),
+            sa.Column("reason", sa.String(), nullable=True),
         )
         op.create_index(
             "ix_index_valuation_snapshots_run_universe_date",

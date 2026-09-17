@@ -233,12 +233,16 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
         elif latest["debt"] is None or latest["cash"] is None:
             reasons[key] = "A complete, consistent debt total and cash balance are required for EV."
     # Index-level aggregate earnings follow the P/E input gates exactly, except
-    # that a non-positive TTM total remains a valid negative contribution
-    # instead of becoming a gap. Quality flags stay blocking even when they
-    # overwrite the non-positive reason for the multiple itself.
+    # that a non-positive TTM total stays a valid negative contribution
+    # instead of becoming a gap. Annual reconciliation conflicts the earnings
+    # totals themselves, so they block aggregate earnings even when the P/E
+    # reason string was later replaced by the non-positive sign. Quality flags
+    # stay blocking for the same reason.
     earnings_ttm = None
     earnings_reason = None
-    if "pe" in reasons and "pe" not in non_positive:
+    if "pe" in annual_reasons:
+        earnings_reason = annual_reasons["pe"]
+    if earnings_reason is None and "pe" in reasons and "pe" not in non_positive:
         earnings_reason = reasons["pe"]
     for row in recent:
         if "eps" in row["quality"]:
@@ -386,10 +390,24 @@ def build_valuation_history(
             "methodology": METHODOLOGY, "warnings": warnings, "metrics": metrics, "bases": bases, "points": points}
 
 
-async def get_valuation_history(ticker: str, db: AsyncSession, interval: str = "1d") -> dict:
+async def get_valuation_history(
+    ticker: str,
+    db: AsyncSession,
+    interval: str = "1d",
+    through: date | None = None,
+) -> dict:
+    """Reconstruct valuation history, optionally capped at a target session.
+
+    ``through`` bounds every loaded price (and therefore the split reference
+    date and statement-effectiveness sweep) to sessions at or before it, so
+    historical re-runs can never mix prices disclosed after the target date.
+    """
     profile = await db.get(Ticker, ticker)
     snapshot, fundamentals = await load_latest_fundamentals_snapshot(ticker, db)
-    prices = (await db.execute(select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date))).scalars().all()
+    price_query = select(DailyPrice).where(DailyPrice.ticker == ticker)
+    if through is not None:
+        price_query = price_query.where(DailyPrice.date <= through)
+    prices = (await db.execute(price_query.order_by(DailyPrice.date))).scalars().all()
     versions = list((await db.execute(select(FundamentalVersion).where(
         FundamentalVersion.ticker == ticker, FundamentalVersion.period_type.in_(("Quarterly", "Yearly")),
     ))).scalars().all())

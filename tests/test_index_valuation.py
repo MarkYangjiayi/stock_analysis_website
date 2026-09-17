@@ -31,9 +31,9 @@ from services.index_valuation import (
     IndexValuationUniverseUnavailable,
     build_index_valuation_rows,
     company_keys,
+    completed_month_end_labels,
     get_index_valuation,
     load_cik_map,
-    month_end_labels,
     refresh_index_valuation,
     validate_index_valuation_rows,
 )
@@ -76,9 +76,21 @@ def test_load_cik_map_reads_gzip_and_tolerates_missing_file(tmp_path):
     assert load_cik_map(str(tmp_path / "absent.json.gz")) == {}
 
 
-def test_month_end_labels_cross_year_boundary():
-    labels = month_end_labels(date(2009, 11, 15), date(2010, 2, 3))
-    assert labels == [date(2009, 11, 30), date(2009, 12, 31), date(2010, 1, 31), date(2010, 2, 28)]
+def test_completed_month_end_labels_exclude_running_month():
+    # Mid-month targets never emit the running month's (future) month-end label.
+    assert completed_month_end_labels(date(2009, 11, 15), date(2010, 2, 3)) == [
+        date(2009, 11, 30), date(2009, 12, 31), date(2010, 1, 31),
+    ]
+    # A month whose final session (Friday the 28th; the 31st is Memorial Day)
+    # has been observed is complete, even though the label is the calendar 31st.
+    assert completed_month_end_labels(date(2010, 5, 1), date(2010, 5, 28)) == [
+        date(2010, 5, 31),
+    ]
+    assert completed_month_end_labels(date(2010, 5, 1), date(2010, 5, 27)) == []
+    # A Saturday target after the month's final Friday session includes July.
+    assert completed_month_end_labels(date(2010, 7, 1), date(2010, 7, 31)) == [
+        date(2010, 7, 31),
+    ]
 
 
 def test_build_rows_multi_class_membership_and_loss_makers(tmp_path, monkeypatch):
@@ -86,37 +98,39 @@ def test_build_rows_multi_class_membership_and_loss_makers(tmp_path, monkeypatch
         settings, "INDEX_VALUATION_SEC_TICKERS_PATH", str(tmp_path / "missing.json.gz")
     )
     memberships = [
+        # Both Alphabet classes are members with same-month points: the
+        # provider reports company-wide shares on every class, so the company
+        # must enter the aggregate once, at the primary class's equity.
         {"ticker": "GOOG.US", "effective_from": date(2010, 1, 1), "effective_to": None},
-        {"ticker": "GOOGL.US", "effective_from": date(2014, 4, 2), "effective_to": None},
+        {"ticker": "GOOGL.US", "effective_from": date(2010, 1, 1), "effective_to": None},
         {"ticker": "AAPL.US", "effective_from": date(2010, 1, 1), "effective_to": None},
         {"ticker": "EXIT.US", "effective_from": date(2010, 1, 1), "effective_to": date(2011, 6, 30)},
         {"ticker": "LOSS.US", "effective_from": date(2010, 1, 1), "effective_to": None},
     ]
     per_ticker = {
         "GOOG.US": {"2011-06-30": _point("2011-06-30", 1000.0, 50.0), "2011-07-31": _point("2011-07-29", 1010.0, 51.0)},
-        "GOOGL.US": {"2014-04-30": _point("2014-04-30", 500.0, 50.0)},
+        "GOOGL.US": {"2011-06-30": _point("2011-06-30", 500.0, 50.0), "2011-07-31": _point("2011-07-29", 505.0, 51.0)},
         "AAPL.US": {
             "2011-06-30": _point("2011-06-30", 800.0, 40.0),
             "2011-07-31": _point("2011-07-29", 810.0, 41.0),
-            "2014-04-30": _point("2014-04-30", 900.0, 45.0),
         },
         "EXIT.US": {"2011-06-30": _point("2011-06-30", 300.0, 15.0)},
         "LOSS.US": {
             "2011-06-30": _point("2011-06-30", 200.0, -20.0),
             "2011-07-31": _point("2011-07-29", 200.0, -20.0),
-            "2014-04-30": _point("2014-04-30", 210.0, -21.0),
         },
     }
     rows = build_index_valuation_rows(
         per_ticker,
         memberships,
-        [date(2011, 6, 30), date(2011, 7, 31), date(2014, 4, 30)],
+        [date(2011, 6, 30), date(2011, 7, 31)],
         min_members=1,
         min_coverage=0.5,
     )
-    june, july, april = rows
+    june, july = rows
 
-    # Multi-class: equity adds across classes while company earnings count once.
+    # Alphabet counts once at the primary class's equity (1000), never the
+    # 1500 class sum, while company earnings are counted exactly once.
     assert june["member_count"] == 4
     assert june["covered_count"] == 4
     assert june["equity_total"] == pytest.approx(1000.0 + 800.0 + 300.0 + 200.0)
@@ -126,21 +140,15 @@ def test_build_rows_multi_class_membership_and_loss_makers(tmp_path, monkeypatch
     assert june["loss_maker_count"] == 1
     assert june["reason"] is None
 
-    # After EXIT.US leaves the index it no longer contributes.
+    # After EXIT.US leaves the index it no longer contributes; the primary
+    # class switch (GOOG still larger) keeps the company equity stable.
     assert july["member_count"] == 3
     assert july["equity_total"] == pytest.approx(1010.0 + 810.0 + 200.0)
     assert july["earnings_ttm_total"] == pytest.approx(51.0 + 41.0 - 20.0)
 
-    # GOOGL joins mid-month; GOOG's fixture series has no 2014 point, so the
-    # Alphabet company is represented by the GOOGL class row alone.
-    assert april["member_count"] == 3
-    assert april["covered_count"] == 3
-    assert april["equity_total"] == pytest.approx(500.0 + 900.0 + 210.0)
-    assert april["earnings_ttm_total"] == pytest.approx(50.0 + 45.0 - 21.0)
-
     quality = validate_index_valuation_rows(rows, min_month_coverage=0.9)
     assert quality["passed"] is True
-    assert quality["metrics"]["months_valid"] == 3
+    assert quality["metrics"]["months_valid"] == 2
 
 
 def test_build_rows_gaps_below_member_and_coverage_minimums(tmp_path, monkeypatch):
@@ -344,14 +352,30 @@ async def test_refresh_publishes_and_serves_index_valuation(
     await _seed_member(db_session, "AAA.US", shares=100, price=10.0, quarterly_net_income=12.5)
     await _seed_member(db_session, "BBB.US", shares=50, price=4.0, quarterly_net_income=-5.0)
     await _seed_member(db_session, "CCC.US", shares=40, price=5.0, quarterly_net_income=5.0)
+    # A session after the target must never leak into the series: without the
+    # through cap it would become the split reference and an August point.
+    db_session.add(DailyPrice(
+        ticker="AAA.US", date=date(2026, 8, 3), close=999.0, adjusted_close=999.0, volume=1,
+    ))
+    await db_session.commit()
+
+    from services.valuation_history import get_valuation_history as load_history
+
+    capped = await load_history("AAA.US", db_session, "1mo", through=target)
+    assert capped["points"][-1]["date"] == "2026-07-31"
+    assert capped["points"][-1]["price_date"] == "2026-07-31"
+    uncapped = await load_history("AAA.US", db_session, "1mo")
+    assert uncapped["points"][-1]["date"] == "2026-08-31"
 
     result = await refresh_index_valuation(target)
     assert result["status"] == "published"
     assert result["months_valid"] == 3
+    assert result["cik_map_available"] is False
 
     snapshots = list((await db_session.execute(
         select(IndexValuationSnapshot).order_by(IndexValuationSnapshot.date)
     )).scalars())
+    # The running month (August) is never published with a future label.
     assert [row.date.isoformat() for row in snapshots] == [
         "2026-05-31", "2026-06-30", "2026-07-31",
     ]
@@ -365,6 +389,7 @@ async def test_refresh_publishes_and_serves_index_valuation(
         assert row.index_pe == pytest.approx(28.0)
         assert row.index_pe_earners == pytest.approx(1200.0 / 70.0)
         assert row.median_pe == pytest.approx(15.0)
+        assert row.reason is None
 
     # Idempotent re-run for the same session.
     assert (await refresh_index_valuation(target))["status"] == "skipped"
@@ -379,6 +404,9 @@ async def test_refresh_publishes_and_serves_index_valuation(
     assert validated.stats.latest_index_pe == pytest.approx(28.0)
     assert validated.stats.median_index_pe == pytest.approx(28.0)
     assert validated.points[-1].loss_maker_count == 1
+    assert validated.points[-1].reason is None
+    # The missing CIK cache is disclosed, not silently degraded.
+    assert any("SEC company-tickers" in note for note in payload["meta"]["warnings"])
 
     from main import app
 
@@ -533,7 +561,8 @@ def test_alembic_upgrade_creates_index_valuation_snapshots(tmp_path):
         }
         assert {"id", "pipeline_run_id", "universe", "date", "member_count", "covered_count",
                 "loss_maker_count", "coverage_pct", "equity_total", "earnings_ttm_total",
-                "earnings_ttm_earners", "index_pe", "index_pe_earners", "median_pe"} <= columns
+                "earnings_ttm_earners", "index_pe", "index_pe_earners", "median_pe",
+                "reason"} <= columns
         indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(index_valuation_snapshots)")
         }

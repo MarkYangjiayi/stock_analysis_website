@@ -23,14 +23,18 @@ Examples:
 
 import argparse
 import asyncio
+import gzip
+import json
 import logging
 import os
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert
 
@@ -40,8 +44,8 @@ from database import async_session_maker, init_db
 from models import DailyPrice, FundamentalVersion, Ticker, UniverseMembership
 from services import eodhd_client
 from services.data_sync import _upsert_daily_prices, _upsert_financials, _upsert_ticker_info
-from services.index_valuation import refresh_index_valuation
-from services.pipeline_runs import begin_pipeline_run, finish_pipeline_run, update_pipeline_run
+from services.index_valuation import completed_month_end_labels, refresh_index_valuation
+from services.pipeline_runs import begin_pipeline_run, finish_pipeline_run, latest_published_date, update_pipeline_run
 from services.raw_store import persist_snapshot
 from services.split_history import load_split_history, sync_full_split_history
 from services.universe import (
@@ -57,6 +61,8 @@ PRICE_COVERAGE_THRESHOLD = 0.90
 # A member needs trailing quarters before its first month-end sample, so the
 # statement-completion check looks almost a year behind the window start.
 STATEMENT_LOOKBACK_DAYS = 370
+STATEMENT_COMPLETION_RATIO = 0.75
+SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
 
 def _sessions_between(start: date, end: date) -> int:
@@ -116,7 +122,47 @@ async def _price_coverage(ticker: str, start: date, end: date) -> float:
     return (rows or 0) / expected if expected else 1.0
 
 
+async def _ensure_sec_tickers_file() -> bool:
+    """Download the official SEC company-tickers file when the cache is absent.
+
+    The file is the primary multi-class grouping source and is not shipped in
+    the image (data/ is excluded), so a fresh deployment must fetch it once.
+    """
+    path = Path(settings.INDEX_VALUATION_SEC_TICKERS_PATH)
+    if path.exists():
+        return True
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(
+                SEC_TICKERS_URL, headers={"User-Agent": settings.SEC_USER_AGENT}
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("unexpected company-tickers payload")
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        logger.info("Downloaded SEC company-tickers file to %s", path)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Unable to download the SEC company-tickers file (%s): %s. "
+            "Multi-class grouping will fall back to the documented static "
+            "list; historical companies outside it may be double-counted in "
+            "member counts.", SEC_TICKERS_URL, exc,
+        )
+        return False
+
+
 async def _has_window_statements(ticker: str, start: date, end: date) -> bool:
+    """Stored quarters must cover most of the window's expected quarters.
+
+    A single stray record is not completion: the aggregator needs four
+    consecutive quarters behind every month-end, so the stored count is
+    compared against the quarters the window (and the member's own listing)
+    could possibly contain.
+    """
     async with async_session_maker() as db:
         rows = await db.scalar(
             select(func.count(FundamentalVersion.id)).where(
@@ -126,7 +172,14 @@ async def _has_window_statements(ticker: str, start: date, end: date) -> bool:
                 FundamentalVersion.period_end <= end,
             )
         )
-    return bool(rows)
+        first_price = await db.scalar(
+            select(func.min(DailyPrice.date)).where(DailyPrice.ticker == ticker)
+        )
+    span_start = start - timedelta(days=STATEMENT_LOOKBACK_DAYS)
+    if first_price is not None:
+        span_start = max(span_start, first_price - timedelta(days=130))
+    expected = max(1, (end - span_start).days // 91)
+    return (rows or 0) >= max(1, int(expected * STATEMENT_COMPLETION_RATIO))
 
 
 async def _has_split_coverage(ticker: str, start: date, end: date) -> bool:
@@ -208,6 +261,7 @@ async def backfill_member_data(
         "splits_skipped": 0,
         "failed": 0,
     }
+    failed_tickers: list[str] = []
     run_id = await begin_pipeline_run("index_valuation_backfill", target, version="v1")
 
     async def process(ticker: str) -> None:
@@ -245,6 +299,7 @@ async def backfill_member_data(
                     stats["splits_synced"] += 1
             except Exception as exc:
                 stats["failed"] += 1
+                failed_tickers.append(ticker)
                 logger.warning("Backfill failed for %s: %s", ticker, exc)
 
     try:
@@ -266,12 +321,24 @@ async def backfill_member_data(
                 )
         quality = {
             "passed": stats["failed"] == 0,
-            "metrics": stats,
-            "errors": [] if stats["failed"] == 0 else [f"{stats['failed']} members failed"],
+            "metrics": {**stats, "failed_tickers": failed_tickers[:100]},
+            "errors": [] if stats["failed"] == 0 else [
+                f"{stats['failed']} members failed: " + ", ".join(sorted(failed_tickers)[:20])
+            ],
             "warnings": [],
         }
-        await finish_pipeline_run(run_id, "published", quality_report=quality)
-        return {"run_id": run_id, **stats}
+        # Acquisition failures are recorded on the run even though the gated
+        # index refresh may still publish: the run status must not claim every
+        # member was acquired when it was not.
+        await finish_pipeline_run(
+            run_id,
+            "published" if stats["failed"] == 0 else "failed",
+            quality_report=quality,
+            error_message=None if stats["failed"] == 0 else (
+                f"{stats['failed']} members failed during acquisition"
+            ),
+        )
+        return {"run_id": run_id, "status": "published" if stats["failed"] == 0 else "failed", **stats}
     except asyncio.CancelledError:
         await finish_pipeline_run(run_id, "cancelled", quality_report={"metrics": stats})
         raise
@@ -322,9 +389,27 @@ async def main() -> int:
     history_start = settings.INDEX_VALUATION_HISTORY_START
     await init_db()
 
+    # Fail fast before the expensive acquisition: the final aggregation
+    # refresh defers unless the day's price_history publication exists, so a
+    # cold deployment must run the daily pipeline (or cold_start_init.py) once
+    # before this backfill.
+    published_prices = await latest_published_date("price_history")
+    if published_prices is None or published_prices < target:
+        logger.error(
+            "price_history is not published for %s (latest: %s). Run the daily "
+            "screener pipeline or scripts/cold_start_init.py once, then re-run "
+            "this backfill; otherwise the final refresh will defer.",
+            target, published_prices,
+        )
+        if not args.skip_refresh:
+            return 2
+
     if not args.skip_membership_refresh:
+        # force=True: an older parser version may already have published this
+        # session's intervals without the anchored ancient members, and the
+        # skip-if-published guard would leave that truncated history in place.
         logger.info("Refreshing strict S&P 500 membership intervals for %s...", target)
-        result = await refresh_historical_universe_memberships(target)
+        result = await refresh_historical_universe_memberships(target, force=True)
         logger.info("Membership refresh: %s", result.get("status"))
 
     windows = await _load_membership_windows(target)
@@ -338,6 +423,27 @@ async def main() -> int:
         "%d ever-members since %s need data through %s",
         len(windows), history_start, target,
     )
+    first_sample = completed_month_end_labels(history_start, target)[:1]
+    if first_sample:
+        async with async_session_maker() as db:
+            early_members = await db.scalar(
+                select(func.count(UniverseMembership.ticker.distinct())).where(
+                    UniverseMembership.universe == "SP500",
+                    UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE,
+                    UniverseMembership.effective_from <= first_sample[0],
+                    (
+                        UniverseMembership.effective_to.is_(None)
+                        | (UniverseMembership.effective_to >= first_sample[0])
+                    ),
+                )
+            )
+        if (early_members or 0) < settings.PIPELINE_MIN_SP500_SIZE:
+            logger.warning(
+                "Only %d members cover the first sample month %s (gate: %d). "
+                "The provider history may be incomplete; the aggregation "
+                "quality gate will decide whether early months stay gaps.",
+                early_members, first_sample[0], settings.PIPELINE_MIN_SP500_SIZE,
+            )
 
     if args.tickers:
         wanted = {ticker.strip().upper() for ticker in args.tickers.split(",")}
@@ -353,8 +459,17 @@ async def main() -> int:
             logger.info("DRY %s window=%s..%s", ticker, start, end)
         return 0
 
+    await _ensure_sec_tickers_file()
+
     stats = await backfill_member_data(windows, target)
     logger.info("Backfill complete: %s", stats)
+    if stats.get("failed"):
+        logger.warning(
+            "%d member(s) failed acquisition; the aggregation refresh will "
+            "attempt anyway and its coverage gates decide the outcome. "
+            "Re-run this script after fixing the provider errors to complete them.",
+            stats["failed"],
+        )
 
     if args.verify:
         for ticker in sorted(windows):
@@ -367,6 +482,17 @@ async def main() -> int:
     logger.info("Running index valuation refresh for %s...", target)
     result = await refresh_index_valuation(target)
     logger.info("Index valuation refresh: %s", result)
+    if result.get("status") == "deferred":
+        logger.error(
+            "The aggregation refresh deferred (missing: %s). Wait for the "
+            "daily pipeline to publish the missing datasets for %s, or run "
+            "scripts/cold_start_init.py, then re-run this script; the "
+            "acquisition above is already complete and will be skipped.",
+            ", ".join(result.get("missing", [])) or result.get("reason"), target,
+        )
+        return 2
+    if result.get("status") != "published":
+        return 1
     return 0
 
 
