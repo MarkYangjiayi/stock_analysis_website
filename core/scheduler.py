@@ -16,6 +16,7 @@ from services.market_breadth import (
     backfill_market_breadth_price_history,
     refresh_market_breadth,
 )
+from services.index_valuation import refresh_index_valuation
 from services.universe import refresh_historical_universe_memberships
 from services.rsi_monitor import run_daily_rsi_monitor
 
@@ -30,6 +31,7 @@ scheduler = AsyncIOScheduler(
 )
 _factor_sync_lock = asyncio.Lock()
 _market_breadth_sync_lock = asyncio.Lock()
+_index_valuation_sync_lock = asyncio.Lock()
 
 
 async def _sync_factors_for_target(target: date):
@@ -107,6 +109,28 @@ async def scheduled_market_breadth_sync(reference_date: date = None):
     return await _sync_market_breadth_for_target(target)
 
 
+async def _sync_index_valuation_for_target(target: date):
+    """Recompute the month-end series after membership and prices are current.
+
+    The refresh itself is idempotent and dependency-gated; the lock only keeps
+    concurrent triggers from racing on the pipeline run.
+    """
+    async with _index_valuation_sync_lock:
+        published = await latest_published_date("index_valuation")
+        if published is not None and published >= target:
+            return {
+                "status": "skipped",
+                "reason": "already-published",
+                "as_of_date": target.isoformat(),
+            }
+        return await refresh_index_valuation(target)
+
+
+async def scheduled_index_valuation_sync(reference_date: date = None):
+    target = latest_completed_us_session(reference_date or datetime.now(ny_tz).date())
+    return await _sync_index_valuation_for_target(target)
+
+
 async def scheduled_morning_briefing():
     if is_us_market_session(datetime.now(ny_tz).date()):
         return await generate_morning_briefing()
@@ -171,6 +195,18 @@ def start_scheduler():
         hour=4,
         minute=0,
         id="daily_factor_cross_section",
+        replace_existing=True,
+    )
+    # Index-level valuation recomputes the full month-end P/E series from
+    # stored statements and prices; it runs after breadth has confirmed the
+    # day's membership and price publications.
+    scheduler.add_job(
+        scheduled_index_valuation_sync,
+        'cron',
+        day_of_week='tue-sat',
+        hour=4,
+        minute=15,
+        id="daily_index_valuation_sync",
         replace_existing=True,
     )
     # Run after the daily price/factor pipeline. Tue-Sat maps to the preceding

@@ -489,6 +489,52 @@ class TreasuryYieldCurveResponse(BaseModel):
     observations: List[TreasuryYieldObservation]
 
 
+class IndexValuationPoint(BaseModel):
+    date: date
+    index_pe: Optional[float] = None
+    index_pe_earners: Optional[float] = None
+    median_pe: Optional[float] = None
+    member_count: int
+    covered_count: int
+    loss_maker_count: int
+    coverage_pct: Optional[float] = None
+    reason: Optional[str] = None
+
+
+class IndexValuationStats(BaseModel):
+    months_total: int
+    months_valid: int
+    latest_date: Optional[date] = None
+    latest_index_pe: Optional[float] = None
+    latest_index_pe_earners: Optional[float] = None
+    latest_median_pe: Optional[float] = None
+    median_index_pe: Optional[float] = None
+    min_index_pe: Optional[float] = None
+    max_index_pe: Optional[float] = None
+    average_coverage_pct: Optional[float] = None
+
+
+class IndexValuationMeta(BaseModel):
+    universe: Literal["SP500"]
+    as_of_date: date
+    expected_as_of_date: date
+    published_at: Optional[datetime] = None
+    stale: bool
+    history_start: date
+    history_end: date
+    membership_mode: Literal["point_in_time"]
+    history_basis: Literal["reconstructed_estimates"]
+    price_basis: Literal["split_only"]
+    warnings: List[str] = Field(default_factory=list)
+
+
+class IndexValuationResponse(BaseModel):
+    meta: IndexValuationMeta
+    methodology: List[str]
+    points: List[IndexValuationPoint]
+    stats: IndexValuationStats
+
+
 class FactorComputeRequest(BaseModel):
     as_of_date: date
 

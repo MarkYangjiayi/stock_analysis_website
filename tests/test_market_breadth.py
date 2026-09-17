@@ -179,7 +179,7 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         ("RUSSELL2000", "BBB.US", LIVE_UNIVERSE_SOURCE),
         ("SP500", "AAA.US", LIVE_UNIVERSE_SOURCE),
     ]
-    assert revision == "0020_daily_report_market_context"
+    assert revision == "0022_index_valuation_backfill_checkpoints"
 
 
 def test_historical_membership_parser_supports_duplicates_and_reentry():
@@ -233,10 +233,24 @@ def test_historical_membership_parser_only_ignores_unknown_start_before_window()
 
     with pytest.raises(ValueError, match="required history window"):
         parse_historical_memberships(
-            [{"Code": "AMBIG", "StartDate": None, "EndDate": "2025-02-01"}],
+            [{"Code": "ACTIVE", "StartDate": None, "EndDate": None}],
             "SP500",
-            required_from=required_from,
         )
+
+    # Join dates the provider omitted anchor at the earliest served date:
+    # active members and members whose known exit falls inside the window.
+    anchored = parse_historical_memberships(
+        [
+            {"Code": "ACTIVE", "StartDate": None, "EndDate": None},
+            {"Code": "AMBIG", "StartDate": None, "EndDate": "2025-02-01"},
+        ],
+        "SP500",
+        required_from=required_from,
+    )
+    assert {(row["ticker"], row["effective_from"], row["effective_to"]) for row in anchored} == {
+        ("ACTIVE.US", required_from, None),
+        ("AMBIG.US", required_from, date(2025, 2, 1)),
+    }
 
 
 @pytest.mark.asyncio
@@ -315,6 +329,64 @@ async def test_historical_membership_publication_preserves_explicit_session_date
     assert {membership.source for membership in memberships} == {
         HISTORICAL_UNIVERSE_SOURCE
     }
+
+
+@pytest.mark.asyncio
+async def test_forced_membership_refresh_replaces_already_published_history(db_session, monkeypatch):
+    target = date(2025, 1, 10)
+    run = PipelineRun(
+        pipeline_name="historical_universe_sync",
+        target_date=target,
+        status="published",
+        stage="published",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(DataPublication(
+        dataset=HISTORICAL_UNIVERSE_DATASET,
+        as_of_date=target,
+        pipeline_run_id=run.id,
+        status="published",
+    ))
+    db_session.add(UniverseMembership(
+        universe="SP500",
+        ticker="STALE.US",
+        effective_from=date(2010, 1, 1),
+        source=HISTORICAL_UNIVERSE_SOURCE,
+    ))
+    await db_session.commit()
+
+    @asynccontextmanager
+    async def fake_client():
+        yield object()
+
+    async def fake_history(index_ticker, client=None):
+        assert index_ticker == "GSPC.INDX"
+        return [
+            {"Code": "FRESH", "StartDate": "2020-01-01", "EndDate": None},
+            {"Code": "FRESH2", "StartDate": "2020-01-01", "EndDate": None},
+        ]
+
+    monkeypatch.setattr("services.universe.eodhd_client.create_http_client", fake_client)
+    monkeypatch.setattr("services.universe.eodhd_client.get_index_component_history", fake_history)
+
+    # Without force the same-session publication short-circuits the refresh.
+    assert (await refresh_historical_universe_memberships(target))["status"] == "skipped"
+    # force rebuilds provider intervals recorded by an older parser version.
+    result = await refresh_historical_universe_memberships(target, force=True)
+    assert result["status"] == "published"
+    db_session.expire_all()
+    memberships = list((await db_session.execute(
+        select(UniverseMembership).where(
+            UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE
+        )
+    )).scalars())
+    assert sorted(row.ticker for row in memberships) == ["FRESH.US", "FRESH2.US"]
+    publications = list((await db_session.execute(
+        select(DataPublication).where(DataPublication.dataset == HISTORICAL_UNIVERSE_DATASET)
+    )).scalars())
+    assert len(publications) == 1
+    assert publications[0].as_of_date == target
 
 
 @pytest.mark.asyncio

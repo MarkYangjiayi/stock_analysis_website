@@ -106,10 +106,18 @@ def parse_historical_memberships(
                 # ancient constituents. It is safe to exclude them only when
                 # their known exit predates every date this publication serves.
                 continue
-            raise ValueError(
-                f"{universe} {ticker} has no StartDate inside the required history window"
-            )
-        effective_from = _parse_date(raw_start, "StartDate")
+            if required_from is None:
+                raise ValueError(
+                    f"{universe} {ticker} has no StartDate inside the required history window"
+                )
+            # The provider omits join dates only for members whose tenure
+            # predates its records; every join since then is dated. Anchor
+            # such rows at the earliest served date: this never claims
+            # membership before any date the publication serves, and the
+            # refresh records the anchored tickers in its quality report.
+            effective_from = required_from
+        else:
+            effective_from = _parse_date(raw_start, "StartDate")
         if effective_to is not None and effective_to < effective_from:
             raise ValueError(
                 f"{universe} {ticker} ends before it starts: "
@@ -159,7 +167,11 @@ def historical_membership_required_from(target: date) -> date:
         if is_us_market_session(cursor):
             sessions.append(cursor)
         cursor -= timedelta(days=1)
-    return sessions[-1]
+    # The membership table serves every consumer of point-in-time history,
+    # including the multi-year index-valuation window, so intervals must be
+    # retained (and unknown join dates anchored) from the earliest date any
+    # product needs, not just the breadth display window.
+    return min(sessions[-1], settings.INDEX_VALUATION_HISTORY_START)
 
 
 def validate_historical_memberships(
@@ -217,8 +229,15 @@ async def replace_historical_memberships(
 
 async def refresh_historical_universe_memberships(
     target_date: Optional[date] = None,
+    *,
+    force: bool = False,
 ) -> dict:
-    """Atomically publish every enabled strict Market Overview history."""
+    """Atomically publish every enabled strict Market Overview history.
+
+    ``force`` re-runs and replaces provider intervals even when the target
+    session is already published; the one-time index-valuation backfill uses
+    it to rebuild membership history recorded by an older parser version.
+    """
     reference = target_date or date.today()
     target = (
         reference
@@ -226,7 +245,7 @@ async def refresh_historical_universe_memberships(
         else latest_completed_us_session(reference)
     )
     published = await latest_published_date(HISTORICAL_UNIVERSE_DATASET)
-    if published is not None and published >= target:
+    if published is not None and published >= target and not force:
         return {
             "status": "skipped",
             "reason": "already-published",
@@ -264,6 +283,24 @@ async def refresh_historical_universe_memberships(
             quality_metrics[universe]["excluded_or_deduplicated_source_rows"] = (
                 len(rows) - len(intervals)
             )
+            anchored_tickers: set[str] = set()
+            for row in rows:
+                if row.get("StartDate") not in (None, "", "null"):
+                    continue
+                code = str(row.get("Code") or "").strip().upper()
+                if not code:
+                    continue
+                raw_end = str(row.get("EndDate") or "").strip().lower()
+                if raw_end in ("none", "", "null", "0000-00-00"):
+                    anchored_tickers.add(code if "." in code else f"{code}.US")
+                    continue
+                try:
+                    row_exit = date.fromisoformat(raw_end)
+                except ValueError:
+                    continue
+                if row_exit >= required_from:
+                    anchored_tickers.add(code if "." in code else f"{code}.US")
+            quality_metrics[universe]["join_date_anchored_tickers"] = sorted(anchored_tickers)
 
         await update_pipeline_run(run_id, "publishing_history")
         async with async_session_maker() as db, db.begin():

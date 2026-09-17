@@ -140,6 +140,74 @@ class MarketBreadthSnapshot(Base):
     )
 
 
+class IndexValuationSnapshot(Base):
+    """Immutable month-end index-level valuation for one published pipeline run.
+
+    Aggregates reconstructed per-member multiples over point-in-time index
+    membership. Months with insufficient coverage stay gaps: value columns are
+    null and the run's quality report carries the reason, never zero-filled.
+    """
+
+    __tablename__ = "index_valuation_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
+    universe: Mapped[str] = mapped_column(String)
+    date: Mapped[dt_date] = mapped_column(Date)
+
+    member_count: Mapped[int] = mapped_column(Integer)
+    covered_count: Mapped[int] = mapped_column(Integer)
+    loss_maker_count: Mapped[int] = mapped_column(Integer)
+
+    coverage_pct: Mapped[Optional[float]] = mapped_column(Float)
+    equity_total: Mapped[Optional[float]] = mapped_column(Float)
+    earnings_ttm_total: Mapped[Optional[float]] = mapped_column(Float)
+    earnings_ttm_earners: Mapped[Optional[float]] = mapped_column(Float)
+    index_pe: Mapped[Optional[float]] = mapped_column(Float)
+    index_pe_earners: Mapped[Optional[float]] = mapped_column(Float)
+    median_pe: Mapped[Optional[float]] = mapped_column(Float)
+    reason: Mapped[Optional[str]] = mapped_column(String)
+
+    __table_args__ = (
+        Index(
+            "ix_index_valuation_snapshots_run_universe_date",
+            "pipeline_run_id",
+            "universe",
+            "date",
+            unique=True,
+        ),
+    )
+
+
+class IndexValuationBackfillCheckpoint(Base):
+    """Latest successfully normalized fundamentals fetch for one member.
+
+    Raw snapshots are immutable and deduplicated by payload checksum, so their
+    ``fetched_at`` value cannot represent a repeated fetch of identical data.
+    This checkpoint is updated in the same transaction as normalization and is
+    therefore safe to use for the paid re-fetch guard.
+    """
+
+    __tablename__ = "index_valuation_backfill_checkpoints"
+
+    ticker: Mapped[str] = mapped_column(
+        ForeignKey("tickers.ticker"), primary_key=True
+    )
+    fundamentals_normalized_at: Mapped[datetime] = mapped_column(
+        DateTime
+    )
+    raw_snapshot_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("raw_data_snapshots.id")
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_index_valuation_backfill_checkpoints_normalized_at",
+            "fundamentals_normalized_at",
+        ),
+    )
+
+
 class FinancialStatement(Base):
     """
     3. financial_statements (财务报表表)

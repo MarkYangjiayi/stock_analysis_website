@@ -88,10 +88,15 @@ from services.market_breadth import (
     MarketOverviewUniverseUnavailable,
     get_market_overview,
 )
+from services.index_valuation import (
+    IndexValuationUnavailable,
+    IndexValuationUniverseUnavailable,
+    get_index_valuation,
+)
 from services.yield_curve import YieldCurveUnavailable, get_yield_curve
 from services.stock_snapshot import get_market_snapshot
 from services.similar_stocks import get_similar_stocks
-from api.schemas import SimilarStocksResponse
+from api.schemas import IndexValuationResponse, SimilarStocksResponse
 from services.valuation_history import get_valuation_history
 from services.split_history import sync_full_split_history
 import pandas as pd
@@ -795,6 +800,23 @@ async def market_overview(
     except MarketOverviewUniverseUnavailable as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except MarketOverviewUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/index-valuation",
+    response_model=IndexValuationResponse,
+    tags=["Market Analysis Read"],
+)
+async def index_valuation(
+    universe: Literal["SP500"] = "SP500",
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_index_valuation(db, universe)
+    except IndexValuationUniverseUnavailable as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IndexValuationUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 

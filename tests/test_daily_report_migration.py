@@ -25,4 +25,4 @@ def test_existing_report_survives_market_context_migration(tmp_path):
                    cwd=Path(__file__).resolve().parents[1], env=env, check=True, capture_output=True)
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT content, source_results, market_context FROM daily_report_runs").fetchone() == ("original content", "[]", None)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0020_daily_report_market_context"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0022_index_valuation_backfill_checkpoints"

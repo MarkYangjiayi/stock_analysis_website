@@ -184,7 +184,7 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
     recent = sorted(rows.values(), key=lambda row: row["period_end"], reverse=True)[:4]
     latest = recent[0]
     complete = _consecutive(recent)
-    values = {key: None for key in ("eps", "revenue", "fcf", "ebitda")}
+    values = {key: None for key in ("eps", "revenue", "fcf", "ebitda", "net_income", "common_income")}
     reasons: dict[str, str] = {}
     required_parts = {"pe": [0, 1], "ps": [0, 1], "pb": [1], "pfcf": [1, 2], "ev_revenue": [0, 1], "ev_ebitda": [0, 1]}
     for key in KEYS:
@@ -200,6 +200,7 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
         for key in values:
             components = [row[key] for row in recent]
             values[key] = number(sum(components)) if all(v is not None for v in components) else None
+    non_positive: set[str] = set()
     for key, field_name in {**mapping, "pb": "book"}.items():
         denominator = latest["book"] if key == "pb" else values[field_name]
         if key not in reasons and denominator is None:
@@ -208,6 +209,7 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
                 "fcf": "Operating cash flow and capex are required in every quarter; missing values are not zero.",
             }.get(field_name, f"Complete {field_name.upper()} inputs are unavailable.")
         elif key not in reasons and denominator <= 0:
+            non_positive.add(key)
             reasons[key] = f"{field_name.upper()} is zero or negative; this multiple is not meaningful."
         for row in ([latest] if key == "pb" else recent):
             if field_name in row["quality"]:
@@ -230,6 +232,30 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
             reasons[key] = latest["quality"]["debt"]
         elif latest["debt"] is None or latest["cash"] is None:
             reasons[key] = "A complete, consistent debt total and cash balance are required for EV."
+    # Index-level aggregate earnings follow the P/E input gates exactly, except
+    # that a non-positive TTM total stays a valid negative contribution
+    # instead of becoming a gap. Annual reconciliation conflicts the earnings
+    # totals themselves, so they block aggregate earnings even when the P/E
+    # reason string was later replaced by the non-positive sign. Quality flags
+    # stay blocking for the same reason.
+    earnings_ttm = None
+    earnings_reason = None
+    if "pe" in annual_reasons:
+        earnings_reason = annual_reasons["pe"]
+    if earnings_reason is None and "pe" in reasons and "pe" not in non_positive:
+        earnings_reason = reasons["pe"]
+    for row in recent:
+        if "eps" in row["quality"]:
+            earnings_reason = f"{row['period_end'].isoformat()}: {row['quality']['eps']}"
+            break
+    if earnings_reason is None and complete:
+        common_total, net_total = values["common_income"], values["net_income"]
+        if common_total is not None:
+            earnings_ttm = common_total
+        elif net_total is not None and not financial:
+            earnings_ttm = net_total
+        if earnings_ttm is None:
+            earnings_reason = "Reported earnings totals are unavailable in every quarter of the trailing window."
     return {
         "id": basis_id, "period_end": latest["period_end"].isoformat(),
         "available_from": available_from.isoformat(),
@@ -239,6 +265,7 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
         "share_reference_dates": sorted({row["share_reference_date"].isoformat() for row in recent if row["share_reference_date"]}),
         "inputs": {**values, "shares": latest["shares"], "book": latest["book"], "debt": latest["debt"], "cash": latest["cash"]},
         "reasons": reasons,
+        "earnings_ttm": earnings_ttm, "earnings_reason": earnings_reason,
     }
 
 
@@ -317,6 +344,9 @@ def build_valuation_history(
             reason = "The latest quarterly statement is more than 180 days old."
         values = dict.fromkeys(KEYS)
         ev_reason = None
+        equity = None
+        earnings_ttm = None
+        earnings_reason = reason
         if reason is None:
             split_price = close / _split_factor(price.date, reference, splits)
             inputs = active["inputs"]
@@ -329,10 +359,14 @@ def build_valuation_history(
                 numerator = split_price if key == "pe" else ev if key.startswith("ev_") else equity
                 if key not in active["reasons"] and numerator is not None and numerator > 0:
                     values[key] = number(numerator / inputs[denominators[key]])
+            earnings_ttm = active["earnings_ttm"]
+            if active["earnings_reason"]:
+                earnings_reason = active["earnings_reason"]
         label = _sample_date(price.date, interval).isoformat()
         # Keep the final session's ratio, never average daily ratios and never
         # forward-fill the prior valid value over a missing final observation.
-        sampled[label] = {"date": label, "price_date": price.date.isoformat(), "basis_id": active["id"] if active else None, "values": values, "reason": reason, "ev_reason": ev_reason}
+        sampled[label] = {"date": label, "price_date": price.date.isoformat(), "basis_id": active["id"] if active else None, "values": values, "reason": reason, "ev_reason": ev_reason,
+                          "equity": equity, "earnings_ttm": earnings_ttm, "earnings_reason": earnings_reason}
     points = list(sampled.values())
     metrics = []
     for key, label, description, formula in METRICS:
@@ -356,10 +390,24 @@ def build_valuation_history(
             "methodology": METHODOLOGY, "warnings": warnings, "metrics": metrics, "bases": bases, "points": points}
 
 
-async def get_valuation_history(ticker: str, db: AsyncSession, interval: str = "1d") -> dict:
+async def get_valuation_history(
+    ticker: str,
+    db: AsyncSession,
+    interval: str = "1d",
+    through: date | None = None,
+) -> dict:
+    """Reconstruct valuation history, optionally capped at a target session.
+
+    ``through`` bounds every loaded price (and therefore the split reference
+    date and statement-effectiveness sweep) to sessions at or before it, so
+    historical re-runs can never mix prices disclosed after the target date.
+    """
     profile = await db.get(Ticker, ticker)
     snapshot, fundamentals = await load_latest_fundamentals_snapshot(ticker, db)
-    prices = (await db.execute(select(DailyPrice).where(DailyPrice.ticker == ticker).order_by(DailyPrice.date))).scalars().all()
+    price_query = select(DailyPrice).where(DailyPrice.ticker == ticker)
+    if through is not None:
+        price_query = price_query.where(DailyPrice.date <= through)
+    prices = (await db.execute(price_query.order_by(DailyPrice.date))).scalars().all()
     versions = list((await db.execute(select(FundamentalVersion).where(
         FundamentalVersion.ticker == ticker, FundamentalVersion.period_type.in_(("Quarterly", "Yearly")),
     ))).scalars().all())

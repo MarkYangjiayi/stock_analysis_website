@@ -4,6 +4,7 @@ const PAGES = [
     { path: "/screener", name: "screener", heading: "Stock Screener" },
     { path: "/anomalies", name: "anomalies", heading: "Market Anomalies" },
     { path: "/market", name: "market", heading: "US Market Overview" },
+    { path: "/market/index-valuation", name: "index-valuation", heading: "S&P 500 Historical P/E" },
     { path: "/research", name: "factor-lab", heading: "Factor Lab" },
     { path: "/rrg", name: "sector-rotation", heading: "US Sector Rotation" },
 ];
