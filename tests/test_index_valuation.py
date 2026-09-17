@@ -39,6 +39,33 @@ from services.index_valuation import (
 )
 from services.split_history import persist_full_split_history
 from services.universe import HISTORICAL_UNIVERSE_DATASET, HISTORICAL_UNIVERSE_SOURCE
+from scripts.backfill_index_valuation import statement_window_complete
+
+
+def _quarters(first: date, count: int) -> list[date]:
+    return [first + timedelta(days=91 * index) for index in range(count)]
+
+
+def test_statement_window_complete_requires_head_tail_and_continuity():
+    start, end = date(2024, 1, 1), date(2026, 6, 30)
+    full = _quarters(date(2023, 1, 5), 14)
+    assert statement_window_complete(full, None, start, end) is True
+
+    # Enough rows but concentrated at the recent tail: the head is missing and
+    # the early months would never self-heal, so this is not completion.
+    recent_only = full[4:]
+    assert statement_window_complete(recent_only, None, start, end) is False
+
+    # A quarter-sized hole breaks the four-consecutive-quarter requirement.
+    with_hole = [quarter for quarter in full if quarter != full[7]]
+    assert statement_window_complete(with_hole, None, start, end) is False
+
+    # Nothing near the window end: stale history, not completion.
+    assert statement_window_complete(full[:12], None, start, end) is False
+
+    # The same recent-only set is complete when the member listed that late:
+    # its own first price bounds the expected span.
+    assert statement_window_complete(recent_only, date(2024, 6, 1), start, end) is True
 
 
 def _point(price_date: str, equity, earnings_ttm, earnings_reason=None):
@@ -51,17 +78,26 @@ def _point(price_date: str, equity, earnings_ttm, earnings_reason=None):
     }
 
 
-def test_company_keys_group_by_cik_then_static_then_ticker(tmp_path, monkeypatch):
+def test_company_keys_static_pairs_take_precedence_over_partial_cik_maps(tmp_path, monkeypatch):
     monkeypatch.setattr(
         settings, "INDEX_VALUATION_SEC_TICKERS_PATH", str(tmp_path / "missing.json.gz")
     )
-    cik_map = {"GOOG": "1652044", "GOOGL": "1652044"}
-    resolved = company_keys(
-        ["GOOG.US", "GOOGL.US", "FOXA.US", "FOX.US", "AAPL.US"], cik_map
+    # The current SEC file lists only the surviving class of a delisted pair
+    # (CMCSA yes, CMCSK no); the declared pair must still merge.
+    one_sided = company_keys(["CMCSA.US", "CMCSK.US"], {"CMCSA": "1166691"})
+    assert one_sided["CMCSA.US"] == one_sided["CMCSK.US"] == "STATIC:CMCSA"
+
+    # Declared pairs stay merged even when the SEC file knows both classes.
+    both_listed = company_keys(
+        ["GOOG.US", "GOOGL.US"], {"GOOG": "1652044", "GOOGL": "1652044"}
     )
-    assert resolved["GOOG.US"] == resolved["GOOGL.US"] == "CIK:1652044"
-    assert resolved["FOXA.US"] == resolved["FOX.US"] == "STATIC:FOXA"
-    assert resolved["AAPL.US"] == "TICKER:AAPL"
+    assert both_listed["GOOG.US"] == both_listed["GOOGL.US"] == "STATIC:GOOG"
+
+    # Pairs the static list does not know still group through the CIK map.
+    undeclared = company_keys(["NEWA.US", "NEWC.US"], {"NEWA": "999", "NEWC": "999"})
+    assert undeclared["NEWA.US"] == undeclared["NEWC.US"] == "CIK:999"
+
+    assert company_keys(["AAPL.US"], {})["AAPL.US"] == "TICKER:AAPL"
 
 
 def test_load_cik_map_reads_gzip_and_tolerates_missing_file(tmp_path):
@@ -91,6 +127,37 @@ def test_completed_month_end_labels_exclude_running_month():
     assert completed_month_end_labels(date(2010, 7, 1), date(2010, 7, 31)) == [
         date(2010, 7, 31),
     ]
+
+
+def test_build_rows_membership_uses_the_months_final_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        settings, "INDEX_VALUATION_SEC_TICKERS_PATH", str(tmp_path / "missing.json.gz")
+    )
+    memberships = [
+        # Exits on the month's final session: still a member for that month.
+        {"ticker": "EXIT.US", "effective_from": date(2010, 1, 1), "effective_to": date(2010, 5, 28)},
+        # Join effective only after the final session: not yet a member.
+        {"ticker": "JOIN.US", "effective_from": date(2010, 5, 31), "effective_to": None},
+        {"ticker": "AAPL.US", "effective_from": date(2010, 1, 1), "effective_to": None},
+    ]
+    per_ticker = {
+        "EXIT.US": {"2010-05-31": _point("2010-05-28", 300.0, 15.0)},
+        "JOIN.US": {"2010-05-31": _point("2010-05-28", 100.0, 10.0)},
+        "AAPL.US": {"2010-05-31": _point("2010-05-28", 900.0, 45.0)},
+    }
+    # May 2010's calendar month-end is Memorial Day; the final session is the
+    # 28th, so membership must be evaluated there, not on the label date.
+    rows = build_index_valuation_rows(
+        per_ticker,
+        memberships,
+        [date(2010, 5, 31)],
+        min_members=1,
+        min_coverage=0.5,
+    )
+    assert rows[0]["member_count"] == 2
+    assert rows[0]["covered_count"] == 2
+    assert rows[0]["equity_total"] == pytest.approx(1200.0)
+    assert rows[0]["earnings_ttm_total"] == pytest.approx(60.0)
 
 
 def test_build_rows_multi_class_membership_and_loss_makers(tmp_path, monkeypatch):

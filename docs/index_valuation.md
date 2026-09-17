@@ -47,23 +47,27 @@ so a forward history cannot be reconstructed honestly.
 
 ## Membership and company grouping
 
-- Membership is **point-in-time**: a company contributes to a month only when
-  its EODHD `HistoricalTickerComponents` interval covers that month-end **and**
-  the underlying price session falls inside the interval (mid-month joiners
-  and leavers are handled exactly).
-- **Multi-class members are one company.** Grouping uses the cached official
-  SEC company-tickers file (`INDEX_VALUATION_SEC_TICKERS_PATH`, ticker → CIK)
-  with a documented fallback list (`STATIC_COMPANY_GROUPS`, verified against
-  the provider's GSPC history: GOOG/GOOGL, FOXA/FOX, NWSA/NWS, CMCSA/CMCSK,
-  TFCFA/TFCF, UAA/UA, LBRDA/LBRDK, MOB.A/MOB.B). The provider reports
+- Membership is **point-in-time** and evaluated at each month's **final
+  trading session**, never at a holiday calendar month-end: a company
+  contributes to a month only when its EODHD `HistoricalTickerComponents`
+  interval covers that final session **and** the underlying price session
+  falls inside the interval (mid-month joiners and leavers are handled
+  exactly).
+- **Multi-class members are one company.** The verified static pairs
+  (`STATIC_COMPANY_GROUPS`: GOOG/GOOGL, FOXA/FOX, NWSA/NWS, CMCSA/CMCSK,
+  TFCFA/TFCF, UAA/UA, LBRDA/LBRDK, MOB.A/MOB.B) take precedence over the
+  cached SEC company-tickers file, because the current SEC file can list
+  only one class of a delisted multi-class company (CMCSA is listed while
+  CMCSK is not) and would split a declared pair; the CIK map still groups
+  every pair the static list does not know about. The provider reports
   **company-wide statement shares on every class**, so each class's equity
   already approximates the whole company; summing classes would double-count
   the numerator while earnings count once. Company equity therefore uses the
   primary (largest) class's equity proxy, and company-wide earnings are
   counted exactly once and must agree across classes — when two classes
   report earnings that disagree beyond a 2% tolerance, the company stays a
-  gap for that month rather than guessing which class is right. A missing CIK
-  cache degrades to the static list and is disclosed as a warning in the
+  gap for that month rather than guessing which class is right. A missing
+  CIK cache degrades to the static list and is disclosed as a warning in the
   run's quality report (`cik_map_available`), not silently.
 - Provider rows without a `StartDate` are anchored at the earliest served
   date (see `services/universe.py`): EODHD omits join dates only for members
@@ -123,12 +127,16 @@ Prerequisites and behaviour:
 - The SEC company-tickers file is downloaded once when the cache is absent
   (it is not shipped in the image; `data/` is excluded from builds).
 - Per ever-member it backfills prices over that member's own membership
-  window (one EOD call), fetches full fundamentals once when stored
-  statements do not cover most of the window's expected quarters (ten calls;
-  current screener members already carry full statement history), and
-  verifies complete split history (one call) — roughly 800 price calls +
-  800 split calls + ~10 calls per still-fundamentals-less member in total.
-  Completed tickers are skipped on re-run.
+  window (one EOD call), fetches full fundamentals once when the stored
+  **distinct** quarters do not cover the window — the completion check
+  requires quarters near both ends of the span and no quarter-sized holes,
+  so a recent-only partial history is re-fetched instead of silently
+  stranding the early months (a fetch within the last 7 days that still
+  fails the check is accepted as a provider limitation, with a warning,
+  instead of re-paying on every re-run) — and verifies complete split
+  history (one call) — roughly 800 price calls + 800 split calls + ~10 calls
+  per still-fundamentals-less member in total. Completed tickers are skipped
+  on re-run.
 - Acquisition failures mark the backfill run `failed` with the ticker list
   (the gated aggregation refresh may still publish; its coverage gates
   decide) and the script exits non-zero when the refresh does not publish,

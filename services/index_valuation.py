@@ -58,8 +58,8 @@ STATIC_COMPANY_GROUPS = (
 )
 METHODOLOGY = [
     "Reconstructed history, not a point-in-time backtest dataset: initial provider payloads may contain later restatements. Recorded revisions become effective only after their availability date.",
-    "Membership is point-in-time: every month-end uses the index constituents whose provider membership interval covers that date, and the underlying price session must also fall inside the interval. Only completed months are published, and prices are capped at the publication's target session.",
-    "Multi-class members are grouped into one company by SEC CIK (cached official company-tickers file) with a documented fallback list. The provider reports company-wide statement shares on every class, so company equity uses the primary (largest) class's equity proxy instead of summing classes; company-wide earnings are counted exactly once and must agree across classes.",
+    "Membership is point-in-time: every month uses the index constituents whose provider membership interval covers that month's final trading session (never a holiday calendar month-end), and the underlying price session must also fall inside the interval. Only completed months are published, and prices are capped at the publication's target session.",
+    "Multi-class members are grouped into one company: the documented static pairs take precedence, with the SEC CIK map (cached official company-tickers file) grouping every further pair, because the current SEC file can list only one class of a delisted multi-class company. The provider reports company-wide statement shares on every class, so company equity uses the primary (largest) class's equity proxy instead of summing classes; company-wide earnings are counted exactly once and must agree across classes.",
     "Member earnings follow the per-stock P/E gates: currency match, four consecutive disclosed quarters, a latest statement no older than 180 days, annual reconciliation and earnings-quality quarantines. A non-positive TTM total stays a valid negative contribution instead of becoming a gap.",
     "index_pe is the aggregate sum(company equity) / sum(TTM earnings) including loss-makers; index_pe_earners repeats the ratio over profitable companies only; median_pe is the median of company-level P/E ratios.",
     "Provider statement shares are split-adjusted weighted-average proxies, so equity totals are estimates of market capitalization, not verified historical market caps.",
@@ -100,7 +100,14 @@ def load_cik_map(path: str) -> dict[str, str]:
 
 
 def company_keys(tickers: list[str], cik_map: dict[str, str]) -> dict[str, str]:
-    """Resolve every member ticker to one company identity."""
+    """Resolve every member ticker to one company identity.
+
+    The verified static pairs take precedence over the current SEC file: the
+    file can list only one class of a delisted multi-class company (CMCSA is
+    listed while CMCSK is not), which would otherwise split a declared pair
+    into two companies. The SEC CIK map still groups every multi-class pair
+    the static list does not know about.
+    """
     static: dict[str, str] = {}
     for group in STATIC_COMPANY_GROUPS:
         canonical = group[0]
@@ -109,15 +116,17 @@ def company_keys(tickers: list[str], cik_map: dict[str, str]) -> dict[str, str]:
     resolved: dict[str, str] = {}
     for ticker in tickers:
         base = _base_code(ticker).upper()
-        resolved[ticker] = (
-            f"CIK:{cik_map[base]}"
-            if base in cik_map
-            else static.get(base, f"TICKER:{base}")
-        )
+        if base in static:
+            resolved[ticker] = static[base]
+        elif base in cik_map:
+            resolved[ticker] = f"CIK:{cik_map[base]}"
+        else:
+            resolved[ticker] = f"TICKER:{base}"
     return resolved
 
 
-def _last_session_of_month(year: int, month: int) -> Optional[date]:
+def last_session_of_month(year: int, month: int) -> Optional[date]:
+    """The final US session of a calendar month, or None when there is none."""
     day = calendar.monthrange(year, month)[1]
     cursor = date(year, month, day)
     for _ in range(7):
@@ -133,12 +142,13 @@ def completed_month_end_labels(start: date, target: date) -> list[date]:
     A month is complete when its final US session closed at or before the
     target; the running month therefore never appears with a future label,
     and a month whose final session was observed is included even when that
-    session precedes the calendar month-end (e.g. the 29th).
+    session precedes the calendar month-end (e.g. the 28th before a holiday
+    Monday).
     """
     labels: list[date] = []
     year, month = start.year, start.month
     while (year, month) <= (target.year, target.month):
-        last_session = _last_session_of_month(year, month)
+        last_session = last_session_of_month(year, month)
         if last_session is not None and last_session <= target:
             labels.append(date(year, month, calendar.monthrange(year, month)[1]))
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
@@ -174,7 +184,12 @@ def build_index_valuation_rows(
     )
     rows: list[dict] = []
     for day in sample_dates:
-        members = [iv for iv in memberships if _interval_covers(iv, day)]
+        # Membership is evaluated at the month's final trading session, not
+        # the calendar month-end: a holiday month-end (e.g. Memorial Day)
+        # would wrongly drop members whose exit is the last session and could
+        # wrongly include joins effective only after that session.
+        as_of = last_session_of_month(day.year, day.month) or day
+        members = [iv for iv in memberships if _interval_covers(iv, as_of)]
         companies: dict[str, list[dict]] = {}
         for interval in members:
             ticker = interval["ticker"]

@@ -39,12 +39,17 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert
 
 from core.config import settings
+from core.time_utils import utc_now
 from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from database import async_session_maker, init_db
-from models import DailyPrice, FundamentalVersion, Ticker, UniverseMembership
+from models import DailyPrice, FundamentalVersion, RawDataSnapshot, Ticker, UniverseMembership
 from services import eodhd_client
 from services.data_sync import _upsert_daily_prices, _upsert_financials, _upsert_ticker_info
-from services.index_valuation import completed_month_end_labels, refresh_index_valuation
+from services.index_valuation import (
+    completed_month_end_labels,
+    last_session_of_month,
+    refresh_index_valuation,
+)
 from services.pipeline_runs import begin_pipeline_run, finish_pipeline_run, latest_published_date, update_pipeline_run
 from services.raw_store import persist_snapshot
 from services.split_history import load_split_history, sync_full_split_history
@@ -62,6 +67,14 @@ PRICE_COVERAGE_THRESHOLD = 0.90
 # statement-completion check looks almost a year behind the window start.
 STATEMENT_LOOKBACK_DAYS = 370
 STATEMENT_COMPLETION_RATIO = 0.75
+# Fiscal calendars vary, so head/tail slack is a quarter plus drift and the
+# gap check allows one missing-quarter-shaped hole to fail loudly.
+STATEMENT_MAX_HEAD_SLACK_DAYS = 140
+STATEMENT_MAX_TAIL_SLACK_DAYS = 140
+STATEMENT_MAX_QUARTER_GAP_DAYS = 140
+# After a fresh fundamentals fetch, do not pay for another one inside this
+# window even when the provider's own history remains incomplete.
+FUNDAMENTALS_REFETCH_GUARD_DAYS = 7
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
 
@@ -155,31 +168,77 @@ async def _ensure_sec_tickers_file() -> bool:
         return False
 
 
-async def _has_window_statements(ticker: str, start: date, end: date) -> bool:
-    """Stored quarters must cover most of the window's expected quarters.
-
-    A single stray record is not completion: the aggregator needs four
-    consecutive quarters behind every month-end, so the stored count is
-    compared against the quarters the window (and the member's own listing)
-    could possibly contain.
-    """
+async def _window_statement_coverage(ticker: str, start: date, end: date) -> tuple[list[date], Optional[date]]:
+    """Distinct stored quarter-ends in the window span, plus the member's
+    first stored price date (used to bound the span by its own listing)."""
     async with async_session_maker() as db:
-        rows = await db.scalar(
-            select(func.count(FundamentalVersion.id)).where(
+        period_ends = list((await db.execute(
+            select(FundamentalVersion.period_end).where(
                 FundamentalVersion.ticker == ticker,
                 FundamentalVersion.period_type == "Quarterly",
                 FundamentalVersion.period_end >= start - timedelta(days=STATEMENT_LOOKBACK_DAYS),
                 FundamentalVersion.period_end <= end,
-            )
-        )
+            ).distinct().order_by(FundamentalVersion.period_end)
+        )).scalars())
         first_price = await db.scalar(
             select(func.min(DailyPrice.date)).where(DailyPrice.ticker == ticker)
         )
+    return period_ends, first_price
+
+
+def statement_window_complete(
+    period_ends: list[date],
+    first_price: Optional[date],
+    start: date,
+    end: date,
+) -> bool:
+    """Stored quarters must cover the window span, not merely outnumber it.
+
+    Beyond a minimum count, the earliest quarter must sit near the span start
+    (a recent-only tail is exactly the partial-database case that would never
+    self-heal), the latest quarter must sit near the span end, and no two
+    adjacent quarters may be more than a quarter plus fiscal-calendar slack
+    apart, because the aggregator needs four consecutive quarters behind
+    every month-end.
+    """
     span_start = start - timedelta(days=STATEMENT_LOOKBACK_DAYS)
     if first_price is not None:
         span_start = max(span_start, first_price - timedelta(days=130))
+    if not period_ends:
+        return False
     expected = max(1, (end - span_start).days // 91)
-    return (rows or 0) >= max(1, int(expected * STATEMENT_COMPLETION_RATIO))
+    if len(period_ends) < max(1, int(expected * STATEMENT_COMPLETION_RATIO)):
+        return False
+    if period_ends[0] > span_start + timedelta(days=STATEMENT_MAX_HEAD_SLACK_DAYS):
+        return False
+    if period_ends[-1] < end - timedelta(days=STATEMENT_MAX_TAIL_SLACK_DAYS):
+        return False
+    return all(
+        later - earlier <= timedelta(days=STATEMENT_MAX_QUARTER_GAP_DAYS)
+        for earlier, later in zip(period_ends, period_ends[1:])
+    )
+
+
+async def _recently_fetched_fundamentals(ticker: str) -> bool:
+    """Whether a fundamentals payload was already fetched for this ticker
+    within the re-fetch guard window, so a provider-side history gap does not
+    turn every backfill re-run into another ten paid calls."""
+    cutoff = utc_now() - timedelta(days=FUNDAMENTALS_REFETCH_GUARD_DAYS)
+    async with async_session_maker() as db:
+        fetched_at = await db.scalar(
+            select(func.max(RawDataSnapshot.fetched_at)).where(
+                RawDataSnapshot.source == "EODHD",
+                RawDataSnapshot.dataset == "fundamentals",
+                RawDataSnapshot.details["ticker"].as_string() == ticker,
+                RawDataSnapshot.fetched_at >= cutoff,
+            )
+        )
+    return fetched_at is not None
+
+
+async def _has_window_statements(ticker: str, start: date, end: date) -> bool:
+    period_ends, first_price = await _window_statement_coverage(ticker, start, end)
+    return statement_window_complete(period_ends, first_price, start, end)
 
 
 async def _has_split_coverage(ticker: str, start: date, end: date) -> bool:
@@ -288,6 +347,18 @@ async def backfill_member_data(
                         )
                     stats["prices_fetched"] += 1
                 if await _has_window_statements(ticker, start, end):
+                    stats["fundamentals_skipped"] += 1
+                elif await _recently_fetched_fundamentals(ticker):
+                    # The completion check still fails after a fresh fetch:
+                    # the provider itself lacks the quarters, and re-paying
+                    # for the same payload every re-run would not fix that.
+                    logger.warning(
+                        "%s statement history remains incomplete after a fetch "
+                        "within %d days; the provider likely lacks the quarters. "
+                        "Skipping the paid re-fetch; the aggregation coverage "
+                        "gates will judge the affected months.",
+                        ticker, FUNDAMENTALS_REFETCH_GUARD_DAYS,
+                    )
                     stats["fundamentals_skipped"] += 1
                 else:
                     await _fetch_fundamentals(ticker, target, client)
@@ -425,24 +496,32 @@ async def main() -> int:
     )
     first_sample = completed_month_end_labels(history_start, target)[:1]
     if first_sample:
+        # Evaluate membership at the month's final trading session, exactly
+        # like the aggregation does (a holiday calendar month-end misjudges
+        # last-session exits and post-close joins).
+        first_session = last_session_of_month(
+            first_sample[0].year, first_sample[0].month
+        ) or first_sample[0]
         async with async_session_maker() as db:
             early_members = await db.scalar(
                 select(func.count(UniverseMembership.ticker.distinct())).where(
                     UniverseMembership.universe == "SP500",
                     UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE,
-                    UniverseMembership.effective_from <= first_sample[0],
+                    UniverseMembership.effective_from <= first_session,
                     (
                         UniverseMembership.effective_to.is_(None)
-                        | (UniverseMembership.effective_to >= first_sample[0])
+                        | (UniverseMembership.effective_to >= first_session)
                     ),
                 )
             )
         if (early_members or 0) < settings.PIPELINE_MIN_SP500_SIZE:
             logger.warning(
-                "Only %d members cover the first sample month %s (gate: %d). "
-                "The provider history may be incomplete; the aggregation "
-                "quality gate will decide whether early months stay gaps.",
-                early_members, first_sample[0], settings.PIPELINE_MIN_SP500_SIZE,
+                "Only %d members cover the first sample month %s (session %s, "
+                "gate: %d). The provider history may be incomplete; the "
+                "aggregation quality gate will decide whether early months "
+                "stay gaps.",
+                early_members, first_sample[0], first_session,
+                settings.PIPELINE_MIN_SP500_SIZE,
             )
 
     if args.tickers:
