@@ -12,6 +12,7 @@ from services.market_breadth import (
     backfill_market_breadth_price_history,
     refresh_market_breadth,
 )
+from services.index_valuation import refresh_index_valuation
 from services.universe import refresh_historical_universe_memberships
 
 
@@ -33,6 +34,7 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
         "rrg_prices": "deferred",
         "universe_history": "deferred",
         "market_breadth": "deferred",
+        "index_valuation": "deferred",
     }
     try:
         universe_result = await refresh_historical_universe_memberships(target)
@@ -71,6 +73,14 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
     except Exception as exc:
         result["market_breadth"] = "failed"
         logger.exception("Market breadth catch-up failed for %s: %s", target, exc)
+    try:
+        # The refresh defers itself when the day's dependencies are missing;
+        # a previously published series keeps serving regardless.
+        valuation_result = await refresh_index_valuation(target)
+        result["index_valuation"] = valuation_result["status"]
+    except Exception as exc:
+        result["index_valuation"] = "failed"
+        logger.exception("Index valuation catch-up failed for %s: %s", target, exc)
     latest_factors = await latest_published_date("factors")
     if latest_factors is None or latest_factors < target:
         await compute_latest_factors()

@@ -140,6 +140,44 @@ class MarketBreadthSnapshot(Base):
     )
 
 
+class IndexValuationSnapshot(Base):
+    """Immutable month-end index-level valuation for one published pipeline run.
+
+    Aggregates reconstructed per-member multiples over point-in-time index
+    membership. Months with insufficient coverage stay gaps: value columns are
+    null and the run's quality report carries the reason, never zero-filled.
+    """
+
+    __tablename__ = "index_valuation_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
+    universe: Mapped[str] = mapped_column(String)
+    date: Mapped[dt_date] = mapped_column(Date)
+
+    member_count: Mapped[int] = mapped_column(Integer)
+    covered_count: Mapped[int] = mapped_column(Integer)
+    loss_maker_count: Mapped[int] = mapped_column(Integer)
+
+    coverage_pct: Mapped[Optional[float]] = mapped_column(Float)
+    equity_total: Mapped[Optional[float]] = mapped_column(Float)
+    earnings_ttm_total: Mapped[Optional[float]] = mapped_column(Float)
+    earnings_ttm_earners: Mapped[Optional[float]] = mapped_column(Float)
+    index_pe: Mapped[Optional[float]] = mapped_column(Float)
+    index_pe_earners: Mapped[Optional[float]] = mapped_column(Float)
+    median_pe: Mapped[Optional[float]] = mapped_column(Float)
+
+    __table_args__ = (
+        Index(
+            "ix_index_valuation_snapshots_run_universe_date",
+            "pipeline_run_id",
+            "universe",
+            "date",
+            unique=True,
+        ),
+    )
+
+
 class FinancialStatement(Base):
     """
     3. financial_statements (财务报表表)

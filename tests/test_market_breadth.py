@@ -179,7 +179,7 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         ("RUSSELL2000", "BBB.US", LIVE_UNIVERSE_SOURCE),
         ("SP500", "AAA.US", LIVE_UNIVERSE_SOURCE),
     ]
-    assert revision == "0020_daily_report_market_context"
+    assert revision == "0021_index_valuation_snapshots"
 
 
 def test_historical_membership_parser_supports_duplicates_and_reentry():
@@ -233,10 +233,24 @@ def test_historical_membership_parser_only_ignores_unknown_start_before_window()
 
     with pytest.raises(ValueError, match="required history window"):
         parse_historical_memberships(
-            [{"Code": "AMBIG", "StartDate": None, "EndDate": "2025-02-01"}],
+            [{"Code": "ACTIVE", "StartDate": None, "EndDate": None}],
             "SP500",
-            required_from=required_from,
         )
+
+    # Join dates the provider omitted anchor at the earliest served date:
+    # active members and members whose known exit falls inside the window.
+    anchored = parse_historical_memberships(
+        [
+            {"Code": "ACTIVE", "StartDate": None, "EndDate": None},
+            {"Code": "AMBIG", "StartDate": None, "EndDate": "2025-02-01"},
+        ],
+        "SP500",
+        required_from=required_from,
+    )
+    assert {(row["ticker"], row["effective_from"], row["effective_to"]) for row in anchored} == {
+        ("ACTIVE.US", required_from, None),
+        ("AMBIG.US", required_from, date(2025, 2, 1)),
+    }
 
 
 @pytest.mark.asyncio

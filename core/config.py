@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 from typing import List
 
@@ -125,6 +126,14 @@ class Settings(BaseSettings):
     # normalized payload between runs and refresh only the oldest cohort.
     SCREENER_FUNDAMENTAL_MAX_AGE_DAYS: int = 7
     SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT: int = 600
+    # Index-level valuation (Market tab: S&P 500 month-end P/E history). The
+    # start date stays inside the provider-earnings window the 2026-09
+    # historical-multiples review could verify; earlier data is not backfilled.
+    INDEX_VALUATION_HISTORY_START: date = date(2010, 1, 1)
+    PIPELINE_MIN_INDEX_VALUATION_COVERAGE: float = 0.80
+    INDEX_VALUATION_MIN_MONTH_COVERAGE: float = 0.90
+    INDEX_VALUATION_COMPUTE_CONCURRENCY: int = 8
+    INDEX_VALUATION_SEC_TICKERS_PATH: str = "./data/sec_mapping_cache/sec_company_tickers.json.gz"
 
     @property
     def cors_origins(self) -> List[str]:

@@ -859,6 +859,47 @@ export interface TreasuryYieldCurveResponse {
     observations: TreasuryYieldObservation[];
 }
 
+export interface IndexValuationPoint {
+    date: string;
+    index_pe: number | null;
+    index_pe_earners: number | null;
+    median_pe: number | null;
+    member_count: number;
+    covered_count: number;
+    loss_maker_count: number;
+    coverage_pct: number | null;
+}
+
+export interface IndexValuationResponse {
+    meta: {
+        universe: "SP500";
+        as_of_date: string;
+        expected_as_of_date: string;
+        published_at: string | null;
+        stale: boolean;
+        history_start: string;
+        history_end: string;
+        membership_mode: "point_in_time";
+        history_basis: "reconstructed_estimates";
+        price_basis: "split_only";
+        warnings: string[];
+    };
+    methodology: string[];
+    points: IndexValuationPoint[];
+    stats: {
+        months_total: number;
+        months_valid: number;
+        latest_date: string | null;
+        latest_index_pe: number | null;
+        latest_index_pe_earners: number | null;
+        latest_median_pe: number | null;
+        median_index_pe: number | null;
+        min_index_pe: number | null;
+        max_index_pe: number | null;
+        average_coverage_pct: number | null;
+    };
+}
+
 export interface MarketOverviewResponse {
     meta: {
         universe: MarketUniverse;
@@ -1203,6 +1244,9 @@ export const fetchTreasuryYieldCurve = (
     { signal },
     60_000,
 );
+
+export const fetchIndexValuation = (signal?: AbortSignal) =>
+    apiRequest<IndexValuationResponse>("/api/v1/index-valuation", { signal }, 90_000);
 
 export const fetchStockNews = (ticker: string, signal?: AbortSignal) =>
     apiRequest<NewsItem[]>(`/api/stocks/${encodeURIComponent(ticker)}/news`, { signal });

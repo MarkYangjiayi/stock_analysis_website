@@ -41,6 +41,8 @@
     `/market` 在同一条联动时间轴上展示 11 个美股板块相对 SPY 趋势、`RSP/SPY`、MA20/50/200 市场宽度、涨跌家数、新高新低、McClellan 与横截面离散度。当前发布严格历史成分口径的 S&P 500；Russell 2000 与合并股票池在可靠历史成分源接入前暂时禁用，绝不以当前成分回填历史。
 *   **🏛️ 美债收益率曲线**
     `/market/yield-curve` 展示美国财政部最新名义 par yield curve，并与约 1 个月、3 个月和 1 年前的曲线形状叠加比较；历史视图支持 1Y/3Y/5Y 区间与最多六个期限，同时单列 `10Y−2Y`、`10Y−3M` 利差。数据通过现有 EODHD 配置获取官方 Treasury 序列，并以财政部年度 CSV 直连作为兜底，服务端磁盘缓存可在上游短暂不可用时继续提供最近数据。
+*   **📐 S&P 500 历史整体 P/E**
+    `/market/index-valuation` 自 2010 年起逐月末重构 S&P 500 整体市盈率：严格按当月真实成分聚合 Σ市值 / Σ TTM 报告盈利（亏损公司保留负贡献），并列示仅盈利公司与中位数口径。多重股权按 SEC CIK 归并为一家公司（股本相加、盈利只计一次）；单股盈利沿用 Price & valuation history 的全部披露时点与勾稽门槛；覆盖不足的月份留缺口并披露原因，绝不插值。一次性回填与完整口径见 [Index Valuation](docs/index_valuation.md)。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
     内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
