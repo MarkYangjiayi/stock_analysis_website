@@ -16,12 +16,15 @@ from sqlalchemy import func, select
 
 from api.schemas import IndexValuationResponse
 from core.config import settings
+from core.time_utils import utc_now
 from models import (
     DataPublication,
     DailyPrice,
     FundamentalVersion,
+    IndexValuationBackfillCheckpoint,
     IndexValuationSnapshot,
     PipelineRun,
+    RawDataSnapshot,
     Ticker,
     UniverseMembership,
 )
@@ -39,7 +42,11 @@ from services.index_valuation import (
 )
 from services.split_history import persist_full_split_history
 from services.universe import HISTORICAL_UNIVERSE_DATASET, HISTORICAL_UNIVERSE_SOURCE
-from scripts.backfill_index_valuation import statement_window_complete
+from scripts.backfill_index_valuation import (
+    _fetch_fundamentals,
+    _recently_normalized_fundamentals,
+    statement_window_complete,
+)
 
 
 def _quarters(first: date, count: int) -> list[date]:
@@ -66,6 +73,91 @@ def test_statement_window_complete_requires_head_tail_and_continuity():
     # The same recent-only set is complete when the member listed that late:
     # its own first price bounds the expected span.
     assert statement_window_complete(recent_only, date(2024, 6, 1), start, end) is True
+
+
+@pytest.mark.asyncio
+async def test_fundamentals_checkpoint_refreshes_for_identical_raw_payload(
+    db_session, monkeypatch
+):
+    payload = {
+        "General": {
+            "Code": "AAA",
+            "Name": "AAA Corp",
+            "Exchange": "NYSE",
+            "CurrencyCode": "USD",
+        },
+        "Financials": {},
+    }
+
+    async def same_payload(*args, **kwargs):
+        return payload
+
+    monkeypatch.setattr(
+        "scripts.backfill_index_valuation.eodhd_client.get_fundamental_data",
+        same_payload,
+    )
+
+    await _fetch_fundamentals("AAA.US", date(2026, 9, 17), object())
+    checkpoint = await db_session.get(IndexValuationBackfillCheckpoint, "AAA.US")
+    assert checkpoint is not None
+    original_snapshot_id = checkpoint.raw_snapshot_id
+
+    # Simulate expiry of the guard, then fetch the same provider payload. The
+    # immutable raw snapshot deduplicates to the original row, while the
+    # successful-normalization checkpoint must still advance.
+    checkpoint.fundamentals_normalized_at = utc_now() - timedelta(days=8)
+    await db_session.commit()
+    assert await _recently_normalized_fundamentals("AAA.US") is False
+
+    await _fetch_fundamentals("AAA.US", date(2026, 9, 18), object())
+    db_session.expire_all()
+    refreshed = await db_session.get(IndexValuationBackfillCheckpoint, "AAA.US")
+    assert refreshed is not None
+    assert refreshed.raw_snapshot_id == original_snapshot_id
+    assert refreshed.fundamentals_normalized_at > utc_now() - timedelta(minutes=1)
+    assert await _recently_normalized_fundamentals("AAA.US") is True
+    raw_count = await db_session.scalar(
+        select(func.count(RawDataSnapshot.id)).where(
+            RawDataSnapshot.source == "EODHD",
+            RawDataSnapshot.dataset == "fundamentals",
+        )
+    )
+    assert raw_count == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_fundamentals_normalization_does_not_set_refetch_guard(
+    db_session, monkeypatch
+):
+    async def payload(*args, **kwargs):
+        return {"General": {"Code": "FAIL", "Name": "Failure Corp"}}
+
+    async def fail_normalization(*args, **kwargs):
+        raise RuntimeError("normalized write failed")
+
+    monkeypatch.setattr(
+        "scripts.backfill_index_valuation.eodhd_client.get_fundamental_data",
+        payload,
+    )
+    monkeypatch.setattr(
+        "scripts.backfill_index_valuation._upsert_financials",
+        fail_normalization,
+    )
+
+    with pytest.raises(RuntimeError, match="normalized write failed"):
+        await _fetch_fundamentals("FAIL.US", date(2026, 9, 17), object())
+
+    assert await db_session.get(IndexValuationBackfillCheckpoint, "FAIL.US") is None
+    assert await _recently_normalized_fundamentals("FAIL.US") is False
+    # The immutable evidence remains available even though the normalized
+    # transaction (including the checkpoint) rolled back.
+    raw_count = await db_session.scalar(
+        select(func.count(RawDataSnapshot.id)).where(
+            RawDataSnapshot.source == "EODHD",
+            RawDataSnapshot.dataset == "fundamentals",
+        )
+    )
+    assert raw_count == 1
 
 
 def _point(price_date: str, equity, earnings_ttm, earnings_reason=None):
@@ -606,7 +698,7 @@ async def test_retention_keeps_five_most_recent_publications(
     assert orphan_count == 0
 
 
-def test_alembic_upgrade_creates_index_valuation_snapshots(tmp_path):
+def test_alembic_upgrade_creates_index_valuation_tables(tmp_path):
     project_root = Path(__file__).resolve().parents[1]
     database_path = tmp_path / "index-valuation-migration.db"
     env = {
@@ -634,3 +726,20 @@ def test_alembic_upgrade_creates_index_valuation_snapshots(tmp_path):
             row[1] for row in connection.execute("PRAGMA index_list(index_valuation_snapshots)")
         }
         assert "ix_index_valuation_snapshots_run_universe_date" in indexes
+        checkpoint_columns = {
+            row[1] for row in connection.execute(
+                "PRAGMA table_info(index_valuation_backfill_checkpoints)"
+            )
+        }
+        assert {
+            "ticker", "fundamentals_normalized_at", "raw_snapshot_id"
+        } <= checkpoint_columns
+        checkpoint_indexes = {
+            row[1] for row in connection.execute(
+                "PRAGMA index_list(index_valuation_backfill_checkpoints)"
+            )
+        }
+        assert (
+            "ix_index_valuation_backfill_checkpoints_normalized_at"
+            in checkpoint_indexes
+        )

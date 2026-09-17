@@ -3,7 +3,7 @@
 Each month-end point aggregates the reconstructed per-member multiples from
 ``services.valuation_history`` over the members that the index actually
 contained on that date. Multi-class members are grouped into one company:
-equity is summed across classes while company-wide earnings are counted once.
+the primary class's equity proxy and company-wide earnings are counted once.
 Months below the coverage gate stay gaps with the reason recorded in the run's
 quality report; nothing is forward-filled, averaged or zero-filled.
 """
@@ -45,7 +45,7 @@ INDEX_VALUATION_UNIVERSES = ("SP500",)
 INDEX_VALUATION_RETENTION_RUNS = 5
 # Known multi-class S&P 500 members (verified against the provider's GSPC
 # membership history) whose SEC company-ticker entries may be missing after
-# delisting. The SEC file remains the primary grouping source.
+# delisting. These pairs take precedence; the SEC file groups all others.
 STATIC_COMPANY_GROUPS = (
     ("GOOG", "GOOGL"),
     ("FOXA", "FOX"),

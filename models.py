@@ -179,6 +179,35 @@ class IndexValuationSnapshot(Base):
     )
 
 
+class IndexValuationBackfillCheckpoint(Base):
+    """Latest successfully normalized fundamentals fetch for one member.
+
+    Raw snapshots are immutable and deduplicated by payload checksum, so their
+    ``fetched_at`` value cannot represent a repeated fetch of identical data.
+    This checkpoint is updated in the same transaction as normalization and is
+    therefore safe to use for the paid re-fetch guard.
+    """
+
+    __tablename__ = "index_valuation_backfill_checkpoints"
+
+    ticker: Mapped[str] = mapped_column(
+        ForeignKey("tickers.ticker"), primary_key=True
+    )
+    fundamentals_normalized_at: Mapped[datetime] = mapped_column(
+        DateTime
+    )
+    raw_snapshot_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("raw_data_snapshots.id")
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_index_valuation_backfill_checkpoints_normalized_at",
+            "fundamentals_normalized_at",
+        ),
+    )
+
+
 class FinancialStatement(Base):
     """
     3. financial_statements (财务报表表)

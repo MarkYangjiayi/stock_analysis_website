@@ -135,8 +135,11 @@ Prerequisites and behaviour:
   fails the check is accepted as a provider limitation, with a warning,
   instead of re-paying on every re-run) — and verifies complete split
   history (one call) — roughly 800 price calls + 800 split calls + ~10 calls
-  per still-fundamentals-less member in total. Completed tickers are skipped
-  on re-run.
+  per still-fundamentals-less member in total. A durable checkpoint is updated
+  in the same transaction as successful fundamentals normalization; it keeps
+  identical, deduplicated raw payloads from defeating the seven-day re-fetch
+  guard and never suppresses recovery after a failed normalized write.
+  Completed tickers are skipped on re-run.
 - Acquisition failures mark the backfill run `failed` with the ticker list
   (the gated aggregation refresh may still publish; its coverage gates
   decide) and the script exits non-zero when the refresh does not publish,

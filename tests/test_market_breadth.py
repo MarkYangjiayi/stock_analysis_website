@@ -179,7 +179,7 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         ("RUSSELL2000", "BBB.US", LIVE_UNIVERSE_SOURCE),
         ("SP500", "AAA.US", LIVE_UNIVERSE_SOURCE),
     ]
-    assert revision == "0021_index_valuation_snapshots"
+    assert revision == "0022_index_valuation_backfill_checkpoints"
 
 
 def test_historical_membership_parser_supports_duplicates_and_reentry():

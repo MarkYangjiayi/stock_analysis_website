@@ -42,7 +42,13 @@ from core.config import settings
 from core.time_utils import utc_now
 from core.trading_calendar import is_us_market_session, latest_completed_us_session
 from database import async_session_maker, init_db
-from models import DailyPrice, FundamentalVersion, RawDataSnapshot, Ticker, UniverseMembership
+from models import (
+    DailyPrice,
+    FundamentalVersion,
+    IndexValuationBackfillCheckpoint,
+    Ticker,
+    UniverseMembership,
+)
 from services import eodhd_client
 from services.data_sync import _upsert_daily_prices, _upsert_financials, _upsert_ticker_info
 from services.index_valuation import (
@@ -72,8 +78,8 @@ STATEMENT_COMPLETION_RATIO = 0.75
 STATEMENT_MAX_HEAD_SLACK_DAYS = 140
 STATEMENT_MAX_TAIL_SLACK_DAYS = 140
 STATEMENT_MAX_QUARTER_GAP_DAYS = 140
-# After a fresh fundamentals fetch, do not pay for another one inside this
-# window even when the provider's own history remains incomplete.
+# After a successfully normalized fundamentals fetch, do not pay for another
+# one inside this window even when the provider's own history remains incomplete.
 FUNDAMENTALS_REFETCH_GUARD_DAYS = 7
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
@@ -219,21 +225,24 @@ def statement_window_complete(
     )
 
 
-async def _recently_fetched_fundamentals(ticker: str) -> bool:
-    """Whether a fundamentals payload was already fetched for this ticker
-    within the re-fetch guard window, so a provider-side history gap does not
-    turn every backfill re-run into another ten paid calls."""
+async def _recently_normalized_fundamentals(ticker: str) -> bool:
+    """Whether fundamentals were normalized inside the re-fetch guard.
+
+    This deliberately uses a mutable checkpoint instead of the immutable raw
+    snapshot timestamp. Raw snapshots deduplicate identical payloads, so their
+    original ``fetched_at`` cannot record a later repeated fetch; they are also
+    committed before normalization and must not suppress recovery from a
+    failed normalized write.
+    """
     cutoff = utc_now() - timedelta(days=FUNDAMENTALS_REFETCH_GUARD_DAYS)
     async with async_session_maker() as db:
-        fetched_at = await db.scalar(
-            select(func.max(RawDataSnapshot.fetched_at)).where(
-                RawDataSnapshot.source == "EODHD",
-                RawDataSnapshot.dataset == "fundamentals",
-                RawDataSnapshot.details["ticker"].as_string() == ticker,
-                RawDataSnapshot.fetched_at >= cutoff,
+        normalized_at = await db.scalar(
+            select(IndexValuationBackfillCheckpoint.fundamentals_normalized_at).where(
+                IndexValuationBackfillCheckpoint.ticker == ticker,
+                IndexValuationBackfillCheckpoint.fundamentals_normalized_at >= cutoff,
             )
         )
-    return fetched_at is not None
+    return normalized_at is not None
 
 
 async def _has_window_statements(ticker: str, start: date, end: date) -> bool:
@@ -294,6 +303,19 @@ async def _fetch_fundamentals(ticker: str, observed: date, client) -> None:
     async with async_session_maker() as db, db.begin():
         await _upsert_ticker_info(ticker, payload, db)
         await _upsert_financials(ticker, payload, db, raw_snapshot_id=snapshot.id)
+        normalized_at = utc_now()
+        checkpoint_stmt = insert(IndexValuationBackfillCheckpoint).values(
+            ticker=ticker,
+            fundamentals_normalized_at=normalized_at,
+            raw_snapshot_id=snapshot.id,
+        ).on_conflict_do_update(
+            index_elements=["ticker"],
+            set_={
+                "fundamentals_normalized_at": normalized_at,
+                "raw_snapshot_id": snapshot.id,
+            },
+        )
+        await db.execute(checkpoint_stmt)
 
 
 async def _fetch_splits(ticker: str) -> None:
@@ -348,7 +370,7 @@ async def backfill_member_data(
                     stats["prices_fetched"] += 1
                 if await _has_window_statements(ticker, start, end):
                     stats["fundamentals_skipped"] += 1
-                elif await _recently_fetched_fundamentals(ticker):
+                elif await _recently_normalized_fundamentals(ticker):
                     # The completion check still fails after a fresh fetch:
                     # the provider itself lacks the quarters, and re-paying
                     # for the same payload every re-run would not fix that.
