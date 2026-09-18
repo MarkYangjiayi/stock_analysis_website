@@ -62,6 +62,7 @@ export default function IndexValuationPage() {
     }, [loadData, retryKey]);
 
     const latestPoint = data?.points.findLast((point) => point.index_pe != null) ?? null;
+    const historyStartYear = data?.meta.history_start.slice(0, 4);
 
     return (
         <div className="app-page">
@@ -72,7 +73,8 @@ export default function IndexValuationPage() {
                         <h1 className="page-title mt-1">S&amp;P 500 Historical P/E</h1>
                         <p className="page-description">
                             Month-end aggregate price-to-earnings reconstructed from point-in-time index membership,
-                            reported quarterly earnings and split-only prices since 2010.
+                            reported quarterly earnings and split-only prices
+                            {historyStartYear ? ` since ${historyStartYear}.` : " over the verified history window."}
                         </p>
                     </div>
                     {data && (

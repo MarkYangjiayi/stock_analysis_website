@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { IndexValuationResponse } from "@/lib/api";
 import { makeIndexValuationFixture } from "@/test/indexValuationFixture";
 
 const apiMocks = vi.hoisted(() => ({
@@ -38,6 +37,7 @@ describe("IndexValuationPage", () => {
         expect(screen.getByRole("link", { name: "Valuation" })).toHaveAttribute("href", "/market/index-valuation");
         expect(screen.getByText(/Forward P\/E requires archived analyst expectations/)).toBeInTheDocument();
         expect(screen.getByText("Month-end 2026-09-30")).toBeInTheDocument();
+        expect(screen.getByText(/split-only prices since 2016/)).toBeInTheDocument();
         expect(apiMocks.fetchIndexValuation).toHaveBeenCalledWith(expect.any(AbortSignal));
     });
 
