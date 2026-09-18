@@ -43,8 +43,13 @@ def statement_quality(income: dict, balance: dict, cash: dict) -> dict[str, str]
             and income_currency == cash_currency and net is not None and cash_net is not None
             and not (minority_bridge or tax_bridge)
             and not math.isclose(net, cash_net, rel_tol=0.005, abs_tol=1.0)):
-        reason = "Income and cash-flow statements report different net income for the same period; earnings and cash-flow scope require reconciliation."
-        reasons.setdefault("eps", reason)
+        # Provider "quarterly" cash-flow rows can be year-to-date while the
+        # income statement is a discrete quarter, and the payload carries no
+        # duration metadata that proves the two net-income fields share a
+        # scope. The mismatch can therefore quarantine cash-flow-derived FCF,
+        # but it is not evidence against earnings reported by the income
+        # statement itself.
+        reason = "Cash-flow net income does not reconcile with the income statement for the same reported date; cash-flow scope requires reconciliation."
         reasons["fcf"] = reason
 
     balance_date = str(balance.get("date") or balance.get("period_end") or "")[:10]

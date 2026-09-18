@@ -20,10 +20,10 @@ def test_consistent_earnings_are_not_rejected_for_their_magnitude_or_sign(earnin
     assert statement_quality(income, {}, cash) == {}
 
 
-def test_same_period_earnings_scope_conflict_quarantines_pe_and_pfcf():
+def test_same_date_cash_flow_scope_conflict_does_not_discard_reported_earnings():
     income = {"date": "2001-03-31", "currency_symbol": "USD", "netIncome": -223608000}
     cash = {"date": "2001-03-31", "currency_symbol": "usd", "netIncome": -234131000}
-    assert set(statement_quality(income, {}, cash)) == {"eps", "fcf"}
+    assert set(statement_quality(income, {}, cash)) == {"fcf"}
 
 
 @pytest.mark.parametrize("net,cash_net,minority", [(5254000000, 5425000000, -171000000),
@@ -34,9 +34,9 @@ def test_signed_minority_income_reconciles_consolidated_cash_flow_earnings(net, 
               "minorityInterest": minority}
     cash = {"date": "2024-12-31", "currency_symbol": "USD", "netIncome": cash_net}
     assert statement_quality(income, {}, cash) == {}
-    assert set(statement_quality({**income, "minorityInterest": 0}, {}, cash)) == {"eps", "fcf"}
+    assert set(statement_quality({**income, "minorityInterest": 0}, {}, cash)) == {"fcf"}
     # Stock balances do not reconcile a quarterly earnings flow.
-    assert set(statement_quality({**income, "minorityInterest": None}, {"minorityInterest": minority}, cash)) == {"eps", "fcf"}
+    assert set(statement_quality({**income, "minorityInterest": None}, {"minorityInterest": minority}, cash)) == {"fcf"}
 
 
 def test_missing_minority_line_can_reconcile_through_consolidated_pretax_less_tax():
@@ -55,7 +55,7 @@ def test_tax_bridge_does_not_bypass_explicit_conflicts_or_infer_loss_attribution
     income = {"date": "2026-07-31", "currency_symbol": "USD", "netIncome": 6366000000,
               "incomeBeforeTax": 8012000000, "incomeTaxExpense": 1483000000, **change}
     cash = {"date": "2026-07-31", "currency_symbol": "USD", "netIncome": 6529000000}
-    assert set(statement_quality(income, {}, cash)) == {"eps", "fcf"}
+    assert set(statement_quality(income, {}, cash)) == {"fcf"}
 
 
 @pytest.mark.parametrize("change", [{"date": "2001-06-30"}, {"date": None},

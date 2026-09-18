@@ -39,6 +39,18 @@ def test_all_six_multiples_use_reported_inputs_and_raw_price():
     ValuationHistoryResponse.model_validate(result)
 
 
+def test_cash_flow_scope_conflict_only_quarantines_cash_flow_multiple():
+    rows = statements()
+    for row in rows:
+        day = row.period_end.isoformat()
+        row.income_statement["date"] = day
+        row.cash_flow.update(date=day, netIncome=99)
+    point = calculate(rows)["points"][0]
+    assert point["values"]["pe"] == 10
+    assert point["earnings_ttm"] == 40
+    assert point["values"]["pfcf"] is None
+
+
 def test_filing_and_cash_flow_disclosure_dates_are_not_backdated():
     rows = statements()
     rows[-1].cash_flow["filing_date"] = "2024-11-05"
