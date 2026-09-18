@@ -2,7 +2,7 @@
 
 The Market tab exposes **Valuation → S&P 500 Historical P/E**
 (`/market/index-valuation`): the index's month-end aggregate price-to-earnings
-from `INDEX_VALUATION_HISTORY_START` (default 2010-01-01) to the latest
+from `INDEX_VALUATION_HISTORY_START` (default 2016-01-01) to the latest
 published session, served by `GET /api/v1/index-valuation?universe=SP500`.
 
 Two variants are always shown together:
@@ -86,20 +86,29 @@ so a forward history cannot be reconstructed honestly.
   `docs/valuation_history.md` and the
   `docs/historical_multiples_review_2026-09-12/` review (zeroed losses, filing
   placeholders, placeholder EBITDA remain blocking). A non-positive TTM total
-  is a valid negative contribution, never zero.
+  is a valid negative contribution, never zero. EODHD intermittently omits
+  `netIncomeApplicableToCommonShares` for financial companies even while its
+  reported `netIncome` remains present. In that one case, the index aggregate
+  uses reported net income as an explicit proxy only after every other P/E
+  gate passes. The individual company's P/E remains unavailable, because the
+  proxy can include preferred dividends. The quality report discloses how many
+  months and companies used the proxy.
 - Provider statement shares are split-adjusted weighted-average proxies, so
   equity totals are **estimates of market capitalization**, not verified
   historical market caps. The aggregate ratio is far less sensitive to this
   than the per-company equity level, but the caveat stands.
 - The series is **reconstructed, not point-in-time backtest data**: initial
   provider payloads may contain later restatements; revisions become effective
-  only after their availability date. The 2010 start deliberately stays inside
-  the earnings window the 2026-09 review could verify; earlier provider data
-  is not trusted and not backfilled.
+  only after their availability date. Production backfill verification found
+  every month from 2016-01 onward above the 80% company-coverage gate after the
+  constrained financial proxy, while 2010-2015 remained below it (roughly
+  48%-79%) because of unverified filing dates, absent historical prices and
+  irreconcilable provider statements. The default therefore begins at 2016-01
+  instead of weakening the gate or publishing a systematically biased series.
 - EODHD's GSPC history itself misses some members entirely (measured ~444/500
-  companies for early 2010 months). Missing members are absent from both
-  numerator and denominator; the coverage columns make the residual visible
-  per month.
+  companies for early 2010 months during the backfill audit). Missing members
+  are absent from both numerator and denominator; the coverage columns make
+  the residual visible per month.
 
 ## Backfill and operations
 

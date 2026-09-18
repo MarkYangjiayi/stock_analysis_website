@@ -127,9 +127,10 @@ class Settings(BaseSettings):
     SCREENER_FUNDAMENTAL_MAX_AGE_DAYS: int = 7
     SCREENER_FUNDAMENTAL_DAILY_REFRESH_LIMIT: int = 600
     # Index-level valuation (Market tab: S&P 500 month-end P/E history). The
-    # start date stays inside the provider-earnings window the 2026-09
-    # historical-multiples review could verify; earlier data is not backfilled.
-    INDEX_VALUATION_HISTORY_START: date = date(2010, 1, 1)
+    # The production backfill verified >=80% company coverage from 2016-01
+    # onward.  Earlier provider history remains below the publication gate and
+    # is excluded instead of weakening the gate or presenting a biased index.
+    INDEX_VALUATION_HISTORY_START: date = date(2016, 1, 1)
     PIPELINE_MIN_INDEX_VALUATION_COVERAGE: float = 0.80
     INDEX_VALUATION_MIN_MONTH_COVERAGE: float = 0.90
     INDEX_VALUATION_COMPUTE_CONCURRENCY: int = 8

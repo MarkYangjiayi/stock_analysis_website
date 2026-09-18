@@ -123,9 +123,34 @@ def test_real_small_earnings_keep_high_pe_and_sector_limits_explain_gaps():
     assert utility["points"][0]["values"]["pe"] == pytest.approx(4000)
     assert utility["points"][0]["values"]["pfcf"] is None
     assert "capital-investment" in utility["metrics"][3]["latest_reason"]
-    financial = calculate(sector="Financial Services")
+    financial = calculate(rows, sector="Financial Services")
     assert financial["points"][0]["values"]["pe"] is None
     assert "common shareholders" in financial["metrics"][0]["latest_reason"]
+    # The company P/E stays unavailable, but the separately exposed aggregate
+    # earnings input may use reported net income after every other gate passes.
+    assert financial["points"][0]["earnings_ttm"] == pytest.approx(0.1)
+    assert (
+        financial["points"][0]["earnings_basis"]
+        == "financial_reported_net_income_proxy"
+    )
+
+
+def test_financial_net_income_proxy_never_bypasses_other_earnings_gates():
+    rows = statements()
+    rows[-1].income_statement["currency_symbol"] = "EUR"
+    currency_failure = calculate(rows, sector="Financial Services")["points"][0]
+    assert currency_failure["earnings_ttm"] is None
+    assert "currencies" in currency_failure["earnings_reason"]
+
+    annual = annual_statement()
+    annual.income_statement["netIncome"] = 30
+    reconciliation_failure = calculate(
+        prices=[price("2024-11-11")],
+        sector="Financial Services",
+        annual_statements=[annual],
+    )["points"][0]
+    assert reconciliation_failure["earnings_ttm"] is None
+    assert "does not reconcile" in reconciliation_failure["earnings_reason"]
 
 
 @pytest.mark.asyncio

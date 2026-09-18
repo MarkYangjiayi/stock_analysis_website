@@ -81,6 +81,7 @@ async def test_legacy_versions_recover_currency_from_their_own_raw_snapshot(db_s
     await db_session.commit()
 
     stats = await repair_fundamental_version_currencies(batch_size=1)
+    assert stats["candidate_versions"] == 1
     assert stats["versions_repaired"] == 1
     assert stats["statement_fields_repaired"] == 3
 
@@ -92,6 +93,7 @@ async def test_legacy_versions_recover_currency_from_their_own_raw_snapshot(db_s
 
     repeated = await repair_fundamental_version_currencies(batch_size=1)
     assert repeated["candidate_snapshots"] == 0
+    assert repeated["candidate_versions"] == 0
 
 
 @pytest.mark.asyncio

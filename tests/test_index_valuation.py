@@ -160,13 +160,20 @@ async def test_failed_fundamentals_normalization_does_not_set_refetch_guard(
     assert raw_count == 1
 
 
-def _point(price_date: str, equity, earnings_ttm, earnings_reason=None):
+def _point(
+    price_date: str,
+    equity,
+    earnings_ttm,
+    earnings_reason=None,
+    earnings_basis=None,
+):
     """A reconstructed month point; the dict key carries the month-end label."""
     return {
         "price_date": price_date,
         "equity": equity,
         "earnings_ttm": earnings_ttm,
         "earnings_reason": earnings_reason,
+        "earnings_basis": earnings_basis,
     }
 
 
@@ -308,6 +315,38 @@ def test_build_rows_multi_class_membership_and_loss_makers(tmp_path, monkeypatch
     quality = validate_index_valuation_rows(rows, min_month_coverage=0.9)
     assert quality["passed"] is True
     assert quality["metrics"]["months_valid"] == 2
+
+
+def test_build_rows_disclose_financial_net_income_proxy_usage(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        settings, "INDEX_VALUATION_SEC_TICKERS_PATH", str(tmp_path / "missing.json.gz")
+    )
+    memberships = [
+        {"ticker": "BANK.US", "effective_from": date(2026, 1, 1), "effective_to": None},
+        {"ticker": "TECH.US", "effective_from": date(2026, 1, 1), "effective_to": None},
+    ]
+    per_ticker = {
+        "BANK.US": {
+            "2026-02-28": _point(
+                "2026-02-27",
+                100.0,
+                10.0,
+                earnings_basis="financial_reported_net_income_proxy",
+            )
+        },
+        "TECH.US": {"2026-02-28": _point("2026-02-27", 200.0, 20.0)},
+    }
+    rows = build_index_valuation_rows(
+        per_ticker,
+        memberships,
+        [date(2026, 2, 28)],
+        min_members=1,
+        min_coverage=0.5,
+    )
+    assert rows[0]["financial_net_income_proxy_count"] == 1
+    quality = validate_index_valuation_rows(rows, min_month_coverage=0.9)
+    assert quality["metrics"]["months_using_financial_net_income_proxy"] == 1
+    assert quality["metrics"]["maximum_financial_net_income_proxy_count"] == 1
 
 
 def test_build_rows_gaps_below_member_and_coverage_minimums(tmp_path, monkeypatch):
