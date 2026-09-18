@@ -9,7 +9,7 @@ export const makeIndexValuationFixture = (
         expected_as_of_date: "2026-09-17",
         published_at: "2026-09-18T04:15:00Z",
         stale: false,
-        history_start: "2010-01-31",
+        history_start: "2016-01-31",
         history_end: "2026-09-30",
         membership_mode: "point_in_time",
         history_basis: "reconstructed_estimates",
