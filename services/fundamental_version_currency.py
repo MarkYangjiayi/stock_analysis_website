@@ -121,22 +121,35 @@ async def repair_fundamental_version_currencies(
     batch_size = max(1, batch_size)
     missing = _missing_currency_clause()
     async with async_session_maker() as db:
-        snapshot_ids = list(
+        candidate_rows = list(
             (
                 await db.execute(
-                    select(FundamentalVersion.raw_snapshot_id)
+                    select(
+                        FundamentalVersion.id,
+                        FundamentalVersion.raw_snapshot_id,
+                    )
                     .where(
                         FundamentalVersion.raw_snapshot_id.is_not(None),
                         missing,
                     )
-                    .distinct()
                     .order_by(FundamentalVersion.raw_snapshot_id)
                 )
-            ).scalars()
+            ).all()
         )
+
+    version_ids_by_snapshot: dict[int, list[int]] = {}
+    for version_id, snapshot_id in candidate_rows:
+        version_ids_by_snapshot.setdefault(snapshot_id, []).append(version_id)
+    snapshot_ids = list(version_ids_by_snapshot)
+    logger.info(
+        "Fundamental currency repair found %d versions across %d snapshots",
+        len(candidate_rows),
+        len(snapshot_ids),
+    )
 
     stats = {
         "candidate_snapshots": len(snapshot_ids),
+        "candidate_versions": len(candidate_rows),
         "snapshots_processed": 0,
         "snapshots_unreadable": 0,
         "versions_examined": 0,
@@ -146,6 +159,11 @@ async def repair_fundamental_version_currencies(
     }
     for start in range(0, len(snapshot_ids), batch_size):
         batch = snapshot_ids[start : start + batch_size]
+        version_ids = [
+            version_id
+            for snapshot_id in batch
+            for version_id in version_ids_by_snapshot[snapshot_id]
+        ]
         async with async_session_maker() as db:
             snapshots = list(
                 (
@@ -166,8 +184,7 @@ async def repair_fundamental_version_currencies(
                 (
                     await db.execute(
                         select(FundamentalVersion).where(
-                            FundamentalVersion.raw_snapshot_id.in_(batch),
-                            missing,
+                            FundamentalVersion.id.in_(version_ids),
                         )
                     )
                 ).scalars()

@@ -34,11 +34,17 @@ METRICS = (
     ("ev_ebitda", "EV/EBITDA", "TTM · simplified EV estimate", "(Equity value proxy + debt − cash and short-term investments) / TTM EBITDA"),
 )
 KEYS = tuple(row[0] for row in METRICS)
+FINANCIAL_SECTORS = {"financial services", "financials", "financial"}
+FINANCIAL_COMMON_EARNINGS_REASON = (
+    "Disclosed earnings attributable to common shareholders are required for "
+    "financial companies."
+)
+FINANCIAL_NET_INCOME_PROXY_BASIS = "financial_reported_net_income_proxy"
 METHODOLOGY = [
     "Reconstructed history, not a point-in-time backtest dataset: initial provider payloads may contain later restatements. Recorded revisions become effective only after their availability date.",
     "Statements become effective on the first price session after the reported filing date and recorded availability. Missing, estimated and fiscal-end placeholder filing dates are excluded. Quarterly inputs expire 180 days after period end.",
     "Price and provider statement shares use the same split basis, without dividend adjustments. Provider shares may be weighted averages; equity value and P/E are estimates, not exact historical market cap or verified GAAP diluted P/E.",
-    "P/E uses reported net income per quarterly provider share, never the non-GAAP Earnings.History EPS. TTM metrics require four consecutive quarters; missing or non-positive denominators remain gaps.",
+    "P/E uses reported net income per quarterly provider share, never the non-GAAP Earnings.History EPS. TTM metrics require four consecutive quarters; missing or non-positive denominators remain gaps. A financial company's individual P/E still requires common-share earnings; only the index aggregate may use its reported net income as a disclosed proxy when that common-share field is absent and every other earnings gate passes.",
     "Conflicting financial inputs and quarterly totals that disagree with an already disclosed annual statement remain gaps. Annual checks never backdate later filings or revisions.",
     "EV is a simplified equity + debt − cash/short-term-investments estimate. Preferred equity and noncontrolling interests are excluded; lease scope follows reported debt. Financial companies require separate revenue and cash-flow definitions; P/S, P/FCF and EV multiples are unavailable.",
     "Utility P/FCF is unavailable until group-wide capital-investment coverage is verified; provider capex can omit generating-project investments.",
@@ -217,12 +223,22 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
                 break
     annual_reasons, checked_annuals = _annual_conflicts(rows, annuals, recent)
     reasons.update(annual_reasons)
-    financial = (sector or "").lower() in {"financial services", "financials", "financial"}
+    # Preserve every ordinary P/E blocker before the financial-sector rule
+    # below replaces the user-facing reason.  The index-only net-income proxy
+    # may bypass a missing common-income field, but it must never bypass an FX,
+    # share-count, continuity, annual-reconciliation or quality failure.
+    aggregate_pe_reason = annual_reasons.get("pe")
+    if aggregate_pe_reason is None and "pe" in reasons and "pe" not in non_positive:
+        aggregate_pe_reason = reasons["pe"]
+    financial = (sector or "").lower() in FINANCIAL_SECTORS
+    financial_common_income_missing = financial and any(
+        row["common_income"] is None for row in recent
+    )
     if financial:
         for key in ("ps", "pfcf"):
             reasons[key] = "Financial companies require separate revenue and cash-flow definitions; this multiple is unavailable."
-        if any(row["common_income"] is None for row in recent):
-            reasons["pe"] = "Disclosed earnings attributable to common shareholders are required for financial companies."
+        if financial_common_income_missing:
+            reasons["pe"] = FINANCIAL_COMMON_EARNINGS_REASON
     if (sector or "").lower() == "utilities":
         reasons["pfcf"] = "Utility capital-investment coverage is not verified; provider capex can omit generating-project investments."
     for key in ("ev_revenue", "ev_ebitda"):
@@ -239,11 +255,8 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
     # reason string was later replaced by the non-positive sign. Quality flags
     # stay blocking for the same reason.
     earnings_ttm = None
-    earnings_reason = None
-    if "pe" in annual_reasons:
-        earnings_reason = annual_reasons["pe"]
-    if earnings_reason is None and "pe" in reasons and "pe" not in non_positive:
-        earnings_reason = reasons["pe"]
+    earnings_basis = None
+    earnings_reason = aggregate_pe_reason
     for row in recent:
         if "eps" in row["quality"]:
             earnings_reason = f"{row['period_end'].isoformat()}: {row['quality']['eps']}"
@@ -252,8 +265,14 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
         common_total, net_total = values["common_income"], values["net_income"]
         if common_total is not None:
             earnings_ttm = common_total
-        elif net_total is not None and not financial:
+            earnings_basis = "reported_common_income"
+        elif net_total is not None:
             earnings_ttm = net_total
+            earnings_basis = (
+                FINANCIAL_NET_INCOME_PROXY_BASIS
+                if financial_common_income_missing
+                else "reported_net_income"
+            )
         if earnings_ttm is None:
             earnings_reason = "Reported earnings totals are unavailable in every quarter of the trailing window."
     return {
@@ -266,6 +285,7 @@ def _basis(rows: dict[date, dict], basis_id: int, available_from: date, currency
         "inputs": {**values, "shares": latest["shares"], "book": latest["book"], "debt": latest["debt"], "cash": latest["cash"]},
         "reasons": reasons,
         "earnings_ttm": earnings_ttm, "earnings_reason": earnings_reason,
+        "earnings_basis": earnings_basis,
     }
 
 
@@ -347,6 +367,7 @@ def build_valuation_history(
         equity = None
         earnings_ttm = None
         earnings_reason = reason
+        earnings_basis = None
         if reason is None:
             split_price = close / _split_factor(price.date, reference, splits)
             inputs = active["inputs"]
@@ -362,11 +383,12 @@ def build_valuation_history(
             earnings_ttm = active["earnings_ttm"]
             if active["earnings_reason"]:
                 earnings_reason = active["earnings_reason"]
+            earnings_basis = active["earnings_basis"]
         label = _sample_date(price.date, interval).isoformat()
         # Keep the final session's ratio, never average daily ratios and never
         # forward-fill the prior valid value over a missing final observation.
         sampled[label] = {"date": label, "price_date": price.date.isoformat(), "basis_id": active["id"] if active else None, "values": values, "reason": reason, "ev_reason": ev_reason,
-                          "equity": equity, "earnings_ttm": earnings_ttm, "earnings_reason": earnings_reason}
+                          "equity": equity, "earnings_ttm": earnings_ttm, "earnings_reason": earnings_reason, "earnings_basis": earnings_basis}
     points = list(sampled.values())
     metrics = []
     for key, label, description, formula in METRICS:

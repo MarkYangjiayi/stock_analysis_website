@@ -35,7 +35,10 @@ from services.pipeline_runs import (
     update_pipeline_run,
 )
 from services.universe import HISTORICAL_UNIVERSE_DATASET, HISTORICAL_UNIVERSE_SOURCE
-from services.valuation_history import get_valuation_history
+from services.valuation_history import (
+    FINANCIAL_NET_INCOME_PROXY_BASIS,
+    get_valuation_history,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -60,7 +63,7 @@ METHODOLOGY = [
     "Reconstructed history, not a point-in-time backtest dataset: initial provider payloads may contain later restatements. Recorded revisions become effective only after their availability date.",
     "Membership is point-in-time: every month uses the index constituents whose provider membership interval covers that month's final trading session (never a holiday calendar month-end), and the underlying price session must also fall inside the interval. Only completed months are published, and prices are capped at the publication's target session.",
     "Multi-class members are grouped into one company: the documented static pairs take precedence, with the SEC CIK map (cached official company-tickers file) grouping every further pair, because the current SEC file can list only one class of a delisted multi-class company. The provider reports company-wide statement shares on every class, so company equity uses the primary (largest) class's equity proxy instead of summing classes; company-wide earnings are counted exactly once and must agree across classes.",
-    "Member earnings follow the per-stock P/E gates: currency match, four consecutive disclosed quarters, a latest statement no older than 180 days, annual reconciliation and earnings-quality quarantines. A non-positive TTM total stays a valid negative contribution instead of becoming a gap.",
+    "Member earnings follow the per-stock P/E gates: currency match, four consecutive disclosed quarters, a latest statement no older than 180 days, annual reconciliation and earnings-quality quarantines. When a financial company's common-share field is absent, the index aggregate may use its reported net income as an explicit proxy only after every other gate passes; this does not enable the company's individual P/E. A non-positive TTM total stays a valid negative contribution instead of becoming a gap.",
     "index_pe is the aggregate sum(company equity) / sum(TTM earnings) including loss-makers; index_pe_earners repeats the ratio over profitable companies only; median_pe is the median of company-level P/E ratios.",
     "Provider statement shares are split-adjusted weighted-average proxies, so equity totals are estimates of market capitalization, not verified historical market caps.",
     "Months with insufficient member or input coverage remain gaps with the reason stored on the month and aggregated in the quality report; gaps are never interpolated and failed runs publish nothing.",
@@ -210,6 +213,7 @@ def build_index_valuation_rows(
                 "ticker": ticker,
                 "equity": point["equity"],
                 "earnings_ttm": point["earnings_ttm"],
+                "earnings_basis": point.get("earnings_basis"),
             })
         member_count = len({keys[interval["ticker"]] for interval in members})
         covered: dict[str, dict] = {}
@@ -235,6 +239,7 @@ def build_index_valuation_rows(
             covered[company] = {
                 "equity": primary["equity"],
                 "earnings_ttm": primary["earnings_ttm"],
+                "earnings_basis": primary["earnings_basis"],
             }
         covered_count = len(covered)
         coverage_pct = 100.0 * covered_count / member_count if member_count else None
@@ -275,6 +280,10 @@ def build_index_valuation_rows(
             "median_pe": None if reason or len(company_pes) < 2 else median(company_pes),
             "reason": reason,
             "multi_class_conflicts": multi_class_conflicts,
+            "financial_net_income_proxy_count": sum(
+                row["earnings_basis"] == FINANCIAL_NET_INCOME_PROXY_BASIS
+                for row in covered.values()
+            ),
         })
     return rows
 
@@ -308,6 +317,13 @@ def validate_index_valuation_rows(rows: list[dict], min_month_coverage: float) -
             "last_date": rows[-1]["date"].isoformat() if rows else None,
             "minimum_member_count": min((row["member_count"] for row in rows), default=0),
             "minimum_covered_count": min((row["covered_count"] for row in rows), default=0),
+            "months_using_financial_net_income_proxy": sum(
+                row["financial_net_income_proxy_count"] > 0 for row in rows
+            ),
+            "maximum_financial_net_income_proxy_count": max(
+                (row["financial_net_income_proxy_count"] for row in rows),
+                default=0,
+            ),
         },
         "errors": errors,
         "warnings": [],
@@ -462,7 +478,19 @@ async def refresh_index_valuation(target_date: date) -> dict:
             rows, settings.INDEX_VALUATION_MIN_MONTH_COVERAGE
         )
         quality["metrics"]["cik_map_available"] = bool(cik_map)
-        quality["warnings"] = load_warnings[:200]
+        proxy_months = quality["metrics"]["months_using_financial_net_income_proxy"]
+        proxy_max = quality["metrics"]["maximum_financial_net_income_proxy_count"]
+        quality["warnings"] = []
+        if proxy_months:
+            quality["warnings"].append(
+                "Financial-sector aggregate earnings used reported net income "
+                "as a disclosed proxy where the provider's common-share field "
+                f"was absent ({proxy_months} months; at most {proxy_max} "
+                "companies in one month). Individual company P/E remains gated."
+            )
+        quality["warnings"].extend(
+            load_warnings[: 200 - len(quality["warnings"])]
+        )
         if not cik_map:
             quality["warnings"].append(
                 "SEC company-tickers cache is unavailable; multi-class grouping "
