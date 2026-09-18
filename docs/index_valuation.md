@@ -140,6 +140,10 @@ Prerequisites and behaviour:
   identical, deduplicated raw payloads from defeating the seven-day re-fetch
   guard and never suppresses recovery after a failed normalized write.
   Completed tickers are skipped on re-run.
+- Before aggregation, legacy statement versions that predate section-currency
+  inheritance are repaired from their own immutable raw fundamentals snapshot.
+  The repair requires an exact same-period statement match and never infers a
+  historical reporting currency from today's quote or ticker profile.
 - Acquisition failures mark the backfill run `failed` with the ticker list
   (the gated aggregation refresh may still publish; its coverage gates
   decide) and the script exits non-zero when the refresh does not publish,

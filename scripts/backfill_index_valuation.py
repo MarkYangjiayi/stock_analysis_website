@@ -9,7 +9,9 @@ capable of reconstructing that member's month-end multiples:
 3. fetch full fundamentals once for members without stored statements
    (current members already carry full statement history from the screener);
 4. verify complete split history so share/price bases are provable;
-5. run ``refresh_index_valuation`` for the target session.
+5. restore legacy statement currencies only from each version's immutable raw
+   fundamentals snapshot;
+6. run ``refresh_index_valuation`` for the target session.
 
 Every step is idempotent and safe to re-run after an interruption; completed
 tickers are skipped. Call cost is dominated by one EOD call per member for
@@ -55,6 +57,9 @@ from services.index_valuation import (
     completed_month_end_labels,
     last_session_of_month,
     refresh_index_valuation,
+)
+from services.fundamental_version_currency import (
+    repair_fundamental_version_currencies,
 )
 from services.pipeline_runs import begin_pipeline_run, finish_pipeline_run, latest_published_date, update_pipeline_run
 from services.raw_store import persist_snapshot
@@ -571,6 +576,9 @@ async def main() -> int:
             "Re-run this script after fixing the provider errors to complete them.",
             stats["failed"],
         )
+
+    currency_repair = await repair_fundamental_version_currencies()
+    logger.info("Legacy fundamental currency repair: %s", currency_repair)
 
     if args.verify:
         for ticker in sorted(windows):
