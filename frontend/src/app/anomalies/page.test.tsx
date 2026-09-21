@@ -30,7 +30,14 @@ const completedScan: AnomalyScan = {
         date: "2026-07-30",
         quote_timestamp: "2026-07-30T15:30:00Z",
         price_change: 25.73,
-        ai_analysis: "Earnings and an analyst upgrade drove the move [1].",
+        ai_analysis: [
+            "### Catalyst review",
+            "",
+            "**Reported facts**",
+            "",
+            "- Earnings exceeded expectations.",
+            "- An [analyst note](https://example.com/research) followed.",
+        ].join("\n"),
         attribution_status: "completed",
         news: [{
             title: "Bloom Energy earnings",
@@ -76,6 +83,15 @@ describe("AnomaliesPage", () => {
             await screen.findByRole("link", { name: "BE" }),
         ).toBeInTheDocument();
         expect(screen.getByText("+25.73%")).toBeInTheDocument();
+        expect(
+            screen.getByRole("heading", { name: "Catalyst review", level: 3 }),
+        ).toBeInTheDocument();
+        expect(screen.getByText("Reported facts").tagName).toBe("STRONG");
+        expect(screen.getByRole("list")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "analyst note" })).toHaveAttribute(
+            "href",
+            "https://example.com/research",
+        );
         expect(screen.getByRole("tooltip")).toHaveTextContent(
             "Bloom Energy develops solid oxide fuel-cell systems.",
         );

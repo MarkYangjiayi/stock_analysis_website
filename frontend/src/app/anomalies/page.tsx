@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
     Activity,
     ArrowDownRight,
@@ -320,9 +322,11 @@ export default function AnomaliesPage() {
                                                 {statusLabel && (
                                                     <span className="status-pill mb-3">{statusLabel}</span>
                                                 )}
-                                                <p className="whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-300">
-                                                    {item.ai_analysis}
-                                                </p>
+                                                <div className="prose prose-sm max-w-none text-slate-700 dark:prose-invert dark:text-slate-300 prose-headings:font-black prose-a:text-indigo-600 prose-a:underline prose-a:underline-offset-2 dark:prose-a:text-indigo-400 prose-li:my-0.5 prose-p:leading-7">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                        {item.ai_analysis}
+                                                    </ReactMarkdown>
+                                                </div>
                                                 {item.news?.length > 0 && (
                                                     <div className="mt-5 space-y-2 border-t pt-4">
                                                         {item.news.map((source, index) => (
