@@ -227,6 +227,7 @@ def start_scheduler():
         day_of_week='sun',
         hour=3,
         minute=0,
+        kwargs={'retention': 2},
         id="weekly_sqlite_backup",
         replace_existing=True,
     )

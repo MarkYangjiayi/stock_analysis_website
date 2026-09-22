@@ -84,8 +84,8 @@ jobs:
 
             # Fail before downtime if a consistent, integrity-checked backup
             # cannot be made. Keep deployment snapshots separate from weekly
-            # backups, retaining the two most recent deployment snapshots.
-            sudo docker compose exec -T backend python -c "from pathlib import Path; from core.config import settings; from scripts.backup_sqlite import create_backup; print(create_backup(backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=2))"
+            # backups, retaining only the latest deployment snapshot locally.
+            sudo docker compose exec -T backend python -c "from pathlib import Path; from core.config import settings; from scripts.backup_sqlite import create_backup; print(create_backup(backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=1))"
 
             # Keep the shared WARP service running, but release the application
             # containers and their old images before unpacking the new release.

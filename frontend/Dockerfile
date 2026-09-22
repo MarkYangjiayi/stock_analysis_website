@@ -1,30 +1,28 @@
-FROM node:20-alpine
+FROM node:20-alpine AS deps
 
-# Set working directory
 WORKDIR /app
-
-# Copy package.json and lock file
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
 
-# Copy frontend code
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# 1. 声明我们要接收一个构建参数
 ARG NEXT_PUBLIC_API_URL
-# 2. 把这个参数转化为容器内的环境变量，供 Next.js 打包时读取
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-# Build the Next.js app
 RUN npm run build
 
-RUN chown -R node:node /app
+FROM node:20-alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
 USER node
 
-# Expose port
 EXPOSE 3000
-
-# Start Next.js server
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

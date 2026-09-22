@@ -1,6 +1,7 @@
 """Create consistent online SQLite backups with retention."""
 
 import argparse
+import shutil
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -22,25 +23,39 @@ def sqlite_path_from_url(database_url: str) -> Path:
 def create_backup(
     source_path: Optional[Path] = None,
     backup_dir: Optional[Path] = None,
-    retention: int = 3,
+    retention: int = 2,
 ) -> Path:
     source = (source_path or sqlite_path_from_url(settings.DATABASE_URL)).resolve()
     destination_dir = (backup_dir or Path(settings.BACKUP_DIR)).resolve()
     if not source.exists():
         raise FileNotFoundError(f"Database not found: {source}")
     destination_dir.mkdir(parents=True, exist_ok=True)
+    required_bytes = source.stat().st_size + 512 * 1024 * 1024
+    available_bytes = shutil.disk_usage(destination_dir).free
+    if available_bytes < required_bytes:
+        raise RuntimeError(
+            f"Not enough free space for SQLite backup: need at least {required_bytes} "
+            f"bytes, have {available_bytes} bytes"
+        )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     destination = destination_dir / f"{source.stem}-{timestamp}.db"
 
-    with sqlite3.connect(str(source)) as source_conn, sqlite3.connect(str(destination)) as destination_conn:
-        source_conn.backup(destination_conn)
-        # A backup should be one portable file. The source uses WAL for live
-        # concurrency, but retaining that journal mode makes even a read-only
-        # inspection create empty -wal/-shm sidecars next to the backup.
-        destination_conn.execute("PRAGMA journal_mode=DELETE")
-        result = destination_conn.execute("PRAGMA quick_check").fetchone()
-        if not result or result[0] != "ok":
-            raise RuntimeError(f"Backup integrity check failed: {result}")
+    try:
+        with sqlite3.connect(str(source)) as source_conn, sqlite3.connect(str(destination)) as destination_conn:
+            source_conn.backup(destination_conn)
+            # A backup should be one portable file. The source uses WAL for live
+            # concurrency, but retaining that journal mode makes even a read-only
+            # inspection create empty -wal/-shm sidecars next to the backup.
+            destination_conn.execute("PRAGMA journal_mode=DELETE")
+            result = destination_conn.execute("PRAGMA quick_check").fetchone()
+            if not result or result[0] != "ok":
+                raise RuntimeError(f"Backup integrity check failed: {result}")
+    except Exception:
+        # A failed copy is not a recovery point and can otherwise fill the disk
+        # before the next attempt gets a chance to run.
+        for suffix in ("", "-journal", "-wal", "-shm"):
+            Path(f"{destination}{suffix}").unlink(missing_ok=True)
+        raise
 
     for suffix in ("-wal", "-shm"):
         sidecar = Path(f"{destination}{suffix}")
@@ -59,6 +74,6 @@ def create_backup(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create an online SQLite backup")
-    parser.add_argument("--retention", type=int, default=3)
+    parser.add_argument("--retention", type=int, default=2)
     args = parser.parse_args()
     print(create_backup(retention=args.retention))

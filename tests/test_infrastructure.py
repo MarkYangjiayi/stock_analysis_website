@@ -1,5 +1,6 @@
 import asyncio
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -1605,6 +1606,55 @@ def test_online_backup_is_consistent(tmp_path):
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
 
 
+def test_online_backup_rejects_insufficient_space_without_writing(tmp_path, monkeypatch):
+    source = tmp_path / "source.db"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE values_table (value INTEGER)")
+    backup_dir = tmp_path / "backups"
+    usage = shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(
+        "scripts.backup_sqlite.shutil.disk_usage",
+        lambda path: usage._replace(free=0),
+    )
+
+    with pytest.raises(RuntimeError, match="Not enough free space"):
+        create_backup(source, backup_dir)
+
+    assert list(backup_dir.iterdir()) == []
+
+
+def test_online_backup_removes_partial_file_on_failure(tmp_path, monkeypatch):
+    source = tmp_path / "source.db"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE values_table (value INTEGER)")
+    backup_dir = tmp_path / "backups"
+    real_connect = sqlite3.connect
+
+    class FailingSource:
+        def __init__(self, path):
+            self.connection = real_connect(path)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.connection.close()
+
+        def backup(self, destination):
+            destination.execute("CREATE TABLE partial (value INTEGER)")
+            raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(
+        "scripts.backup_sqlite.sqlite3.connect",
+        lambda path: FailingSource(path) if path == str(source) else real_connect(path),
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="database or disk is full"):
+        create_backup(source, backup_dir)
+
+    assert list(backup_dir.iterdir()) == []
+
+
 @pytest.mark.asyncio
 async def test_cleanup_funds_uses_sqlite_compatible_exact_match(db_session):
     from scripts.cleanup_funds import clean_database
@@ -2581,7 +2631,7 @@ def test_deploy_waits_for_service_health_and_fails_closed():
     assert 'if [ "$attempt" -ge 60 ]' in script
     assert "docker compose logs --tail=200 backend worker frontend" in script
     assert "exit 1" in script
-    assert "backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=2" in script
+    assert "backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=1" in script
     assert script.index("create_backup(") < script.index("docker compose stop backend")
     assert "docker compose exec -T backend alembic current" in script
     assert "docker compose exec -T worker python -c" in script
