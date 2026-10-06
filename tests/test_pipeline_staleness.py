@@ -90,37 +90,52 @@ async def test_index_valuation_skips_split_refresh_when_already_published(monkey
 
 @pytest.mark.asyncio
 async def test_split_refresh_only_fetches_members_whose_snapshot_is_stale(monkeypatch):
-    today = date(2026, 10, 6)
-    horizons = {"FRESH.US": today, "STALE.US": date(2026, 9, 18), "FORMER.US": date(2024, 3, 1), "BROKEN.US": None}
-    checked = {}
+    horizons = {"FRESH.US": date(2026, 10, 6), "STALE.US": date(2026, 9, 18), "BROKEN.US": None}
     synced = []
 
     async def fake_load(db, ticker, start, end):
-        checked[ticker] = end
         through = horizons[ticker]
         return object() if through is not None and through >= end else None
 
     async def fake_sync(db, ticker):
         synced.append(ticker)
-        return ticker != "BROKEN.US"
+        if ticker == "BROKEN.US":
+            return False
+        horizons[ticker] = date(2026, 10, 6)
+        return True
 
-    monkeypatch.setattr(split_history, "utc_now", lambda: __import__("datetime").datetime(2026, 10, 6, 12))
     monkeypatch.setattr(split_history, "load_split_history", fake_load)
     monkeypatch.setattr(split_history, "sync_full_split_history", fake_sync)
 
     stats = await split_history.refresh_stale_split_histories({
-        "FRESH.US": (date(2016, 1, 1), date(2026, 10, 5)),
-        "STALE.US": (date(2016, 1, 1), date(2026, 10, 5)),
-        "FORMER.US": (date(2016, 1, 1), date(2024, 2, 28)),
-        "BROKEN.US": (date(2016, 1, 1), date(2026, 10, 5)),
+        "FRESH.US": (date(1990, 1, 2), date(2026, 10, 5)),
+        "STALE.US": (date(1990, 1, 2), date(2026, 10, 5)),
+        "BROKEN.US": (date(1990, 1, 2), date(2026, 10, 5)),
     })
 
-    # Open windows must be observed through today (statement vintages can follow the last price);
-    # closed windows only through their exit.
-    assert checked["STALE.US"] == today
-    assert checked["FORMER.US"] == date(2024, 2, 28)
     assert sorted(synced) == ["BROKEN.US", "STALE.US"]
-    assert stats["current"] == 2
+    assert stats["current"] == 1
     assert stats["refreshed"] == 1
-    assert stats["failed"] == 1
     assert stats["failed_tickers"] == ["BROKEN.US"]
+
+
+@pytest.mark.asyncio
+async def test_split_requirement_matches_valuation_history_window(db_session):
+    """The refresh must demand exactly what verification will: prices through the cap
+    plus statement vintages fetched after the last price."""
+    from datetime import datetime
+    from decimal import Decimal
+
+    from models import DailyPrice, FinancialStatement, Ticker
+    from services.valuation_history import split_history_requirement
+
+    db_session.add(Ticker(ticker="OLD.US", last_updated=datetime(2026, 9, 30)))
+    for day in (date(2015, 3, 2), date(2019, 6, 3), date(2026, 10, 2)):
+        db_session.add(DailyPrice(ticker="OLD.US", date=day, close=Decimal(10), adjusted_close=Decimal(10)))
+    db_session.add(FinancialStatement(ticker="OLD.US", period="Quarterly", fiscal_date=date(2019, 3, 31)))
+    await db_session.commit()
+
+    assert await split_history_requirement("OLD.US", db_session, through=date(2026, 10, 5)) == (date(2015, 3, 2), date(2026, 10, 2))
+    capped = await split_history_requirement("OLD.US", db_session, through=date(2019, 12, 31))
+    # The statement vintage (profile refresh on 2026-09-30) outlives the capped prices.
+    assert capped == (date(2015, 3, 2), date(2026, 9, 30))

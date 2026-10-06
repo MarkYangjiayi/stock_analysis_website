@@ -39,6 +39,7 @@ from services.universe import HISTORICAL_UNIVERSE_DATASET, HISTORICAL_UNIVERSE_S
 from services.valuation_history import (
     FINANCIAL_NET_INCOME_PROXY_BASIS,
     get_valuation_history,
+    split_history_requirement,
 )
 
 
@@ -406,8 +407,15 @@ async def refresh_member_split_histories(target: date) -> dict:
     price after one session and the quality gate rejects every month.
     """
     windows = await load_membership_windows(target)
+    requirements: dict[str, tuple[date, date]] = {}
+    async with async_session_maker() as db:
+        for ticker in windows:
+            # Mirror _load_member_points: the same `through` yields the same demanded window.
+            window = await split_history_requirement(ticker, db, through=target)
+            if window is not None:
+                requirements[ticker] = window
     stats = await refresh_stale_split_histories(
-        windows,
+        requirements,
         concurrency=settings.HISTORY_BACKFILL_CONCURRENCY,
     )
     logger.info("Index member split refresh for %s: %s", target, {k: v for k, v in stats.items() if k != "failed_tickers"})

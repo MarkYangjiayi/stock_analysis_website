@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import CorporateAction, DailyPrice, FinancialStatement, FundamentalVersion, Ticker
@@ -412,6 +412,47 @@ def build_valuation_history(
             "methodology": METHODOLOGY, "warnings": warnings, "metrics": metrics, "bases": bases, "points": points}
 
 
+async def _load_statements(ticker: str, db: AsyncSession) -> tuple[list, list]:
+    versions = list((await db.execute(select(FundamentalVersion).where(
+        FundamentalVersion.ticker == ticker, FundamentalVersion.period_type.in_(("Quarterly", "Yearly")),
+    ))).scalars().all())
+    # Legacy-only periods can still be reconstructed when their payload carries
+    # a filing date. Never mix a mutable statement into an already versioned period.
+    legacy = (await db.execute(select(FinancialStatement).where(
+        FinancialStatement.ticker == ticker, FinancialStatement.period.in_(("Quarterly", "Yearly")),
+    ))).scalars().all()
+    covered = {(row.period_type, row.period_end) for row in versions}
+    all_statements = [*versions, *(row for row in legacy if (row.period, row.fiscal_date) not in covered)]
+    statements = [row for row in all_statements if (getattr(row, "period_type", None) or row.period) == "Quarterly"]
+    annual_statements = [row for row in all_statements if (getattr(row, "period_type", None) or row.period) == "Yearly"]
+    return statements, annual_statements
+
+
+def _split_requirement(price_dates, statements, vintage) -> tuple[date, date] | None:
+    """Dates a split snapshot must cover: quote dates plus every statement share vintage,
+    including revisions fetched after the final price observation."""
+    required_dates = list(price_dates)
+    for row in statements:
+        required_dates.extend(filter(None, (
+            _date(getattr(row, "period_end", None) or getattr(row, "fiscal_date", None)),
+            _date(getattr(row, "fetched_at", None)) or vintage,
+        )))
+    return (min(required_dates), max(required_dates)) if required_dates else None
+
+
+async def split_history_requirement(ticker: str, db: AsyncSession, through: date | None = None) -> tuple[date, date] | None:
+    """The split-coverage window ``get_valuation_history`` will demand for the same inputs."""
+    profile = await db.get(Ticker, ticker)
+    snapshot, _ = await load_latest_fundamentals_snapshot(ticker, db)
+    bounds = select(func.min(DailyPrice.date), func.max(DailyPrice.date)).where(DailyPrice.ticker == ticker)
+    if through is not None:
+        bounds = bounds.where(DailyPrice.date <= through)
+    first_price, last_price = (await db.execute(bounds)).one()
+    statements, _ = await _load_statements(ticker, db)
+    vintage = _date(snapshot.fetched_at) if snapshot else _date(profile.last_updated) if profile else None
+    return _split_requirement(filter(None, (first_price, last_price)), statements, vintage)
+
+
 async def get_valuation_history(
     ticker: str,
     db: AsyncSession,
@@ -430,28 +471,10 @@ async def get_valuation_history(
     if through is not None:
         price_query = price_query.where(DailyPrice.date <= through)
     prices = (await db.execute(price_query.order_by(DailyPrice.date))).scalars().all()
-    versions = list((await db.execute(select(FundamentalVersion).where(
-        FundamentalVersion.ticker == ticker, FundamentalVersion.period_type.in_(("Quarterly", "Yearly")),
-    ))).scalars().all())
-    # Legacy-only periods can still be reconstructed when their payload carries
-    # a filing date. Never mix a mutable statement into an already versioned period.
-    legacy = (await db.execute(select(FinancialStatement).where(
-        FinancialStatement.ticker == ticker, FinancialStatement.period.in_(("Quarterly", "Yearly")),
-    ))).scalars().all()
-    covered = {(row.period_type, row.period_end) for row in versions}
-    all_statements = [*versions, *(row for row in legacy if (row.period, row.fiscal_date) not in covered)]
-    statements = [row for row in all_statements if (getattr(row, "period_type", None) or row.period) == "Quarterly"]
-    annual_statements = [row for row in all_statements if (getattr(row, "period_type", None) or row.period) == "Yearly"]
+    statements, annual_statements = await _load_statements(ticker, db)
     vintage = _date(snapshot.fetched_at) if snapshot else _date(profile.last_updated) if profile else None
-    # Cover both quote dates and every statement share vintage, including
-    # revisions fetched after the final price observation.
-    required_dates = [row.date for row in prices]
-    for row in statements:
-        required_dates.extend(filter(None, (
-            _date(getattr(row, "period_end", None) or getattr(row, "fiscal_date", None)),
-            _date(getattr(row, "fetched_at", None)) or vintage,
-        )))
-    coverage = await load_split_history(db, ticker, min(required_dates), max(required_dates)) if required_dates else None
+    window = _split_requirement((row.date for row in prices), statements, vintage)
+    coverage = await load_split_history(db, ticker, *window) if window else None
     result = build_valuation_history(ticker, prices, statements, coverage.actions if coverage else [], interval=interval,
                                      currency=profile.currency if profile else None,
                                      sector=profile.sector if profile else None,
