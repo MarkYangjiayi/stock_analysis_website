@@ -16,7 +16,7 @@ from services.market_breadth import (
     backfill_market_breadth_price_history,
     refresh_market_breadth,
 )
-from services.index_valuation import refresh_index_valuation
+from services.index_valuation import refresh_index_valuation, refresh_member_split_histories
 from services.universe import refresh_historical_universe_memberships
 from services.rsi_monitor import run_daily_rsi_monitor
 
@@ -100,7 +100,12 @@ async def _sync_market_breadth_for_target(target: date):
                 "reason": "already-published",
                 "as_of_date": target.isoformat(),
             }
-        await backfill_market_breadth_price_history(target)
+        try:
+            await backfill_market_breadth_price_history(target)
+        except Exception as exc:
+            # Same policy as startup catch-up: the backfill gate is advisory, and
+            # refresh_market_breadth applies its own per-date eligibility gate.
+            logger.warning("Market breadth price backfill incomplete for %s: %s", target, exc)
         return await refresh_market_breadth(target)
 
 
@@ -123,6 +128,10 @@ async def _sync_index_valuation_for_target(target: date):
                 "reason": "already-published",
                 "as_of_date": target.isoformat(),
             }
+        try:
+            await refresh_member_split_histories(target)
+        except Exception as exc:
+            logger.exception("Index member split refresh failed for %s: %s", target, exc)
         return await refresh_index_valuation(target)
 
 

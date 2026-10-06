@@ -9,7 +9,8 @@ import gzip
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date
+from collections.abc import Mapping
+from datetime import date, timedelta
 from decimal import DecimalException
 from types import SimpleNamespace
 
@@ -105,3 +106,40 @@ async def sync_full_split_history(db: AsyncSession, ticker: str) -> bool:
         await db.rollback()
         logger.exception("Unable to refresh complete split history for %s", ticker)
         return False
+
+
+async def refresh_stale_split_histories(
+    windows: Mapping[str, tuple[date, date]],
+    *,
+    concurrency: int = 4,
+) -> dict:
+    """Re-fetch full split histories whose snapshot horizon no longer covers a member window.
+
+    Historical-multiple verification demands a snapshot observed through the newest price
+    and statement vintage, so current members go stale every session; former members whose
+    window has closed keep their existing snapshot.
+    """
+    from database import async_session_maker
+
+    today = utc_now().date()
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    stats = {"members": len(windows), "current": 0, "refreshed": 0, "failed": 0, "failed_tickers": []}
+
+    async def refresh(ticker: str, start: date, end: date) -> None:
+        # Open windows also need statement vintages observed after the last price.
+        horizon = today if end >= today - timedelta(days=7) else end
+        async with semaphore:
+            async with async_session_maker() as db:
+                if await load_split_history(db, ticker, start, horizon) is not None:
+                    stats["current"] += 1
+                    return
+                ok = await sync_full_split_history(db, ticker)
+        if ok:
+            stats["refreshed"] += 1
+        else:
+            stats["failed"] += 1
+            stats["failed_tickers"].append(ticker)
+
+    await asyncio.gather(*(refresh(ticker, start, end) for ticker, (start, end) in windows.items()))
+    stats["failed_tickers"] = sorted(stats["failed_tickers"])[:50]
+    return stats

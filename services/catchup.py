@@ -12,7 +12,7 @@ from services.market_breadth import (
     backfill_market_breadth_price_history,
     refresh_market_breadth,
 )
-from services.index_valuation import refresh_index_valuation
+from services.index_valuation import refresh_index_valuation, refresh_member_split_histories
 from services.universe import refresh_historical_universe_memberships
 
 
@@ -73,6 +73,12 @@ async def catch_up_latest_publications(reference_date: Optional[date] = None) ->
     except Exception as exc:
         result["market_breadth"] = "failed"
         logger.exception("Market breadth catch-up failed for %s: %s", target, exc)
+    latest_valuation = await latest_published_date("index_valuation")
+    if latest_valuation is None or latest_valuation < target:
+        try:
+            await refresh_member_split_histories(target)
+        except Exception as exc:
+            logger.exception("Index member split refresh catch-up failed for %s: %s", target, exc)
     try:
         # The refresh defers itself when the day's dependencies are missing;
         # a previously published series keeps serving regardless.

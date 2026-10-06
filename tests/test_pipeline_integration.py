@@ -212,7 +212,7 @@ async def test_history_backfill_default_does_not_require_reference_session(
     monkeypatch,
 ):
     reference_date = date(2025, 1, 10)
-    previous_session = date(2025, 1, 9)
+    previous_session = date(2025, 1, 8)
     db_session.add(Ticker(ticker="AAA.US"))
     for price_date in market_sessions_through(previous_session, 6):
         db_session.add(DailyPrice(
@@ -332,9 +332,10 @@ async def test_rrg_price_publications_are_versioned_and_atomic(
     db_session,
     monkeypatch,
 ):
-    first_target = date(2025, 1, 9)
-    second_target = date(2025, 1, 10)
-    failed_target = date(2025, 1, 13)
+    # 2025-01-09 was an unscheduled NYSE closure, so use consecutive real sessions.
+    first_target = date(2025, 1, 10)
+    second_target = date(2025, 1, 13)
+    failed_target = date(2025, 1, 14)
     state = {"revision": 1, "failed_ticker": None}
     monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 2)
 
@@ -416,8 +417,8 @@ async def test_rrg_snapshot_retention_keeps_only_recent_runs(
 ):
     targets = [
         date(2025, 1, 8),
-        date(2025, 1, 9),
         date(2025, 1, 10),
+        date(2025, 1, 13),
     ]
     monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 0)
     monkeypatch.setattr("services.rrg_prices.RRG_SNAPSHOT_RETENTION_RUNS", 2)
@@ -464,7 +465,7 @@ async def test_rrg_retention_preserves_snapshot_referenced_by_stale_market_overv
     db_session,
     monkeypatch,
 ):
-    targets = [date(2025, 1, 8), date(2025, 1, 9), date(2025, 1, 10)]
+    targets = [date(2025, 1, 8), date(2025, 1, 10), date(2025, 1, 13)]
     monkeypatch.setattr("services.rrg_prices.RRG_PRICE_HISTORY_DAYS", 0)
     monkeypatch.setattr("services.rrg_prices.RRG_SNAPSHOT_RETENTION_RUNS", 2)
 

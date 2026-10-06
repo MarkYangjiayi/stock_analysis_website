@@ -54,6 +54,7 @@ from models import (
 from services import eodhd_client
 from services.data_sync import _upsert_daily_prices, _upsert_financials, _upsert_ticker_info
 from services.index_valuation import (
+    load_membership_windows,
     completed_month_end_labels,
     last_session_of_month,
     refresh_index_valuation,
@@ -97,39 +98,6 @@ def _sessions_between(start: date, end: date) -> int:
             count += 1
         cursor += timedelta(days=1)
     return count
-
-
-async def _load_membership_windows(target: date) -> dict[str, tuple[date, date]]:
-    """Ever-members since the history start, each with its needed price window."""
-    history_start = settings.INDEX_VALUATION_HISTORY_START
-    async with async_session_maker() as db:
-        rows = (await db.execute(
-            select(
-                UniverseMembership.ticker,
-                UniverseMembership.effective_from,
-                UniverseMembership.effective_to,
-            ).where(
-                UniverseMembership.universe == "SP500",
-                UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE,
-                UniverseMembership.effective_from <= target,
-                (
-                    UniverseMembership.effective_to.is_(None)
-                    | (UniverseMembership.effective_to >= history_start)
-                ),
-            )
-        )).all()
-    windows: dict[str, tuple[date, date]] = {}
-    for ticker, effective_from, effective_to in rows:
-        window_start = max(effective_from, history_start)
-        window_end = min(effective_to or target, target)
-        if window_start > window_end:
-            continue
-        previous = windows.get(ticker)
-        if previous is None:
-            windows[ticker] = (window_start, window_end)
-        else:
-            windows[ticker] = (min(previous[0], window_start), max(previous[1], window_end))
-    return windows
 
 
 async def _price_coverage(ticker: str, start: date, end: date) -> float:
@@ -510,7 +478,7 @@ async def main() -> int:
         result = await refresh_historical_universe_memberships(target, force=True)
         logger.info("Membership refresh: %s", result.get("status"))
 
-    windows = await _load_membership_windows(target)
+    windows = await load_membership_windows(target)
     if not windows:
         logger.error(
             "No S&P 500 membership intervals overlap [%s, %s]; cannot backfill.",
