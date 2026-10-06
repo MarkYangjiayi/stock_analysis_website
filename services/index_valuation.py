@@ -34,6 +34,7 @@ from services.pipeline_runs import (
     publish_datasets_and_finish,
     update_pipeline_run,
 )
+from services.split_history import refresh_stale_split_histories
 from services.universe import HISTORICAL_UNIVERSE_DATASET, HISTORICAL_UNIVERSE_SOURCE
 from services.valuation_history import (
     FINANCIAL_NET_INCOME_PROXY_BASIS,
@@ -363,6 +364,54 @@ async def _load_member_points(
 
     await asyncio.gather(*(load(ticker) for ticker in tickers))
     return per_ticker, warnings
+
+
+async def load_membership_windows(target: date) -> dict[str, tuple[date, date]]:
+    """Ever-members since the history start, each with its needed price window."""
+    history_start = settings.INDEX_VALUATION_HISTORY_START
+    async with async_session_maker() as db:
+        rows = (await db.execute(
+            select(
+                UniverseMembership.ticker,
+                UniverseMembership.effective_from,
+                UniverseMembership.effective_to,
+            ).where(
+                UniverseMembership.universe == "SP500",
+                UniverseMembership.source == HISTORICAL_UNIVERSE_SOURCE,
+                UniverseMembership.effective_from <= target,
+                (
+                    UniverseMembership.effective_to.is_(None)
+                    | (UniverseMembership.effective_to >= history_start)
+                ),
+            )
+        )).all()
+    windows: dict[str, tuple[date, date]] = {}
+    for ticker, effective_from, effective_to in rows:
+        window_start = max(effective_from, history_start)
+        window_end = min(effective_to or target, target)
+        if window_start > window_end:
+            continue
+        previous = windows.get(ticker)
+        if previous is None:
+            windows[ticker] = (window_start, window_end)
+        else:
+            windows[ticker] = (min(previous[0], window_start), max(previous[1], window_end))
+    return windows
+
+
+async def refresh_member_split_histories(target: date) -> dict:
+    """Keep split snapshots current for index members before the daily aggregation.
+
+    Without this, every current member's split history falls behind the newest
+    price after one session and the quality gate rejects every month.
+    """
+    windows = await load_membership_windows(target)
+    stats = await refresh_stale_split_histories(
+        windows,
+        concurrency=settings.HISTORY_BACKFILL_CONCURRENCY,
+    )
+    logger.info("Index member split refresh for %s: %s", target, {k: v for k, v in stats.items() if k != "failed_tickers"})
+    return stats
 
 
 async def _published_run_for_date(db: AsyncSession, dataset: str, as_of_date: date) -> Optional[int]:

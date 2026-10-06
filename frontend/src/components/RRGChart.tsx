@@ -108,6 +108,8 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 name: ticker,
                 type: 'custom',
                 animation: false,
+                // The legend takes its swatch from the first series with this name.
+                itemStyle: { color: themeColor },
                 data: lineData,
                 renderItem: function (params: CustomRenderParams, api: CustomRenderApi) {
                     const idx = params.dataIndex;
@@ -358,8 +360,8 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
 
             {/* 补充四个象限的文字标识浮层 (绝对定位，避免遮挡 ECharts legend，调整到底部网格上方) */}
             <div className="pointer-events-none absolute right-5 top-12 z-0 text-xs font-semibold uppercase tracking-widest text-up/40 sm:right-10 sm:text-lg">Leading</div>
-            <div className="pointer-events-none absolute bottom-28 right-5 z-0 text-xs font-semibold uppercase tracking-widest text-caution/40 sm:bottom-24 sm:right-10 sm:text-lg">Weakening</div>
-            <div className="pointer-events-none absolute bottom-28 left-5 z-0 text-xs font-semibold uppercase tracking-widest text-down/40 sm:bottom-24 sm:left-10 sm:text-lg">Lagging</div>
+            <div className="pointer-events-none absolute bottom-32 right-5 z-0 text-xs font-semibold uppercase tracking-widest text-caution/40 sm:bottom-36 sm:right-10 sm:text-lg">Weakening</div>
+            <div className="pointer-events-none absolute bottom-32 left-5 z-0 text-xs font-semibold uppercase tracking-widest text-down/40 sm:bottom-36 sm:left-10 sm:text-lg">Lagging</div>
             <div className="pointer-events-none absolute left-5 top-12 z-0 text-xs font-semibold uppercase tracking-widest text-info/40 sm:left-10 sm:text-lg">Improving</div>
         </div>
     );

@@ -2,11 +2,25 @@ from datetime import date, datetime, time, timezone
 from typing import Literal, Optional, TypedDict
 from zoneinfo import ZoneInfo
 
-import exchange_calendars as exchange_calendars
 import pandas as pd
+from exchange_calendars.exchange_calendar_xnys import XNYSExchangeCalendar
 
 
-_XNYS = exchange_calendars.get_calendar("XNYS")
+# Unscheduled NYSE closures that the pinned exchange_calendars release (4.5.x) does not
+# know about. Treating them as sessions makes every price-history gate demand a bar the
+# provider can never return.
+ADHOC_CLOSURES = (
+    pd.Timestamp("2025-01-09"),  # National Day of Mourning for President Jimmy Carter
+)
+
+
+class _XNYSWithAdhocClosures(XNYSExchangeCalendar):
+    @property
+    def adhoc_holidays(self):
+        return [*super().adhoc_holidays, *ADHOC_CLOSURES]
+
+
+_XNYS = _XNYSWithAdhocClosures()
 
 
 def is_us_market_session(session_date: date) -> bool:
