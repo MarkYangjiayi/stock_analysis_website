@@ -26,9 +26,9 @@ export default function OperatingForecastEditor({ scenarios, disabled, onChange 
     const enabled = !!scenarios[1]?.operating_forecast;
     const current = scenarios[selected];
     const edit = (change: Partial<Draft>) => onChange(scenarios.map((s, i) => i === selected ? { ...s, ...change } : s));
-    return <details className="rounded-xl border p-4">
-        <summary className="cursor-pointer text-sm font-bold">Annual operating forecast</summary>
-        <p className="mt-2 text-xs leading-5 text-slate-500">Use a documented revenue, margin and investment path when historical cash flow cannot represent the business. Early cash flows may be negative. All three cases need ten annual assumptions and a positive sustainable terminal cash flow. Amounts are in millions of the reporting currency. Positive Δ working capital consumes cash.</p>
+    return <details className="rounded-lg border p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Annual operating forecast</summary>
+        <p className="mt-2 text-xs leading-5 text-fg-muted">Use a documented revenue, margin and investment path when historical cash flow cannot represent the business. Early cash flows may be negative. All three cases need ten annual assumptions and a positive sustainable terminal cash flow. Amounts are in millions of the reporting currency. Positive Δ working capital consumes cash.</p>
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} disabled={disabled} onChange={event => onChange(scenarios.map(s => ({ ...s,
             operating_forecast: event.target.checked ? blankRows() : undefined,
             terminal_roic: event.target.checked ? Number(s.wacc) / 100 : undefined,
@@ -42,11 +42,11 @@ export default function OperatingForecastEditor({ scenarios, disabled, onChange 
                 <label className="text-xs">Assumption source / rationale<input aria-label={`${current.scenario} forecast source`} className="control-field mt-1" placeholder="Forecast source, date and rationale" value={current.operating_forecast?.[0]?.source || ""} disabled={disabled} onChange={event => edit({ operating_forecast: current.operating_forecast?.map(row => ({ ...row, source: event.target.value })) })} /></label>
             </div>
             <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-xs"><thead><tr><th>Year</th>{columns.map(c => <th key={c.key} className="p-2 text-left">{c.label}</th>)}</tr></thead><tbody>
-                {current.operating_forecast?.map((row, ri) => <tr key={row.year}><th className="p-2">{row.year}</th>{columns.map(c => <td key={c.key} className="p-1"><input aria-label={`${current.scenario} year ${row.year} ${c.label}`} className="control-field w-28 font-mono" type="number" step="any" disabled={disabled}
+                {current.operating_forecast?.map((row, ri) => <tr key={row.year}><th className="p-2 font-mono">{row.year}</th>{columns.map(c => <td key={c.key} className="p-1"><input aria-label={`${current.scenario} year ${row.year} ${c.label}`} className="control-field w-28 font-mono" type="number" step="any" disabled={disabled}
                     value={Number.isFinite(row[c.key]) ? Number((row[c.key] / c.scale).toPrecision(12)) : ""}
                     onChange={event => edit({ operating_forecast: current.operating_forecast?.map((r, i) => i === ri ? { ...r, [c.key]: event.target.value === "" ? NaN : Number(event.target.value) * c.scale } : r) })} /></td>)}</tr>)}
             </tbody></table></div>
-            <p className="text-xs text-slate-500">FCFF = EBIT after tax − capex + D&A − Δ working capital. Terminal reinvestment = max(growth, 0) / ROIC × terminal operating profit after tax. ROIC initially equals WACC; document any change. Initial FCF-growth controls are unused in this mode.</p>
+            <p className="text-xs text-fg-muted">FCFF = EBIT after tax − capex + D&A − Δ working capital. Terminal reinvestment = max(growth, 0) / ROIC × terminal operating profit after tax. ROIC initially equals WACC; document any change. Initial FCF-growth controls are unused in this mode.</p>
         </div>}
     </details>;
 }

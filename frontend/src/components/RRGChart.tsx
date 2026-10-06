@@ -3,6 +3,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { useTheme } from 'next-themes';
+import { chartMonoFont, chartTheme } from '@/lib/chartTheme';
 
 export interface RRGDataPoint {
     date: string;
@@ -42,13 +43,6 @@ interface RRGTooltipParam {
     seriesName?: string;
 }
 
-// 预设的亮丽颜色数组
-const BRAND_COLORS = [
-    '#00f2fe', '#fec163', '#ff0844', '#f12711', '#00c6ff',
-    '#a18cd1', '#ff9a9e', '#f83600', '#f9d423', '#00b4db',
-    '#b224ef', '#00a8f3', '#ff512f', '#dd2476', '#a1c4fd'
-];
-
 export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRGChartProps) {
     const { resolvedTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
@@ -64,6 +58,11 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
         if (!data || !data.data || Object.keys(data.data).length === 0) {
             return {};
         }
+
+        const colors = chartTheme(isDark);
+        const monoFont = chartMonoFont();
+        // 分类色板：与涨跌绿/红区分，数量不足时循环使用
+        const sectorColors = colors.categorical;
 
         let minRatio = 100, maxRatio = 100;
         let minMomentum = 100, maxMomentum = 100;
@@ -98,7 +97,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
             const startIndex = Math.max(0, effectiveEndIndex - tailLength);
             const slicedTrajectory = seriesData.slice(startIndex, effectiveEndIndex);
 
-            const themeColor = BRAND_COLORS[colorIndex % BRAND_COLORS.length];
+            const themeColor = sectorColors[colorIndex % sectorColors.length];
             colorIndex++;
 
             // 转换为 ECharts 数据格式
@@ -134,9 +133,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                             lineWidth: 3,
                             opacity: opacity,
                             lineCap: 'round',
-                            lineJoin: 'round',
-                            shadowColor: themeColor,
-                            shadowBlur: 2
+                            lineJoin: 'round'
                         }
                     };
                 }
@@ -151,10 +148,8 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 symbolSize: 12,
                 itemStyle: {
                     color: themeColor,
-                    borderColor: '#ffffff',
-                    borderWidth: 1.5,
-                    shadowColor: themeColor,
-                    shadowBlur: 15
+                    borderColor: colors.background,
+                    borderWidth: 1.5
                 },
                 label: {
                     show: true,
@@ -162,9 +157,10 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                     position: lastDataNode.rs_ratio >= 100 ? 'left' : 'right',
                     distance: 7,
                     color: themeColor,
-                    fontWeight: 'bold',
+                    fontFamily: monoFont,
+                    fontWeight: 600,
                     fontSize: 12,
-                    textBorderColor: isDark ? '#000' : '#fff',
+                    textBorderColor: colors.background,
                     textBorderWidth: 2
                 }
             });
@@ -187,14 +183,16 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
         return {
             // 动画更新配置：关闭更新动画，提升 Slider 拖拉时的纯粹重绘体验，防蠕动
             animationDurationUpdate: 0,
+            backgroundColor: 'transparent',
             aria: { enabled: true, description: 'Relative rotation graph for US sector ETFs versus the benchmark' },
             title: {
                 text: 'Relative Rotation Graph (RRG)',
                 left: 'center',
                 top: 10,
                 textStyle: {
-                    color: isDark ? '#ccc' : '#475569',
-                    fontSize: 16
+                    color: colors.text,
+                    fontSize: 14,
+                    fontWeight: 600
                 }
             },
             legend: {
@@ -202,19 +200,23 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 bottom: 15, // 放置在底部
                 data: legendData,
                 textStyle: {
-                    color: isDark ? '#e2e8f0' : '#475569', // slate-200
+                    color: colors.textMuted,
+                    fontFamily: monoFont,
                     fontSize: 12
                 },
-                pageIconColor: '#3b82f6',
+                inactiveColor: colors.border,
+                pageIconColor: colors.brand,
+                pageIconInactiveColor: colors.border,
                 pageTextStyle: {
-                    color: isDark ? '#e2e8f0' : '#475569'
+                    color: colors.textMuted,
+                    fontFamily: monoFont
                 }
             },
             tooltip: {
                 trigger: 'item',
-                backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                borderColor: isDark ? '#334155' : '#cbd5e1',
-                textStyle: { color: isDark ? '#f8fafc' : '#0f172a' },
+                backgroundColor: colors.tooltipBackground,
+                borderColor: colors.border,
+                textStyle: { color: colors.text },
                 formatter: function (params: RRGTooltipParam) {
                     if (Array.isArray(params.value)) {
                         const ratio = Number(params.value[0]).toFixed(2);
@@ -222,15 +224,15 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                         const dt = params.value[2];
                         const tck = params.value[3];
 
-                        const dateColor = isDark ? 'text-slate-300' : 'text-slate-500';
-                        const valColor = isDark ? 'text-white' : 'text-black';
+                        const dateColor = 'text-fg-muted';
+                        const valColor = 'font-mono text-fg';
 
                         return `
-              <div class="font-bold flex items-center gap-2 mb-1">
+              <div class="font-mono font-semibold flex items-center gap-2 mb-1">
                 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${params.color};"></span>
                 ${tck}
               </div>
-              <div class="text-sm ${dateColor}">Date: ${dt}</div>
+              <div class="text-sm ${dateColor}">Date: <span class="font-mono">${dt}</span></div>
               <div class="text-sm ${dateColor}">RS-Ratio: <span class="${valColor}">${ratio}</span></div>
               <div class="text-sm ${dateColor}">RS-Momentum: <span class="${valColor}">${momentum}</span></div>
             `;
@@ -251,7 +253,7 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 name: 'RS-Ratio',
                 nameLocation: 'middle',
                 nameGap: 30,
-                nameTextStyle: { color: isDark ? '#888' : '#64748b' },
+                nameTextStyle: { color: colors.textMuted, fontFamily: monoFont },
                 min: axisMin,
                 max: axisMax,
                 axisLine: { show: false },
@@ -259,18 +261,18 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 splitLine: {
                     show: true,
                     lineStyle: {
-                        color: isDark ? '#333' : '#e2e8f0',
+                        color: colors.grid,
                         type: 'dashed'
                     }
                 },
-                axisLabel: { color: isDark ? '#888' : '#64748b' }
+                axisLabel: { color: colors.textMuted, fontFamily: monoFont }
             },
             yAxis: {
                 type: 'value',
                 name: 'RS-Momentum',
                 nameLocation: 'middle',
                 nameGap: 30,
-                nameTextStyle: { color: isDark ? '#888' : '#64748b' },
+                nameTextStyle: { color: colors.textMuted, fontFamily: monoFont },
                 min: axisMin,
                 max: axisMax,
                 axisLine: { show: false },
@@ -278,11 +280,11 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                 splitLine: {
                     show: true,
                     lineStyle: {
-                        color: isDark ? '#333' : '#e2e8f0',
+                        color: colors.grid,
                         type: 'dashed'
                     }
                 },
-                axisLabel: { color: isDark ? '#888' : '#64748b' }
+                axisLabel: { color: colors.textMuted, fontFamily: monoFont }
             },
             // 4 & 5. 背景象限 和 准星线
             series: [
@@ -293,28 +295,25 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                     data: [],
                     markArea: {
                         silent: true,
-                        itemStyle: {
-                            opacity: 0.1
-                        },
                         data: [
                             // 第一象限：右上 Leading (绿)
                             [
-                                { xAxis: 100, yAxis: 100, itemStyle: { color: '#10b981' } },
+                                { xAxis: 100, yAxis: 100, itemStyle: { color: `${colors.positive}14` } },
                                 { xAxis: axisMax, yAxis: axisMax }
                             ],
                             // 第二象限：左上 Improving (蓝)
                             [
-                                { xAxis: axisMin, yAxis: 100, itemStyle: { color: '#3b82f6' } },
+                                { xAxis: axisMin, yAxis: 100, itemStyle: { color: `${colors.info}14` } },
                                 { xAxis: 100, yAxis: axisMax }
                             ],
                             // 第三象限：左下 Lagging (红)
                             [
-                                { xAxis: axisMin, yAxis: axisMin, itemStyle: { color: '#ef4444' } },
+                                { xAxis: axisMin, yAxis: axisMin, itemStyle: { color: `${colors.negative}14` } },
                                 { xAxis: 100, yAxis: 100 }
                             ],
-                            // 第四象限：右下 Weakening (黄)
+                            // 第四象限：右下 Weakening (警示紫)
                             [
-                                { xAxis: 100, yAxis: axisMin, itemStyle: { color: '#eab308' } },
+                                { xAxis: 100, yAxis: axisMin, itemStyle: { color: `${colors.caution}14` } },
                                 { xAxis: axisMax, yAxis: 100 }
                             ]
                         ]
@@ -324,8 +323,8 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
                         symbol: 'none',
                         label: { show: false },
                         lineStyle: {
-                            color: '#555',
-                            width: 1.5,
+                            color: colors.border,
+                            width: 1,
                             type: 'solid'
                         },
                         data: [
@@ -341,28 +340,27 @@ export default function RRGChart({ data, tailLength = 10, currentDayIndex }: RRG
     }, [data, tailLength, currentDayIndex, isDark]);
 
     if (!mounted) {
-        return <div className="h-[520px] w-full rounded-xl bg-white p-2 dark:bg-[#121920] sm:h-[600px] sm:p-4" />;
+        return <div className="h-[520px] w-full rounded-lg bg-surface p-2 sm:h-[600px] sm:p-4" />;
     }
 
     return (
         <div
-            className="relative h-[520px] w-full rounded-xl bg-white p-2 dark:bg-[#121920] sm:h-[600px] sm:p-4"
+            className="relative h-[520px] w-full rounded-lg bg-surface p-2 sm:h-[600px] sm:p-4"
             onWheelCapture={(event) => event.stopPropagation()}
         >
             <ReactECharts
                 option={option}
                 style={{ height: '100%', width: '100%' }}
-                theme={isDark ? "dark" : undefined}
                 // 关键修复：设置为 false 允许 ECharts 保留用户手动点击过的 Legend 状态，而不是在重新渲染尾巴时被覆盖
                 notMerge={false}
                 lazyUpdate={true}
             />
 
             {/* 补充四个象限的文字标识浮层 (绝对定位，避免遮挡 ECharts legend，调整到底部网格上方) */}
-            <div className="pointer-events-none absolute right-5 top-12 z-0 text-xs font-bold uppercase tracking-widest text-emerald-500/50 sm:right-10 sm:text-lg">Leading</div>
-            <div className="pointer-events-none absolute bottom-28 right-5 z-0 text-xs font-bold uppercase tracking-widest text-yellow-500/50 sm:bottom-24 sm:right-10 sm:text-lg">Weakening</div>
-            <div className="pointer-events-none absolute bottom-28 left-5 z-0 text-xs font-bold uppercase tracking-widest text-red-500/50 sm:bottom-24 sm:left-10 sm:text-lg">Lagging</div>
-            <div className="pointer-events-none absolute left-5 top-12 z-0 text-xs font-bold uppercase tracking-widest text-blue-500/50 sm:left-10 sm:text-lg">Improving</div>
+            <div className="pointer-events-none absolute right-5 top-12 z-0 text-xs font-semibold uppercase tracking-widest text-up/40 sm:right-10 sm:text-lg">Leading</div>
+            <div className="pointer-events-none absolute bottom-28 right-5 z-0 text-xs font-semibold uppercase tracking-widest text-caution/40 sm:bottom-24 sm:right-10 sm:text-lg">Weakening</div>
+            <div className="pointer-events-none absolute bottom-28 left-5 z-0 text-xs font-semibold uppercase tracking-widest text-down/40 sm:bottom-24 sm:left-10 sm:text-lg">Lagging</div>
+            <div className="pointer-events-none absolute left-5 top-12 z-0 text-xs font-semibold uppercase tracking-widest text-info/40 sm:left-10 sm:text-lg">Improving</div>
         </div>
     );
 }

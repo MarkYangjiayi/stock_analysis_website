@@ -3,54 +3,85 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Graphite amber design tokens. Components should consume these through the
+ * semantic Tailwind utilities registered in @theme below (bg-surface, text-fg-muted,
+ * text-up, text-accent, ...) rather than raw palette classes like slate-500.
+ */
 :root {
-  --app-bg: #f4f7f9;
+  --app-bg: #f7f7f5;
   --surface: #ffffff;
-  --surface-muted: #f8fafc;
+  --surface-muted: #f2f2ef;
   --surface-raised: #ffffff;
-  --border: #dfe6eb;
-  --border-strong: #cbd5dc;
-  --text: #12211d;
-  --text-muted: #64748b;
-  --brand: #0f9f78;
-  --brand-strong: #08785b;
-  --brand-soft: #e8f8f2;
-  --positive: #11875f;
-  --negative: #d6455d;
-  --neutral: #64748b;
-  --danger: #dc5264;
-  --warning: #c68018;
+  --border: #e4e4e0;
+  --border-strong: #d0d0ca;
+  --text: #18181b;
+  --text-muted: #66666c;
+  --brand: #b45309;
+  --brand-strong: #92400e;
+  --brand-soft: #fdf1d8;
+  --on-brand: #ffffff;
+  --positive: #15803d;
+  --negative: #dc2626;
+  --neutral: #66666c;
+  --danger: #dc2626;
+  --warning: #9333ea;
   --info: #2563eb;
-  --chart-series-1: #2563eb;
-  --chart-series-2: #7c3aed;
-  --chart-series-3: #db2777;
-  --chart-series-4: #ea580c;
-  --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px rgb(15 23 42 / 0.06);
+  --chart-series-1: #b45309;
+  --chart-series-2: #2563eb;
+  --chart-series-3: #9333ea;
+  --chart-series-4: #db2777;
+  --shadow-panel: 0 1px 2px rgb(24 24 27 / 0.04);
 }
 
 .dark {
-  --app-bg: #0c1116;
-  --surface: #121920;
-  --surface-muted: #0f151b;
-  --surface-raised: #172029;
-  --border: #26313a;
-  --border-strong: #35434d;
-  --text: #e8f0ed;
-  --text-muted: #91a19b;
-  --brand: #39c99b;
-  --brand-strong: #6de2bc;
-  --brand-soft: #112a23;
-  --positive: #44d39f;
-  --negative: #ff7a8b;
-  --neutral: #91a19b;
-  --danger: #f06b7c;
-  --warning: #e3a13e;
+  --app-bg: #0c0c0d;
+  --surface: #141416;
+  --surface-muted: #101012;
+  --surface-raised: #1a1a1d;
+  --border: #26262a;
+  --border-strong: #36363c;
+  --text: #ededef;
+  --text-muted: #9a9aa2;
+  --brand: #f5a524;
+  --brand-strong: #ffb547;
+  --brand-soft: #2a2010;
+  --on-brand: #1a1206;
+  --positive: #3fcf8e;
+  --negative: #f2555a;
+  --neutral: #9a9aa2;
+  --danger: #f2555a;
+  --warning: #c084fc;
   --info: #60a5fa;
-  --chart-series-1: #60a5fa;
-  --chart-series-2: #a78bfa;
-  --chart-series-3: #f472b6;
-  --chart-series-4: #fb923c;
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.25), 0 18px 40px rgb(0 0 0 / 0.18);
+  --chart-series-1: #f5a524;
+  --chart-series-2: #60a5fa;
+  --chart-series-3: #c084fc;
+  --chart-series-4: #f472b6;
+  --shadow-panel: inset 0 1px 0 rgb(255 255 255 / 0.03);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans", Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, "PingFang SC", monospace;
+
+  --color-canvas: var(--app-bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-fg-muted: var(--text-muted);
+  --color-accent: var(--brand);
+  --color-accent-strong: var(--brand-strong);
+  --color-accent-soft: var(--brand-soft);
+  --color-on-accent: var(--on-brand);
+  --color-up: var(--positive);
+  --color-down: var(--negative);
+  --color-flat: var(--neutral);
+  --color-danger: var(--danger);
+  --color-caution: var(--warning);
+  --color-info: var(--info);
 }
 
 @layer base {
@@ -70,7 +101,7 @@ html.dark {
 body {
   background: var(--app-bg);
   color: var(--text);
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans", Arial, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
@@ -81,9 +112,11 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
-:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
 }
 
 @layer components {
@@ -100,7 +133,7 @@ select {
   }
 
   .surface-panel {
-    @apply rounded-2xl border;
+    @apply rounded-lg border;
     background: var(--surface);
     border-color: var(--border);
     box-shadow: var(--shadow-panel);
@@ -118,12 +151,12 @@ select {
   }
 
   .eyebrow {
-    @apply text-[11px] font-bold uppercase tracking-[0.16em];
+    @apply font-mono text-xs font-medium uppercase tracking-[0.08em];
     color: var(--text-muted);
   }
 
   .page-title {
-    @apply text-2xl font-bold tracking-[-0.03em] sm:text-3xl;
+    @apply text-2xl font-semibold tracking-[-0.025em] sm:text-[28px];
     color: var(--text);
   }
 
@@ -133,7 +166,7 @@ select {
   }
 
   .control-field {
-    @apply w-full rounded-[10px] border px-3 py-2.5 text-sm transition-colors;
+    @apply w-full rounded-md border px-3 py-2 text-sm transition-colors;
     background: var(--surface-muted);
     border-color: var(--border);
     color: var(--text);
@@ -145,12 +178,14 @@ select {
 
   .control-field:focus {
     border-color: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
     outline: none;
   }
 
   .primary-button {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] px-4 py-2 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-3.5 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
     background: var(--brand);
+    color: var(--on-brand);
   }
 
   .primary-button:hover:not(:disabled) {
@@ -158,7 +193,7 @@ select {
   }
 
   .secondary-button {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3.5 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
     background: var(--surface);
     border-color: var(--border);
     color: var(--text);
@@ -170,22 +205,22 @@ select {
   }
 
   .status-pill {
-    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+    @apply inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs font-medium;
     background: var(--brand-soft);
     border-color: color-mix(in srgb, var(--brand) 24%, transparent);
     color: var(--brand-strong);
   }
 
   .error-panel {
-    @apply rounded-xl border px-4 py-3 text-sm;
+    @apply rounded-lg border px-4 py-3 text-sm;
     background: color-mix(in srgb, var(--danger) 8%, transparent);
     border-color: color-mix(in srgb, var(--danger) 28%, transparent);
     color: var(--danger);
   }
 
   .section-header {
-    @apply flex flex-col justify-between gap-3 border-b px-5 py-4 sm:flex-row sm:items-start sm:px-6 sm:py-5;
-    background: var(--surface-muted);
+    @apply flex flex-col justify-between gap-3 border-b px-4 py-3.5 sm:flex-row sm:items-start sm:px-5 sm:py-4;
+    background: var(--surface);
   }
 
   .section-title {
@@ -199,24 +234,27 @@ select {
   }
 
   .segmented-control {
-    @apply inline-flex min-h-10 items-center rounded-[10px] border p-1;
+    @apply inline-flex min-h-9 items-center rounded-md border p-0.5;
     background: var(--surface-muted);
     border-color: var(--border);
   }
 
   .segmented-control-item {
-    @apply min-h-8 rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+    @apply min-h-7 rounded px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40;
     color: var(--text-muted);
   }
 
+  .segmented-control-item:hover:not(:disabled) {
+    color: var(--text);
+  }
+
   .segmented-control-item[aria-pressed="true"] {
-    background: var(--surface);
+    background: var(--brand-soft);
     color: var(--brand-strong);
-    box-shadow: 0 1px 3px rgb(15 23 42 / 0.1);
   }
 
   .data-state {
-    @apply inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium;
+    @apply inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 font-mono text-xs;
     background: var(--surface-muted);
     color: var(--text-muted);
   }
@@ -241,7 +279,7 @@ select {
   }
 
   .analysis-navigation-item {
-    @apply relative flex min-h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-3 text-xs font-semibold transition-colors sm:px-4 sm:text-sm;
+    @apply relative flex min-h-10 shrink-0 items-center gap-2 border-b-2 border-transparent px-3 text-xs font-medium transition-colors sm:px-3.5 sm:text-sm;
     color: var(--text-muted);
   }
 
@@ -251,7 +289,11 @@ select {
 
   .analysis-navigation-item[aria-selected="true"] {
     border-bottom-color: var(--brand);
-    color: var(--brand-strong);
+    color: var(--text);
+  }
+
+  .analysis-navigation-item[aria-selected="true"] svg {
+    color: var(--brand);
   }
 
   .stock-context-header {
@@ -267,9 +309,9 @@ select {
   }
 
   .research-panel {
-    @apply min-w-0 rounded-xl border;
+    @apply min-w-0 rounded-lg border;
     background: var(--surface);
-    box-shadow: 0 1px 2px rgb(15 23 42 / 0.025);
+    box-shadow: var(--shadow-panel);
   }
 
   .overview-grid {
@@ -286,7 +328,7 @@ select {
   }
 
   .research-details {
-    @apply rounded-xl border;
+    @apply rounded-lg border;
     background: var(--surface);
   }
 
@@ -297,6 +339,33 @@ select {
 
   .research-details[open] > summary {
     @apply border-b;
+  }
+
+  /* Numeric readouts: prices, ratios, dates. Monospaced so columns align. */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+
+  .metric-label {
+    @apply text-xs;
+    color: var(--text-muted);
+  }
+
+  .metric-value {
+    @apply font-mono text-lg font-medium tabular-nums tracking-tight;
+    color: var(--text);
+  }
+
+  .kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded border px-1 font-mono text-[11px] leading-none;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+  }
+
+  .status-bar {
+    @apply flex h-7 shrink-0 items-center gap-4 overflow-x-auto border-t px-4 font-mono text-xs whitespace-nowrap md:px-6;
+    background: var(--surface-muted);
+    color: var(--text-muted);
   }
 }
 

@@ -69,42 +69,42 @@ const expectationRevision = (expectation?: EarningsExpectation) => {
 };
 
 const revisionTone = (value: number | null) => {
-    if (value == null || Math.abs(value) < 0.0005) return { label: "Flat", className: "text-slate-500", Icon: Minus };
+    if (value == null || Math.abs(value) < 0.0005) return { label: "Flat", className: "text-flat", Icon: Minus };
     return value > 0
-        ? { label: "Raised", className: "text-emerald-600 dark:text-emerald-400", Icon: TrendingUp }
-        : { label: "Lowered", className: "text-rose-500", Icon: TrendingDown };
+        ? { label: "Raised", className: "text-up", Icon: TrendingUp }
+        : { label: "Lowered", className: "text-down", Icon: TrendingDown };
 };
 
 function EventRow({ event, currency }: { event: StockEvent; currency?: string | null }) {
     const surprise = event.eps_surprise_percent;
     return (
-        <li className="flex gap-3 rounded-xl border p-3.5">
-            <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${event.kind === "earnings" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300"}`}>
+        <li className="flex gap-3 rounded-lg border p-3.5">
+            <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${event.kind === "earnings" ? "bg-accent-soft text-accent-strong" : "bg-info/10 text-info"}`}>
                 {event.kind === "earnings" ? <CalendarClock size={16} /> : <CalendarDays size={16} />}
             </span>
             <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                        <p className="text-sm font-black">{event.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{eventDateLabel(event)}</p>
+                        <p className="text-sm font-semibold">{event.title}</p>
+                        <p className="mt-1 font-mono text-xs text-fg-muted">{eventDateLabel(event)}</p>
                     </div>
-                    <span className="rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    <span className="rounded-full border px-2 py-1 text-xs font-medium uppercase tracking-wide text-fg-muted">
                         {event.status}
                     </span>
                 </div>
                 {event.kind === "earnings" && event.status === "upcoming" && (
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 font-mono text-xs text-fg-muted">
                         Period ending {formatDate(event.period_end)} · EPS consensus {formatNumber(event.eps_estimate)}
                     </p>
                 )}
                 {event.kind === "earnings" && event.status === "reported" && (
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 font-mono text-xs text-fg-muted">
                         EPS {formatNumber(event.eps_actual)} vs {formatNumber(event.eps_estimate)} estimate
                         {surprise == null ? "" : ` · ${surprise >= 0 ? "+" : ""}${surprise.toFixed(1)}% surprise`}
                     </p>
                 )}
                 {event.kind === "dividend" && (
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 font-mono text-xs text-fg-muted">
                         Payment date {formatDate(event.payment_date)}{currency ? ` · ${currency}` : ""}
                     </p>
                 )}
@@ -121,7 +121,7 @@ function ExpectationTable({
     currency?: string | null;
 }) {
     return (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-lg border">
             <table className="w-full min-w-[760px] text-left text-xs">
                 <thead className="surface-subtle">
                     <tr>
@@ -141,28 +141,28 @@ function ExpectationTable({
                         return (
                             <tr key={`${item.period}-${item.period_end}`}>
                                 <td className="px-4 py-3">
-                                    <p className="font-bold">{item.label}</p>
-                                    <p className="mt-1 font-mono text-[10px] text-slate-500">{formatDate(item.period_end)}</p>
+                                    <p className="font-semibold">{item.label}</p>
+                                    <p className="mt-1 font-mono text-xs text-fg-muted">{formatDate(item.period_end)}</p>
                                 </td>
-                                <td className="px-4 py-3 font-mono font-bold">
+                                <td className="px-4 py-3 font-mono font-semibold">
                                     {formatNumber(item.eps_average)}
-                                    <span className="ml-1 text-[10px] font-normal text-slate-500">({formatNumber(item.eps_low)}–{formatNumber(item.eps_high)})</span>
+                                    <span className="ml-1 text-xs font-normal text-fg-muted">({formatNumber(item.eps_low)}–{formatNumber(item.eps_high)})</span>
                                 </td>
-                                <td className="px-4 py-3 font-mono font-bold">
+                                <td className="px-4 py-3 font-mono font-semibold">
                                     {formatMoney(item.revenue_average, currency)}
-                                    <span className="ml-1 text-[10px] font-normal text-slate-500">({formatMoney(item.revenue_low, currency)}–{formatMoney(item.revenue_high, currency)})</span>
+                                    <span className="ml-1 text-xs font-normal text-fg-muted">({formatMoney(item.revenue_low, currency)}–{formatMoney(item.revenue_high, currency)})</span>
                                 </td>
                                 <td className="px-4 py-3 font-mono">
                                     <p>EPS {formatPercent(item.eps_growth)}</p>
-                                    <p className="mt-1 text-slate-500">Revenue {formatPercent(item.revenue_growth)}</p>
+                                    <p className="mt-1 text-fg-muted">Revenue {formatPercent(item.revenue_growth)}</p>
                                 </td>
                                 <td className="px-4 py-3 font-mono">
                                     <p>EPS {item.eps_analyst_count ?? "—"}</p>
-                                    <p className="mt-1 text-slate-500">Revenue {item.revenue_analyst_count ?? "—"}</p>
+                                    <p className="mt-1 text-fg-muted">Revenue {item.revenue_analyst_count ?? "—"}</p>
                                 </td>
-                                <td className={`px-4 py-3 font-mono font-bold ${tone.className}`}>
+                                <td className={`px-4 py-3 font-mono font-semibold ${tone.className}`}>
                                     <span className="inline-flex items-center gap-1"><RevisionIcon size={13} />{tone.label}</span>
-                                    <p className="mt-1 text-[10px] font-normal">↑{item.eps_revisions_up_30d ?? 0} / ↓{item.eps_revisions_down_30d ?? 0}</p>
+                                    <p className="mt-1 text-xs font-normal">↑{item.eps_revisions_up_30d ?? 0} / ↓{item.eps_revisions_down_30d ?? 0}</p>
                                 </td>
                             </tr>
                         );
@@ -186,32 +186,32 @@ export default function EventsExpectationsPanel({
     const RevisionIcon = tone.Icon;
 
     return (
-        <section className="rounded-xl border p-4 sm:p-5" aria-labelledby={detail ? "events-expectations-detail-title" : "events-expectations-title"}>
+        <section className="rounded-lg border p-4 sm:p-5" aria-labelledby={detail ? "events-expectations-detail-title" : "events-expectations-title"}>
             <header className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                 <div>
                     <p className="eyebrow">Events & expectations</p>
-                    <h3 id={detail ? "events-expectations-detail-title" : "events-expectations-title"} className="mt-1 text-sm font-black">What could move the stock next</h3>
+                    <h3 id={detail ? "events-expectations-detail-title" : "events-expectations-title"} className="mt-1 text-sm font-semibold">What could move the stock next</h3>
                 </div>
-                <span className="text-[10px] text-slate-500">{data?.as_of ? `Provider snapshot ${formatDate(data.as_of)}` : "Point-in-time provider data"}</span>
+                <span className="font-mono text-xs text-fg-muted">{data?.as_of ? `Provider snapshot ${formatDate(data.as_of)}` : "Point-in-time provider data"}</span>
             </header>
 
-            {loading && <div className="mt-4 rounded-xl border p-4 text-sm text-slate-500" role="status">Loading events and expectations…</div>}
-            {error && !loading && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300" role="alert">{error}</div>}
-            {!loading && !error && !data?.available && <div className="mt-4 rounded-xl border p-4 text-sm text-slate-500">No event or forward-consensus data is available for this ticker yet.</div>}
+            {loading && <div className="mt-4 rounded-lg border p-4 text-sm text-fg-muted" role="status">Loading events and expectations…</div>}
+            {error && !loading && <div className="mt-4 rounded-lg border border-caution/30 bg-caution/6 p-4 text-sm text-caution" role="alert">{error}</div>}
+            {!loading && !error && !data?.available && <div className="mt-4 rounded-lg border p-4 text-sm text-fg-muted">No event or forward-consensus data is available for this ticker yet.</div>}
 
             {!loading && !error && data?.available && (
                 <>
                     <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                        <article className="surface-subtle rounded-xl border p-4">
-                            <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Next catalyst</p>
-                            <p className="mt-2 text-sm font-black">{data.next_event?.title || "No date published"}</p>
-                            <p className="mt-1 text-xs text-slate-500">{data.next_event ? eventDateLabel(data.next_event) : "Provider has not published an upcoming event date."}</p>
-                            {data.next_event?.kind === "dividend" && <p className="mt-2 text-xs text-slate-500">Payment date {formatDate(data.next_event.payment_date)}</p>}
-                            {data.next_event?.kind === "earnings" && <p className="mt-2 text-xs text-slate-500">Period ending {formatDate(data.next_event.period_end)}</p>}
+                        <article className="surface-subtle rounded-lg border p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Next catalyst</p>
+                            <p className="mt-2 text-sm font-semibold">{data.next_event?.title || "No date published"}</p>
+                            <p className={`mt-1 text-xs text-fg-muted ${data.next_event ? "font-mono" : ""}`}>{data.next_event ? eventDateLabel(data.next_event) : "Provider has not published an upcoming event date."}</p>
+                            {data.next_event?.kind === "dividend" && <p className="mt-2 font-mono text-xs text-fg-muted">Payment date {formatDate(data.next_event.payment_date)}</p>}
+                            {data.next_event?.kind === "earnings" && <p className="mt-2 font-mono text-xs text-fg-muted">Period ending {formatDate(data.next_event.period_end)}</p>}
                         </article>
-                        <article className="surface-subtle rounded-xl border p-4">
-                            <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Consensus snapshot</p>
-                            <p className="mt-2 text-sm font-black">{leadExpectation?.label || "Forward estimates"}</p>
+                        <article className="surface-subtle rounded-lg border p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Consensus snapshot</p>
+                            <p className="mt-2 text-sm font-semibold">{leadExpectation?.label || "Forward estimates"}</p>
                             <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-xs">
                                 <span>EPS {formatNumber(leadExpectation?.eps_average)}</span>
                                 <span>Revenue {formatMoney(leadExpectation?.revenue_average, currency)}</span>
@@ -219,17 +219,17 @@ export default function EventsExpectationsPanel({
                                 <span>Revenue growth {formatPercent(leadExpectation?.revenue_growth)}</span>
                             </div>
                         </article>
-                        <article className="surface-subtle rounded-xl border p-4">
-                            <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Expectation signal</p>
-                            <p className={`mt-2 flex items-center gap-1 text-sm font-black ${tone.className}`}><RevisionIcon size={16} />{tone.label}</p>
-                            <p className="mt-1 text-xs text-slate-500">EPS trend vs 30 days ago {formatPercent(revision)}</p>
-                            <p className="mt-2 text-xs text-slate-500">30d revisions ↑{leadExpectation?.eps_revisions_up_30d ?? "—"} / ↓{leadExpectation?.eps_revisions_down_30d ?? "—"}</p>
-                            {data.wall_street_target_price != null && <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Target size={13} /> Target {formatMoney(data.wall_street_target_price, currency)}</p>}
+                        <article className="surface-subtle rounded-lg border p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Expectation signal</p>
+                            <p className={`mt-2 flex items-center gap-1 text-sm font-semibold ${tone.className}`}><RevisionIcon size={16} />{tone.label}</p>
+                            <p className="mt-1 font-mono text-xs text-fg-muted">EPS trend vs 30 days ago {formatPercent(revision)}</p>
+                            <p className="mt-2 font-mono text-xs text-fg-muted">30d revisions ↑{leadExpectation?.eps_revisions_up_30d ?? "—"} / ↓{leadExpectation?.eps_revisions_down_30d ?? "—"}</p>
+                            {data.wall_street_target_price != null && <p className="mt-2 flex items-center gap-1 font-mono text-xs text-fg-muted"><Target size={13} /> Target {formatMoney(data.wall_street_target_price, currency)}</p>}
                         </article>
                     </div>
 
                     {data.data_quality_notes.length > 0 && (
-                        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300" role="note">
+                        <div className="mt-4 rounded-lg border border-caution/30 bg-caution/6 p-3 text-xs leading-5 text-caution" role="note">
                             {data.data_quality_notes.map((note) => <p key={note}>{note}</p>)}
                         </div>
                     )}
@@ -238,19 +238,19 @@ export default function EventsExpectationsPanel({
                         <div className="mt-5 space-y-5">
                             <div className="grid gap-5 xl:grid-cols-2">
                                 <section>
-                                    <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-black">Upcoming events</h4><span className="text-[10px] text-slate-500">{data.upcoming_events.length} published</span></div>
-                                    {data.upcoming_events.length ? <ul className="space-y-2">{data.upcoming_events.map((event) => <EventRow key={event.id} event={event} currency={currency} />)}</ul> : <p className="rounded-xl border p-4 text-sm text-slate-500">No upcoming event date is available.</p>}
+                                    <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-semibold">Upcoming events</h4><span className="font-mono text-xs text-fg-muted">{data.upcoming_events.length} published</span></div>
+                                    {data.upcoming_events.length ? <ul className="space-y-2">{data.upcoming_events.map((event) => <EventRow key={event.id} event={event} currency={currency} />)}</ul> : <p className="rounded-lg border p-4 text-sm text-fg-muted">No upcoming event date is available.</p>}
                                 </section>
                                 <section>
-                                    <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-black">Recent earnings history</h4><span className="text-[10px] text-slate-500">EPS surprise</span></div>
-                                    {data.recent_earnings.length ? <ul className="space-y-2">{data.recent_earnings.slice(0, 4).map((event) => <EventRow key={event.id} event={event} currency={currency} />)}</ul> : <p className="rounded-xl border p-4 text-sm text-slate-500">No reported earnings history is available.</p>}
+                                    <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-semibold">Recent earnings history</h4><span className="text-xs text-fg-muted">EPS surprise</span></div>
+                                    {data.recent_earnings.length ? <ul className="space-y-2">{data.recent_earnings.slice(0, 4).map((event) => <EventRow key={event.id} event={event} currency={currency} />)}</ul> : <p className="rounded-lg border p-4 text-sm text-fg-muted">No reported earnings history is available.</p>}
                                 </section>
                             </div>
                             <section>
-                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-black">Forward consensus</h4><span className="text-[10px] text-slate-500">Point-in-time estimates, not a recommendation</span></div>
-                                {data.expectations.length ? <ExpectationTable expectations={data.expectations} currency={currency} /> : <p className="rounded-xl border p-4 text-sm text-slate-500">No forward consensus estimates are available.</p>}
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-semibold">Forward consensus</h4><span className="text-xs text-fg-muted">Point-in-time estimates, not a recommendation</span></div>
+                                {data.expectations.length ? <ExpectationTable expectations={data.expectations} currency={currency} /> : <p className="rounded-lg border p-4 text-sm text-fg-muted">No forward consensus estimates are available.</p>}
                             </section>
-                            {(data.annual_dividend_per_share != null || data.dividend_yield != null) && <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"><span>Annual dividend {formatNumber(data.annual_dividend_per_share)}</span><span>Dividend yield {formatPercent(data.dividend_yield)}</span></div>}
+                            {(data.annual_dividend_per_share != null || data.dividend_yield != null) && <div className="flex flex-wrap gap-x-5 gap-y-2 font-mono text-xs text-fg-muted"><span>Annual dividend {formatNumber(data.annual_dividend_per_share)}</span><span>Dividend yield {formatPercent(data.dividend_yield)}</span></div>}
                         </div>
                     )}
                 </>

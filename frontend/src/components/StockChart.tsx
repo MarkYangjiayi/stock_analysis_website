@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, IChartApi, ISeriesApi, CrosshairMode, PriceScaleMode } from 'lightweight-charts';
+import { createChart, ColorType, IChartApi, ISeriesApi, CrosshairMode, LineStyle, PriceScaleMode } from 'lightweight-charts';
 import { HistoricalDataPoint } from '@/lib/api';
 import { useTheme } from 'next-themes';
-import { chartTheme } from '@/lib/chartTheme';
+import { chartMonoFont, chartTheme } from '@/lib/chartTheme';
 
 interface StockChartProps {
     data: HistoricalDataPoint[];
@@ -14,6 +14,35 @@ interface StockChartProps {
     height?: number;
     embedded?: boolean;
 }
+
+// Canvas renderers cannot resolve CSS variables, so name the mono stack literally.
+
+type ChartColors = ReturnType<typeof chartTheme>;
+
+const chartChromeOptions = (colors: ChartColors) => ({
+    layout: {
+        background: { type: ColorType.Solid, color: colors.background },
+        textColor: colors.textMuted,
+        fontFamily: chartMonoFont(),
+    },
+    grid: {
+        vertLines: { color: colors.grid, style: LineStyle.Dashed },
+        horzLines: { color: colors.grid, style: LineStyle.Dashed },
+    },
+    crosshair: {
+        vertLine: { color: colors.textMuted, labelBackgroundColor: colors.tooltipBackground },
+        horzLine: { color: colors.textMuted, labelBackgroundColor: colors.tooltipBackground },
+    },
+    timeScale: {
+        borderColor: colors.border,
+    },
+    rightPriceScale: {
+        borderColor: colors.border,
+    },
+});
+
+// 8-digit hex alpha (~52%) keeps volume bars behind the candles.
+const volumeColor = (colors: ChartColors, up: boolean) => `${up ? colors.positive : colors.negative}85`;
 
 type ValidCandlePoint = HistoricalDataPoint & {
     open: number;
@@ -32,6 +61,9 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
     const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
     const ma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     const ma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    // Volume bars are colored per point, so keep the raw direction to recolor them on theme change.
+    const volumeDataRef = useRef<{ time: string; value: number; up: boolean }[]>([]);
+    const resolvedThemeRef = useRef(resolvedTheme);
 
     const [tooltipData, setTooltipData] = useState<{
         visible: boolean;
@@ -54,19 +86,15 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
 
         const colors = chartTheme(resolvedTheme === 'dark');
 
+        const chrome = chartChromeOptions(colors);
         const chart = createChart(chartContainerRef.current, {
-            layout: {
-                background: { type: ColorType.Solid, color: colors.background },
-                textColor: colors.textMuted,
-            },
-            grid: {
-                vertLines: { color: colors.grid },
-                horzLines: { color: colors.grid },
-            },
+            layout: chrome.layout,
+            grid: chrome.grid,
             width: chartContainerRef.current.clientWidth,
             height,
             crosshair: {
                 mode: CrosshairMode.Normal,
+                ...chrome.crosshair,
             },
             handleScroll: {
                 mouseWheel: false,
@@ -77,10 +105,10 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             },
             timeScale: {
                 timeVisible: true,
-                borderColor: colors.grid,
+                ...chrome.timeScale,
             },
             rightPriceScale: {
-                borderColor: colors.grid,
+                ...chrome.rightPriceScale,
                 mode: PriceScaleMode.Logarithmic,
             },
         });
@@ -143,26 +171,12 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
 
     // 2. Dynamic Theme Update (Applies options without recreating chart)
     useEffect(() => {
+        resolvedThemeRef.current = resolvedTheme;
         if (!chartRef.current) return;
 
         const colors = chartTheme(resolvedTheme === 'dark');
 
-        chartRef.current.applyOptions({
-            layout: {
-                background: { type: ColorType.Solid, color: colors.background },
-                textColor: colors.textMuted,
-            },
-            grid: {
-                vertLines: { color: colors.grid },
-                horzLines: { color: colors.grid },
-            },
-            timeScale: {
-                borderColor: colors.grid,
-            },
-            rightPriceScale: {
-                borderColor: colors.grid,
-            },
-        });
+        chartRef.current.applyOptions(chartChromeOptions(colors));
         candlestickSeriesRef.current?.applyOptions({
             upColor: colors.positive,
             downColor: colors.negative,
@@ -171,6 +185,13 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
         });
         ma20SeriesRef.current?.applyOptions({ color: colors.series[0] });
         ma50SeriesRef.current?.applyOptions({ color: colors.series[3] });
+        if (volumeDataRef.current.length > 0) {
+            volumeSeriesRef.current?.setData(volumeDataRef.current.map((point) => ({
+                time: point.time,
+                value: point.value,
+                color: volumeColor(colors, point.up),
+            })));
+        }
     }, [resolvedTheme]);
 
     // 3. Data Update Effect (triggers when `data` changes instead of tearing down instance)
@@ -190,10 +211,16 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             close: d.close,
         }));
 
-        const volumeData = validCandleData.map((d) => ({
+        const colors = chartTheme(resolvedThemeRef.current === 'dark');
+        volumeDataRef.current = validCandleData.map((d) => ({
             time: d.date,
             value: d.volume != null ? d.volume : 0,
-            color: d.close >= d.open ? 'rgba(17, 135, 95, 0.52)' : 'rgba(214, 69, 93, 0.52)',
+            up: d.close >= d.open,
+        }));
+        const volumeData = volumeDataRef.current.map((point) => ({
+            time: point.time,
+            value: point.value,
+            color: volumeColor(colors, point.up),
         }));
 
         const ma20Data = data.filter(d => d.MA20 != null).map(d => ({
@@ -264,12 +291,12 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
 
     return (
         <div
-            className={`relative w-full overflow-hidden bg-[var(--surface)] ${embedded ? "" : "rounded-xl border"}`}
+            className={`relative w-full overflow-hidden bg-surface ${embedded ? "" : "rounded-lg border"}`}
             onWheelCapture={(event) => event.stopPropagation()}
         >
             {/* Interval Switcher UI */}
             {onIntervalChange && (
-                <div className="absolute left-3 top-3 z-20 flex gap-1 rounded-lg border bg-white/95 p-1 shadow-sm backdrop-blur-md dark:bg-slate-900/95">
+                <div className="segmented-control absolute left-3 top-3 z-20 gap-0.5 backdrop-blur-md">
                     {['1d', '1wk', '1mo'].map(intv => (
                         <button
                             key={intv}
@@ -277,17 +304,14 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
                             onClick={() => onIntervalChange(intv)}
                             disabled={isLoading}
                             aria-pressed={interval === intv}
-                            className={`min-h-8 rounded-md border px-3 py-1 text-xs font-bold transition-colors ${interval === intv
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
-                                : 'border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100'
-                                }`}
+                            className="segmented-control-item px-3 font-mono"
                         >
                             {intv === '1d' ? 'D' : intv === '1wk' ? 'W' : 'M'}
                         </button>
                     ))}
                     {isLoading && (
                         <div className="flex items-center justify-center px-2">
-                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
                         </div>
                     )}
                 </div>
@@ -298,26 +322,26 @@ const StockChart: React.FC<StockChartProps> = ({ data, interval = '1d', onInterv
             {/* Tooltip Overlay */}
             {tooltipData && tooltipData.visible && (
                 <div
-                    className="pointer-events-none absolute z-30 rounded-lg border bg-white/95 p-3 text-sm shadow-xl backdrop-blur-md dark:bg-slate-900/95"
+                    className="pointer-events-none absolute z-30 rounded-md border bg-surface-raised/95 p-3 text-sm shadow-xl backdrop-blur-md"
                     style={{
                         left: Math.min(tooltipData.x + 15, tooltipData.containerWidth - 180),
                         top: Math.max(10, tooltipData.y - 120),
                     }}
                 >
-                    <div className="font-bold border-b border-gray-200 dark:border-gray-700 pb-1 mb-2 text-slate-800 dark:text-gray-200">
+                    <div className="mb-2 border-b pb-1 font-mono font-semibold text-fg">
                         {tooltipData.date}
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                        <span className="text-slate-500 dark:text-gray-400">O:</span>
-                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.open.toFixed(2)}</span>
-                        <span className="text-slate-500 dark:text-gray-400">H:</span>
-                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.high.toFixed(2)}</span>
-                        <span className="text-slate-500 dark:text-gray-400">L:</span>
-                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.low.toFixed(2)}</span>
-                        <span className="text-slate-500 dark:text-gray-400">C:</span>
-                        <span className="text-right text-slate-800 dark:text-gray-200">{tooltipData.close.toFixed(2)}</span>
-                        <span className="text-slate-500 dark:text-gray-400 mt-1">Vol:</span>
-                        <span className="text-right text-slate-800 dark:text-gray-200 mt-1">{(tooltipData.volume / 1000000).toFixed(2)}M</span>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs tabular-nums">
+                        <span className="text-fg-muted">O:</span>
+                        <span className="text-right text-fg">{tooltipData.open.toFixed(2)}</span>
+                        <span className="text-fg-muted">H:</span>
+                        <span className="text-right text-fg">{tooltipData.high.toFixed(2)}</span>
+                        <span className="text-fg-muted">L:</span>
+                        <span className="text-right text-fg">{tooltipData.low.toFixed(2)}</span>
+                        <span className="text-fg-muted">C:</span>
+                        <span className="text-right text-fg">{tooltipData.close.toFixed(2)}</span>
+                        <span className="mt-1 text-fg-muted">Vol:</span>
+                        <span className="mt-1 text-right text-fg">{(tooltipData.volume / 1000000).toFixed(2)}M</span>
                         {tooltipData.ma20 && (
                             <>
                                 <span className="mt-1 font-medium text-[var(--chart-series-1)]">MA20:</span>

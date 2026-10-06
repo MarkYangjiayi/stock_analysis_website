@@ -111,29 +111,29 @@ export function FieldControl({
                     aria-label={`${field.label} options`}
                     aria-expanded={enumOpen}
                     onClick={() => setEnumOpen((current) => !current)}
-                    className="flex min-h-10 w-full cursor-pointer items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition hover:border-emerald-400 focus-visible:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                    className="control-field flex min-h-10 cursor-pointer items-center justify-between py-0 focus-visible:border-accent"
                 >
                     <span className="truncate">{selected.length ? `${selected.length} selected` : "Any"}</span>
-                    <span className="text-slate-400">⌄</span>
+                    <span className="text-fg-muted">⌄</span>
                 </button>
                 {enumOpen && (
                     <div
                         role="group"
                         aria-label={`${field.label} choices`}
-                        className="absolute z-40 mt-2 max-h-64 w-64 max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                        className="absolute z-40 mt-2 max-h-64 w-64 max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border bg-surface-raised p-2 shadow-2xl"
                     >
                         {field.options.length === 0 ? (
-                            <p className="px-2 py-3 text-xs text-slate-500">No values in this snapshot.</p>
+                            <p className="px-2 py-3 text-xs text-fg-muted">No values in this snapshot.</p>
                         ) : field.options.map((option) => {
                             const checked = selected.includes(option.value);
                             const selectionLimitReached = !checked && selected.length >= MAX_FILTER_VALUES;
                             return (
                                 <label
                                     key={option.value}
-                                    className={`flex items-center gap-2 rounded-lg px-2 py-2 text-sm ${
+                                    className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm text-fg ${
                                         selectionLimitReached
                                             ? "cursor-not-allowed opacity-50"
-                                            : "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                                            : "cursor-pointer hover:bg-surface-muted"
                                     }`}
                                 >
                                     <input
@@ -144,7 +144,7 @@ export function FieldControl({
                                             const next = checked ? selected.filter((value) => value !== option.value) : [...selected, option.value];
                                             onChange(next.length ? { field: field.id, operator: "in", value: next } : undefined);
                                         }}
-                                        className="accent-emerald-500"
+                                        className="accent-[var(--brand)]"
                                     />
                                     <span>{option.label}</span>
                                 </label>
@@ -204,7 +204,7 @@ export function FieldControl({
                     setDraftValues(values);
                     commit(next, values);
                 }}
-                className="w-[128px] shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                className="control-field w-[128px] shrink-0 px-2 py-1.5 text-xs text-fg-muted"
             >
                 {field.operators.map((value) => (
                     <option value={value} key={value}>{filterOperatorLabel(value)}</option>
@@ -217,7 +217,7 @@ export function FieldControl({
                 value={draftValues[0] ?? ""}
                 onChange={(event) => updateDraft(0, event.target.value)}
                 placeholder={field.unit === "percent" ? "%" : "Value"}
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950"
+                className="control-field min-w-0 flex-1 px-2.5 py-1.5 font-mono tabular-nums"
             />
             {operator === "between" && (
                 <input
@@ -227,7 +227,7 @@ export function FieldControl({
                     value={draftValues[1] ?? ""}
                     onChange={(event) => updateDraft(1, event.target.value)}
                     placeholder="Max"
-                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950"
+                    className="control-field min-w-0 flex-1 px-2.5 py-1.5 font-mono tabular-nums"
                 />
             )}
         </div>

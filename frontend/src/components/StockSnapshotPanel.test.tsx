@@ -70,10 +70,10 @@ describe("StockSnapshotPanel", () => {
     it("uses semantic colors only for signed fields", () => {
         render(<StockSnapshotPanel data={data} loading={false} error="" onRetry={vi.fn()} />);
 
-        expect(screen.getByText("7.63%")).toHaveClass("text-emerald-600");
-        expect(screen.getByText("−7.88%")).toHaveClass("text-rose-500");
-        expect(screen.getByText("180.57×")).not.toHaveClass("text-rose-500");
-        expect(screen.getByText("45.34%")).toHaveClass("text-emerald-600");
+        expect(screen.getByText("7.63%")).toHaveClass("text-up");
+        expect(screen.getByText("−7.88%")).toHaveClass("text-down");
+        expect(screen.getByText("180.57×")).not.toHaveClass("text-down");
+        expect(screen.getByText("45.34%")).toHaveClass("text-up");
     });
 
     it("allows mobile groups to expand and keeps desktop content mounted", async () => {

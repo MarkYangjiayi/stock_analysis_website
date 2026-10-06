@@ -225,32 +225,32 @@ function ScreenerContent() {
                                 Quantify Market Intelligence
                             </div>
                             <h1 className="page-title">Stock Screener</h1>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            <p className="mt-1 text-sm text-fg-muted">
                                 {metadata?.universe === "RUSSELL3000_NASDAQ100"
                                     ? "Russell 3000 + Nasdaq-100"
                                     : "Russell 3000"} · {metadata?.supported_finviz_fields ?? "—"} Finviz-aligned fields
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <div className="surface-subtle rounded-xl border px-4 py-2">
-                                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Matches</div>
-                                <div className="font-mono text-xl font-semibold">{loading ? "···" : (result?.total ?? 0).toLocaleString()}</div>
+                            <div className="surface-subtle rounded-lg border px-4 py-2">
+                                <div className="eyebrow">Matches</div>
+                                <div className="font-mono text-xl font-semibold tabular-nums text-fg">{loading ? "···" : (result?.total ?? 0).toLocaleString()}</div>
                             </div>
-                            <div className="surface-subtle rounded-xl border px-4 py-2">
-                                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Published snapshot</div>
-                                <div className="font-mono text-sm font-semibold">{result?.as_of_date ?? metadata?.as_of_date ?? "No data"}</div>
+                            <div className="surface-subtle rounded-lg border px-4 py-2">
+                                <div className="eyebrow">Published snapshot</div>
+                                <div className="font-mono text-sm font-semibold tabular-nums text-fg">{result?.as_of_date ?? metadata?.as_of_date ?? "No data"}</div>
                             </div>
                             <button
                                 onClick={() => void loadMetadata()}
                                 aria-label="Refresh results"
-                                className="grid size-11 place-items-center rounded-xl border bg-[var(--surface)] text-slate-500 transition hover:border-emerald-400 hover:text-emerald-500"
+                                className="grid size-11 place-items-center rounded-md border bg-surface text-fg-muted transition-colors hover:border-accent hover:text-accent"
                             >
                                 <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
                             </button>
                         </div>
                     </div>
                     {(result?.freshness?.status === "stale" || metadata?.freshness?.status === "stale") && (
-                        <div className="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                        <div className="flex items-center gap-2 border-t border-caution/30 bg-caution/6 px-5 py-2.5 text-sm text-caution">
                             <AlertTriangle size={16} />
                             Data is {(result?.freshness ?? metadata?.freshness)?.lag_sessions} market sessions behind the latest completed session.
                         </div>
@@ -258,53 +258,53 @@ function ScreenerContent() {
                 </header>
 
                 <section className="surface-panel">
-                    <div className="flex items-center justify-between border-b border-slate-200 p-3 dark:border-slate-800 md:hidden">
-                        <button onClick={() => setMobileFiltersOpen(true)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
+                    <div className="flex items-center justify-between border-b p-3 md:hidden">
+                        <button onClick={() => setMobileFiltersOpen(true)} className="primary-button px-4">
                             <Filter size={16} /> Filters {filters.length ? `(${filters.length})` : ""}
                         </button>
                     </div>
-                    <div className={`${mobileFiltersOpen ? "fixed inset-0 z-50 overflow-auto bg-[var(--app-bg)] p-4" : "hidden"} md:block`}>
+                    <div className={`${mobileFiltersOpen ? "fixed inset-0 z-50 overflow-auto bg-canvas p-4" : "hidden"} md:block`}>
                         <div className="mb-4 flex items-center justify-between md:hidden">
-                            <h2 className="text-lg font-semibold">Filters</h2>
-                            <button aria-label="Close filters" onClick={() => setMobileFiltersOpen(false)}><X /></button>
+                            <h2 className="text-lg font-semibold text-fg">Filters</h2>
+                            <button aria-label="Close filters" onClick={() => setMobileFiltersOpen(false)} className="rounded-md p-1 text-fg-muted hover:bg-surface-muted hover:text-fg"><X /></button>
                         </div>
-                        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+                        <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="segmented-control gap-0.5 self-start">
                                 {CATEGORIES.map((category) => (
                                     <button
                                         key={category}
                                         onClick={() => setActiveCategory(category)}
-                                        className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${activeCategory === category ? "bg-white text-emerald-600 shadow-sm dark:bg-slate-800 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}
+                                        className={`min-h-8 rounded px-3.5 text-sm font-medium transition-colors ${activeCategory === category ? "bg-accent-soft text-accent-strong" : "text-fg-muted hover:text-fg"}`}
                                     >
                                         {category}
                                     </button>
                                 ))}
                             </div>
                             <label className="relative block w-full lg:w-72">
-                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
                                 <input
                                     value={search}
                                     onChange={(event) => setSearch(event.target.value)}
                                     placeholder="Search fields"
-                                    className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900"
+                                    className="control-field h-10 pl-9"
                                 />
                             </label>
                         </div>
 
                         {filters.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+                            <div className="flex flex-wrap items-center gap-2 border-b bg-surface-muted px-4 py-3">
                                 {filters.map((filter) => {
                                     const field = fieldMap.get(filter.field);
                                     if (!field) return null;
                                     return (
-                                        <button key={filter.field} onClick={() => updateFilter(filter.field)} className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:border-emerald-400 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                        <button key={filter.field} onClick={() => updateFilter(filter.field)} className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent-strong transition-colors hover:border-accent">
                                             {filterLabel(filter, field)} <X size={12} />
                                         </button>
                                     );
                                 })}
-                                <button onClick={() => { setFilters([]); setPage(0); }} className="px-2 text-xs font-semibold text-slate-500 hover:text-rose-500">Clear all</button>
+                                <button onClick={() => { setFilters([]); setPage(0); }} className="px-2 text-xs font-semibold text-fg-muted transition-colors hover:text-danger">Clear all</button>
                                 {filterLimitReached && (
-                                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                    <span className="text-xs font-medium text-caution">
                                         Maximum {MAX_SCREENER_FILTERS} filters reached.
                                     </span>
                                 )}
@@ -315,30 +315,30 @@ function ScreenerContent() {
                             {visibleFields.map((field) => {
                                 const active = filters.find((filter) => filter.field === field.id);
                                 return (
-                                    <div key={field.id} className={`min-w-0 rounded-xl border p-3 transition ${active ? "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-slate-200 dark:border-slate-800"} ${!field.available ? "opacity-50" : ""}`}>
+                                    <div key={field.id} className={`min-w-0 rounded-lg border p-3 transition-colors ${active ? "border-accent/60 bg-accent-soft" : "bg-surface hover:border-line-strong"} ${!field.available ? "opacity-50" : ""}`}>
                                         <div className="mb-2 flex items-start justify-between gap-2">
                                             <div>
                                                 <div className="flex items-center gap-1">
-                                                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">{field.label}</label>
+                                                    <label className="block text-xs font-semibold text-fg">{field.label}</label>
                                                     {field.description && (
                                                         <span className="group/help relative">
                                                             <button
                                                                 type="button"
                                                                 aria-label={`About ${field.label}`}
-                                                                className="grid size-4 place-items-center rounded-full text-slate-400 hover:text-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                                                                className="grid size-4 place-items-center rounded-full text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                                             >
                                                                 <Info size={12} />
                                                             </button>
                                                             <span
                                                                 role="tooltip"
-                                                                className="pointer-events-none absolute left-0 top-5 z-[60] hidden w-72 rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-normal leading-relaxed text-white shadow-xl group-hover/help:block group-focus-within/help:block dark:bg-slate-100 dark:text-slate-900"
+                                                                className="pointer-events-none absolute left-0 top-5 z-[60] hidden w-72 rounded-md border bg-surface-raised px-3 py-2 text-xs font-normal leading-relaxed text-fg shadow-xl group-hover/help:block group-focus-within/help:block"
                                                             >
                                                                 {field.description}
                                                             </span>
                                                         </span>
                                                     )}
                                                 </div>
-                                                <span className={`text-xs ${field.coverage < 0.5 ? "text-amber-600 dark:text-amber-400" : "text-slate-500"}`}>{Math.round(field.coverage * 100)}% coverage</span>
+                                                <span className={`font-mono text-xs tabular-nums ${field.coverage === 0 ? "text-fg-muted opacity-70" : field.coverage < 0.5 ? "text-caution" : "text-fg-muted"}`}>{Math.round(field.coverage * 100)}% coverage</span>
                                             </div>
                                             {field.presets.length > 0 && (
                                                 <select
@@ -351,7 +351,7 @@ function ScreenerContent() {
                                                         : -1)}
                                                     onChange={(event) => applyPreset(field, Number(event.target.value))}
                                                     disabled={!field.available || (filterLimitReached && !active)}
-                                                    className="max-w-28 rounded-md border-0 bg-transparent text-xs text-slate-500 outline-none"
+                                                    className="max-w-28 rounded-md border-0 bg-transparent text-xs text-fg-muted outline-none hover:text-fg focus-visible:text-fg"
                                                 >
                                                     <option value="-1">Preset</option>
                                                     {field.presets.map((preset, index) => <option value={index} key={preset.label}>{preset.label}</option>)}
@@ -369,33 +369,33 @@ function ScreenerContent() {
                                 );
                             })}
                         </div>
-                        <div className="sticky bottom-0 z-50 border-t bg-[var(--surface)] p-4 md:hidden">
-                            <button onClick={() => setMobileFiltersOpen(false)} className="w-full rounded-xl bg-emerald-500 py-3 font-semibold text-slate-950">Show {result?.total ?? 0} matches</button>
+                        <div className="sticky bottom-0 z-50 border-t bg-surface p-4 md:hidden">
+                            <button onClick={() => setMobileFiltersOpen(false)} className="primary-button min-h-11 w-full">Show {result?.total ?? 0} matches</button>
                         </div>
                     </div>
                 </section>
 
                 <section className="surface-panel overflow-hidden">
-                    <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                            <h2 className="font-semibold">Screening results</h2>
-                            <p className="text-xs text-slate-500">Click a column to sort. Results are calculated from the published snapshot.</p>
+                            <h2 className="font-semibold text-fg">Screening results</h2>
+                            <p className="text-xs text-fg-muted">Click a column to sort. Results are calculated from the published snapshot.</p>
                         </div>
                         <details className="relative">
-                            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:border-emerald-400 dark:border-slate-700">
+                            <summary className="secondary-button cursor-pointer list-none">
                                 <Columns3 size={15} /> Columns
                             </summary>
-                            <div className="absolute right-0 z-30 mt-2 max-h-80 w-72 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                            <div className="absolute right-0 z-30 mt-2 max-h-80 w-72 overflow-auto rounded-lg border bg-surface-raised p-2 shadow-2xl">
                                 {metadata?.fields.filter((field) => field.available && field.result_column).map((field) => (
-                                    <label key={field.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                                    <label key={field.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-fg hover:bg-surface-muted">
                                         <input
                                             type="checkbox"
                                             checked={columns.includes(field.id)}
                                             onChange={() => setColumns((current) => current.includes(field.id) ? current.filter((value) => value !== field.id) : [...current, field.id].slice(0, 30))}
-                                            className="accent-emerald-500"
+                                            className="accent-[var(--brand)]"
                                         />
                                         <span className="flex-1">{field.label}</span>
-                                        <span className="text-[10px] text-slate-400">{field.category.slice(0, 4)}</span>
+                                        <span className="font-mono text-xs uppercase text-fg-muted">{field.category.slice(0, 4)}</span>
                                     </label>
                                 ))}
                             </div>
@@ -403,19 +403,19 @@ function ScreenerContent() {
                     </div>
 
                     {error ? (
-                        <div className="m-4 flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                        <div className="error-panel m-4 flex items-center justify-between p-4">
                             <span>{error}</span>
                             <button onClick={() => void loadMetadata()} className="font-semibold underline">Retry</button>
                         </div>
                     ) : (
                         <div className="max-h-[680px] overflow-auto">
                             <table className="min-w-full whitespace-nowrap text-left text-sm">
-                                <thead className="surface-subtle sticky top-0 z-10 text-xs uppercase tracking-wider text-slate-500 backdrop-blur">
+                                <thead className="sticky top-0 z-10 bg-surface-muted font-mono text-xs font-medium uppercase tracking-[0.08em] text-fg-muted">
                                     <tr>
                                         {selectedColumns.map((column) => {
                                             const field = fieldMap.get(column);
                                             return (
-                                                <th key={column} className={`px-4 py-3 font-semibold ${column === "ticker" ? "sticky left-0 z-20 bg-[var(--surface-muted)]" : column === "name" ? "" : "text-right"}`}>
+                                                <th key={column} className={`border-b px-3 py-2 font-medium ${column === "ticker" ? "sticky left-0 z-20 bg-surface-muted" : column === "name" ? "" : "text-right"}`}>
                                                     <button
                                                         title={field?.description ?? undefined}
                                                         onClick={() => {
@@ -424,25 +424,25 @@ function ScreenerContent() {
                                                                 setPage(0);
                                                             }
                                                         }}
-                                                        className={`flex items-center gap-1 hover:text-emerald-500 ${column === "name" || column === "ticker" ? "" : "ml-auto"}`}
+                                                        className={`flex items-center gap-1 transition-colors hover:text-accent ${sort.field === column ? "text-fg" : ""} ${column === "name" || column === "ticker" ? "" : "ml-auto"}`}
                                                     >
                                                         {column === "ticker" ? "Ticker" : column === "name" ? "Company" : field?.label ?? column}
-                                                        {sort.field === column && <span>{sort.direction === "desc" ? "↓" : "↑"}</span>}
+                                                        {sort.field === column && <span className="text-accent">{sort.direction === "desc" ? "↓" : "↑"}</span>}
                                                     </button>
                                                 </th>
                                             );
                                         })}
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                <tbody className="divide-y divide-line">
                                     {loading && !result ? (
                                         Array.from({ length: 8 }).map((_, index) => (
-                                            <tr key={index}>{selectedColumns.map((column) => <td key={column} className="px-4 py-4"><div className="h-4 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /></td>)}</tr>
+                                            <tr key={index}>{selectedColumns.map((column) => <td key={column} className="px-3 py-2.5"><div className="h-4 w-24 animate-pulse rounded bg-surface-muted" /></td>)}</tr>
                                         ))
                                     ) : result?.items.length ? result.items.map((row, rowIndex) => (
-                                        <tr key={String(row.ticker ?? rowIndex)} className="transition hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20">
+                                        <tr key={String(row.ticker ?? rowIndex)} className="group transition-colors hover:bg-surface-muted">
                                             {selectedColumns.map((column) => (
-                                                <td key={column} className={`px-4 py-3 ${column === "ticker" ? "sticky left-0 z-[5] bg-[var(--surface)] font-mono font-bold text-emerald-600 dark:text-emerald-400" : column === "name" ? "max-w-64 truncate font-medium" : "text-right font-mono text-slate-700 dark:text-slate-300"}`}>
+                                                <td key={column} className={`px-3 py-2 ${column === "ticker" ? "sticky left-0 z-[5] bg-surface font-mono font-semibold text-accent-strong group-hover:bg-surface-muted" : column === "name" ? "max-w-64 truncate font-medium text-fg" : "text-right font-mono tabular-nums text-fg"}`}>
                                                     {column === "ticker" ? (
                                                         <Link
                                                             href={`/?ticker=${encodeURIComponent(String(row[column] ?? ""))}`}
@@ -455,21 +455,21 @@ function ScreenerContent() {
                                             ))}
                                         </tr>
                                     )) : (
-                                        <tr><td colSpan={selectedColumns.length} className="px-6 py-20 text-center"><Filter className="mx-auto mb-3 text-slate-300" size={32} /><p className="font-semibold">No stocks match these filters</p><p className="mt-1 text-sm text-slate-500">Remove one or more conditions and try again.</p></td></tr>
+                                        <tr><td colSpan={selectedColumns.length} className="px-6 py-20 text-center"><Filter className="mx-auto mb-3 text-fg-muted opacity-50" size={32} /><p className="font-semibold text-fg">No stocks match these filters</p><p className="mt-1 text-sm text-fg-muted">Remove one or more conditions and try again.</p></td></tr>
                                     )}
                                 </tbody>
                             </table>
                         </div>
                     )}
 
-                    <footer className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
-                        <span className="text-slate-500">
+                    <footer className="flex items-center justify-between border-t px-4 py-3 text-sm">
+                        <span className="font-mono text-xs tabular-nums text-fg-muted">
                             {result?.total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, result.total)} of ${result.total.toLocaleString()}` : "0 results"}
                         </span>
                         <div className="flex items-center gap-2">
-                            <button aria-label="Previous page" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))} className="grid size-9 place-items-center rounded-lg border border-slate-200 disabled:opacity-30 dark:border-slate-700"><ChevronLeft size={16} /></button>
-                            <span className="min-w-24 text-center font-mono text-xs">Page {page + 1} / {totalPages}</span>
-                            <button aria-label="Next page" disabled={page + 1 >= totalPages} onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))} className="grid size-9 place-items-center rounded-lg border border-slate-200 disabled:opacity-30 dark:border-slate-700"><ChevronRight size={16} /></button>
+                            <button aria-label="Previous page" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))} className="grid size-9 place-items-center rounded-md border bg-surface text-fg-muted transition-colors hover:border-line-strong hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={16} /></button>
+                            <span className="min-w-24 text-center font-mono text-xs tabular-nums text-fg-muted">Page {page + 1} / {totalPages}</span>
+                            <button aria-label="Next page" disabled={page + 1 >= totalPages} onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))} className="grid size-9 place-items-center rounded-md border bg-surface text-fg-muted transition-colors hover:border-line-strong hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"><ChevronRight size={16} /></button>
                         </div>
                     </footer>
                 </section>
@@ -480,7 +480,7 @@ function ScreenerContent() {
 
 export default function ScreenerPage() {
     return (
-        <Suspense fallback={<div className="h-full bg-[var(--app-bg)]" />}>
+        <Suspense fallback={<div className="h-full bg-canvas" />}>
             <ScreenerContent />
         </Suspense>
     );

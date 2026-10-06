@@ -5,7 +5,7 @@ import ReactECharts from "echarts-for-react";
 import { useTheme } from "next-themes";
 
 import type { MarketOverviewResponse } from "@/lib/api";
-import { chartTheme } from "@/lib/chartTheme";
+import { chartMonoFont, chartTheme } from "@/lib/chartTheme";
 
 export type TrendMode = "relative" | "absolute";
 export type LowerMetric = "net_advances" | "new_high_low" | "mcclellan";
@@ -23,20 +23,6 @@ interface AxisTooltipParam {
 interface BarColorParam {
     value?: number | null;
 }
-
-const SECTOR_COLORS = [
-    "#2563eb",
-    "#7c3aed",
-    "#db2777",
-    "#ea580c",
-    "#ca8a04",
-    "#16a34a",
-    "#0891b2",
-    "#4f46e5",
-    "#9333ea",
-    "#dc2626",
-    "#0d9488",
-];
 
 const LOWER_LABELS: Record<LowerMetric, string> = {
     net_advances: "Net advances",
@@ -60,10 +46,18 @@ export default function MarketOverviewChart({
 
     const option = useMemo(() => {
         const colors = chartTheme(dark);
+        const sectorColors = colors.categorical;
+        const sectorColor = (index: number) => sectorColors[index % sectorColors.length];
+        const monoFont = chartMonoFont();
         const axisColor = colors.textMuted;
-        const splitColor = dark ? "rgba(145,161,155,0.13)" : "rgba(100,116,139,0.13)";
+        const axisText = { color: axisColor, fontFamily: monoFont };
         const textColor = colors.text;
-        const tooltipBackground = colors.backgroundMuted;
+        // SPY is the neutral, emphasized benchmark; RSP/SPY is a neutral dashed proxy so
+        // neither competes with the categorical sector hues.
+        const benchmarkColor = colors.text;
+        const proxyColor = colors.textMuted;
+        const dispersionColor = colors.brand;
+        const breadthColors = [colors.series[1], colors.series[4], colors.series[2]];
         const lowerValues = lowerMetric === "net_advances"
             ? data.breadth.net_advances_pct
             : lowerMetric === "new_high_low"
@@ -83,8 +77,8 @@ export default function MarketOverviewChart({
             showSymbol: false,
             connectNulls: false,
             smooth: 0.12,
-            lineStyle: { width: 1.7, color: SECTOR_COLORS[index % SECTOR_COLORS.length] },
-            itemStyle: { color: SECTOR_COLORS[index % SECTOR_COLORS.length] },
+            lineStyle: { width: 1.7, color: sectorColor(index) },
+            itemStyle: { color: sectorColor(index) },
             emphasis: { focus: "series", lineStyle: { width: 3 } },
             markLine: index === 0 ? {
                 silent: true,
@@ -103,8 +97,8 @@ export default function MarketOverviewChart({
                 yAxisIndex: 0,
                 data: data.benchmark.absolute_index,
                 showSymbol: false,
-                lineStyle: { color: dark ? "#f8fafc" : "#0f172a", width: 2.8 },
-                itemStyle: { color: dark ? "#f8fafc" : "#0f172a" },
+                lineStyle: { color: benchmarkColor, width: 2.8 },
+                itemStyle: { color: benchmarkColor },
                 emphasis: { focus: "series" },
             });
         }
@@ -115,16 +109,16 @@ export default function MarketOverviewChart({
             yAxisIndex: 0,
             data: data.rsp_spy_index,
             showSymbol: false,
-            lineStyle: { color: "#10b981", width: 3.2, type: "dashed" },
-            itemStyle: { color: "#10b981" },
+            lineStyle: { color: proxyColor, width: 3.2, type: "dashed" },
+            itemStyle: { color: proxyColor },
             emphasis: { focus: "series" },
             z: 8,
         });
 
         [
-            ["Above MA20", data.breadth.pct_above_ma20, "#0ea5e9"],
-            ["Above MA50", data.breadth.pct_above_ma50, "#8b5cf6"],
-            ["Above MA200", data.breadth.pct_above_ma200, "#f59e0b"],
+            ["Above MA20", data.breadth.pct_above_ma20, breadthColors[0]],
+            ["Above MA50", data.breadth.pct_above_ma50, breadthColors[1]],
+            ["Above MA200", data.breadth.pct_above_ma200, breadthColors[2]],
         ].forEach(([name, values, color], index) => {
             series.push({
                 name,
@@ -167,8 +161,8 @@ export default function MarketOverviewChart({
             data: data.breadth.dispersion_20d.map((value) => value == null ? null : value * 100),
             showSymbol: false,
             connectNulls: false,
-            lineStyle: { color: "#f97316", width: 2.4 },
-            itemStyle: { color: "#f97316" },
+            lineStyle: { color: dispersionColor, width: 2.4 },
+            itemStyle: { color: dispersionColor },
             emphasis: { focus: "series" },
             z: 7,
         });
@@ -179,19 +173,19 @@ export default function MarketOverviewChart({
             if (index == null) return "";
             const sectorRows = data.sector_trends.map((sector, sectorIndex) => {
                 const value = sector[trendKey][index];
-                const color = SECTOR_COLORS[sectorIndex % SECTOR_COLORS.length];
+                const color = sectorColor(sectorIndex);
                 return `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${color}"></i>${sector.ticker}</span><b>${asDisplayNumber(value, 2)}</b></div>`;
             }).join("");
             const benchmarkRow = trendMode === "absolute"
-                ? `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${dark ? "#f8fafc" : "#0f172a"}"></i>SPY</span><b>${asDisplayNumber(data.benchmark.absolute_index[index], 2)}</b></div>`
+                ? `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${benchmarkColor}"></i>SPY</span><b>${asDisplayNumber(data.benchmark.absolute_index[index], 2)}</b></div>`
                 : "";
             const breadth = data.breadth;
             return `<div style="min-width:240px;color:${textColor}">
-                <div style="font-weight:800;margin-bottom:6px">${data.dates[index]}</div>
+                <div style="font-weight:600;margin-bottom:6px">${data.dates[index]}</div>
                 ${sectorRows}
                 ${benchmarkRow}
-                <div style="display:flex;justify-content:space-between;gap:18px;margin-top:4px"><span><i style="display:inline-block;width:12px;border-top:2px dashed #10b981;margin-right:6px;vertical-align:middle"></i>RSP/SPY</span><b>${asDisplayNumber(data.rsp_spy_index[index], 2)}</b></div>
-                <div style="border-top:1px solid ${splitColor};margin:7px 0"></div>
+                <div style="display:flex;justify-content:space-between;gap:18px;margin-top:4px"><span><i style="display:inline-block;width:12px;border-top:2px dashed ${proxyColor};margin-right:6px;vertical-align:middle"></i>RSP/SPY</span><b>${asDisplayNumber(data.rsp_spy_index[index], 2)}</b></div>
+                <div style="border-top:1px solid ${colors.border};margin:7px 0"></div>
                 <div style="display:flex;justify-content:space-between"><span>Above MA20 / 50 / 200</span><b>${asDisplayNumber(breadth.pct_above_ma20[index])} / ${asDisplayNumber(breadth.pct_above_ma50[index])} / ${asDisplayNumber(breadth.pct_above_ma200[index])}%</b></div>
                 <div style="display:flex;justify-content:space-between"><span>Net advances</span><b>${asDisplayNumber(breadth.net_advances_pct[index])}%</b></div>
                 <div style="display:flex;justify-content:space-between"><span>New highs / lows</span><b>${asDisplayNumber(breadth.new_high_pct[index])}% / ${asDisplayNumber(breadth.new_low_pct[index])}%</b></div>
@@ -206,11 +200,11 @@ export default function MarketOverviewChart({
             gridIndex,
             data: data.dates,
             boundaryGap: gridIndex === 2,
-            axisLine: { lineStyle: { color: splitColor } },
+            axisLine: { lineStyle: { color: colors.border } },
             axisTick: { show: false },
             axisLabel: {
+                ...axisText,
                 show: showLabels,
-                color: axisColor,
                 formatter: (value: string) => value.slice(5),
             },
             axisPointer: { show: true, snap: true },
@@ -219,10 +213,10 @@ export default function MarketOverviewChart({
             type: "value",
             gridIndex,
             scale: true,
-            axisLabel: { color: axisColor },
+            axisLabel: axisText,
             axisLine: { show: false },
             axisTick: { show: false },
-            splitLine: { lineStyle: { color: splitColor } },
+            splitLine: { lineStyle: { color: colors.grid, type: "dashed" } },
             ...extras,
         });
 
@@ -232,11 +226,11 @@ export default function MarketOverviewChart({
                 enabled: true,
                 description: "US sector trends, market breadth, participation, and cross-sectional dispersion on linked daily timelines.",
             },
-            color: SECTOR_COLORS,
+            color: sectorColors,
             title: [
-                { text: trendMode === "relative" ? "Sector trends relative to SPY" : "Sector and SPY absolute trends", left: 62, top: 43, textStyle: { color: textColor, fontSize: 13, fontWeight: 700 } },
-                { text: "Market breadth", left: 62, top: "46%", textStyle: { color: textColor, fontSize: 13, fontWeight: 700 } },
-                { text: "Participation & dispersion", left: 62, top: "69%", textStyle: { color: textColor, fontSize: 13, fontWeight: 700 } },
+                { text: trendMode === "relative" ? "Sector trends relative to SPY" : "Sector and SPY absolute trends", left: 62, top: 43, textStyle: { color: textColor, fontSize: 13, fontWeight: 600 } },
+                { text: "Market breadth", left: 62, top: "46%", textStyle: { color: textColor, fontSize: 13, fontWeight: 600 } },
+                { text: "Participation & dispersion", left: 62, top: "69%", textStyle: { color: textColor, fontSize: 13, fontWeight: 600 } },
             ],
             legend: [
                 {
@@ -245,10 +239,10 @@ export default function MarketOverviewChart({
                     left: 50,
                     right: 24,
                     data: topLegend,
-                    textStyle: { color: axisColor, fontSize: 11 },
-                    pageTextStyle: { color: axisColor },
-                    pageIconColor: "#10b981",
-                    pageIconInactiveColor: dark ? "#35434d" : "#cbd5e1",
+                    textStyle: { ...axisText, fontSize: 11 },
+                    pageTextStyle: axisText,
+                    pageIconColor: colors.brand,
+                    pageIconInactiveColor: colors.border,
                 },
                 {
                     top: "45.5%",
@@ -267,10 +261,10 @@ export default function MarketOverviewChart({
                 trigger: "axis",
                 confine: true,
                 order: "seriesAsc",
-                backgroundColor: tooltipBackground,
+                backgroundColor: colors.tooltipBackground,
                 borderColor: colors.border,
-                textStyle: { color: textColor, fontSize: 12 },
-                extraCssText: "max-height:72vh;overflow-y:auto;box-shadow:0 18px 45px rgba(15,23,42,.18);",
+                textStyle: { color: textColor, fontSize: 12, fontFamily: monoFont },
+                extraCssText: "max-height:72vh;overflow-y:auto;",
                 axisPointer: { type: "cross", snap: true },
                 formatter: tooltipFormatter,
             },
@@ -282,14 +276,14 @@ export default function MarketOverviewChart({
             ],
             xAxis: [categoryAxis(0, false), categoryAxis(1, false), categoryAxis(2, true)],
             yAxis: [
-                valueAxis(0, { name: "Index", nameTextStyle: { color: axisColor }, splitNumber: 5 }),
-                valueAxis(1, { min: 0, max: 100, interval: 25, name: "%", nameTextStyle: { color: axisColor } }),
-                valueAxis(2, { name: "%", nameTextStyle: { color: axisColor }, splitNumber: 4 }),
+                valueAxis(0, { name: "Index", nameTextStyle: axisText, splitNumber: 5 }),
+                valueAxis(1, { min: 0, max: 100, interval: 25, name: "%", nameTextStyle: axisText }),
+                valueAxis(2, { name: "%", nameTextStyle: axisText, splitNumber: 4 }),
                 valueAxis(2, {
                     position: "right",
                     name: "Dispersion %",
-                    nameTextStyle: { color: "#f97316" },
-                    axisLabel: { color: "#f97316", formatter: "{value}%" },
+                    nameTextStyle: { ...axisText, color: dispersionColor },
+                    axisLabel: { ...axisText, color: dispersionColor, formatter: "{value}%" },
                     splitLine: { show: false },
                 }),
             ],
@@ -309,11 +303,12 @@ export default function MarketOverviewChart({
                     filterMode: "none",
                     bottom: 12,
                     height: 22,
-                    borderColor: splitColor,
+                    borderColor: colors.border,
                     backgroundColor: colors.backgroundMuted,
-                    fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.13)",
-                    handleStyle: { color: "#10b981", borderColor: "#10b981" },
-                    textStyle: { color: axisColor },
+                    fillerColor: `${colors.brand}24`,
+                    handleStyle: { color: colors.brand, borderColor: colors.brand },
+                    moveHandleStyle: { color: colors.brand },
+                    textStyle: axisText,
                 },
             ],
             series,

@@ -517,9 +517,9 @@ describe("DecisionCockpit", () => {
         await user.click(screen.getByRole("button", { name: "Peer Benchmarks" }));
         await user.click(screen.getByText("View all peer metrics"));
 
-        expect(screen.getByTitle("Strong Better-positioned percentile")).toHaveClass("text-emerald-800");
-        expect(screen.getByTitle("Weak Better-positioned percentile")).toHaveClass("text-rose-800");
-        expect(screen.getByTitle("Unavailable Better-positioned percentile")).toHaveClass("text-slate-500");
+        expect(screen.getByTitle("Strong Better-positioned percentile")).toHaveClass("text-up");
+        expect(screen.getByTitle("Weak Better-positioned percentile")).toHaveClass("text-down");
+        expect(screen.getByTitle("Unavailable Better-positioned percentile")).toHaveClass("text-fg-muted");
         expect(screen.getByRole("group", { name: "Better-positioned legend" })).toHaveTextContent("75–100 strong");
     });
 });

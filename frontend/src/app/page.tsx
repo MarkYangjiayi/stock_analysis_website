@@ -34,6 +34,7 @@ import SimilarStocksPanel from "@/components/SimilarStocksPanel";
 import StockSnapshotPanel from "@/components/StockSnapshotPanel";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
+import { useStatusBar, type StatusItem } from "@/store/useStatusBar";
 import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
 import AnalysisNavigation, { isAnalysisSection, type AnalysisSection } from "@/components/analysis/AnalysisNavigation";
 import FinancialSnapshot from "@/components/analysis/FinancialSnapshot";
@@ -42,19 +43,19 @@ import { formatSignedPercent } from "@/lib/format";
 
 const StockValuationChart = dynamic(() => import("@/components/StockValuationChart"), {
     ssr: false,
-    loading: () => <div className="h-[480px] animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />,
+    loading: () => <div className="h-[480px] animate-pulse rounded-lg bg-surface-muted" />,
 });
 const OverviewStockChart = dynamic(() => import("@/components/StockChart"), {
     ssr: false,
-    loading: () => <div className="h-[260px] animate-pulse bg-[var(--surface-muted)]" />,
+    loading: () => <div className="h-[260px] animate-pulse bg-surface-muted" />,
 });
 const FinancialTrendChart = dynamic(() => import("@/components/FinancialTrendChart"), {
     ssr: false,
-    loading: () => <div className="h-[520px] animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />,
+    loading: () => <div className="h-[520px] animate-pulse rounded-lg bg-surface-muted" />,
 });
 const FinancialFlowPanel = dynamic(() => import("@/components/FinancialFlowPanel"), {
     ssr: false,
-    loading: () => <div className="h-[520px] animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />,
+    loading: () => <div className="h-[520px] animate-pulse rounded-lg bg-surface-muted" />,
 });
 
 const attachEarningsAnalysis = (
@@ -150,6 +151,8 @@ function AnalysisPage() {
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
     const [cockpitView, setCockpitView] = useState<CockpitTab>("overview");
     const personal = usePersonalWorkspace();
+    const setStatus = useStatusBar((state) => state.setStatus);
+    const clearStatus = useStatusBar((state) => state.clearStatus);
     const watchlist = personal.watchlist;
     const handlePersonalUnauthorized = personal.handleUnauthorized;
     const stockRequestRef = useRef<AbortController | null>(null);
@@ -582,8 +585,28 @@ function AnalysisPage() {
     const change = latest?.close != null && previous?.close != null ? latest.close - previous.close : null;
     const changePct = change != null && previous?.close ? change / previous.close : null;
 
+    const financialsDate = decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials || null;
+    const statusCurrency = stockData?.profile.currency || "USD";
+    useEffect(() => {
+        if (!stockData) {
+            setStatus([]);
+            return;
+        }
+        const items: StatusItem[] = [
+            { label: "Price", value: latest?.date || "Unavailable", tone: latest?.date ? "ready" : "error" },
+            { label: "Financials", value: financialsDate || "Unavailable", tone: financialsDate ? "ready" : "error" },
+            {
+                label: "Factors",
+                value: factorLoading ? "Loading" : factorError ? "Unavailable" : factorSnapshot?.as_of_date || "Unavailable",
+                tone: factorLoading ? "neutral" : factorSnapshot?.as_of_date && !factorError ? "ready" : "error",
+            },
+        ];
+        setStatus(items, `PIT · adjusted · ${statusCurrency}`);
+    }, [factorError, factorLoading, factorSnapshot?.as_of_date, financialsDate, latest?.date, setStatus, statusCurrency, stockData]);
+    useEffect(() => () => clearStatus(), [clearStatus]);
+
     return (
-        <div className="flex h-full w-full overflow-hidden bg-[var(--app-bg)]">
+        <div className="flex h-full w-full overflow-hidden bg-canvas">
             <div className="hidden h-full xl:block">
                 <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} />
             </div>
@@ -594,11 +617,12 @@ function AnalysisPage() {
 
                     {!ticker && (
                         <section className="surface-panel flex min-h-[65vh] flex-col items-center justify-center px-6 py-16 text-center">
-                            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"><Search size={26} /></span>
+                            <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-accent/40 bg-accent-soft text-accent"><Search size={22} /></span>
                             <p className="eyebrow mt-6">Single-security workspace</p>
-                            <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Start with a ticker</h1>
-                            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">Review prices, fundamentals, quality-gated point-in-time factors, news, and an optional AI synthesis in one traceable workspace.</p>
-                            <div className="mt-7 flex flex-wrap justify-center gap-2">
+                            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Start with a ticker</h1>
+                            <p className="mt-3 max-w-xl text-sm leading-6 text-fg-muted sm:text-base">Review prices, fundamentals, quality-gated point-in-time factors, news, and an optional AI synthesis in one traceable workspace.</p>
+                            <p className="mt-4 text-xs text-fg-muted">Press <span className="kbd">⌘K</span> or <span className="kbd">/</span> to search from anywhere</p>
+                            <div className="mt-6 flex flex-wrap justify-center gap-2">
                                 {watchlist.slice(0, 6).map((symbol) => <button key={symbol} type="button" className="secondary-button font-mono" onClick={() => selectTicker(symbol)}>{symbol.replace(".US", "")}</button>)}
                             </div>
                         </section>
@@ -606,15 +630,15 @@ function AnalysisPage() {
 
                     {loading && !stockData && (
                         <div className="grid gap-5" aria-label="Loading security analysis">
-                            <div className="surface-panel h-64 animate-pulse bg-slate-100 dark:bg-slate-800" />
-                            <div className="grid gap-5 xl:grid-cols-2"><div className="surface-panel h-96 animate-pulse bg-slate-100 dark:bg-slate-800" /><div className="surface-panel h-96 animate-pulse bg-slate-100 dark:bg-slate-800" /></div>
-                            <p className="text-center text-sm text-slate-500">Loading cached data or synchronizing the latest available snapshot…</p>
+                            <div className="surface-panel h-64 animate-pulse bg-surface-muted" />
+                            <div className="grid gap-5 xl:grid-cols-2"><div className="surface-panel h-96 animate-pulse bg-surface-muted" /><div className="surface-panel h-96 animate-pulse bg-surface-muted" /></div>
+                            <p className="text-center text-sm text-fg-muted">Loading cached data or synchronizing the latest available snapshot…</p>
                         </div>
                     )}
 
                     {error && !stockData && (
                         <div className="error-panel flex min-h-[320px] flex-col items-center justify-center text-center" role="alert">
-                            <AlertCircle size={34} /><h2 className="mt-4 text-lg font-black">Analysis unavailable</h2><p className="mt-2 max-w-lg">{error}</p>
+                            <AlertCircle size={34} /><h2 className="mt-4 text-lg font-semibold">Analysis unavailable</h2><p className="mt-2 max-w-lg">{error}</p>
                             <button type="button" className="secondary-button mt-5" onClick={() => void loadStock(ticker, chartInterval, financialPeriod, true)}>Try again</button>
                         </div>
                     )}
@@ -626,14 +650,14 @@ function AnalysisPage() {
                                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start sm:gap-5">
                                     <div className="min-w-0">
                                         <div className="flex items-center gap-3">
-                                            <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-soft)] text-lg font-semibold text-[var(--brand-strong)] sm:flex" aria-hidden="true">{stockData.profile.ticker.split(".")[0].slice(0, 1)}</span>
+                                            <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-surface font-mono text-base font-medium text-accent sm:flex" aria-hidden="true">{stockData.profile.ticker.split(".")[0].slice(0, 1)}</span>
                                             <div className="min-w-0">
-                                                <h1 className="break-words text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">{stockData.profile.name || stockData.profile.ticker}</h1>
-                                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)]">
-                                                    <span className="font-semibold text-[var(--brand-strong)]">{stockData.profile.ticker}</span>
+                                                <h1 className="break-words text-2xl font-semibold tracking-[-0.03em] sm:text-[28px] sm:leading-9">{stockData.profile.name || stockData.profile.ticker}</h1>
+                                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+                                                    <span className="status-pill">{stockData.profile.ticker}</span>
                                                     {stockData.profile.exchange && <span>{stockData.profile.exchange}</span>}
                                                     {stockData.profile.sector && <span>{stockData.profile.sector}</span>}
-                                                    {stockData.profile.description && <button type="button" className="inline-flex min-h-7 items-center gap-1 hover:text-[var(--text)]" aria-expanded={descriptionExpanded} aria-controls="company-description" onClick={() => setDescriptionExpanded((expanded) => !expanded)}>
+                                                    {stockData.profile.description && <button type="button" className="inline-flex min-h-7 items-center gap-1 hover:text-fg" aria-expanded={descriptionExpanded} aria-controls="company-description" onClick={() => setDescriptionExpanded((expanded) => !expanded)}>
                                                         About {descriptionExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                                                     </button>}
                                                 </div>
@@ -642,14 +666,14 @@ function AnalysisPage() {
                                     </div>
                                     <div className="flex shrink-0 items-center justify-between gap-4 sm:items-start sm:gap-5">
                                         <div className="sm:text-right">
-                                            <div className="flex items-baseline gap-1.5 sm:justify-end"><span className="text-xs text-[var(--text-muted)]">{stockData.profile.currency || "USD"}</span><span className="text-2xl font-semibold tracking-tight sm:text-[28px]">{latest?.close?.toFixed(2) ?? "—"}</span></div>
-                                            {change != null && <p className={`mt-0.5 flex items-center gap-1 text-sm font-medium sm:justify-end ${change > 0 ? "text-[var(--positive)]" : change < 0 ? "text-[var(--negative)]" : "text-[var(--neutral)]"}`}>{change > 0 ? <ArrowUpRight size={14} /> : change < 0 ? <ArrowDownRight size={14} /> : null}{change > 0 ? "+" : change < 0 ? "−" : ""}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${formatSignedPercent(changePct)})`}</p>}
-                                            <p className="mt-1 text-xs text-[var(--text-muted)]">Adjusted close · {latest?.date || "Date unavailable"}</p>
+                                            <div className="flex items-baseline gap-1.5 sm:justify-end"><span className="font-mono text-xs text-fg-muted">{stockData.profile.currency || "USD"}</span><span className="font-mono text-2xl font-medium tracking-tight sm:text-[28px]">{latest?.close?.toFixed(2) ?? "—"}</span></div>
+                                            {change != null && <p className={`mt-0.5 flex items-center gap-1 font-mono text-sm font-medium sm:justify-end ${change > 0 ? "text-up" : change < 0 ? "text-down" : "text-flat"}`}>{change > 0 ? <ArrowUpRight size={14} /> : change < 0 ? <ArrowDownRight size={14} /> : null}{change > 0 ? "+" : change < 0 ? "−" : ""}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${formatSignedPercent(changePct)})`}</p>}
+                                            <p className="mt-1 font-mono text-xs text-fg-muted">Adjusted close · {latest?.date || "Date unavailable"}</p>
                                         </div>
                                         {watchlist.includes(stockData.profile.ticker) ? <span className="research-link"><Check size={15} /> In watchlist</span> : <button type="button" onClick={() => addToWatchlist(stockData.profile.ticker)} className="secondary-button min-h-9 shrink-0 px-3 py-1.5 text-xs"><Plus size={14} /> {personal.isUnlocked ? "Watchlist" : "Unlock to add"}</button>}
                                     </div>
                                 </div>
-                                {descriptionExpanded && <div id="company-description" className="mt-3 border-t pt-3 text-sm leading-6 text-[var(--text-muted)]">{stockData.profile.description}{stockData.profile.industry && <p className="mt-2 text-xs">Industry · {stockData.profile.industry}</p>}</div>}
+                                {descriptionExpanded && <div id="company-description" className="mt-3 border-t pt-3 text-sm leading-6 text-fg-muted">{stockData.profile.description}{stockData.profile.industry && <p className="mt-2 text-xs">Industry · {stockData.profile.industry}</p>}</div>}
                             </section>
 
                             <AnalysisNavigation active={activeSection} onChange={selectSection} />
@@ -692,7 +716,7 @@ function AnalysisPage() {
                                             <div className="overview-grid">
                                                 <section className="research-panel overflow-hidden" aria-labelledby="overview-price-title" data-testid="overview-price-panel">
                                                     <header className="flex flex-wrap items-start justify-between gap-2 px-4 pb-2 pt-4 sm:px-5">
-                                                        <div><h2 id="overview-price-title" className="text-lg font-semibold tracking-tight">Price &amp; volume</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Adjusted · logarithmic · {stockData.profile.currency || "USD"}</p></div>
+                                                        <div><h2 id="overview-price-title" className="text-base font-semibold tracking-tight">Price &amp; volume</h2><p className="mt-1 text-xs text-fg-muted">Adjusted · logarithmic · {stockData.profile.currency || "USD"}</p></div>
                                                         <SegmentedControl label="Price interval" value={chartInterval} options={[{ value: "1d", label: "Daily", disabled: chartLoading }, { value: "1wk", label: "Weekly", disabled: chartLoading }, { value: "1mo", label: "Monthly", disabled: chartLoading }]} onChange={(interval) => void handleIntervalChange(interval)} />
                                                     </header>
                                                     <div className="px-2 pb-2 sm:px-3"><OverviewStockChart data={stockData.historical_data} interval={chartInterval} isLoading={chartLoading} height={260} embedded /></div>
@@ -700,12 +724,6 @@ function AnalysisPage() {
                                                 <FinancialSnapshot stock={stockData} snapshot={marketSnapshot} statementDate={decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials} onDetails={() => selectSection("financials")} />
                                             </div>
                                             <SimilarStocksPanel key={stockData.profile.ticker} ticker={stockData.profile.ticker} watchlist={watchlist} unlocked={personal.isUnlocked} onSelect={selectTicker} onAdd={addToWatchlist} onRemove={removeFromWatchlist} />
-                                            <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-lg border px-4 py-3 text-xs text-[var(--text-muted)]" aria-label="Data sources">
-                                                <span className="font-medium text-[var(--text)]">Data sources</span>
-                                                <span>Price · {latest?.date || "Unavailable"}</span>
-                                                <span>Financials · {decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials || "Unavailable"}</span>
-                                                <span>Factors · {factorLoading ? "Loading" : factorError ? "Unavailable" : factorSnapshot?.as_of_date || "Unavailable"}</span>
-                                            </div>
                                         </>}
                                     />
                                 </div>
@@ -729,7 +747,7 @@ function AnalysisPage() {
                                             if (financialPeriod !== "ttm") void loadFinancialFlow(stockData.profile.ticker, financialPeriod, financialFlowRequestedPeriodRef.current);
                                         }}
                                     />
-                                    <div ref={financialEvidenceRef} tabIndex={-1} className="scroll-mt-20 rounded-2xl focus:outline-none">
+                                    <div ref={financialEvidenceRef} tabIndex={-1} className="scroll-mt-20 rounded-lg focus:outline-none">
                                         <FinancialTrendChart data={stockData.historical_financials} ttmData={stockData.valuation_metrics?.ttm} currentPrice={stockData.valuation_metrics?.valuation.current_price ?? undefined} timePeriod={financialPeriod} onTimePeriodChange={handlePeriodChange} selectedMetric={financialMetric} onMetricChange={setFinancialMetric} earningsQuality={earningsQuality} dataQualityWarnings={stockData.valuation_metrics?.data_quality_warnings} />
                                     </div>
                                 </>}
@@ -742,8 +760,8 @@ function AnalysisPage() {
                                 {activeSection === "events" && <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>}
                             </div>
 
-                            <footer className="flex flex-wrap items-center gap-2 rounded-xl border px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
-                                <ShieldCheck size={14} className="text-emerald-500" /> Published factor values are versioned and quality-gated. Cockpit calculations are transparent decision support, not investment advice.
+                            <footer className="flex flex-wrap items-center gap-2 px-1 py-2 text-xs text-fg-muted">
+                                <ShieldCheck size={14} className="text-accent" /> Published factor values are versioned and quality-gated. Cockpit calculations are transparent decision support, not investment advice.
                             </footer>
                         </>
                     )}
@@ -761,5 +779,5 @@ function AnalysisPage() {
 }
 
 export default function Home() {
-    return <Suspense fallback={<div className="h-full animate-pulse bg-[var(--app-bg)]" />}><AnalysisPage /></Suspense>;
+    return <Suspense fallback={<div className="h-full animate-pulse bg-canvas" />}><AnalysisPage /></Suspense>;
 }
