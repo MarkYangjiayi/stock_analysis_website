@@ -1,37 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { ChartNoAxesCombined, Menu, Search, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { ChartCandlestick, Menu, Search, X } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import CommandPalette, { NAV_PAGES } from "./shell/CommandPalette";
+import MarketStatusChip from "./shell/MarketStatusChip";
 
-const NAV_LINKS = [
-    { name: "Analysis", path: "/" },
-    { name: "Screener", path: "/screener" },
-    { name: "Anomalies", path: "/anomalies" },
-    { name: "Market", path: "/market", aliases: ["/rrg", "/market/yield-curve", "/market/index-valuation"] },
-    { name: "Factor Lab", path: "/research" },
-];
+const isEditable = (target: EventTarget | null) =>
+    target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
 export default function TopNavBar() {
     const pathname = usePathname();
-    const router = useRouter();
-    const [searchInput, setSearchInput] = useState("");
     const [menuOpen, setMenuOpen] = useState(false);
+    const [paletteOpen, setPaletteOpen] = useState(false);
 
-    const handleSearch = (event: React.FormEvent) => {
-        event.preventDefault();
-        const ticker = searchInput.trim().toUpperCase();
-        if (!ticker) return;
-        router.push(`/?ticker=${encodeURIComponent(ticker)}`);
-        setSearchInput("");
-        setMenuOpen(false);
-    };
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+                event.preventDefault();
+                setPaletteOpen((open) => !open);
+            } else if (event.key === "/" && !isEditable(event.target)) {
+                event.preventDefault();
+                setPaletteOpen(true);
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
 
     const navLinks = (mobile = false) => (
-        <div className={mobile ? "grid gap-1" : "flex h-full items-center gap-1"}>
-            {NAV_LINKS.map((link) => {
+        <div className={mobile ? "grid gap-0.5" : "flex h-full items-center gap-0.5"}>
+            {NAV_PAGES.map((link) => {
                 const active = pathname === link.path || link.aliases?.includes(pathname);
                 return (
                     <Link
@@ -40,12 +41,12 @@ export default function TopNavBar() {
                         onClick={() => setMenuOpen(false)}
                         aria-current={active ? "page" : undefined}
                         className={mobile
-                            ? `rounded-xl px-4 py-3 text-sm font-semibold ${active ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`
-                            : `relative flex h-full items-center px-3 text-sm font-semibold transition-colors ${active ? "text-emerald-700 dark:text-emerald-300" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"}`
+                            ? `rounded-md px-3 py-2.5 text-sm font-medium ${active ? "bg-accent-soft text-accent-strong" : "text-fg-muted hover:bg-surface-muted hover:text-fg"}`
+                            : `relative flex h-full items-center px-2.5 text-[13px] font-medium transition-colors ${active ? "text-fg" : "text-fg-muted hover:text-fg"}`
                         }
                     >
                         {link.name}
-                        {!mobile && active && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-emerald-500" />}
+                        {!mobile && active && <span className="absolute inset-x-2.5 bottom-0 h-0.5 bg-accent" />}
                     </Link>
                 );
             })}
@@ -53,51 +54,45 @@ export default function TopNavBar() {
     );
 
     return (
-        <nav className="relative z-50 shrink-0 border-b bg-[var(--surface)] px-4 py-3 backdrop-blur-xl md:h-16 md:px-6 md:py-0" aria-label="Primary navigation">
-            <div className="mx-auto flex h-full max-w-[1600px] flex-wrap items-center gap-3 md:flex-nowrap md:justify-between">
-                <div className="order-1 flex min-w-0 flex-1 items-center gap-5 md:h-full">
-                    <Link href="/" onClick={() => setMenuOpen(false)} className="flex shrink-0 items-center gap-2" aria-label="Quantify home">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 shadow-sm">
-                            <ChartNoAxesCombined size={19} strokeWidth={2.5} />
-                        </span>
-                        <span className="text-lg font-black tracking-[-0.04em] text-slate-900 dark:text-white">Quantify</span>
-                    </Link>
-                    <div className="hidden h-full lg:block">{navLinks()}</div>
-                </div>
+        <nav className="relative z-50 shrink-0 border-b bg-canvas px-3 md:px-5" aria-label="Primary navigation">
+            <div className="mx-auto flex h-11 max-w-[1600px] items-center gap-3">
+                <Link href="/" onClick={() => setMenuOpen(false)} className="flex shrink-0 items-center gap-2" aria-label="Quantify home">
+                    <span className="flex h-6 w-6 items-center justify-center rounded border border-accent text-accent">
+                        <ChartCandlestick size={14} strokeWidth={2.25} />
+                    </span>
+                    <span className="text-[15px] font-semibold tracking-[-0.02em] text-fg">Quantify</span>
+                </Link>
+                <div className="ml-3 hidden h-full lg:block">{navLinks()}</div>
 
-                <form onSubmit={handleSearch} className="relative order-3 w-full md:order-2 md:ml-auto md:w-64 xl:w-72" role="search">
-                    <input
-                        type="search"
-                        className="control-field py-2 pl-3 pr-10"
-                        placeholder="Search ticker, e.g. AAPL.US"
-                        aria-label="Search stock ticker"
-                        value={searchInput}
-                        onChange={(event) => setSearchInput(event.target.value)}
-                    />
-                    <button type="submit" className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 dark:hover:text-emerald-300" aria-label="Search ticker">
-                        <Search size={15} />
-                    </button>
-                </form>
+                <button
+                    type="button"
+                    onClick={() => setPaletteOpen(true)}
+                    className="ml-auto flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border bg-surface px-2.5 text-left text-[13px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg sm:max-w-64 md:flex-none md:w-64"
+                    aria-label="Search stock ticker"
+                    aria-keyshortcuts="Meta+K Control+K /"
+                >
+                    <Search size={14} className="shrink-0" aria-hidden="true" />
+                    <span className="flex-1 truncate">Search ticker or page</span>
+                    <span className="kbd hidden sm:inline-flex">⌘K</span>
+                </button>
 
-                <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-3 md:ml-0">
-                    <ThemeToggle />
-                    <button
-                        type="button"
-                        onClick={() => setMenuOpen((open) => !open)}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border bg-[var(--surface)] text-slate-600 dark:text-slate-200 lg:hidden"
-                        aria-label={menuOpen ? "Close navigation" : "Open navigation"}
-                        aria-expanded={menuOpen}
-                    >
-                        {menuOpen ? <X size={19} /> : <Menu size={19} />}
-                    </button>
-                </div>
+                <MarketStatusChip />
+                <ThemeToggle />
+                <button
+                    type="button"
+                    onClick={() => setMenuOpen((open) => !open)}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-surface text-fg-muted lg:hidden"
+                    aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+                    aria-expanded={menuOpen}
+                    aria-controls="mobile-navigation"
+                >
+                    {menuOpen ? <X size={17} /> : <Menu size={17} />}
+                </button>
             </div>
-
-            {menuOpen && (
-                <div className="absolute inset-x-0 top-full border-b bg-[var(--surface)] p-3 shadow-xl lg:hidden">
-                    {navLinks(true)}
-                </div>
-            )}
+            {menuOpen && <div id="mobile-navigation" className="absolute inset-x-0 top-full border-b bg-surface p-2 shadow-xl lg:hidden">{navLinks(true)}</div>}
+            {paletteOpen && <Suspense fallback={null}>
+                <CommandPalette onClose={() => setPaletteOpen(false)} />
+            </Suspense>}
         </nav>
     );
 }

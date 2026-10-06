@@ -250,24 +250,24 @@ const MetricRow = ({
     const signed = SIGNED_FIELDS.has(definition.key) && numericValue != null && numericValue !== 0;
     const valueClass = signed
         ? numericValue > 0
-            ? "text-emerald-600 dark:text-emerald-400"
-            : "text-rose-500 dark:text-rose-400"
-        : "text-[var(--text)]";
+            ? "text-up"
+            : "text-down"
+        : "text-fg";
     const tooltip = metric?.unavailable_reason || `${definition.description}${metric?.source_date ? ` Source date: ${metric.source_date}.` : ""}`;
     const secondary = metric ? formatSecondary(metric, currency) : null;
 
     return (
         <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t px-3 py-2 first:border-t-0" data-testid={`snapshot-metric-${definition.key}`}>
-            <span className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400" title={tooltip} tabIndex={0}>
+            <span className="truncate text-xs font-medium text-fg-muted" title={tooltip} tabIndex={0}>
                 {definition.label}
             </span>
             <div className="flex min-w-0 items-center justify-end gap-1.5 text-right">
-                <span className={`font-mono text-xs font-black sm:text-[13px] ${valueClass}`} title={tooltip}>
+                <span className={`font-mono text-xs font-semibold sm:text-[13px] ${valueClass}`} title={tooltip}>
                     {metric ? formatSnapshotValue(metric.value, metric.unit, currency) : "—"}
                 </span>
-                {secondary && <span className="font-mono text-[10px] text-slate-400">{secondary}</span>}
+                {secondary && <span className="font-mono text-xs text-fg-muted">{secondary}</span>}
                 {metric?.percentile != null && metric.percentile_scope && (
-                    <span className="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-black text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" title={`${metric.percentile_scope} desirability percentile`}>
+                    <span className="rounded border border-accent/30 bg-accent-soft px-1 py-0.5 font-mono text-xs font-semibold text-accent-strong" title={`${metric.percentile_scope} desirability percentile`}>
                         P{Math.round(metric.percentile)}
                     </span>
                 )}
@@ -279,10 +279,10 @@ const MetricRow = ({
 const SnapshotSkeleton = () => (
     <section className="surface-panel overflow-hidden" aria-label="Loading market snapshot">
         <div className="surface-subtle border-b px-5 py-4">
-            <div className="h-4 w-36 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-4 w-36 animate-pulse rounded bg-surface-muted" />
         </div>
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />)}
+            {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-lg bg-surface-muted" />)}
         </div>
     </section>
 );
@@ -320,7 +320,7 @@ export default function StockSnapshotPanel({
         return (
             <section className="surface-panel p-5" role="alert">
                 <p className="eyebrow">Market Snapshot</p>
-                <p className="mt-2 text-sm text-rose-500">{error}</p>
+                <p className="mt-2 text-sm text-danger">{error}</p>
                 <button type="button" className="secondary-button mt-4" onClick={onRetry}><RefreshCw size={14} /> Retry</button>
             </section>
         );
@@ -345,16 +345,16 @@ export default function StockSnapshotPanel({
                 <div>
                     <p className="eyebrow">Fast fundamentals</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-black tracking-[-0.02em]">Market Snapshot</h2>
+                        <h2 className="text-lg font-semibold tracking-[-0.02em]">Market Snapshot</h2>
                         <span className="status-pill">{data.coverage.available}/{data.coverage.total} · {coveragePercent}% covered</span>
                     </div>
                 </div>
-                <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    {dates.map(([label, value]) => <span key={label} className="rounded-lg border bg-[var(--surface)] px-2.5 py-1">{label} {value}</span>)}
+                <div className="flex flex-wrap gap-2 font-mono text-xs font-medium text-fg-muted">
+                    {dates.map(([label, value]) => <span key={label} className="rounded-md border bg-surface px-2.5 py-1">{label} {value}</span>)}
                 </div>
             </header>
             {error && (
-                <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-caution/30 bg-caution/6 px-3 py-2 text-xs text-caution">
                     <span>{error} The previous snapshot remains visible.</span>
                     <button type="button" className="secondary-button" onClick={onRetry}><RefreshCw size={14} /> Retry</button>
                 </div>
@@ -365,7 +365,7 @@ export default function StockSnapshotPanel({
                     const isExpanded = expanded.has(group.id);
                     const isVisible = isDesktop || isExpanded;
                     return (
-                        <article key={group.id} className="overflow-hidden rounded-xl border bg-[var(--surface)]">
+                        <article key={group.id} className="overflow-hidden rounded-lg border bg-surface">
                             <button
                                 type="button"
                                 className="surface-subtle flex w-full items-center justify-between gap-3 px-3 py-3 text-left disabled:cursor-default"
@@ -374,8 +374,8 @@ export default function StockSnapshotPanel({
                                 onClick={() => toggle(group.id)}
                             >
                                 <span className="flex min-w-0 items-center gap-2.5">
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand-strong)]"><Icon size={16} /></span>
-                                    <span className="min-w-0"><span className="eyebrow block truncate">{group.eyebrow}</span><span className="block truncate text-sm font-black">{group.label}</span></span>
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent-strong"><Icon size={16} /></span>
+                                    <span className="min-w-0"><span className="eyebrow block truncate">{group.eyebrow}</span><span className="block truncate text-sm font-semibold">{group.label}</span></span>
                                 </span>
                                 <ChevronDown size={16} className={`shrink-0 transition-transform md:hidden ${isExpanded ? "rotate-180" : ""}`} />
                             </button>

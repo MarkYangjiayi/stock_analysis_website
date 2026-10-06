@@ -5,18 +5,7 @@ import ReactECharts from "echarts-for-react";
 import { useTheme } from "next-themes";
 
 import type { TreasuryYieldCurveResponse } from "@/lib/api";
-import { chartTheme } from "@/lib/chartTheme";
-
-const SERIES_COLORS = [
-    "#10b981",
-    "#6366f1",
-    "#f59e0b",
-    "#64748b",
-    "#0ea5e9",
-    "#ec4899",
-    "#8b5cf6",
-    "#f97316",
-];
+import { chartMonoFont, chartTheme } from "@/lib/chartTheme";
 
 const dateLabel = (value: string) => value.slice(5);
 const yieldLabel = (value: unknown) => {
@@ -27,10 +16,33 @@ const yieldLabel = (value: unknown) => {
 
 function baseChartColors(dark: boolean) {
     const colors = chartTheme(dark);
+    const monoFont = chartMonoFont();
     return {
         colors,
+        monoFont,
         axisColor: colors.textMuted,
-        splitColor: dark ? "rgba(145,161,155,0.13)" : "rgba(100,116,139,0.13)",
+        axisLabel: { color: colors.textMuted, fontFamily: monoFont },
+        splitLine: { lineStyle: { color: colors.grid, type: "dashed" as const } },
+        tooltip: {
+            backgroundColor: colors.tooltipBackground,
+            borderColor: colors.border,
+            textStyle: { color: colors.text, fontSize: 12, fontFamily: monoFont },
+        },
+        dataZoomSlider: {
+            type: "slider",
+            bottom: 12,
+            height: 22,
+            borderColor: colors.border,
+            backgroundColor: colors.backgroundMuted,
+            fillerColor: `${colors.brand}22`,
+            dataBackground: {
+                lineStyle: { color: colors.textMuted, opacity: 0.5 },
+                areaStyle: { color: colors.textMuted, opacity: 0.12 },
+            },
+            handleStyle: { color: colors.brand, borderColor: colors.brand },
+            moveHandleStyle: { color: colors.brand },
+            textStyle: { color: colors.textMuted, fontFamily: monoFont },
+        },
     };
 }
 
@@ -38,43 +50,46 @@ export function CurrentYieldCurveChart({ data }: { data: TreasuryYieldCurveRespo
     const { resolvedTheme } = useTheme();
     const dark = resolvedTheme === "dark";
     const option = useMemo(() => {
-        const { colors, axisColor, splitColor } = baseChartColors(dark);
+        const { colors, monoFont, axisColor, axisLabel, splitLine, tooltip } = baseChartColors(dark);
+        // The latest curve owns the brand hue; prior snapshots cycle through the remaining series hues.
+        const priorColors = colors.series.slice(1);
+        let priorIndex = 0;
+        const snapshotColors = data.snapshots.map((snapshot) =>
+            snapshot.key === "latest" ? colors.brand : priorColors[priorIndex++ % priorColors.length]);
         return {
             animationDuration: 350,
             aria: {
                 enabled: true,
                 description: "Current U.S. Treasury par yield curve compared with prior monthly and annual snapshots.",
             },
-            color: SERIES_COLORS,
+            color: snapshotColors,
             legend: {
                 top: 4,
-                textStyle: { color: axisColor, fontSize: 11 },
+                textStyle: { color: axisColor, fontSize: 11, fontFamily: monoFont },
             },
             grid: { left: 58, right: 28, top: 48, bottom: 45 },
             tooltip: {
                 trigger: "axis",
                 confine: true,
-                backgroundColor: colors.backgroundMuted,
-                borderColor: colors.border,
-                textStyle: { color: colors.text, fontSize: 12 },
+                ...tooltip,
                 valueFormatter: yieldLabel,
-                axisPointer: { type: "line" },
+                axisPointer: { type: "line", lineStyle: { color: colors.border } },
             },
             xAxis: {
                 type: "category",
                 data: data.maturities.map((maturity) => maturity.label),
                 boundaryGap: false,
-                axisLine: { lineStyle: { color: splitColor } },
+                axisLine: { lineStyle: { color: colors.border } },
                 axisTick: { show: false },
-                axisLabel: { color: axisColor, interval: 0, fontSize: 10 },
+                axisLabel: { ...axisLabel, interval: 0, fontSize: 10 },
             },
             yAxis: {
                 type: "value",
                 scale: true,
                 name: "Yield %",
                 nameTextStyle: { color: axisColor },
-                axisLabel: { color: axisColor, formatter: "{value}%" },
-                splitLine: { lineStyle: { color: splitColor } },
+                axisLabel: { ...axisLabel, formatter: "{value}%" },
+                splitLine,
             },
             series: data.snapshots.map((snapshot, index) => ({
                 name: `${snapshot.label} · ${snapshot.date}`,
@@ -87,9 +102,9 @@ export function CurrentYieldCurveChart({ data }: { data: TreasuryYieldCurveRespo
                 lineStyle: {
                     width: snapshot.key === "latest" ? 3.5 : 1.8,
                     type: snapshot.key === "latest" ? "solid" : "dashed",
-                    color: SERIES_COLORS[index],
+                    color: snapshotColors[index],
                 },
-                itemStyle: { color: SERIES_COLORS[index] },
+                itemStyle: { color: snapshotColors[index] },
                 emphasis: { focus: "series" },
                 z: snapshot.key === "latest" ? 6 : 2,
             })),
@@ -119,45 +134,44 @@ export function YieldHistoryChart({
     const { resolvedTheme } = useTheme();
     const dark = resolvedTheme === "dark";
     const option = useMemo(() => {
-        const { colors, axisColor, splitColor } = baseChartColors(dark);
+        const { colors, monoFont, axisColor, axisLabel, splitLine, tooltip, dataZoomSlider } = baseChartColors(dark);
         const maturityByKey = new Map(data.maturities.map((maturity) => [maturity.key, maturity]));
+        const seriesColors = colors.series;
         return {
             animationDuration: 250,
             aria: {
                 enabled: true,
                 description: "Historical U.S. Treasury par yields for the selected maturities.",
             },
-            color: SERIES_COLORS,
+            color: seriesColors,
             legend: {
                 top: 4,
                 data: selectedMaturities.map((key) => maturityByKey.get(key)?.label ?? key),
-                textStyle: { color: axisColor, fontSize: 11 },
+                textStyle: { color: axisColor, fontSize: 11, fontFamily: monoFont },
             },
             grid: { left: 58, right: 30, top: 48, bottom: 66 },
             tooltip: {
                 trigger: "axis",
                 confine: true,
-                backgroundColor: colors.backgroundMuted,
-                borderColor: colors.border,
-                textStyle: { color: colors.text, fontSize: 12 },
+                ...tooltip,
                 valueFormatter: yieldLabel,
-                axisPointer: { type: "cross", snap: true },
+                axisPointer: { type: "cross", snap: true, lineStyle: { color: colors.border } },
             },
             xAxis: {
                 type: "category",
                 data: data.observations.map((observation) => observation.date),
                 boundaryGap: false,
-                axisLine: { lineStyle: { color: splitColor } },
+                axisLine: { lineStyle: { color: colors.border } },
                 axisTick: { show: false },
-                axisLabel: { color: axisColor, formatter: dateLabel },
+                axisLabel: { ...axisLabel, formatter: dateLabel },
             },
             yAxis: {
                 type: "value",
                 scale: true,
                 name: "Yield %",
                 nameTextStyle: { color: axisColor },
-                axisLabel: { color: axisColor, formatter: "{value}%" },
-                splitLine: { lineStyle: { color: splitColor } },
+                axisLabel: { ...axisLabel, formatter: "{value}%" },
+                splitLine,
             },
             dataZoom: [
                 {
@@ -168,16 +182,7 @@ export function YieldHistoryChart({
                     zoomOnMouseWheel: false,
                     moveOnMouseWheel: false,
                 },
-                {
-                    type: "slider",
-                    bottom: 12,
-                    height: 22,
-                    borderColor: splitColor,
-                    backgroundColor: colors.backgroundMuted,
-                    fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.13)",
-                    handleStyle: { color: "#10b981", borderColor: "#10b981" },
-                    textStyle: { color: axisColor },
-                },
+                dataZoomSlider,
             ],
             series: selectedMaturities.map((key, index) => ({
                 name: maturityByKey.get(key)?.label ?? key,
@@ -186,8 +191,8 @@ export function YieldHistoryChart({
                 showSymbol: false,
                 connectNulls: false,
                 smooth: 0.08,
-                lineStyle: { width: 2.2, color: SERIES_COLORS[index % SERIES_COLORS.length] },
-                itemStyle: { color: SERIES_COLORS[index % SERIES_COLORS.length] },
+                lineStyle: { width: 2.2, color: seriesColors[index % seriesColors.length] },
+                itemStyle: { color: seriesColors[index % seriesColors.length] },
                 emphasis: { focus: "series", lineStyle: { width: 3.2 } },
             })),
         };
@@ -210,7 +215,7 @@ export function YieldSpreadChart({ data }: { data: TreasuryYieldCurveResponse })
     const { resolvedTheme } = useTheme();
     const dark = resolvedTheme === "dark";
     const option = useMemo(() => {
-        const { colors, axisColor, splitColor } = baseChartColors(dark);
+        const { colors, monoFont, axisColor, axisLabel, splitLine, tooltip, dataZoomSlider } = baseChartColors(dark);
         const spread = (longKey: string, shortKey: string) => data.observations.map((observation) => {
             const longYield = observation.yields[longKey];
             const shortYield = observation.yields[shortKey];
@@ -218,60 +223,52 @@ export function YieldSpreadChart({ data }: { data: TreasuryYieldCurveResponse })
                 ? null
                 : Math.round((longYield - shortYield) * 100) / 100;
         });
+        // Spreads are two peer measures, not good/bad signals, so they use categorical hues.
+        const tenTwoColor = colors.series[0];
+        const tenThreeMonthColor = colors.series[1];
         return {
             animationDuration: 250,
             aria: {
                 enabled: true,
                 description: "Historical 10-year minus 2-year and 10-year minus 3-month Treasury yield spreads.",
             },
-            color: ["#10b981", "#f59e0b"],
-            legend: { top: 4, textStyle: { color: axisColor, fontSize: 11 } },
+            color: [tenTwoColor, tenThreeMonthColor],
+            legend: { top: 4, textStyle: { color: axisColor, fontSize: 11, fontFamily: monoFont } },
             grid: { left: 58, right: 30, top: 48, bottom: 66 },
             tooltip: {
                 trigger: "axis",
                 confine: true,
-                backgroundColor: colors.backgroundMuted,
-                borderColor: colors.border,
-                textStyle: { color: colors.text, fontSize: 12 },
+                ...tooltip,
                 valueFormatter: (value: unknown) => {
                     if (value == null) return "—";
                     const number = Number(value);
                     return Number.isFinite(number) ? `${number.toFixed(2)} pp` : "—";
                 },
-                axisPointer: { type: "cross", snap: true },
+                axisPointer: { type: "cross", snap: true, lineStyle: { color: colors.border } },
             },
             xAxis: {
                 type: "category",
                 data: data.observations.map((observation) => observation.date),
                 boundaryGap: false,
-                axisLine: { lineStyle: { color: splitColor } },
+                axisLine: { lineStyle: { color: colors.border } },
                 axisTick: { show: false },
-                axisLabel: { color: axisColor, formatter: dateLabel },
+                axisLabel: { ...axisLabel, formatter: dateLabel },
             },
             yAxis: {
                 type: "value",
                 scale: true,
                 name: "Percentage points",
                 nameTextStyle: { color: axisColor },
-                axisLabel: { color: axisColor, formatter: "{value}" },
-                splitLine: { lineStyle: { color: splitColor } },
+                axisLabel: { ...axisLabel, formatter: "{value}" },
+                splitLine,
             },
             dataZoom: [
                 { type: "inside", filterMode: "none", start: 0, end: 100, zoomOnMouseWheel: false, moveOnMouseWheel: false },
-                {
-                    type: "slider",
-                    bottom: 12,
-                    height: 22,
-                    borderColor: splitColor,
-                    backgroundColor: colors.backgroundMuted,
-                    fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.13)",
-                    handleStyle: { color: "#10b981", borderColor: "#10b981" },
-                    textStyle: { color: axisColor },
-                },
+                dataZoomSlider,
             ],
             series: [
-                { name: "10Y − 2Y", data: spread("10y", "2y"), color: "#10b981" },
-                { name: "10Y − 3M", data: spread("10y", "3m"), color: "#f59e0b" },
+                { name: "10Y − 2Y", data: spread("10y", "2y"), color: tenTwoColor },
+                { name: "10Y − 3M", data: spread("10y", "3m"), color: tenThreeMonthColor },
             ].map((series, index) => ({
                 ...series,
                 type: "line",

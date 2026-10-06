@@ -80,27 +80,27 @@ function TickerProfileHoverCard({ item }: { item: AnomalyReport }) {
             <Link
                 href={`/?ticker=${encodeURIComponent(item.ticker)}`}
                 aria-describedby={tooltipId}
-                className="rounded-sm font-mono text-sm font-black text-emerald-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:text-emerald-400 dark:focus-visible:ring-offset-slate-900"
+                className="rounded-sm font-mono text-sm font-semibold text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
                 {item.ticker.replace(/\.US$/, "")}
             </Link>
             <span
                 id={tooltipId}
                 role="tooltip"
-                className="pointer-events-none invisible absolute left-0 top-full z-50 mt-2 w-72 translate-y-1 rounded-xl border border-slate-200 bg-white p-4 text-left opacity-0 shadow-xl transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 sm:w-96 dark:border-slate-700 dark:bg-slate-900"
+                className="pointer-events-none invisible absolute left-0 top-full z-50 mt-2 w-72 translate-y-1 rounded-lg border bg-surface-raised p-4 text-left opacity-0 shadow-xl transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 sm:w-96"
             >
-                <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                <span className="block text-xs font-medium uppercase tracking-wide text-fg-muted">
                     Company snapshot
                 </span>
                 <span className="mt-1.5 flex items-start justify-between gap-4">
-                    <span className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    <span className="text-sm font-semibold text-fg">
                         {item.company_name}
                     </span>
-                    <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                    <span className="shrink-0 rounded-md bg-accent-soft px-2 py-1 font-mono text-xs font-semibold text-accent-strong">
                         Market cap {formatMarketCap(item.market_cap)}
                     </span>
                 </span>
-                <span className="mt-3 line-clamp-6 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                <span className="mt-3 line-clamp-6 text-xs leading-5 text-fg-muted">
                     {item.company_description || "Company profile is not available yet."}
                 </span>
             </span>
@@ -222,12 +222,12 @@ export default function AnomaliesPage() {
 
                 <section className="surface-panel flex flex-col justify-between gap-5 p-5 sm:flex-row sm:items-center sm:p-6">
                     <div className="flex gap-4">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
                             <Radar size={22} />
                         </span>
                         <div>
-                            <h2 className="font-black">Run a fresh scan</h2>
-                            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+                            <h2 className="font-semibold">Run a fresh scan</h2>
+                            <p className="mt-1 max-w-2xl text-sm leading-6 text-fg-muted">
                                 Checks the tracked universe for moves of at least {threshold.toFixed(1)}%.
                                 Shows the {resultLimit} largest qualifying moves. The scan runs in the
                                 background and this page updates when it finishes.
@@ -253,9 +253,9 @@ export default function AnomaliesPage() {
 
                 {hydrating && !data.length && (
                     <section className="surface-panel flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
-                        <Loader2 className="animate-spin text-emerald-500" size={38} />
-                        <h2 className="mt-4 text-lg font-black">Loading latest scan</h2>
-                        <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                        <Loader2 className="animate-spin text-accent" size={38} />
+                        <h2 className="mt-4 text-lg font-semibold">Loading latest scan</h2>
+                        <p className="mt-2 max-w-md text-sm leading-6 text-fg-muted">
                             Reading the most recent completed result.
                         </p>
                     </section>
@@ -263,11 +263,11 @@ export default function AnomaliesPage() {
 
                 {!hydrating && !loading && !data.length && !error && (
                     <section className="surface-panel flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
-                        <Activity className="text-slate-300 dark:text-slate-600" size={38} />
-                        <h2 className="mt-4 text-lg font-black">
+                        <Activity className="text-fg-muted opacity-50" size={38} />
+                        <h2 className="mt-4 text-lg font-semibold">
                             {latestScan ? "No qualifying moves in the latest scan" : "No completed scan yet"}
                         </h2>
-                        <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                        <p className="mt-2 max-w-md text-sm leading-6 text-fg-muted">
                             {latestScan
                                 ? `No tracked stock moved at least ${threshold.toFixed(1)}% in the latest quote set.`
                                 : "Run the scanner when you need a current anomaly review."}
@@ -277,9 +277,9 @@ export default function AnomaliesPage() {
 
                 {loading && !data.length && (
                     <section className="surface-panel flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
-                        <Loader2 className="animate-spin text-emerald-500" size={38} />
-                        <h2 className="mt-4 text-lg font-black">Scanning market moves</h2>
-                        <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                        <Loader2 className="animate-spin text-accent" size={38} />
+                        <h2 className="mt-4 text-lg font-semibold">Scanning market moves</h2>
+                        <p className="mt-2 max-w-md text-sm leading-6 text-fg-muted">
                             {activeScan?.status === "queued"
                                 ? "The scan is queued and will start shortly."
                                 : "Comparing current quotes and preparing bounded, source-backed attribution."}
@@ -297,19 +297,19 @@ export default function AnomaliesPage() {
                                     key={`${item.ticker}-${item.quote_timestamp}`}
                                     className="surface-panel overflow-visible"
                                 >
-                                    <header className="surface-subtle flex flex-col justify-between gap-3 rounded-t-2xl border-b p-4 sm:flex-row sm:items-center sm:px-5">
+                                    <header className="surface-subtle flex flex-col justify-between gap-3 rounded-t-lg border-b p-4 sm:flex-row sm:items-center sm:px-5">
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-3">
                                                 <TickerProfileHoverCard item={item} />
-                                                <span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                                <span className="truncate text-sm font-semibold text-fg-muted">
                                                     {item.company_name}
                                                 </span>
                                             </div>
-                                            <p className="mt-1 text-xs text-slate-500">
+                                            <p className="mt-1 font-mono text-xs text-fg-muted">
                                                 Quote {new Date(item.quote_timestamp).toLocaleString()}
                                             </p>
                                         </div>
-                                        <span className={`inline-flex w-fit items-center gap-1 rounded-lg px-3 py-1.5 font-mono text-base font-black ${positive ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-300"}`}>
+                                        <span className={`inline-flex w-fit items-center gap-1 rounded-md px-3 py-1.5 font-mono text-base font-semibold ${positive ? "bg-up/10 text-up" : "bg-down/10 text-down"}`}>
                                             {positive ? <ArrowUpRight size={17} /> : <ArrowDownRight size={17} />}
                                             {positive ? "+" : ""}
                                             {item.price_change.toFixed(2)}%
@@ -317,12 +317,12 @@ export default function AnomaliesPage() {
                                     </header>
                                     <div className="p-5 sm:p-6">
                                         <div className="flex gap-3">
-                                            <Sparkles className="mt-0.5 shrink-0 text-indigo-500" size={18} />
+                                            <Sparkles className="mt-0.5 shrink-0 text-accent" size={18} />
                                             <div className="min-w-0 flex-1">
                                                 {statusLabel && (
                                                     <span className="status-pill mb-3">{statusLabel}</span>
                                                 )}
-                                                <div className="prose prose-sm max-w-none text-slate-700 dark:prose-invert dark:text-slate-300 prose-headings:font-black prose-a:text-indigo-600 prose-a:underline prose-a:underline-offset-2 dark:prose-a:text-indigo-400 prose-li:my-0.5 prose-p:leading-7">
+                                                <div className="prose prose-sm prose-zinc max-w-none text-fg dark:prose-invert prose-headings:font-semibold prose-a:text-accent prose-a:underline prose-a:underline-offset-2 prose-li:my-0.5 prose-p:leading-7">
                                                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                                         {item.ai_analysis}
                                                     </ReactMarkdown>
@@ -338,10 +338,10 @@ export default function AnomaliesPage() {
                                                                 className="secondary-button flex min-h-10 w-full justify-between px-3 py-2 text-left text-xs"
                                                             >
                                                                 <span className="min-w-0">
-                                                                    <span className="block truncate font-bold">
+                                                                    <span className="block truncate font-semibold">
                                                                         [{index + 1}] {source.title}
                                                                     </span>
-                                                                    <span className="mt-0.5 block text-slate-500">
+                                                                    <span className="mt-0.5 block text-fg-muted">
                                                                         {source.publisher} · {new Date(source.pub_date).toLocaleString()}
                                                                     </span>
                                                                 </span>

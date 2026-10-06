@@ -51,10 +51,10 @@ function CurveMetric({
 }) {
     return (
         <article className="surface-panel px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-            <p className="mt-1 font-mono text-2xl font-black tracking-tight">{formatYield(value)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{label}</p>
+            <p className="mt-1 font-mono text-2xl font-semibold tracking-tight">{formatYield(value)}</p>
             {comparison !== undefined && (
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                <p className="mt-1 font-mono text-xs text-fg-muted">
                     {formatBasisPointChange(value, comparison)}
                 </p>
             )}
@@ -133,7 +133,7 @@ export default function TreasuryYieldCurvePage() {
                     {data && (
                         <div className="flex flex-wrap gap-2">
                             <span className={data.meta.stale
-                                ? "inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+                                ? "inline-flex items-center gap-1.5 rounded-md border border-caution/30 bg-caution/6 px-2 py-0.5 font-mono text-xs font-medium text-caution"
                                 : "status-pill"
                             }>
                                 <CalendarClock size={13} /> Data through {data.meta.as_of_date}
@@ -142,7 +142,7 @@ export default function TreasuryYieldCurvePage() {
                                 href={data.meta.source_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-300"
+                                className="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-accent"
                             >
                                 <ExternalLink size={13} /> U.S. Treasury source
                             </a>
@@ -153,7 +153,7 @@ export default function TreasuryYieldCurvePage() {
                 <MarketTabs active="rates" />
 
                 {!!data?.meta.warnings.length && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200" role="status">
+                    <div className="rounded-lg border border-caution/30 bg-caution/6 px-4 py-3 text-sm text-caution" role="status">
                         <TriangleAlert className="mr-2 inline" size={16} />
                         {data.meta.warnings.join(" · ")}
                     </div>
@@ -170,8 +170,8 @@ export default function TreasuryYieldCurvePage() {
 
                 {loading && !data && (
                     <section className="surface-panel flex min-h-[520px] flex-col items-center justify-center">
-                        <Loader2 className="animate-spin text-emerald-500" size={34} />
-                        <p className="mt-4 text-sm text-slate-500">Loading Treasury term structure…</p>
+                        <Loader2 className="animate-spin text-accent" size={34} />
+                        <p className="mt-4 text-sm text-fg-muted">Loading Treasury term structure…</p>
                     </section>
                 )}
 
@@ -190,20 +190,20 @@ export default function TreasuryYieldCurvePage() {
                                 );
                             })}
                             <article className="surface-panel px-4 py-3">
-                                <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">10Y − 2Y spread</p>
-                                <p className={`mt-1 font-mono text-2xl font-black tracking-tight ${
-                                    metrics.tenTwo != null && metrics.tenTwo < 0 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-300"
+                                <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">10Y − 2Y spread</p>
+                                <p className={`mt-1 font-mono text-2xl font-semibold tracking-tight ${
+                                    metrics.tenTwo != null && metrics.tenTwo < 0 ? "text-down" : "text-up"
                                 }`}>
                                     {metrics.tenTwo == null ? "—" : `${metrics.tenTwo >= 0 ? "+" : ""}${metrics.tenTwo.toFixed(2)} pp`}
                                 </p>
-                                <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{metrics.curveShape}</p>
+                                <p className="mt-1 text-xs font-semibold text-fg-muted">{metrics.curveShape}</p>
                             </article>
                         </section>
 
                         <section className="surface-panel overflow-hidden">
                             <div className="border-b px-4 py-4 sm:px-5">
-                                <h2 className="text-base font-black">Curve shape comparison</h2>
-                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                <h2 className="text-base font-semibold">Curve shape comparison</h2>
+                                <p className="mt-1 text-xs text-fg-muted">
                                     Latest curve against the nearest available observations around 1 month, 3 months, and 1 year earlier.
                                 </p>
                             </div>
@@ -213,25 +213,22 @@ export default function TreasuryYieldCurvePage() {
                         <section className="surface-panel overflow-hidden">
                             <div className="flex flex-col justify-between gap-4 border-b px-4 py-4 sm:px-5 xl:flex-row xl:items-end">
                                 <div>
-                                    <h2 className="text-base font-black">Yield history by maturity</h2>
-                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    <h2 className="text-base font-semibold">Yield history by maturity</h2>
+                                    <p className="mt-1 text-xs text-fg-muted">
                                         Select up to six maturities. This separates short-end policy repricing from long-end growth and inflation risk.
                                     </p>
                                 </div>
                                 <div className="flex shrink-0 flex-wrap gap-3">
                                     <fieldset>
-                                        <legend className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">History</legend>
-                                        <div className="flex rounded-lg border bg-slate-50 p-1 dark:bg-slate-950/40">
+                                        <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">History</legend>
+                                        <div className="segmented-control">
                                             {PERIODS.map((option) => (
                                                 <button
                                                     key={option.value}
                                                     type="button"
                                                     aria-pressed={period === option.value}
                                                     onClick={() => setPeriod(option.value)}
-                                                    className={`rounded-md px-3 py-1.5 text-xs font-bold ${period === option.value
-                                                        ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-800 dark:text-emerald-300"
-                                                        : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                                                    }`}
+                                                    className="segmented-control-item font-mono"
                                                 >
                                                     {option.label}
                                                 </button>
@@ -253,11 +250,11 @@ export default function TreasuryYieldCurvePage() {
                                             disabled={atLimit}
                                             title={atLimit ? "Select at most six maturities" : undefined}
                                             onClick={() => toggleMaturity(key)}
-                                            className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${selected
-                                                ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                            className={`rounded-full border px-3 py-1.5 font-mono text-xs font-medium transition-colors ${selected
+                                                ? "border-accent bg-accent-soft text-accent-strong"
                                                 : atLimit
-                                                    ? "cursor-not-allowed text-slate-300 dark:text-slate-700"
-                                                    : "text-slate-500 hover:border-emerald-400 hover:text-emerald-600 dark:text-slate-400"
+                                                    ? "cursor-not-allowed text-fg-muted opacity-40"
+                                                    : "text-fg-muted hover:border-accent hover:text-accent"
                                             }`}
                                         >
                                             {maturity?.label ?? key}
@@ -267,7 +264,7 @@ export default function TreasuryYieldCurvePage() {
                             </div>
                             {loading && (
                                 <div className="flex h-[440px] items-center justify-center">
-                                    <Loader2 className="animate-spin text-emerald-500" size={28} />
+                                    <Loader2 className="animate-spin text-accent" size={28} />
                                 </div>
                             )}
                             {!loading && <YieldHistoryChart data={data} selectedMaturities={selectedMaturities} />}
@@ -275,19 +272,19 @@ export default function TreasuryYieldCurvePage() {
 
                         <section className="surface-panel overflow-hidden">
                             <div className="border-b px-4 py-4 sm:px-5">
-                                <h2 className="text-base font-black">Key curve spreads</h2>
-                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                <h2 className="text-base font-semibold">Key curve spreads</h2>
+                                <p className="mt-1 text-xs text-fg-muted">
                                     Values below zero indicate inversion. 10Y−2Y tracks the note curve; 10Y−3M contrasts long rates with the policy-sensitive front end.
                                 </p>
                             </div>
                             <YieldSpreadChart data={data} />
                         </section>
 
-                        <footer className="grid gap-3 rounded-xl border px-4 py-3 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2">
-                            <span><Landmark className="mr-1.5 inline" size={14} /><strong className="text-slate-700 dark:text-slate-200">Basis:</strong> Official daily par yields, not zero-coupon spot rates.</span>
-                            <span><strong className="text-slate-700 dark:text-slate-200">Delivery:</strong> {data.meta.source_name} data via {data.meta.provider_name}; cached for resilience.</span>
-                            <span><strong className="text-slate-700 dark:text-slate-200">Latest 10Y−3M:</strong> {metrics.tenThreeMonth == null ? "—" : `${metrics.tenThreeMonth >= 0 ? "+" : ""}${metrics.tenThreeMonth.toFixed(2)} percentage points`}.</span>
-                            <span><strong className="text-slate-700 dark:text-slate-200">Timing:</strong> Treasury normally publishes after the U.S. market close; weekends and holidays carry forward the latest observation.</span>
+                        <footer className="grid gap-3 rounded-lg border px-4 py-3 text-xs text-fg-muted sm:grid-cols-2">
+                            <span><Landmark className="mr-1.5 inline" size={14} /><strong className="text-fg">Basis:</strong> Official daily par yields, not zero-coupon spot rates.</span>
+                            <span><strong className="text-fg">Delivery:</strong> {data.meta.source_name} data via {data.meta.provider_name}; cached for resilience.</span>
+                            <span><strong className="text-fg">Latest 10Y−3M:</strong> {metrics.tenThreeMonth == null ? "—" : `${metrics.tenThreeMonth >= 0 ? "+" : ""}${metrics.tenThreeMonth.toFixed(2)} percentage points`}.</span>
+                            <span><strong className="text-fg">Timing:</strong> Treasury normally publishes after the U.S. market close; weekends and holidays carry forward the latest observation.</span>
                         </footer>
                     </>
                 )}

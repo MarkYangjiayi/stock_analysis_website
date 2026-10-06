@@ -11,6 +11,9 @@ import {
     PeerMultipleScope,
     PeerMultiplesResponse,
 } from "@/lib/api";
+import { chartMonoFont, chartTheme } from "@/lib/chartTheme";
+
+// Canvas text cannot resolve CSS variables; the HTML tooltip can.
 
 const MULTIPLES: Array<{ key: PeerMultipleKey; label: string }> = [
     { key: "pe_ratio", label: "P/E" },
@@ -79,19 +82,19 @@ function DistributionBand({ data }: { data: PeerMultiplesResponse }) {
     ] as const;
 
     return (
-        <div className="rounded-xl border p-4 sm:p-5" aria-label="Peer multiple percentile distribution">
+        <div className="rounded-lg border p-4 sm:p-5" aria-label="Peer multiple percentile distribution">
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Full peer distribution</p>
-                    <p className="mt-1 text-xs text-slate-500">Position is based on raw multiple values, not investment attractiveness.</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Full peer distribution</p>
+                    <p className="mt-1 text-xs text-fg-muted">Position is based on raw multiple values, not investment attractiveness.</p>
                 </div>
-                <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-mono text-xs font-black text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                <span className="rounded-full border border-accent/40 bg-accent-soft px-2.5 py-1 font-mono text-xs font-semibold text-accent-strong">
                     P{Math.round(percentile)}
                 </span>
             </div>
-            <div className="relative mt-7 h-3 rounded-full bg-gradient-to-r from-emerald-400 via-amber-300 to-rose-400">
+            <div className="relative mt-7 h-3 rounded-full bg-gradient-to-r from-up/60 via-flat/30 to-down/60">
                 <div
-                    className="absolute top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-950 shadow-[0_0_0_3px_rgba(255,255,255,0.9)] dark:bg-white dark:shadow-[0_0_0_3px_rgba(15,23,42,0.9)]"
+                    className="absolute top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-fg shadow-[0_0_0_3px_var(--surface)]"
                     style={{ left: `${markerPosition}%` }}
                     title={`${data.target.ticker} is at the ${percentile.toFixed(1)}th percentile`}
                 />
@@ -99,8 +102,8 @@ function DistributionBand({ data }: { data: PeerMultiplesResponse }) {
             <div className="mt-5 grid grid-cols-5 gap-1 text-center">
                 {markers.map(([label, value]) => (
                     <div key={label} className="min-w-0">
-                        <p className="text-[9px] font-bold uppercase text-slate-400 sm:text-[10px]">{label}</p>
-                        <p className="mt-1 truncate font-mono text-[10px] font-black sm:text-xs">{multiple(value)}</p>
+                        <p className="text-xs font-semibold uppercase text-fg-muted">{label}</p>
+                        <p className="mt-1 truncate font-mono text-xs font-semibold">{multiple(value)}</p>
                     </div>
                 ))}
             </div>
@@ -124,17 +127,18 @@ function PeerBars({ data }: { data: PeerMultiplesResponse }) {
     ].sort((left, right) => right.value - left.value || left.ticker.localeCompare(right.ticker)), [data]);
 
     const option = useMemo(() => {
-        const text = dark ? "#cbd5e1" : "#475569";
-        const grid = dark ? "rgba(148,163,184,0.16)" : "rgba(100,116,139,0.16)";
+        const colors = chartTheme(dark);
+        const text = colors.textMuted;
+        const grid = colors.grid;
         return {
             animationDuration: 350,
             aria: { enabled: true, description: `${data.metric.label} comparison for ${data.target.ticker} and representative peers` },
             grid: { left: 82, right: 112, top: 20, bottom: 42 },
             tooltip: {
                 trigger: "item",
-                backgroundColor: dark ? "rgba(15,23,42,0.98)" : "rgba(255,255,255,0.98)",
-                borderColor: dark ? "#334155" : "#e2e8f0",
-                textStyle: { color: dark ? "#f8fafc" : "#0f172a" },
+                backgroundColor: colors.tooltipBackground,
+                borderColor: colors.border,
+                textStyle: { color: colors.text, fontFamily: chartMonoFont() },
                 formatter: (params: TooltipParam) => {
                     const member = members[params.dataIndex];
                     if (!member) return "";
@@ -153,7 +157,7 @@ function PeerBars({ data }: { data: PeerMultiplesResponse }) {
             xAxis: {
                 type: "value",
                 min: 0,
-                axisLabel: { color: text, formatter: (value: number) => `${value.toFixed(0)}×` },
+                axisLabel: { color: text, fontFamily: chartMonoFont(), formatter: (value: number) => `${value.toFixed(0)}×` },
                 splitLine: { lineStyle: { color: grid, type: "dashed" } },
             },
             yAxis: {
@@ -162,22 +166,23 @@ function PeerBars({ data }: { data: PeerMultiplesResponse }) {
                 data: members.map((member) => member.ticker.replace(".US", "")),
                 axisTick: { show: false },
                 axisLine: { show: false },
-                axisLabel: { color: text, fontWeight: 700 },
+                axisLabel: { color: colors.text, fontFamily: chartMonoFont(), fontWeight: 600 },
             },
             series: [{
                 type: "bar",
                 data: members.map((member) => member.value),
                 barMaxWidth: 24,
                 itemStyle: {
-                    borderRadius: [0, 5, 5, 0],
-                    color: (params: BarColorParam) => members[params.dataIndex]?.isTarget ? "#f59e0b" : "#10b981",
-                    opacity: 0.9,
+                    borderRadius: [0, 3, 3, 0],
+                    // The selected stock carries the accent; peers stay neutral so it stands out.
+                    color: (params: BarColorParam) => members[params.dataIndex]?.isTarget ? colors.brand : `${colors.textMuted}8c`,
                 },
                 label: {
                     show: true,
                     position: "right",
                     color: text,
-                    fontSize: 10,
+                    fontFamily: chartMonoFont(),
+                    fontSize: 11,
                     formatter: (params: TooltipParam) => {
                         const member = members[params.dataIndex];
                         return member ? `${multiple(member.value)}  Growth ${percent(member.sales_growth_ttm)}` : "";
@@ -189,7 +194,7 @@ function PeerBars({ data }: { data: PeerMultiplesResponse }) {
 
     return (
         <div
-            className="overflow-x-auto rounded-xl border"
+            className="overflow-x-auto rounded-lg border"
             aria-label="Representative peer multiples"
             onWheelCapture={(event) => event.stopPropagation()}
         >
@@ -231,11 +236,11 @@ export default function PeerMultipleDistribution({ ticker }: { ticker: string })
             <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
                 <div>
                     <p className="eyebrow">Relative valuation</p>
-                    <h3 id="peer-multiple-title" className="mt-1 text-base font-black">Valuation multiples vs peers</h3>
-                    <p className="mt-1 text-xs text-slate-500">Same-date published values · peer median is the primary benchmark.</p>
+                    <h3 id="peer-multiple-title" className="mt-1 text-base font-semibold">Valuation multiples vs peers</h3>
+                    <p className="mt-1 text-xs text-fg-muted">Same-date published values · peer median is the primary benchmark.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
                         Multiple
                         <select
                             aria-label="Peer multiple"
@@ -252,8 +257,8 @@ export default function PeerMultipleDistribution({ ticker }: { ticker: string })
                         </select>
                     </label>
                     <div>
-                        <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Peer scope</p>
-                        <div className="mt-1 flex rounded-lg border bg-slate-100 p-1 dark:bg-slate-900">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Peer scope</p>
+                        <div className="segmented-control mt-1">
                             {SCOPE_OPTIONS.map((item) => (
                                 <button
                                     key={item.key}
@@ -265,7 +270,7 @@ export default function PeerMultipleDistribution({ ticker }: { ticker: string })
                                         setData(null);
                                         setScope(item.key);
                                     }}
-                                    className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${scope === item.key ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300" : "text-slate-500"}`}
+                                    className="segmented-control-item"
                                     aria-pressed={scope === item.key}
                                 >
                                     {item.label}
@@ -277,13 +282,13 @@ export default function PeerMultipleDistribution({ ticker }: { ticker: string })
             </div>
 
             {loading && (
-                <div className="grid min-h-56 place-items-center rounded-xl border bg-slate-50/60 dark:bg-slate-900/30" role="status">
-                    <div className="text-center text-sm text-slate-500"><LoaderCircle className="mx-auto mb-2 animate-spin" size={22} />Loading same-date peer distribution…</div>
+                <div className="grid min-h-56 place-items-center rounded-lg border bg-surface-muted" role="status">
+                    <div className="text-center text-sm text-fg-muted"><LoaderCircle className="mx-auto mb-2 animate-spin" size={22} />Loading same-date peer distribution…</div>
                 </div>
             )}
             {!loading && error && <div className="error-panel" role="alert">{error}</div>}
             {!loading && !error && data && !data.available && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300" role="status">
+                <div className="rounded-lg border border-caution/30 bg-caution/6 p-5 text-sm text-caution" role="status">
                     <AlertTriangle className="mr-2 inline" size={17} />
                     {data.reason ? unavailableCopy[data.reason] : "Peer comparison is unavailable."}
                     <p className="mt-2 text-xs opacity-80">Snapshot {data.as_of_date || "not published"}{data.cohort ? ` · ${data.cohort.valid_count}/${data.cohort.minimum_observations} required valid peers` : ""}</p>
@@ -298,15 +303,15 @@ export default function PeerMultipleDistribution({ ticker }: { ticker: string })
                             ["Raw percentile", `P${Math.round(data.target.raw_percentile ?? 0)}`, "Higher multiple means more expensive"],
                             ["Premium / discount", percent(data.target.premium_to_median), `vs median · mean ${multiple(data.distribution.mean)}`],
                         ].map(([label, value, detail]) => (
-                            <article key={label} className="surface-subtle rounded-xl border p-4">
-                                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
-                                <p className="mt-2 font-mono text-xl font-black">{value}</p>
-                                <p className="mt-1 text-[10px] text-slate-500">{detail}</p>
+                            <article key={label} className="surface-subtle rounded-lg border p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{label}</p>
+                                <p className="mt-2 font-mono text-xl font-semibold">{value}</p>
+                                <p className="mt-1 text-xs text-fg-muted">{detail}</p>
                             </article>
                         ))}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-200"><BarChart3 size={14} />{data.cohort.scope === "industry" ? "Industry" : "Sector"}: {data.cohort.name || "Unknown"}</span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+                        <span className="inline-flex items-center gap-1 font-semibold text-fg"><BarChart3 size={14} />{data.cohort.scope === "industry" ? "Industry" : "Sector"}: {data.cohort.name || "Unknown"}</span>
                         <span>· {data.cohort.valid_count} valid peers</span>
                         <span>· {data.cohort.excluded_count} excluded</span>
                         <span>· Snapshot {data.as_of_date}</span>

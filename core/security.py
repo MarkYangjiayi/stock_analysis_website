@@ -82,6 +82,7 @@ class SlidingWindowRateLimiter:
 
 
 _expensive_limiter = SlidingWindowRateLimiter(settings.EXPENSIVE_REQUESTS_PER_MINUTE)
+_watchlist_quote_limiter = SlidingWindowRateLimiter(settings.WATCHLIST_QUOTE_REQUESTS_PER_MINUTE)
 
 
 def _is_trusted_proxy(
@@ -126,3 +127,7 @@ def _client_identifier(request: Request) -> str:
 
 async def limit_expensive_requests(request: Request) -> None:
     await _expensive_limiter.check(_client_identifier(request))
+
+
+async def limit_watchlist_quote_requests(request: Request) -> None:
+    await _watchlist_quote_limiter.check(_client_identifier(request))

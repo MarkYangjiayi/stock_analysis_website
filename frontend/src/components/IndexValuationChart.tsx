@@ -5,7 +5,7 @@ import ReactECharts from "echarts-for-react";
 import { useTheme } from "next-themes";
 
 import type { IndexValuationResponse } from "@/lib/api";
-import { chartTheme } from "@/lib/chartTheme";
+import { chartMonoFont, chartTheme } from "@/lib/chartTheme";
 
 const multiple = (value: number | null | undefined) =>
     value == null || !Number.isFinite(value) ? "N/M" : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}×`;
@@ -24,7 +24,10 @@ export function indexValuationChartOption(
 ) {
     const colors = chartTheme(dark);
     const dates = data.points.map((point) => point.date);
-    const text = { color: colors.textMuted, fontSize: 11 };
+    const monoFont = chartMonoFont();
+    const text = { color: colors.textMuted, fontSize: 11, fontFamily: monoFont };
+    // Earners-only variant takes the first non-brand series hue so it never collides with the primary P/E line.
+    const earnersColor = colors.series[1];
     return {
         animation: false,
         aria: {
@@ -46,7 +49,7 @@ export function indexValuationChartOption(
             type: "category",
             data: dates,
             boundaryGap: true,
-            axisLine: { lineStyle: { color: colors.grid } },
+            axisLine: { lineStyle: { color: colors.border } },
             axisTick: { show: false },
             axisLabel: { ...text, hideOverlap: true, formatter: (value: string) => value.slice(0, 4) },
             axisPointer: { show: true },
@@ -72,18 +75,21 @@ export function indexValuationChartOption(
                 left: 12,
                 right: 64,
                 showDataShadow: false,
-                borderColor: colors.grid,
+                borderColor: colors.border,
+                backgroundColor: colors.backgroundMuted,
                 textStyle: text,
-                fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.12)",
+                fillerColor: `${colors.brand}22`,
+                handleStyle: { color: colors.brand, borderColor: colors.brand },
+                moveHandleStyle: { color: colors.brand },
             },
         ],
         tooltip: {
             trigger: "axis",
             confine: true,
-            axisPointer: { type: "cross", snap: true },
-            backgroundColor: colors.backgroundMuted,
-            borderColor: colors.grid,
-            textStyle: { color: colors.text, fontSize: 12 },
+            axisPointer: { type: "cross", snap: true, lineStyle: { color: colors.border } },
+            backgroundColor: colors.tooltipBackground,
+            borderColor: colors.border,
+            textStyle: { color: colors.text, fontSize: 12, fontFamily: monoFont },
             formatter: (params: Array<{ dataIndex?: number }>) => {
                 const index = params.find((param) => param.dataIndex != null)?.dataIndex;
                 if (index == null || !data.points[index]) return "";
@@ -132,8 +138,8 @@ export function indexValuationChartOption(
                 showSymbol: false,
                 connectNulls: false,
                 smooth: false,
-                lineStyle: { width: 1.2, color: colors.series[0], opacity: 0.9 },
-                itemStyle: { color: colors.series[0] },
+                lineStyle: { width: 1.2, color: earnersColor, opacity: 0.9 },
+                itemStyle: { color: earnersColor },
             },
         ],
     };

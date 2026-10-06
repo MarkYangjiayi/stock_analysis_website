@@ -29,9 +29,9 @@ function ValuationMetric({
 }) {
     return (
         <article className="surface-panel px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-            <p className="mt-1 font-mono text-2xl font-black tracking-tight">{value}</p>
-            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{note}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{label}</p>
+            <p className="mt-1 font-mono text-2xl font-semibold tracking-tight">{value}</p>
+            <p className="mt-1 text-xs text-fg-muted">{note}</p>
         </article>
     );
 }
@@ -80,7 +80,7 @@ export default function IndexValuationPage() {
                     {data && (
                         <div className="flex flex-wrap gap-2">
                             <span className={data.meta.stale
-                                ? "inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+                                ? "inline-flex items-center gap-1.5 rounded-md border border-caution/30 bg-caution/6 px-2 py-0.5 font-mono text-xs font-medium text-caution"
                                 : "status-pill"
                             }>
                                 <CalendarClock size={13} /> Data through {data.meta.as_of_date}
@@ -95,7 +95,7 @@ export default function IndexValuationPage() {
                 <MarketTabs active="valuation" />
 
                 {!!data?.meta.warnings.length && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200" role="status">
+                    <div className="rounded-lg border border-caution/30 bg-caution/6 px-4 py-3 text-sm text-caution" role="status">
                         <TriangleAlert className="mr-2 inline" size={16} />
                         {data.meta.warnings.slice(0, 4).join(" · ")}
                         {data.meta.warnings.length > 4 ? ` · +${data.meta.warnings.length - 4} more` : ""}
@@ -113,8 +113,8 @@ export default function IndexValuationPage() {
 
                 {loading && !data && (
                     <section className="surface-panel flex min-h-[420px] flex-col items-center justify-center">
-                        <Loader2 className="animate-spin text-emerald-500" size={34} />
-                        <p className="mt-4 text-sm text-slate-500">Loading index valuation history…</p>
+                        <Loader2 className="animate-spin text-accent" size={34} />
+                        <p className="mt-4 text-sm text-fg-muted">Loading index valuation history…</p>
                     </section>
                 )}
 
@@ -154,15 +154,15 @@ export default function IndexValuationPage() {
 
                         <section className="surface-panel overflow-hidden" aria-labelledby="index-pe-chart-title">
                             <div className="border-b px-4 py-4 sm:px-5">
-                                <h2 id="index-pe-chart-title" className="text-base font-black">Index P/E · month-end</h2>
-                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                <h2 id="index-pe-chart-title" className="text-base font-semibold">Index P/E · month-end</h2>
+                                <p className="mt-1 text-xs text-fg-muted">
                                     Aggregate = total member equity ÷ total trailing reported earnings. The dashed line is the
                                     full-history median; the secondary series repeats the ratio over profitable companies only.
                                     {latestPoint != null && latestPoint.loss_maker_count > 0 && ` ${latestPoint.loss_maker_count} loss-making companies currently reduce the aggregate denominator.`}
                                 </p>
                             </div>
                             <IndexValuationChart data={data} />
-                            <div className="border-t px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">
+                            <div className="border-t px-4 py-3 text-xs text-fg-muted sm:px-5">
                                 <p>
                                     <Landmark className="mr-1.5 inline" size={14} />
                                     Reconstructed estimates over point-in-time membership; gaps mean a month failed its
@@ -173,7 +173,7 @@ export default function IndexValuationPage() {
                                     Forward P/E requires archived analyst expectations and is not inferred from today&apos;s forecasts.
                                 </p>
                                 <details className="mt-3">
-                                    <summary className="cursor-pointer font-semibold text-[var(--text)]">Methodology &amp; data coverage</summary>
+                                    <summary className="cursor-pointer font-semibold text-fg">Methodology &amp; data coverage</summary>
                                     {data.methodology.map((note) => <p key={note} className="mt-2 leading-5">{note}</p>)}
                                 </details>
                             </div>

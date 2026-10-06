@@ -1,6 +1,7 @@
 # api/routers.py
 import logging
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -21,6 +22,8 @@ from api.schemas import (
     MarketSnapshotResponse,
     MarketOverviewResponse,
     TreasuryYieldCurveResponse,
+    MarketStatusResponse,
+    WatchlistQuotesResponse,
     PeerMultiplesResponse,
     StockDataResponse,
     ValuationHistoryResponse,
@@ -73,10 +76,15 @@ from services.anomaly_scans import (
 )
 from core.security import (
     limit_expensive_requests,
+    limit_watchlist_quote_requests,
     require_admin_api_key,
     require_configured_admin_api_key,
 )
 from services.security_master import canonicalize_ticker
+from services.watchlist_quotes import MAX_TICKERS as WATCHLIST_MAX_TICKERS, get_watchlist_quotes
+from core.trading_calendar import us_market_status
+
+WATCHLIST_TICKER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-^_]{0,19}")
 from services.quant.backtest import BacktestConfig, run_and_store_backtest
 from services.quant.factor_engine import compute_and_store_factors
 from services.quant.research import evaluate_factor
@@ -832,6 +840,43 @@ async def treasury_yield_curve(
         return await get_yield_curve(period)
     except YieldCurveUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/market/status",
+    response_model=MarketStatusResponse,
+    tags=["Market Analysis Read"],
+)
+async def market_status():
+    """Current NYSE phase from the exchange calendar (holidays and early closes included)."""
+    return us_market_status(datetime.now(timezone.utc))
+
+
+@router.get(
+    "/api/v1/watchlist/quotes",
+    response_model=WatchlistQuotesResponse,
+    tags=["Market Analysis Read"],
+    dependencies=[Depends(limit_watchlist_quote_requests)],
+)
+async def watchlist_quotes(
+    tickers: str = Query(..., max_length=600, description="Comma-separated tickers, at most 20"),
+    db: AsyncSession = Depends(get_db),
+):
+    """15-minute delayed quotes plus ~30-session sparklines for a watchlist."""
+    symbols: list[str] = []
+    for value in tickers.split(","):
+        if not value.strip():
+            continue
+        if not WATCHLIST_TICKER_PATTERN.fullmatch(value.strip()):
+            raise HTTPException(status_code=422, detail=f"Invalid ticker: {value.strip()[:24]}")
+        symbol = canonicalize_ticker(value)
+        if symbol not in symbols:
+            symbols.append(symbol)
+    if not symbols:
+        raise HTTPException(status_code=422, detail="At least one ticker is required")
+    if len(symbols) > WATCHLIST_MAX_TICKERS:
+        raise HTTPException(status_code=422, detail=f"At most {WATCHLIST_MAX_TICKERS} tickers can be quoted at once")
+    return await get_watchlist_quotes(db, symbols)
 
 
 @router.get("/health/live", tags=["Operations"])

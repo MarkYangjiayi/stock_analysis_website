@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { Info } from "lucide-react";
 
 import type { HistoricalDataPoint, MultipleKey, ValuationHistoryResponse } from "@/lib/api";
-import { chartTheme } from "@/lib/chartTheme";
+import { chartMonoFont, chartTheme } from "@/lib/chartTheme";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 const MULTIPLES: Array<{ key: MultipleKey; label: string }> = [
@@ -22,6 +22,7 @@ const DENOMINATORS: Record<MultipleKey, { input: string; label: string }> = {
     ev_revenue: { input: "revenue", label: "TTM revenue" },
     ev_ebitda: { input: "ebitda", label: "TTM EBITDA" },
 };
+// Canvas text cannot resolve CSS variables; the HTML tooltip can.
 const multiple = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "N/M" : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}×`;
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 const denominatorAmount = (value: number | null | undefined, currency: string | null | undefined, perShare: boolean) => {
@@ -55,7 +56,7 @@ export function valuationChartOption(
     const bases = new Map(history?.bases.map((basis) => [basis.id, basis]));
     const values = data.map((point) => points.get(point.date)?.values[key] ?? null);
     const dates = data.map((point) => point.date);
-    const text = { color: colors.textMuted, fontSize: 11 };
+    const text = { color: colors.textMuted, fontSize: 11, fontFamily: chartMonoFont() };
     return {
         animation: false,
         aria: { enabled: true, description: `Logarithmic stock price and ${label} history on a shared timeline. Missing multiples are gaps.` },
@@ -70,15 +71,20 @@ export function valuationChartOption(
             { left: 12, right: 78, top: "49%", height: "9%" },
             { left: 12, right: 78, top: "67%", height: "22%" },
         ],
-        axisPointer: { link: [{ xAxisIndex: "all" }], label: { backgroundColor: colors.textMuted } },
+        axisPointer: {
+            link: [{ xAxisIndex: "all" }],
+            lineStyle: { color: colors.textMuted, type: "dashed" },
+            crossStyle: { color: colors.textMuted },
+            label: { backgroundColor: colors.tooltipBackground, borderColor: colors.border, borderWidth: 1, color: colors.text, fontFamily: chartMonoFont() },
+        },
         xAxis: [0, 1, 2].map((gridIndex) => ({
             type: "category", gridIndex, data: dates, boundaryGap: true,
-            axisLine: { lineStyle: { color: colors.grid } },
+            axisLine: { lineStyle: { color: colors.border } },
             axisTick: { show: false }, axisLabel: { ...text, show: gridIndex === 2, hideOverlap: true },
             axisPointer: { show: true },
         })),
         yAxis: [
-            { type: "log", gridIndex: 0, position: "right", scale: true, min: (extent: { min: number }) => extent.min * 0.9, max: (extent: { max: number }) => extent.max * 1.1, axisLabel: { ...text, showMinLabel: false, formatter: (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 2 }) }, splitLine: { lineStyle: { color: colors.grid } } },
+            { type: "log", gridIndex: 0, position: "right", scale: true, min: (extent: { min: number }) => extent.min * 0.9, max: (extent: { max: number }) => extent.max * 1.1, axisLabel: { ...text, showMinLabel: false, formatter: (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 2 }) }, splitLine: { lineStyle: { color: colors.grid, type: "dashed" } } },
             { type: "value", gridIndex: 1, position: "right", axisLabel: { ...text, formatter: (v: number) => v >= 1e9 ? `${(v / 1e9).toFixed(0)}B` : `${(v / 1e6).toFixed(0)}M` }, splitLine: { show: false }, splitNumber: 1 },
             { type: "value", gridIndex: 2, position: "right", scale: true, axisLabel: { ...text, formatter: (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}×` }, splitLine: { lineStyle: { color: colors.grid, type: "dashed" } }, splitNumber: 3 },
         ],
@@ -92,12 +98,12 @@ export function valuationChartOption(
                 moveOnMouseWheel: false,
                 ...zoom,
             },
-            { id: "history-slider", type: "slider", xAxisIndex: [0, 1, 2], filterMode: "filter", ...zoom, bottom: 4, height: 22, left: 12, right: 78, showDataShadow: false, borderColor: colors.grid, textStyle: text, fillerColor: dark ? "rgba(57,201,155,.16)" : "rgba(15,159,120,.12)" },
+            { id: "history-slider", type: "slider", xAxisIndex: [0, 1, 2], filterMode: "filter", ...zoom, bottom: 4, height: 22, left: 12, right: 78, showDataShadow: false, borderColor: colors.border, textStyle: text, fillerColor: `${colors.brand}24` },
         ],
         tooltip: {
             trigger: "axis", confine: true, axisPointer: { type: "cross" },
-            backgroundColor: colors.backgroundMuted, borderColor: colors.grid,
-            textStyle: { color: colors.text, fontSize: 12 },
+            backgroundColor: colors.tooltipBackground, borderColor: colors.border,
+            textStyle: { color: colors.text, fontSize: 12, fontFamily: chartMonoFont() },
             formatter: (params: Array<{ dataIndex?: number }>) => {
                 const index = params.find((param) => param.dataIndex != null)?.dataIndex;
                 if (index == null || !data[index]) return "";
@@ -164,11 +170,11 @@ export default function StockValuationChart({ data, history, interval, onInterva
             </div>
         </header>
         <div className="grid grid-cols-3 gap-3 border-b px-4 py-3 text-xs sm:px-5" aria-label="Historical valuation summary">
-            <div><p className="text-[var(--text-muted)]">Latest {selectedLabel}</p><p className="mt-1 font-mono text-lg font-bold" aria-label={`Latest ${selectedLabel}`}>{multiple(metadata?.latest_value)}</p><p className="text-[10px] text-[var(--text-muted)]">{metadata?.latest_date || "No observations"}</p></div>
-            <div><p className="text-[var(--text-muted)]">Full-history median</p><p className="mt-1 font-mono text-lg font-bold">{multiple(metadata?.median)}</p><p className="text-[10px] text-[var(--text-muted)]">Dashed line · selected frequency</p></div>
-            <div><p className="text-[var(--text-muted)]">Coverage</p><p className="mt-1 font-mono text-lg font-bold">{metadata?.total_points ? `${Math.round(metadata.valid_points / metadata.total_points * 100)}%` : "—"}</p><p className="text-[10px] text-[var(--text-muted)]">{metadata ? `${metadata.valid_points.toLocaleString()} / ${metadata.total_points.toLocaleString()} available observations` : "No observations"}</p></div>
+            <div><p className="text-fg-muted">Latest {selectedLabel}</p><p className="mt-1 font-mono text-lg font-semibold" aria-label={`Latest ${selectedLabel}`}>{multiple(metadata?.latest_value)}</p><p className="text-xs text-fg-muted">{metadata?.latest_date || "No observations"}</p></div>
+            <div><p className="text-fg-muted">Full-history median</p><p className="mt-1 font-mono text-lg font-semibold">{multiple(metadata?.median)}</p><p className="text-xs text-fg-muted">Dashed line · selected frequency</p></div>
+            <div><p className="text-fg-muted">Coverage</p><p className="mt-1 font-mono text-lg font-semibold">{metadata?.total_points ? `${Math.round(metadata.valid_points / metadata.total_points * 100)}%` : "—"}</p><p className="text-xs text-fg-muted">{metadata ? `${metadata.valid_points.toLocaleString()} / ${metadata.total_points.toLocaleString()} available observations` : "No observations"}</p></div>
         </div>
-        {(!metadata || metadata.latest_reason) && <p role="status" className="flex gap-2 border-b bg-[var(--surface-subtle)] px-4 py-3 text-xs text-[var(--text-muted)]"><Info size={15} className="shrink-0" />{metadata?.latest_reason || "Historical multiples are unavailable. Refresh stock data to load eligible quarterly statements."}</p>}
+        {(!metadata || metadata.latest_reason) && <p role="status" className="flex gap-2 border-b bg-surface-muted px-4 py-3 text-xs text-fg-muted"><Info size={15} className="shrink-0" />{metadata?.latest_reason || "Historical multiples are unavailable. Refresh stock data to load eligible quarterly statements."}</p>}
         <div
             className={`relative h-[600px] w-full sm:h-[660px] ${isLoading ? "opacity-50" : ""}`}
             role="img"
@@ -177,14 +183,14 @@ export default function StockValuationChart({ data, history, interval, onInterva
         >
             <ReactECharts option={option} onEvents={chartEvents} style={{ width: "100%", height: "100%" }} />
         </div>
-        <div className="border-t px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">
+        <div className="border-t px-4 py-3 text-xs text-fg-muted sm:px-5">
             <p>{metadata?.formula || "Historical valuation multiples"}</p>
             <p className="mt-1">{metadata?.description || "Reconstructed estimates"} · {history?.currency || "Currency unavailable"} · gaps mean unavailable or not meaningful.</p>
             <details className="mt-3">
-                <summary className="cursor-pointer font-semibold text-[var(--text)]">Calculation & data coverage</summary>
+                <summary className="cursor-pointer font-semibold text-fg">Calculation & data coverage</summary>
                 <p className="mt-3">The price chart includes dividend adjustments. Multiples use prices adjusted only for splits; the ratio is unchanged by a split when price and shares use the same basis.</p>
                 {history?.methodology.map((note) => <p key={note} className="mt-2 leading-5">{note}</p>)}
-                {history?.warnings.map((note) => <p key={note} className="mt-2 font-medium text-amber-700 dark:text-amber-300">{note}</p>)}
+                {history?.warnings.map((note) => <p key={note} className="mt-2 font-medium text-caution">{note}</p>)}
                 <p className="mt-2">Forward P/E requires archived analyst expectations and is not inferred from today’s forecasts.</p>
             </details>
         </div>
