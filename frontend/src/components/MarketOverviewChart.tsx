@@ -51,6 +51,8 @@ export default function MarketOverviewChart({
         const monoFont = chartMonoFont();
         const axisColor = colors.textMuted;
         const axisText = { color: axisColor, fontFamily: monoFont };
+        // Axis names sit left of the axis line so they never collide with the panel titles.
+        const axisNameText = { ...axisText, align: "right" as const, padding: [0, 6, 0, 0] };
         const textColor = colors.text;
         // SPY is the neutral, emphasized benchmark; RSP/SPY is a neutral dashed proxy so
         // neither competes with the categorical sector hues.
@@ -276,9 +278,9 @@ export default function MarketOverviewChart({
             ],
             xAxis: [categoryAxis(0, false), categoryAxis(1, false), categoryAxis(2, true)],
             yAxis: [
-                valueAxis(0, { name: "Index", nameTextStyle: axisText, splitNumber: 5 }),
-                valueAxis(1, { min: 0, max: 100, interval: 25, name: "%", nameTextStyle: axisText }),
-                valueAxis(2, { name: "%", nameTextStyle: axisText, splitNumber: 4 }),
+                valueAxis(0, { name: "Index", nameTextStyle: axisNameText, splitNumber: 5 }),
+                valueAxis(1, { min: 0, max: 100, interval: 25, name: "%", nameTextStyle: axisNameText }),
+                valueAxis(2, { name: "%", nameTextStyle: axisNameText, splitNumber: 4 }),
                 valueAxis(2, {
                     position: "right",
                     name: "Dispersion %",

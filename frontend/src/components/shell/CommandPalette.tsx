@@ -91,6 +91,12 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         for (const page of [...NAV_PAGES, ...MARKET_PAGES]) {
             if (matches(trimmed, page.name, page.path)) result.push({ id: `page-${page.path}`, group: "Go to", label: page.name, hint: page.path, href: page.path });
         }
+        // "fin" or "valu" names a section more often than a ticker; ≥3 chars keeps "F" or "MU" ticker-first.
+        if (trimmed.length >= 3) {
+            const prefix = trimmed.toLowerCase();
+            const named = (command: Command) => (command.group === "Section" || command.group === "Go to") && command.label.toLowerCase().startsWith(prefix);
+            return [...result.filter(named), ...result.filter((command) => !named(command))].slice(0, 30);
+        }
         return result.slice(0, 30);
     }, [currentTicker, query, watchlist]);
 
@@ -140,6 +146,8 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
                         onKeyDown={onKeyDown}
                         autoComplete="off"
                         spellCheck={false}
+                        // Focus during commit so keystrokes typed right after ⌘K aren't lost.
+                        autoFocus
                     />
                     <span className="kbd">Esc</span>
                 </div>
