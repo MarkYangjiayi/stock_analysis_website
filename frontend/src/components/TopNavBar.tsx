@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ChartCandlestick, Menu, Search, X } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import CommandPalette, { NAV_PAGES } from "./shell/CommandPalette";
+import MarketStatusChip from "./shell/MarketStatusChip";
 
 const isEditable = (target: EventTarget | null) =>
     target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -75,6 +76,7 @@ export default function TopNavBar() {
                     <span className="kbd hidden sm:inline-flex">⌘K</span>
                 </button>
 
+                <MarketStatusChip />
                 <ThemeToggle />
                 <button
                     type="button"

@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     ADMIN_API_KEY: str = ""
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     EXPENSIVE_REQUESTS_PER_MINUTE: int = 3
+    # Watchlist quotes poll once a minute per open tab; provider symbols are what EODHD bills.
+    WATCHLIST_QUOTE_REQUESTS_PER_MINUTE: int = 30
+    WATCHLIST_PROVIDER_SYMBOLS_PER_MINUTE: int = 120
     TRUSTED_PROXY_IPS: str = "127.0.0.1,::1,172.16.0.0/12"
 
     # On-demand anomaly scans are persisted and run outside the HTTP request.

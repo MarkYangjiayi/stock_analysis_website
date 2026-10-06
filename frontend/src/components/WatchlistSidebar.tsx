@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { LockKeyhole, Plus, Star, Trash2 } from "lucide-react";
+import type { WatchlistQuoteItem } from "@/lib/api";
+import { formatSignedPercent } from "@/lib/format";
+import { Sparkline } from "@/components/ui/Sparkline";
 
 interface WatchlistSidebarProps {
     currentTicker: string;
@@ -12,9 +15,19 @@ interface WatchlistSidebarProps {
     compact?: boolean;
     readOnly?: boolean;
     onUnlock?: () => void;
+    quotes?: Record<string, WatchlistQuoteItem>;
 }
 
-export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchlist, onAdd, onRemove, compact = false, readOnly = false, onUnlock }: WatchlistSidebarProps) {
+const toneClass = (change?: number | null) =>
+    change == null || change === 0 ? "text-flat" : change > 0 ? "text-up" : "text-down";
+
+const quoteTitle = (item?: WatchlistQuoteItem) => {
+    if (!item?.quote) return undefined;
+    const asOf = new Date(item.quote.as_of);
+    return `Delayed quote · ${Number.isNaN(asOf.getTime()) ? item.quote.session_date : asOf.toLocaleString()}`;
+};
+
+export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchlist, onAdd, onRemove, compact = false, readOnly = false, onUnlock, quotes = {} }: WatchlistSidebarProps) {
     const [newTicker, setNewTicker] = useState("");
 
     const handleAdd = (event: React.FormEvent) => {
@@ -32,8 +45,9 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                     <span className="eyebrow flex shrink-0 items-center gap-1.5 px-1"><Star size={14} /> Watchlist</span>
                     {watchlist.map((ticker) => (
                         <div key={ticker} className={`flex shrink-0 items-center rounded-full border ${ticker === currentTicker ? "border-accent bg-accent-soft text-accent-strong" : "bg-surface text-fg-muted hover:border-line-strong hover:text-fg"}`}>
-                            <button type="button" onClick={() => onSelectTicker(ticker)} className="min-h-11 py-1.5 pl-3 pr-1 font-mono text-xs font-semibold">
+                            <button type="button" onClick={() => onSelectTicker(ticker)} className="min-h-11 py-1.5 pl-3 pr-1 font-mono text-xs font-semibold" title={quoteTitle(quotes[ticker])}>
                                 {ticker.replace(".US", "")}
+                                {quotes[ticker]?.quote && <span className={`ml-1.5 font-medium ${toneClass(quotes[ticker].quote?.change)}`}>{formatSignedPercent(quotes[ticker].quote?.change_pct)}</span>}
                             </button>
                             {!readOnly && <button type="button" onClick={() => onRemove(ticker)} className="mr-1 flex h-7 w-7 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:bg-danger/10 focus-visible:text-danger" aria-label={`Remove ${ticker} from watchlist`}>
                                 <Trash2 size={12} />
@@ -65,16 +79,26 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
             <div className="custom-scrollbar flex-1 overflow-y-auto">
                 {watchlist.map((ticker) => {
                     const selected = ticker === currentTicker;
+                    const item = quotes[ticker];
+                    const quote = item?.quote;
                     return (
                         <div key={ticker} className={`group flex items-center gap-1 border-b ${selected ? "bg-accent-soft shadow-[inset_2px_0_0_var(--brand)]" : "hover:bg-surface-muted"}`}>
-                            <button type="button" onClick={() => onSelectTicker(ticker)} aria-current={selected ? "true" : undefined} className={`min-h-9 min-w-0 flex-1 truncate px-3 py-2 text-left font-mono text-xs ${selected ? "font-semibold text-fg" : "font-medium text-fg-muted group-hover:text-fg"}`}>
-                                {ticker}
+                            <button type="button" onClick={() => onSelectTicker(ticker)} aria-current={selected ? "true" : undefined} title={quoteTitle(item)} className={`min-h-9 min-w-0 flex-1 px-3 py-2 text-left font-mono text-xs ${selected ? "font-semibold text-fg" : "font-medium text-fg-muted group-hover:text-fg"}`}>
+                                <span className="flex items-baseline justify-between gap-2">
+                                    <span className="truncate">{ticker}</span>
+                                    {quote && <span className={`shrink-0 font-medium ${toneClass(quote.change)}`}>{formatSignedPercent(quote.change_pct)}</span>}
+                                </span>
+                                {item && <span className="mt-1 flex items-center gap-2">
+                                    <span className="shrink-0 font-normal text-fg-muted">{quote ? quote.price.toFixed(2) : "—"}</span>
+                                    <Sparkline values={item.sparkline.map((point) => point.close)} className={`min-w-0 flex-1 ${toneClass(quote?.change)}`} height={16} />
+                                </span>}
                             </button>
                             {!readOnly && <button type="button" onClick={() => onRemove(ticker)} className="mr-1.5 rounded-md p-1 text-fg-muted opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus:opacity-100 group-hover:opacity-100" aria-label={`Remove ${ticker} from watchlist`}><Trash2 size={14} /></button>}
                         </div>
                     );
                 })}
                 {watchlist.length === 0 && <p className="px-3 py-12 text-center text-xs leading-5 text-fg-muted">Your watchlist is empty.<br />Add a ticker above.</p>}
+                {watchlist.length > 0 && Object.keys(quotes).length > 0 && <p className="px-3 py-2 text-xs text-fg-muted">Quotes delayed ~15 min</p>}
             </div>
         </aside>
     );

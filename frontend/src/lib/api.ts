@@ -1321,3 +1321,45 @@ export interface SimilarStocksResponse {
 }
 export const fetchSimilarStocks = (ticker: string, signal?: AbortSignal) =>
     apiRequest<SimilarStocksResponse>(`/api/stocks/${encodeURIComponent(ticker)}/similar`, { signal });
+
+export type MarketPhase = "pre" | "open" | "post" | "closed";
+
+export interface MarketStatusResponse {
+    phase: MarketPhase;
+    session_date: string | null;
+    opens_at: string | null;
+    closes_at: string | null;
+    next_open: string;
+    as_of: string;
+}
+
+export interface WatchlistQuote {
+    price: number;
+    previous_close: number | null;
+    change: number | null;
+    change_pct: number | null;
+    as_of: string;
+    session_date: string;
+}
+
+export interface WatchlistQuoteItem {
+    ticker: string;
+    quote: WatchlistQuote | null;
+    sparkline: Array<{ date: string; close: number }>;
+}
+
+export interface WatchlistQuotesResponse {
+    market: MarketStatusResponse;
+    delay_minutes: number;
+    items: WatchlistQuoteItem[];
+}
+
+export const fetchMarketStatus = (signal?: AbortSignal) =>
+    apiRequest<MarketStatusResponse>("/api/v1/market/status", { signal }, 10_000);
+
+export const fetchWatchlistQuotes = (tickers: string[], signal?: AbortSignal) =>
+    apiRequest<WatchlistQuotesResponse>(
+        `/api/v1/watchlist/quotes?tickers=${encodeURIComponent(tickers.join(","))}`,
+        { signal },
+        20_000,
+    );

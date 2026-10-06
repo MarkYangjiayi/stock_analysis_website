@@ -627,3 +627,38 @@ class SimilarStocksResponse(BaseModel):
     target_returns: list[float]
     matches: list[SimilarStockMatch]
     eligible_count: int
+
+
+class MarketStatusResponse(BaseModel):
+    phase: Literal["pre", "open", "post", "closed"]
+    session_date: Optional[date] = None
+    opens_at: Optional[datetime] = None
+    closes_at: Optional[datetime] = None
+    next_open: datetime
+    as_of: datetime
+
+
+class WatchlistQuote(BaseModel):
+    price: float
+    previous_close: Optional[float] = None
+    change: Optional[float] = None
+    change_pct: Optional[float] = None
+    as_of: datetime
+    session_date: date
+
+
+class WatchlistSparkPoint(BaseModel):
+    date: date
+    close: float
+
+
+class WatchlistQuoteItem(BaseModel):
+    ticker: str
+    quote: Optional[WatchlistQuote] = None
+    sparkline: List[WatchlistSparkPoint] = Field(default_factory=list)
+
+
+class WatchlistQuotesResponse(BaseModel):
+    market: MarketStatusResponse
+    delay_minutes: int
+    items: List[WatchlistQuoteItem]
