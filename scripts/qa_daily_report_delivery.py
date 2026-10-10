@@ -1,7 +1,7 @@
 """Manually exercise reporting nodes; opt-in delivery, no scheduler/DB writes.
 
-Prepare with --case morning|post|degraded --output-dir PATH. Then inspect the
-saved Markdown and send that exact artifact with --deliver (no recollection).
+Prepare with --case morning|post|degraded|weekly --output-dir PATH. Then inspect
+the saved Markdown/card and send that exact artifact with --deliver (no recollection).
 This deliberately does not claim to exercise a production scan or scheduler.
 """
 import argparse
@@ -19,9 +19,9 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services import eodhd_client, report_market
-from services.daily_reporter import REPORT_RENDERER_VERSION, render_daily_report
+from services.daily_reporter import REPORT_RENDERER_VERSION, build_report_card, render_daily_report
 from services.notifications import NotificationManager
-from services.notifications.report_card import build_daily_report_card
+from services.weekly_digest import build_weekly_report_card, collect_weekly_evidence, render_weekly_markdown
 from core.config import settings
 
 
@@ -85,7 +85,31 @@ async def collect_audited():
     return context, raw, checks
 
 
+def rebuild_card(payload):
+    if payload["report_type"] == "weekly_digest":
+        return build_weekly_report_card(payload["market_context"], tag=payload.get("tag"))
+    return build_report_card(payload["anomalies"], report_type=payload["report_type"],
+                             market_context=payload["market_context"], tag=payload.get("tag"))
+
+
+async def prepare_weekly(directory):
+    digest = await collect_weekly_evidence()
+    digest.setdefault("warnings", []).append("手动验收，非正式定时报送。")
+    title = f"🧪 Quantify QA {directory.name}｜周报模板·真实采集"
+    payload = {"title": title, "content": "**测试卡片，请勿作为正式报送或交易依据**\n\n" + render_weekly_markdown(digest),
+               "report_type": "weekly_digest", "market_context": digest, "anomalies": [], "tag": "测试",
+               "delivered": False}
+    payload["card"] = rebuild_card(payload)
+    save(directory / "weekly.json", payload)
+    save(directory / "weekly.card.json", payload["card"])
+    (directory / "weekly.md").write_text(payload["content"] + "\n", encoding="utf-8")
+    return {"prepared": "weekly", "week_end": digest["week_end"], "bytes": len(payload["content"].encode()),
+            "title": title}
+
+
 async def prepare(case, directory):
+    if case == "weekly":
+        return await prepare_weekly(directory)
     report_type = "morning_briefing" if case == "morning" else "post_market_summary"
     anomalies, scan = [], None
     if case == "degraded":
@@ -127,8 +151,10 @@ async def prepare(case, directory):
             assert expected in content, expected
         assert "不应展示的合成归因" not in content
     payload = {"title": title, "content": content, "report_type": report_type, "market_context": context,
-               "anomalies": anomalies, "scan": scan, "raw": raw, "checks": checks, "delivered": False}
+               "anomalies": anomalies, "scan": scan, "raw": raw, "checks": checks, "tag": "测试", "delivered": False}
+    payload["card"] = rebuild_card(payload)
     save(directory / f"{case}.json", payload)
+    save(directory / f"{case}.card.json", payload["card"])
     (directory / f"{case}.md").write_text(content + "\n", encoding="utf-8")
     return {"prepared": case, "raw_price_checks": len(checks), "fresh": sum(bool(r["fresh"]) for r in context["quotes"]),
             "quote_count": len(context["quotes"]), "bytes": len(content.encode()), "title": title}
@@ -148,19 +174,21 @@ async def main(args):
             context["warnings"].append("历史回放验收：仅使用已保存数据，不是当前行情或正式定时报送。")
             title = f"Quantify QA {REPORT_RENDERER_VERSION}｜历史回放·{args.case}"
             content = render_daily_report(original["anomalies"], report_type=original["report_type"], market_context=context)
-            card = build_daily_report_card(title, content)
-            save(path, {"title": title, "content": content, "card": card, "renderer_version": REPORT_RENDERER_VERSION,
-                        "report_type": original["report_type"], "market_context": context,
-                        "anomalies": original["anomalies"], "source_artifact": str(args.replay.resolve()), "delivered": False})
+            payload = {"title": title, "content": content, "renderer_version": REPORT_RENDERER_VERSION,
+                       "report_type": original["report_type"], "market_context": context, "tag": "测试·历史回放",
+                       "anomalies": original["anomalies"], "source_artifact": str(args.replay.resolve()), "delivered": False}
+            card = payload["card"] = rebuild_card(payload)
+            save(path, payload)
             (directory / f"{args.case}.md").write_text(content + "\n", encoding="utf-8")
             save(directory / f"{args.case}.card.json", card)
-            visible = json.dumps(card["body"]["elements"][:2], ensure_ascii=False)
+            elements = card["body"]["elements"]
             return {"replayed": args.case, "renderer_version": REPORT_RENDERER_VERSION,
-                    "report_bytes": len(content.encode()), "first_screen_component_bytes": len(visible.encode()),
-                    "panels": len(card["body"]["elements"]) - 2, "title": title}
+                    "report_bytes": len(content.encode()), "card_bytes": len(json.dumps(card, ensure_ascii=False).encode()),
+                    "headline": card["config"]["summary"]["content"],
+                    "panels": sum(element["tag"] == "collapsible_panel" for element in elements), "title": title}
         return await prepare(args.case, directory)
     payload = json.loads(path.read_text())
-    if payload.get("card") and payload["card"] != build_daily_report_card(payload["title"], payload["content"]):
+    if not payload.get("card") or payload["card"] != rebuild_card(payload):
         raise RuntimeError("Card renderer changed since preparation; create a new preview before sending")
     if payload.get("delivery_attempted_at"):
         raise RuntimeError("Delivery already attempted; inspect Feishu before creating any new attempt")
@@ -184,7 +212,7 @@ async def main(args):
             raise
 
     with patch.object(httpx.AsyncClient, "post", observed_post):
-        payload["delivered"] = await NotificationManager.broadcast(title=payload["title"], content=payload["content"], channels=["feishu"], card_layout="daily_report")
+        payload["delivered"] = await NotificationManager.broadcast(title=payload["title"], content=payload["content"], channels=["feishu"], card=payload["card"])
     save(path, payload)
     if not payload["delivered"]:
         raise RuntimeError(f"Feishu did not acknowledge delivery: {payload.get('transport')}; inspect the chat, do not blindly retry")
@@ -195,7 +223,7 @@ if __name__ == "__main__":
     # Avoid transport logs containing credential-bearing provider/webhook URLs.
     logging.disable(logging.CRITICAL)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=("morning", "post", "degraded"), required=True)
+    parser.add_argument("--case", choices=("morning", "post", "degraded", "weekly"), required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--deliver", action="store_true")
     parser.add_argument("--replay", type=Path, help="Replay a saved evidence JSON without any data-source calls")

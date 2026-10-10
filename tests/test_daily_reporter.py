@@ -132,8 +132,8 @@ async def test_morning_report_is_delivered_and_audited(db_session, monkeypatch):
         assert limit_count == 5
         return [_pypl_anomaly()]
 
-    async def fake_broadcast(*, title, content, channels=None, card_layout=None):
-        broadcasts.append({"title": title, "content": content, "card_layout": card_layout})
+    async def fake_broadcast(*, title, content, channels=None, card=None):
+        broadcasts.append({"title": title, "content": content, "card": card})
         return True
 
     monkeypatch.setattr(
@@ -161,7 +161,11 @@ async def test_morning_report_is_delivered_and_audited(db_session, monkeypatch):
     assert broadcasts[0]["title"] == "🌅 Quantify 美股开盘速递"
     assert broadcasts[0]["content"] == run.content
     assert "Stripe and Advent" in run.content
-    assert broadcasts[0]["card_layout"] == "daily_report"
+    card = broadcasts[0]["card"]
+    assert card["schema"] == "2.0"
+    assert card["header"]["title"]["content"] == "Quantify 美股开盘 · 8月28日 周五"
+    assert "PYPL" in str(card["body"]["elements"])
+    assert "结论（规则生成）：美股当期报价不足。" in run.content
     assert run.renderer_version == daily_reporter.REPORT_RENDERER_VERSION
     assert run.status == "delivered"
     assert run.notification_delivered is True
@@ -176,7 +180,7 @@ async def test_evidence_failure_is_audited_and_raised(db_session, monkeypatch):
     async def failed_scan(*, trigger, limit_count):
         raise RuntimeError("Current quotes are unavailable")
 
-    async def unexpected_broadcast(*, title, content, channels=None, card_layout=None):
+    async def unexpected_broadcast(*, title, content, channels=None, card=None):
         pytest.fail("A report without evidence must not be broadcast")
 
     monkeypatch.setattr(
@@ -209,7 +213,7 @@ async def test_delivery_rejection_is_audited_and_raised(db_session, monkeypatch)
     async def fake_scan(*, trigger, limit_count):
         return [_pypl_anomaly()]
 
-    async def rejected_broadcast(*, title, content, channels=None, card_layout=None):
+    async def rejected_broadcast(*, title, content, channels=None, card=None):
         return False
 
     monkeypatch.setattr(
@@ -246,7 +250,7 @@ async def test_post_market_report_uses_same_grounded_path(db_session, monkeypatc
         requested.append((trigger, limit_count))
         return [_pypl_anomaly()]
 
-    async def fake_broadcast(*, title, content, channels=None, card_layout=None):
+    async def fake_broadcast(*, title, content, channels=None, card=None):
         assert title == "🌃 Quantify 美股盘后总结"
         assert "美股盘后总结｜2026-08-28" in content
         assert "Stripe and Advent" in content
