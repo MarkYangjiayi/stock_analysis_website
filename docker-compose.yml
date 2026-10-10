@@ -71,6 +71,8 @@ services:
     environment:
       - ENVIRONMENT=production
       - ANOMALY_RESULT_LIMIT=20
+      # Same origin the frontend image is built for; used by Feishu card links.
+      - PUBLIC_SITE_URL=https://finbrain.icu
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
       - ALL_PROXY=socks5h://warp:9091

@@ -10,17 +10,25 @@ from urllib.parse import quote, urlparse
 
 from sqlalchemy import select, update
 
+from core.config import settings
 from core.time_utils import utc_now
 from database import async_session_maker
 from models import DailyReportRun
 from services.anomaly_scans import run_persisted_anomaly_scan
 from services.notifications import NotificationManager
+from services.notifications.report_card import build_daily_card
+from services.report_insights import daily_headline
 from services.report_market import NY, Instrument, collect_market_context, session_context
 from services.report_renderer import compact, instant, number, quality_summary, render_events_and_quality, render_market_sections, value
+from services.watchlist_signals import collect_watchlist_signals, signal_tags
 
 
 logger = logging.getLogger(__name__)
-REPORT_RENDERER_VERSION = "cross-asset-v2.2"
+REPORT_RENDERER_VERSION = "cross-asset-v3.0"
+_COMPANY_SUFFIXES = re.compile(
+    r"[,\s]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|holdings?|group|n\.?v|s\.?a|ag|se)\.?$",
+    re.I,
+)
 _CITATION_PATTERN = re.compile(r"\[(\d+)]")
 _NO_CATALYST = "本次未检索到可用新闻，无法确认异动原因。"
 _INVALID_CITATIONS = "归因引用无法与已保存新闻匹配，本次仅展示行情异动。"
@@ -104,22 +112,23 @@ def _headline_mentions_company(title: str, anomaly: dict[str, Any]) -> bool:
     return " " + " ".join(words) + " " in normalized_title
 
 
-def _grounded_analysis(anomaly: dict[str, Any]) -> str:
+def _news_evidence(anomaly: dict[str, Any]) -> tuple[list[tuple[str, str, int]], str | None]:
+    """Displayable (escaped title, link, citation number) rows, or a fail-closed note."""
     status = _compact_text(anomaly.get("attribution_status"))
     analysis = _compact_text(anomaly.get("ai_analysis"))
     links = _source_links(anomaly.get("news"))
 
     if status == "no_news":
-        return _NO_CATALYST
+        return [], _NO_CATALYST
     citation_numbers = {
         int(match.group(1))
         for match in _CITATION_PATTERN.finditer(analysis)
     }
     if citation_numbers and not citation_numbers.issubset(links):
-        return _INVALID_CITATIONS
+        return [], _INVALID_CITATIONS
 
     if not links:
-        return "可核验新闻来源不足，无法确认异动原因。"
+        return [], "可核验新闻来源不足，无法确认异动原因。"
     # A valid citation only proves the article exists, not that the model's
     # causal claim follows from it. Render the saved headline evidence instead
     # of laundering old/free-form model conclusions as verified facts.
@@ -136,12 +145,60 @@ def _grounded_analysis(anomaly: dict[str, Any]) -> str:
         seen.add(identity)
         title = title[:120] + ("…" if len(title) > 120 else "")
         title = re.sub(r"([\\`*_\[\]()!~])", r"\\\1", title)
-        headlines.append(f"{title} [{index}]({links[index]})")
+        headlines.append((title, links[index], index))
         if len(headlines) == 3:
             break
     if not headlines:
-        return "未找到标题明确提及该公司的新闻；不展示关联不明条目。"
-    return "新闻线索（原标题）：" + "；".join(headlines) + "。关联判断：尚未验证为此次涨跌原因。"
+        return [], "未找到标题明确提及该公司的新闻；不展示关联不明条目。"
+    return headlines, None
+
+
+def _grounded_analysis(anomaly: dict[str, Any]) -> str:
+    headlines, note = _news_evidence(anomaly)
+    if note:
+        return note
+    return ("新闻线索（原标题）：" + "；".join(f"{title} [{index}]({link})" for title, link, index in headlines)
+            + "。关联判断：尚未验证为此次涨跌原因。")
+
+
+def _short_company(raw: Any) -> str:
+    name = _compact_text(raw)
+    for _ in range(3):
+        name = _COMPANY_SUFFIXES.sub("", name).strip()
+    name = compact(name)
+    return name[:24] + ("…" if len(name) > 24 else "")
+
+
+def anomaly_card_row(anomaly: dict[str, Any], context: dict | None) -> dict[str, Any]:
+    """Presentation row for the card; status is set only for non-current quotes."""
+    label, is_current = anomaly_observation(anomaly, context)
+    headlines, note = _news_evidence(anomaly)
+    return {
+        "ticker": _display_ticker(anomaly.get("ticker")) or "UNKNOWN",
+        "company": _short_company(anomaly.get("company_name")),
+        "move": number(anomaly.get("price_change")),
+        "status": None if is_current else label.split(" · ", 1)[-1],
+        "headlines": [(title, link) for title, link, _ in headlines[:2]],
+        "news_note": "暂无相关新闻" if note == _NO_CATALYST else note,
+    }
+
+
+def build_report_card(
+    anomalies: list[dict[str, Any]],
+    *,
+    report_type: str,
+    market_context: dict[str, Any],
+    tag: str | None = None,
+) -> dict[str, Any]:
+    """Deterministic Feishu card for one saved report evidence set."""
+    return build_daily_card(
+        market_context,
+        [anomaly_card_row(anomaly, market_context) for anomaly in anomalies],
+        report_type=report_type,
+        headline=daily_headline(market_context, report_type),
+        site_url=settings.PUBLIC_SITE_URL.rstrip("/"),
+        tag=tag,
+    )
 
 
 def anomaly_observation(anomaly: dict, context: dict | None) -> tuple[str, bool]:
@@ -196,13 +253,23 @@ def render_daily_report(
     if market_context:
         captured = instant(market_context.get("captured_at"))
         when = captured.astimezone(NY).strftime("%m-%d %H:%M %Z") if captured else "时间未知"
-        lines.extend([f"采集于 {when}；延迟行情，非实时或正式收盘价。", "", "**数据提示**", "",
+        lines.extend([f"采集于 {when}；延迟行情，非实时或正式收盘价。", "",
+                      f"结论（规则生成）：{daily_headline(market_context, report_type)}", "", "**数据提示**", "",
                       *quality_summary(market_context)])
         stale = sum(not anomaly_observation(row, market_context)[1] for row in anomalies)
         if stale:
             lines.append(f"- 个股异动 {stale}/{len(anomalies)} 项为历史、盘前、待更新或未核验报价，勿作当前行情。")
         lines.extend(["",
                       *render_market_sections(market_context, report_type), ""])
+        signals = market_context.get("watchlist_signals")
+        tagged = [(row["ticker"], signal_tags(row["ticker"], signals)) for row in market_context.get("quotes", [])
+                  if row.get("group") == "core"]
+        tagged = [(ticker, tags) for ticker, tags in tagged if tags]
+        if tagged:
+            lines.extend(["**关注列表信号（日线）**", ""])
+            lines.extend(f"- {_display_ticker(ticker)}：{'；'.join(tag['text'] for tag in tags)}"
+                         f"（截至 {signals['items'][ticker]['as_of']}）" for ticker, tags in tagged)
+            lines.append("")
     lines.extend(["**个股异动与新闻线索**", ""])
     if not anomalies:
         lines.append("- 本次扫描没有可展示的个股异动；不据此判断整体市场平稳。")
@@ -227,11 +294,12 @@ def render_daily_report(
 async def _create_report_run(
     *,
     report_type: str,
+    renderer_version: str = REPORT_RENDERER_VERSION,
 ) -> int:
     async with async_session_maker() as db, db.begin():
         run = DailyReportRun(
             report_type=report_type,
-            renderer_version=REPORT_RENDERER_VERSION,
+            renderer_version=renderer_version,
             status="collecting_evidence",
             source_results=[],
             content="",
@@ -339,9 +407,12 @@ async def _generate_and_broadcast(
             market_context["morning_snapshot"] = await _morning_snapshot(market_context["report_date"])
         except Exception:
             market_context.setdefault("warnings", []).append("当天早报快照读取失败，无法完成前后对比。")
+    if any(row.get("group") == "core" for row in market_context.get("quotes", [])):
+        market_context["watchlist_signals"] = await collect_watchlist_signals(market_context, report_type)
     await _record_report_evidence(report_run_id, anomalies, market_context)
     try:
         content = render_daily_report(anomalies, report_type=report_type, market_context=market_context)
+        card = build_report_card(anomalies, report_type=report_type, market_context=market_context)
         await _record_rendered_report(report_run_id, content)
     except Exception as exc:
         await _finish_report_run(
@@ -361,7 +432,7 @@ async def _generate_and_broadcast(
         delivered = await NotificationManager.broadcast(
             title=notification_title,
             content=content,
-            card_layout="daily_report",
+            card=card,
         )
         if not delivered:
             raise RuntimeError(

@@ -137,11 +137,12 @@ def _compatible(a: dict | None, b: dict | None) -> bool:
         return False
 
 
-def morning_comparison(current: dict, morning: dict | None) -> list[str]:
+def morning_moves(current: dict, morning: dict | None) -> list[tuple[dict, dict, float]] | None:
+    """(morning row, current row, % move) for comparable quotes; None without a snapshot."""
     if not morning or morning.get("report_date") != current.get("report_date"):
-        return ["- 当天无已送达的开盘报告快照，暂无法比较。"]
+        return None
     by_symbol = {row["ticker"]: row for row in morning.get("quotes", [])}
-    lines = []
+    moves = []
     for row in current.get("quotes", []):
         if row.get("ticker") not in {"SPY.US", "QQQ.US", "IWM.US", "VIX.INDX", "BTC-USD.CC", "ETH-USD.CC", *PRECIOUS_METAL_TICKERS}:
             continue
@@ -156,8 +157,16 @@ def morning_comparison(current: dict, morning: dict | None) -> list[str]:
         before, after = number(previous.get("price")), number(row.get("price"))
         if before is None or after is None or before <= 0:
             continue
-        lines.append(f"- {row['name']}：自早报报价以来 {value((after / before - 1) * 100, '%', True)}"
-                     f"（{stamp(previous)} → {stamp(row)}）")
+        moves.append((previous, row, (after / before - 1) * 100))
+    return moves
+
+
+def morning_comparison(current: dict, morning: dict | None) -> list[str]:
+    moves = morning_moves(current, morning)
+    if moves is None:
+        return ["- 当天无已送达的开盘报告快照，暂无法比较。"]
+    lines = [f"- {row['name']}：自早报报价以来 {value(move, '%', True)}（{stamp(previous)} → {stamp(row)}）"
+             for previous, row, move in moves]
     return lines or ["- 暂无同一交易日、时间有效的前后报价可供比较。"]
 
 

@@ -401,10 +401,12 @@ async def collect_breadth(now: datetime) -> dict:
         }
 
 
-async def collect_events(assets: list[Instrument], now: datetime) -> dict:
-    today = now.astimezone(NY).date()
+async def collect_events(assets: list[Instrument], now: datetime, *,
+                         start: date | None = None, end: date | None = None) -> dict:
+    """Default window: New York today through the next US session."""
+    today = start or now.astimezone(NY).date()
     calendar = _calendar("XNYS")
-    next_day = calendar.date_to_session(pd.Timestamp(today + timedelta(days=1)), direction="next").date()
+    next_day = end or calendar.date_to_session(pd.Timestamp(today + timedelta(days=1)), direction="next").date()
     async with eodhd_client.create_http_client() as client:
         responses = await asyncio.gather(*(
             eodhd_client.get_report_calendar(kind, today.isoformat(), next_day.isoformat(), client=client)

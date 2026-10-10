@@ -45,7 +45,8 @@ async def run_worker() -> None:
     if settings.ENABLE_WS_MONITOR:
         monitor_task = asyncio.create_task(ws_monitor.start())
 
-    await NotificationManager.broadcast("System Status", "Quantify worker started. 🚀")
+    if settings.NOTIFY_WORKER_STARTUP:
+        await NotificationManager.broadcast("System Status", "Quantify worker started. 🚀")
     try:
         await stop_event.wait()
     finally:
