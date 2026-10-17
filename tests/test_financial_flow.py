@@ -231,8 +231,17 @@ async def test_external_enrichment_stops_after_three_attempts(db_session, monkey
     def fail_fetch(**_kwargs):
         raise RuntimeError("SEC unavailable")
 
+    real_sleep = financial_flow.asyncio.sleep
+
+    async def idle_heartbeat(_run_id):
+        # With asyncio.sleep patched out, the real lease heartbeat would write in a
+        # tight loop and could be cancelled mid-transaction, leaving SQLite locked
+        # for the next test's schema reset.
+        await real_sleep(3600)
+
     monkeypatch.setattr(financial_flow, "_resolve_cik", cik)
     monkeypatch.setattr(financial_flow, "_fetch_sec_documents_sync", fail_fetch)
+    monkeypatch.setattr(financial_flow, "_renew_financial_flow_lease", idle_heartbeat)
     monkeypatch.setattr(financial_flow.asyncio, "sleep", no_sleep)
 
     await execute_financial_flow(run.id)

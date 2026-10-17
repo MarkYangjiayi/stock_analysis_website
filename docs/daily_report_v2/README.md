@@ -75,7 +75,7 @@ python scripts/qa_daily_report_delivery.py --case weekly --output-dir /path/to/n
 
 ## 审计与上线
 
-新增迁移 `0020_daily_report_market_context`。`DailyReportRun.source_results` 保留原来的个股异动数组；新的 `market_context` JSON 保存归一化报价、时间、前收盘、收益率、宽度、事件、异常提示和用于比较的早报快照。当前代码 `renderer_version` 为 `cross-asset-v2.2`；v2.2 无新增数据库迁移。旧报告无需改写。
+新增迁移 `0020_daily_report_market_context`。`DailyReportRun.source_results` 保留原来的个股异动数组；新的 `market_context` JSON 保存归一化报价、时间、前收盘、收益率、宽度、事件、异常提示和用于比较的早报快照。当前代码 `renderer_version` 为 `cross-asset-v3.1`；v2.2 与 v3.0 无新增数据库迁移，v3.1 的题材表随 `0023_theme_trends` 迁移创建（报告本身不新增列）。旧报告无需改写。
 
 部署时先备份数据库并执行 `alembic upgrade head`，再重启 worker 以加载新调度。无需新的数据源密钥；日历及海外数据可用性取决于现有 EODHD 订阅。
 
@@ -93,6 +93,15 @@ python scripts/preview_daily_report.py --report-type morning_briefing --output d
 脚本只抓取市场证据，复用当天已有的个股扫描；不会启动额外的 AI 异动扫描或发送通知。Markdown 和伴随 JSON 保存在指定路径，预览可能在盘中生成，不能当作正式收盘报告。
 
 复现文本只需调用 `render_daily_report(evidence['anomalies'], report_type=evidence['report_type'], market_context=evidence['market_context'])`，无需重新抓取行情。
+
+## v3.1 题材热度
+
+- 开盘报告在“板块与市场宽度”之后新增“题材热度”段落；盘后报告不展示。数据只读最新一期成功发布的 `theme_trends`（按 `DataPublication.pipeline_run_id == ThemeDaily.source_run_id` 关联，且运行状态为 published），不调用外部接口或 LLM。
+- 每行展示前 5 名题材：排名、阶段（萌芽/加速/主线/拥挤/退潮/中性）、热度、排名变化（↑/↓/持平，不按涨跌着色）、21日超额（相对 SPY，对数收益换算为简单收益，带正负号并着色）、MA50 以上成员占比和前 3 名龙头；另列当日萌芽题材及阶段变化。
+- 题材数据不是最新交易日时注明“题材数据截至 X”；超过7天、晚于报告日期或日期无法核验时只在数据提示中说明，不展示指标。关注度降级发布或含回填（非时点成员）时追加数据提示。
+- 采集失败时记为模块缺口“题材热度暂不可用”。证据快照中没有 `theme_heat` 键的旧报告（以及 `THEMES_ENABLED=false` 时）既不渲染段落也不提示缺口，回放结果不变。
+- 飞书卡片（仅开盘）在异动面板之后新增折叠面板“题材热度 · #1 题材名”，底部按钮增加“题材热度”（/themes）；数据缺口进入卡片脚注。
+- 预览脚本的开盘模式同样读取题材热度；它只读本地数据库。
 
 ## v2.2 贵金属、BTC 与涨跌颜色
 

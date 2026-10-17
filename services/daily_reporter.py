@@ -18,13 +18,13 @@ from services.anomaly_scans import run_persisted_anomaly_scan
 from services.notifications import NotificationManager
 from services.notifications.report_card import build_daily_card
 from services.report_insights import daily_headline
-from services.report_market import NY, Instrument, collect_market_context, session_context
+from services.report_market import NY, Instrument, collect_market_context, collect_theme_heat, session_context
 from services.report_renderer import compact, instant, number, quality_summary, render_events_and_quality, render_market_sections, value
 from services.watchlist_signals import collect_watchlist_signals, signal_tags
 
 
 logger = logging.getLogger(__name__)
-REPORT_RENDERER_VERSION = "cross-asset-v3.0"
+REPORT_RENDERER_VERSION = "cross-asset-v3.1"
 _COMPANY_SUFFIXES = re.compile(
     r"[,\s]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|holdings?|group|n\.?v|s\.?a|ag|se)\.?$",
     re.I,
@@ -32,6 +32,7 @@ _COMPANY_SUFFIXES = re.compile(
 _CITATION_PATTERN = re.compile(r"\[(\d+)]")
 _NO_CATALYST = "本次未检索到可用新闻，无法确认异动原因。"
 _INVALID_CITATIONS = "归因引用无法与已保存新闻匹配，本次仅展示行情异动。"
+THEME_HEAT_TIMEOUT_SECONDS = 25
 
 
 def _safe_link(value: Any) -> str:
@@ -407,6 +408,8 @@ async def _generate_and_broadcast(
             market_context["morning_snapshot"] = await _morning_snapshot(market_context["report_date"])
         except Exception:
             market_context.setdefault("warnings", []).append("当天早报快照读取失败，无法完成前后对比。")
+    if report_type == "morning_briefing":
+        await attach_theme_heat(market_context, now)
     if any(row.get("group") == "core" for row in market_context.get("quotes", [])):
         market_context["watchlist_signals"] = await collect_watchlist_signals(market_context, report_type)
     await _record_report_evidence(report_run_id, anomalies, market_context)
@@ -463,6 +466,22 @@ async def _generate_and_broadcast(
         "report_run_id": report_run_id,
         "anomalies": len(anomalies),
     }
+
+
+async def attach_theme_heat(market_context: dict[str, Any], now: datetime) -> None:
+    """Add the morning-only 题材热度 evidence; a failure is a reported gap, never fatal.
+
+    The key is only set when the theme feature is enabled, so older snapshots
+    and disabled deployments render neither the section nor a gap.
+    """
+    if not settings.THEMES_ENABLED:
+        return
+    try:
+        market_context["theme_heat"] = await asyncio.wait_for(collect_theme_heat(now), THEME_HEAT_TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.warning("Report theme heat unavailable (%s)", type(exc).__name__)
+        market_context["theme_heat"] = None
+        market_context.setdefault("warnings", []).append("题材热度暂不可用。")
 
 
 async def _morning_snapshot(report_date: str) -> dict | None:

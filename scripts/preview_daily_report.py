@@ -2,9 +2,11 @@
 
 Usage: python scripts/preview_daily_report.py --output /path/to/preview.md
 The companion JSON contains the exact evidence needed to reproduce the text.
+Morning previews also read the latest published 题材热度 (local tables only).
 """
 import argparse
 import asyncio
+from datetime import datetime
 import json
 from pathlib import Path
 import sys
@@ -15,12 +17,14 @@ from sqlalchemy import select
 
 from database import async_session_maker
 from models import AnomalyScanRun
-from services.daily_reporter import render_daily_report
+from services.daily_reporter import attach_theme_heat, render_daily_report
 from services.report_market import collect_market_context
 
 
 async def preview(output: Path, report_type: str) -> dict:
     context = await collect_market_context()
+    if report_type == "morning_briefing":
+        await attach_theme_heat(context, datetime.fromisoformat(context["captured_at"]))
     async with async_session_maker() as db:
         saved = await db.scalar(select(AnomalyScanRun).where(AnomalyScanRun.status == "completed")
                                 .order_by(AnomalyScanRun.finished_at.desc()).limit(1))

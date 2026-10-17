@@ -879,3 +879,358 @@ class BacktestRun(Base):
     diagnostics: Mapped[Optional[Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+# ------------------------------------------------------------------------
+# Trending themes (题材热度)
+#
+# The taxonomy lives in services/themes/taxonomy/*.yaml and is synced into
+# `themes`. Membership rows are validity intervals (valid_to is exclusive).
+# Daily outputs follow the factor publication pattern: rows carry the run
+# that produced them and readers join DataPublication(dataset="theme_trends").
+# ------------------------------------------------------------------------
+
+
+class Theme(Base):
+    """Curated theme definition synced from the Git-managed taxonomy file."""
+
+    __tablename__ = "themes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String)
+    name_en: Mapped[str] = mapped_column(String)
+    name_zh: Mapped[str] = mapped_column(String)
+    megatrend: Mapped[Optional[str]] = mapped_column(String)
+    definition: Mapped[str] = mapped_column(Text)
+    keywords: Mapped[Any] = mapped_column(JSON)
+    negative_keywords: Mapped[Any] = mapped_column(JSON)
+    proxy_etfs: Mapped[Any] = mapped_column(JSON)
+    seed_core: Mapped[Any] = mapped_column(JSON)
+    pins: Mapped[Any] = mapped_column(JSON)
+    bans: Mapped[Any] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String, default="active", index=True)
+    taxonomy_version: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (UniqueConstraint("slug", name="uix_themes_slug"),)
+
+
+class ThemeMember(Base):
+    """One company's membership interval in a theme; valid_to is exclusive."""
+
+    __tablename__ = "theme_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    tier: Mapped[str] = mapped_column(String)
+    weight: Mapped[float] = mapped_column(Float)
+    exposure: Mapped[int] = mapped_column(Integer)
+    role: Mapped[Optional[str]] = mapped_column(String)
+    sources: Mapped[Any] = mapped_column(JSON)
+    evidence_quote: Mapped[Optional[str]] = mapped_column(Text)
+    evidence_source: Mapped[Optional[str]] = mapped_column(String)
+    evidence_as_of: Mapped[Optional[dt_date]] = mapped_column(Date)
+    llm_model: Mapped[Optional[str]] = mapped_column(String)
+    prompt_version: Mapped[Optional[str]] = mapped_column(String)
+    review_status: Mapped[str] = mapped_column(String)
+    valid_from: Mapped[dt_date] = mapped_column(Date, index=True)
+    valid_to: Mapped[Optional[dt_date]] = mapped_column(Date, index=True)
+    source_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("pipeline_runs.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("theme_id", "ticker", "valid_from", name="uix_theme_members_theme_ticker_valid_from"),
+        Index("ix_theme_members_theme_interval", "theme_id", "valid_from", "valid_to"),
+    )
+
+
+class ThemeMemberVerification(Base):
+    """Cached LLM verification of one (theme, company, input text) candidate."""
+
+    __tablename__ = "theme_member_verifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    input_hash: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+    exposure: Mapped[Optional[int]] = mapped_column(Integer)
+    role: Mapped[Optional[str]] = mapped_column(String)
+    evidence_quote: Mapped[Optional[str]] = mapped_column(Text)
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("theme_id", "ticker", "input_hash", name="uix_theme_member_verifications_key"),
+    )
+
+
+class EtfHoldingSnapshot(Base):
+    """Holdings of a theme proxy ETF as observed on one fetch date."""
+
+    __tablename__ = "etf_holdings_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    etf: Mapped[str] = mapped_column(String, index=True)
+    as_of_date: Mapped[dt_date] = mapped_column(Date, index=True)
+    source: Mapped[str] = mapped_column(String)
+    holding_key: Mapped[str] = mapped_column(String)
+    holding_ticker: Mapped[Optional[str]] = mapped_column(String, index=True)
+    holding_name: Mapped[Optional[str]] = mapped_column(String)
+    exchange: Mapped[Optional[str]] = mapped_column(String)
+    weight_pct: Mapped[Optional[float]] = mapped_column(Float)
+    inception_date: Mapped[Optional[dt_date]] = mapped_column(Date)
+    raw_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("raw_data_snapshots.id"))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("etf", "as_of_date", "source", "holding_key", name="uix_etf_holdings_etf_date_source_key"),
+    )
+
+
+class NewsIngestDay(Base):
+    """Completion checkpoint for one UTC day of the market-wide news feed."""
+
+    __tablename__ = "news_ingest_days"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    day: Mapped[dt_date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String, index=True)
+    pages: Mapped[int] = mapped_column(Integer, default=0)
+    articles_total: Mapped[int] = mapped_column(Integer, default=0)
+    articles_us: Mapped[int] = mapped_column(Integer, default=0)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    raw_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("raw_data_snapshots.id"))
+    source_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("pipeline_runs.id"))
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (UniqueConstraint("day", name="uix_news_ingest_days_day"),)
+
+
+class NewsItem(Base):
+    """Deduplicated market-news headline kept for evidence (short retention)."""
+
+    __tablename__ = "news_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    url_hash: Mapped[str] = mapped_column(String)
+    day: Mapped[dt_date] = mapped_column(Date, index=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    title: Mapped[str] = mapped_column(Text)
+    link: Mapped[Optional[str]] = mapped_column(String)
+    source_domain: Mapped[Optional[str]] = mapped_column(String)
+    tickers: Mapped[Any] = mapped_column(JSON)
+    symbol_count: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[Optional[Any]] = mapped_column(JSON)
+    raw_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("raw_data_snapshots.id"))
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (UniqueConstraint("url_hash", name="uix_news_items_url_hash"),)
+
+
+class TickerAttentionDaily(Base):
+    """Per-ticker article counts for one UTC news day (rows only where > 0)."""
+
+    __tablename__ = "ticker_attention_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    day: Mapped[dt_date] = mapped_column(Date, index=True)
+    article_count: Mapped[int] = mapped_column(Integer)
+    focused_count: Mapped[int] = mapped_column(Integer, default=0)
+    source_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("pipeline_runs.id"))
+
+    __table_args__ = (UniqueConstraint("ticker", "day", name="uix_ticker_attention_daily_ticker_day"),)
+
+
+class ThemeDaily(Base):
+    """Theme heat, components and lifecycle stage for one session and run."""
+
+    __tablename__ = "theme_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"))
+    date: Mapped[dt_date] = mapped_column(Date, index=True)
+    scoring_version: Mapped[str] = mapped_column(String)
+    pit: Mapped[bool] = mapped_column(Boolean, default=False)
+    rankable: Mapped[bool] = mapped_column(Boolean, default=False)
+    n_members: Mapped[int] = mapped_column(Integer, default=0)
+    n_priced: Mapped[int] = mapped_column(Integer, default=0)
+    ret_1d: Mapped[Optional[float]] = mapped_column(Float)
+    basket_index: Mapped[Optional[float]] = mapped_column(Float)
+    x5: Mapped[Optional[float]] = mapped_column(Float)
+    x21: Mapped[Optional[float]] = mapped_column(Float)
+    x63: Mapped[Optional[float]] = mapped_column(Float)
+    x126: Mapped[Optional[float]] = mapped_column(Float)
+    b50: Mapped[Optional[float]] = mapped_column(Float)
+    nh: Mapped[Optional[float]] = mapped_column(Float)
+    d_b50: Mapped[Optional[float]] = mapped_column(Float)
+    ign: Mapped[int] = mapped_column(Integer, default=0)
+    ign5: Mapped[int] = mapped_column(Integer, default=0)
+    rvol5_median: Mapped[Optional[float]] = mapped_column(Float)
+    att: Mapped[Optional[float]] = mapped_column(Float)
+    att_breadth: Mapped[Optional[float]] = mapped_column(Float)
+    score_price: Mapped[Optional[float]] = mapped_column(Float)
+    score_breadth: Mapped[Optional[float]] = mapped_column(Float)
+    score_volume: Mapped[Optional[float]] = mapped_column(Float)
+    score_attention: Mapped[Optional[float]] = mapped_column(Float)
+    h_raw: Mapped[Optional[float]] = mapped_column(Float)
+    heat: Mapped[Optional[float]] = mapped_column(Float)
+    heat_now: Mapped[Optional[float]] = mapped_column(Float)
+    heat_trend: Mapped[Optional[float]] = mapped_column(Float)
+    pct_now: Mapped[Optional[float]] = mapped_column(Float)
+    pct_trend: Mapped[Optional[float]] = mapped_column(Float)
+    rank_now: Mapped[Optional[int]] = mapped_column(Integer)
+    rank_trend: Mapped[Optional[int]] = mapped_column(Integer)
+    rank_change: Mapped[Optional[int]] = mapped_column(Integer)
+    streak_top5: Mapped[int] = mapped_column(Integer, default=0)
+    ts_z: Mapped[Optional[float]] = mapped_column(Float)
+    cocorr: Mapped[Optional[float]] = mapped_column(Float)
+    cocorr_pct: Mapped[Optional[float]] = mapped_column(Float)
+    emerge: Mapped[bool] = mapped_column(Boolean, default=False)
+    attention_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    attention_degraded: Mapped[bool] = mapped_column(Boolean, default=False)
+    candidate_stage: Mapped[str] = mapped_column(String)
+    stage: Mapped[str] = mapped_column(String, index=True)
+    stage_prev: Mapped[Optional[str]] = mapped_column(String)
+    stage_changed: Mapped[bool] = mapped_column(Boolean, default=False)
+    emerging_first_20: Mapped[bool] = mapped_column(Boolean, default=False)
+    proxy_etf: Mapped[Optional[str]] = mapped_column(String)
+    proxy_x21: Mapped[Optional[float]] = mapped_column(Float)
+    leaders: Mapped[Optional[Any]] = mapped_column(JSON)
+    flags: Mapped[Optional[Any]] = mapped_column(JSON)
+
+    __table_args__ = (
+        Index("ix_theme_daily_run_theme_date", "source_run_id", "theme_id", "date", unique=True),
+        Index("ix_theme_daily_theme_date", "theme_id", "date"),
+    )
+
+
+class ThemeMemberDaily(Base):
+    """Per-member metrics for the as-of session of one theme_trends run."""
+
+    __tablename__ = "theme_member_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"))
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    date: Mapped[dt_date] = mapped_column(Date, index=True)
+    tier: Mapped[str] = mapped_column(String)
+    weight: Mapped[float] = mapped_column(Float)
+    close: Mapped[Optional[float]] = mapped_column(Float)
+    r1: Mapped[Optional[float]] = mapped_column(Float)
+    x5: Mapped[Optional[float]] = mapped_column(Float)
+    x21: Mapped[Optional[float]] = mapped_column(Float)
+    pth: Mapped[Optional[float]] = mapped_column(Float)
+    rvol5: Mapped[Optional[float]] = mapped_column(Float)
+    att_z: Mapped[Optional[float]] = mapped_column(Float)
+    ignited: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_ignition_date: Mapped[Optional[dt_date]] = mapped_column(Date)
+    leader_score: Mapped[Optional[float]] = mapped_column(Float)
+    leader_rank: Mapped[Optional[int]] = mapped_column(Integer)
+    is_leader: Mapped[bool] = mapped_column(Boolean, default=False)
+    sparkline: Mapped[Optional[Any]] = mapped_column(JSON)
+
+    __table_args__ = (
+        Index("ix_theme_member_daily_run_theme_ticker_date", "source_run_id", "theme_id", "ticker", "date", unique=True),
+    )
+
+
+class CompanyTrendDaily(Base):
+    """Top trending companies (universe-wide) for the as-of session of one run."""
+
+    __tablename__ = "company_trend_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    date: Mapped[dt_date] = mapped_column(Date, index=True)
+    rank: Mapped[int] = mapped_column(Integer)
+    score: Mapped[float] = mapped_column(Float)
+    name: Mapped[Optional[str]] = mapped_column(String)
+    sector: Mapped[Optional[str]] = mapped_column(String)
+    industry: Mapped[Optional[str]] = mapped_column(String)
+    close: Mapped[Optional[float]] = mapped_column(Float)
+    market_cap: Mapped[Optional[float]] = mapped_column(Float)
+    r1: Mapped[Optional[float]] = mapped_column(Float)
+    x5: Mapped[Optional[float]] = mapped_column(Float)
+    x5_sector: Mapped[Optional[float]] = mapped_column(Float)
+    rvol5: Mapped[Optional[float]] = mapped_column(Float)
+    att_z: Mapped[Optional[float]] = mapped_column(Float)
+    pth: Mapped[Optional[float]] = mapped_column(Float)
+    theme_slugs: Mapped[Optional[Any]] = mapped_column(JSON)
+    flags: Mapped[Optional[Any]] = mapped_column(JSON)
+
+    __table_args__ = (
+        Index("ix_company_trend_daily_run_ticker_date", "source_run_id", "ticker", "date", unique=True),
+    )
+
+
+class ThemeBrief(Base):
+    """Validated, evidence-cited theme brief; only passing output is cached."""
+
+    __tablename__ = "theme_briefs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    date: Mapped[dt_date] = mapped_column(Date, index=True)
+    evidence_hash: Mapped[str] = mapped_column(String, index=True)
+    model: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[str] = mapped_column(String)
+    evidence: Mapped[Any] = mapped_column(JSON)
+    content: Mapped[str] = mapped_column(Text)
+    validation_report: Mapped[Optional[Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("theme_id", "evidence_hash", "model", name="uix_theme_briefs_evidence_model"),
+    )
+
+
+class ThemeAlert(Base):
+    """One successfully delivered theme lifecycle alert (data date keyed)."""
+
+    __tablename__ = "theme_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    date: Mapped[dt_date] = mapped_column(Date, index=True)
+    alert_type: Mapped[str] = mapped_column(String)
+    payload: Mapped[Optional[Any]] = mapped_column(JSON)
+    notified_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("theme_id", "alert_type", "date", name="uix_theme_alerts_theme_type_date"),
+    )
+
+
+class ThemeProposal(Base):
+    """Owner-reviewed candidate for a new theme discovered from unmapped movers."""
+
+    __tablename__ = "theme_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    proposal_key: Mapped[str] = mapped_column(String)
+    label_en: Mapped[Optional[str]] = mapped_column(String)
+    label_zh: Mapped[Optional[str]] = mapped_column(String)
+    slug_suggestion: Mapped[Optional[str]] = mapped_column(String)
+    rationale: Mapped[Optional[str]] = mapped_column(Text)
+    tickers: Mapped[Any] = mapped_column(JSON)
+    evidence: Mapped[Optional[Any]] = mapped_column(JSON)
+    first_seen: Mapped[dt_date] = mapped_column(Date)
+    last_seen: Mapped[dt_date] = mapped_column(Date, index=True)
+    hit_count: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)
+    llm_model: Mapped[Optional[str]] = mapped_column(String)
+    prompt_version: Mapped[Optional[str]] = mapped_column(String)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (UniqueConstraint("proposal_key", name="uix_theme_proposals_key"),)

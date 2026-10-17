@@ -33,7 +33,10 @@ export default function TopNavBar() {
     const navLinks = (mobile = false) => (
         <div className={mobile ? "grid gap-0.5" : "flex h-full items-center gap-0.5"}>
             {NAV_PAGES.map((link) => {
-                const active = pathname === link.path || link.aliases?.includes(pathname);
+                // Prefix match keeps a section active on its nested routes (e.g. /themes/ai-compute).
+                const active = pathname === link.path
+                    || link.aliases?.includes(pathname)
+                    || (link.path !== "/" && pathname.startsWith(`${link.path}/`));
                 return (
                     <Link
                         key={link.path}
@@ -42,11 +45,11 @@ export default function TopNavBar() {
                         aria-current={active ? "page" : undefined}
                         className={mobile
                             ? `rounded-md px-3 py-2.5 text-sm font-medium ${active ? "bg-accent-soft text-accent-strong" : "text-fg-muted hover:bg-surface-muted hover:text-fg"}`
-                            : `relative flex h-full items-center px-2.5 text-[13px] font-medium transition-colors ${active ? "text-fg" : "text-fg-muted hover:text-fg"}`
+                            : `relative flex h-full items-center whitespace-nowrap px-2 text-[13px] font-medium transition-colors xl:px-2.5 ${active ? "text-fg" : "text-fg-muted hover:text-fg"}`
                         }
                     >
                         {link.name}
-                        {!mobile && active && <span className="absolute inset-x-2.5 bottom-0 h-0.5 bg-accent" />}
+                        {!mobile && active && <span className="absolute inset-x-2 bottom-0 h-0.5 bg-accent xl:inset-x-2.5" />}
                     </Link>
                 );
             })}
@@ -62,17 +65,19 @@ export default function TopNavBar() {
                     </span>
                     <span className="text-[15px] font-semibold tracking-[-0.02em] text-fg">Quantify</span>
                 </Link>
+                {/* Six links, the search, the market chip and the theme toggle only just fit at 1024px: the
+                    search and link padding stay compact until xl (covered by e2e/themes.spec.ts). */}
                 <div className="ml-3 hidden h-full lg:block">{navLinks()}</div>
 
                 <button
                     type="button"
                     onClick={() => setPaletteOpen(true)}
-                    className="ml-auto flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border bg-surface px-2.5 text-left text-[13px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg sm:max-w-64 md:flex-none md:w-64"
+                    className="ml-auto flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border bg-surface px-2.5 text-left text-[13px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg sm:max-w-64 md:flex-none md:w-64 lg:w-44 xl:w-64"
                     aria-label="Search stock ticker"
                     aria-keyshortcuts="Meta+K Control+K /"
                 >
                     <Search size={14} className="shrink-0" aria-hidden="true" />
-                    <span className="flex-1 truncate">Search ticker or page</span>
+                    <span className="flex-1 truncate">Search<span className="lg:max-xl:hidden"> ticker or page</span></span>
                     <span className="kbd hidden sm:inline-flex">⌘K</span>
                 </button>
 

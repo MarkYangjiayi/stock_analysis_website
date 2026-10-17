@@ -13,8 +13,18 @@ export class ApiError extends Error {
 }
 
 const parseError = async (response: Response) => {
-    const payload = await response.json().catch(() => ({})) as { detail?: string; message?: string };
-    return payload.detail || payload.message || `Request failed with status ${response.status}`;
+    const payload = await response.json().catch(() => ({})) as { detail?: unknown; message?: unknown };
+    const fallback = `Request failed with status ${response.status}`;
+    // FastAPI validation errors (422) carry a list of {loc, msg, type} objects.
+    if (Array.isArray(payload.detail)) {
+        const messages = payload.detail
+            .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : ""))
+            .filter(Boolean);
+        return messages.length ? messages.join("; ") : fallback;
+    }
+    if (typeof payload.detail === "string" && payload.detail) return payload.detail;
+    if (typeof payload.message === "string" && payload.message) return payload.message;
+    return fallback;
 };
 
 export async function apiRequest<T>(
@@ -1363,3 +1373,291 @@ export const fetchWatchlistQuotes = (tickers: string[], signal?: AbortSignal) =>
         { signal },
         20_000,
     );
+
+// Trending themes. Mirrors the Theme* models in api/schemas.py. Returns are simple
+// fractions (0.05 == +5%); missing values stay null and render as "—".
+export type ThemeStage = "emerging" | "accelerating" | "leading" | "crowded" | "fading" | "neutral" | "insufficient";
+export type ThemeView = "now" | "trend";
+export type ThemeProposalStatus = "pending" | "accepted" | "rejected" | "expired";
+export type ThemeProposalDecision = "accepted" | "rejected";
+
+export interface ThemeTrendsMeta {
+    as_of_date: string;
+    expected_as_of_date: string;
+    published_at: string | null;
+    stale: boolean;
+    scoring_version: string;
+    taxonomy_version: string | null;
+    point_in_time: boolean;
+    attention_degraded: boolean;
+    coverage_pct: number | null;
+    warnings: string[];
+}
+
+export interface ThemeLeader {
+    ticker: string;
+    name: string | null;
+}
+
+export interface ThemeListItem {
+    slug: string;
+    name_en: string;
+    name_zh: string;
+    megatrend: string | null;
+    stage: ThemeStage;
+    candidate_stage: ThemeStage;
+    stage_changed: boolean;
+    heat: number | null;
+    heat_now: number | null;
+    heat_trend: number | null;
+    rank_now: number | null;
+    rank_trend: number | null;
+    rank_change: number | null;
+    streak_top5: number;
+    score_price: number | null;
+    score_breadth: number | null;
+    score_volume: number | null;
+    score_attention: number | null;
+    excess_5d: number | null;
+    excess_21d: number | null;
+    excess_63d: number | null;
+    pct_above_ma50: number | null;
+    near_high_share: number | null;
+    pct_above_ma50_change_10d: number | null;
+    ignitions_today: number;
+    ignitions_5d: number;
+    n_members: number;
+    n_priced: number;
+    leaders: ThemeLeader[];
+    proxy_etf: string | null;
+    proxy_excess_21d: number | null;
+    heat_sparkline: Array<number | null>;
+    emerging: boolean;
+    attention_only: boolean;
+    attention_degraded: boolean;
+    point_in_time: boolean;
+}
+
+export interface ThemeListSummary {
+    ranked: number;
+    emerging: number;
+    accelerating: number;
+    leading: number;
+    crowded: number;
+    fading: number;
+    top_riser: string | null;
+}
+
+export interface ThemeListResponse {
+    meta: ThemeTrendsMeta;
+    view: ThemeView;
+    summary: ThemeListSummary;
+    themes: ThemeListItem[];
+}
+
+export interface ThemeMemberRow {
+    ticker: string;
+    name: string | null;
+    tier: "core" | "peripheral";
+    weight: number;
+    exposure: number;
+    role: string | null;
+    review_status: string;
+    sources: string[];
+    evidence_quote: string | null;
+    evidence_source: string | null;
+    evidence_as_of: string | null;
+    close: number | null;
+    return_1d: number | null;
+    excess_5d: number | null;
+    excess_21d: number | null;
+    near_high_ratio: number | null;
+    relative_volume_5d: number | null;
+    attention_z: number | null;
+    ignited: boolean;
+    first_ignition_date: string | null;
+    leader_score: number | null;
+    leader_rank: number | null;
+    is_leader: boolean;
+    sparkline: Array<number | null>;
+}
+
+export interface ThemeHistory {
+    dates: string[];
+    heat: Array<number | null>;
+    heat_now: Array<number | null>;
+    heat_trend: Array<number | null>;
+    score_price: Array<number | null>;
+    score_breadth: Array<number | null>;
+    score_volume: Array<number | null>;
+    score_attention: Array<number | null>;
+    basket_index: Array<number | null>;
+    benchmark_index: Array<number | null>;
+    proxy_index: Array<number | null>;
+    pct_above_ma50: Array<number | null>;
+    near_high_share: Array<number | null>;
+    ignitions: number[];
+    stage: ThemeStage[];
+    rank_now: Array<number | null>;
+    point_in_time: boolean[];
+}
+
+export interface ThemeBriefEvidence {
+    id: string;
+    kind: string;
+    label: string;
+    source_date: string | null;
+    link: string | null;
+}
+
+export interface ThemeBriefResponse {
+    date: string;
+    model: string;
+    prompt_version: string;
+    created_at: string | null;
+    stale: boolean;
+    content: string;
+    evidence: ThemeBriefEvidence[];
+}
+
+export interface ThemeDetailResponse {
+    meta: ThemeTrendsMeta;
+    theme: ThemeListItem;
+    definition: string;
+    keywords: string[];
+    proxy_etfs: string[];
+    history: ThemeHistory;
+    members: ThemeMemberRow[];
+    brief: ThemeBriefResponse | null;
+}
+
+export interface ThemeHistoryResponse {
+    meta: ThemeTrendsMeta;
+    slug: string;
+    history: ThemeHistory;
+}
+
+export interface TrendingCompany {
+    rank: number;
+    ticker: string;
+    name: string | null;
+    sector: string | null;
+    industry: string | null;
+    score: number;
+    close: number | null;
+    market_cap: number | null;
+    return_1d: number | null;
+    excess_5d: number | null;
+    excess_5d_vs_sector: number | null;
+    relative_volume_5d: number | null;
+    attention_z: number | null;
+    near_high_ratio: number | null;
+    themes: string[];
+    flags: string[];
+}
+
+export interface TrendingCompaniesResponse {
+    meta: ThemeTrendsMeta;
+    companies: TrendingCompany[];
+}
+
+export interface ThemeProposalItem {
+    id: number;
+    label_en: string | null;
+    label_zh: string | null;
+    slug_suggestion: string | null;
+    rationale: string | null;
+    tickers: string[];
+    evidence: Array<Record<string, unknown>>;
+    first_seen: string;
+    last_seen: string;
+    hit_count: number;
+    status: ThemeProposalStatus;
+}
+
+export interface ThemeProposalsResponse {
+    proposals: ThemeProposalItem[];
+}
+
+export interface ThemeProposalDecisionResponse {
+    proposal: ThemeProposalItem;
+    yaml_snippet: string | null;
+}
+
+export const fetchThemes = (
+    { asOfDate, view, stage }: { asOfDate?: string | null; view: ThemeView; stage?: ThemeStage | null },
+    adminKey: string,
+    signal?: AbortSignal,
+) => {
+    const params = new URLSearchParams({ view });
+    if (asOfDate) params.set("as_of_date", asOfDate);
+    if (stage) params.set("stage", stage);
+    return apiRequest<ThemeListResponse>(
+        `/api/v1/themes?${params.toString()}`,
+        { headers: personalHeaders(adminKey), signal },
+        60_000,
+    );
+};
+
+export const fetchThemeDetail = (
+    slug: string,
+    adminKey: string,
+    asOfDate?: string | null,
+    signal?: AbortSignal,
+) => {
+    const query = asOfDate ? `?${new URLSearchParams({ as_of_date: asOfDate }).toString()}` : "";
+    return apiRequest<ThemeDetailResponse>(
+        `/api/v1/themes/${encodeURIComponent(slug)}${query}`,
+        { headers: personalHeaders(adminKey), signal },
+        60_000,
+    );
+};
+
+export const fetchThemeHistory = (
+    slug: string,
+    days: number,
+    adminKey: string,
+    signal?: AbortSignal,
+) => apiRequest<ThemeHistoryResponse>(
+    `/api/v1/themes/${encodeURIComponent(slug)}/history?days=${encodeURIComponent(days)}`,
+    { headers: personalHeaders(adminKey), signal },
+    60_000,
+);
+
+export const fetchTrendingCompanies = (
+    { asOfDate, limit }: { asOfDate?: string | null; limit?: number },
+    adminKey: string,
+    signal?: AbortSignal,
+) => {
+    const params = new URLSearchParams();
+    if (asOfDate) params.set("as_of_date", asOfDate);
+    if (limit != null) params.set("limit", String(limit));
+    const query = params.toString();
+    return apiRequest<TrendingCompaniesResponse>(
+        `/api/v1/trending-companies${query ? `?${query}` : ""}`,
+        { headers: personalHeaders(adminKey), signal },
+        60_000,
+    );
+};
+
+export const fetchThemeProposals = (
+    adminKey: string,
+    status?: ThemeProposalStatus | null,
+    signal?: AbortSignal,
+) => apiRequest<ThemeProposalsResponse>(
+    `/api/personal/themes/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    { headers: personalHeaders(adminKey), signal },
+);
+
+export const decideThemeProposal = (
+    id: number,
+    decision: ThemeProposalDecision,
+    adminKey: string,
+) => apiRequest<ThemeProposalDecisionResponse>(
+    `/api/personal/themes/proposals/${encodeURIComponent(id)}/decision`,
+    {
+        method: "POST",
+        headers: personalHeaders(adminKey, true),
+        body: JSON.stringify({ decision }),
+    },
+);

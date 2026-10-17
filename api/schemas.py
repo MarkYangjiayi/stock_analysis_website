@@ -535,6 +535,218 @@ class IndexValuationResponse(BaseModel):
     stats: IndexValuationStats
 
 
+# Trending themes. Returns are simple fractions (0.05 == +5%) derived from the
+# stored log excess returns; missing values stay null and render as "—".
+ThemeStage = Literal["emerging", "accelerating", "leading", "crowded", "fading", "neutral", "insufficient"]
+
+
+class ThemeTrendsMeta(BaseModel):
+    as_of_date: date
+    expected_as_of_date: date
+    published_at: Optional[datetime] = None
+    stale: bool
+    scoring_version: str
+    taxonomy_version: Optional[str] = None
+    point_in_time: bool
+    attention_degraded: bool
+    coverage_pct: Optional[float] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
+class ThemeLeader(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+
+
+class ThemeListItem(BaseModel):
+    slug: str
+    name_en: str
+    name_zh: str
+    megatrend: Optional[str] = None
+    stage: ThemeStage
+    candidate_stage: ThemeStage
+    stage_changed: bool = False
+    heat: Optional[float] = None
+    heat_now: Optional[float] = None
+    heat_trend: Optional[float] = None
+    rank_now: Optional[int] = None
+    rank_trend: Optional[int] = None
+    rank_change: Optional[int] = None
+    streak_top5: int = 0
+    score_price: Optional[float] = None
+    score_breadth: Optional[float] = None
+    score_volume: Optional[float] = None
+    score_attention: Optional[float] = None
+    excess_5d: Optional[float] = None
+    excess_21d: Optional[float] = None
+    excess_63d: Optional[float] = None
+    pct_above_ma50: Optional[float] = None
+    near_high_share: Optional[float] = None
+    pct_above_ma50_change_10d: Optional[float] = None
+    ignitions_today: int = 0
+    ignitions_5d: int = 0
+    n_members: int = 0
+    n_priced: int = 0
+    leaders: List[ThemeLeader] = Field(default_factory=list)
+    proxy_etf: Optional[str] = None
+    proxy_excess_21d: Optional[float] = None
+    heat_sparkline: List[Optional[float]] = Field(default_factory=list)
+    emerging: bool = False
+    attention_only: bool = False
+    attention_degraded: bool = False
+    point_in_time: bool = False
+
+
+class ThemeListSummary(BaseModel):
+    ranked: int
+    emerging: int
+    accelerating: int
+    leading: int
+    crowded: int
+    fading: int
+    top_riser: Optional[str] = None
+
+
+class ThemeListResponse(BaseModel):
+    meta: ThemeTrendsMeta
+    view: Literal["now", "trend"]
+    summary: ThemeListSummary
+    themes: List[ThemeListItem]
+
+
+class ThemeMemberRow(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    tier: Literal["core", "peripheral"]
+    weight: float
+    exposure: int
+    role: Optional[str] = None
+    review_status: str
+    sources: List[str] = Field(default_factory=list)
+    evidence_quote: Optional[str] = None
+    evidence_source: Optional[str] = None
+    evidence_as_of: Optional[date] = None
+    close: Optional[float] = None
+    return_1d: Optional[float] = None
+    excess_5d: Optional[float] = None
+    excess_21d: Optional[float] = None
+    near_high_ratio: Optional[float] = None
+    relative_volume_5d: Optional[float] = None
+    attention_z: Optional[float] = None
+    ignited: bool = False
+    first_ignition_date: Optional[date] = None
+    leader_score: Optional[float] = None
+    leader_rank: Optional[int] = None
+    is_leader: bool = False
+    sparkline: List[Optional[float]] = Field(default_factory=list)
+
+
+class ThemeHistory(BaseModel):
+    dates: List[date]
+    heat: List[Optional[float]]
+    heat_now: List[Optional[float]]
+    heat_trend: List[Optional[float]]
+    score_price: List[Optional[float]]
+    score_breadth: List[Optional[float]]
+    score_volume: List[Optional[float]]
+    score_attention: List[Optional[float]]
+    basket_index: List[Optional[float]]
+    benchmark_index: List[Optional[float]]
+    proxy_index: List[Optional[float]]
+    pct_above_ma50: List[Optional[float]]
+    near_high_share: List[Optional[float]]
+    ignitions: List[int]
+    stage: List[ThemeStage]
+    rank_now: List[Optional[int]]
+    point_in_time: List[bool]
+
+
+class ThemeBriefEvidence(BaseModel):
+    id: str
+    kind: str
+    label: str
+    source_date: Optional[str] = None
+    link: Optional[str] = None
+
+
+class ThemeBriefResponse(BaseModel):
+    date: date
+    model: str
+    prompt_version: str
+    created_at: Optional[datetime] = None
+    stale: bool
+    content: str
+    evidence: List[ThemeBriefEvidence] = Field(default_factory=list)
+
+
+class ThemeDetailResponse(BaseModel):
+    meta: ThemeTrendsMeta
+    theme: ThemeListItem
+    definition: str
+    keywords: List[str] = Field(default_factory=list)
+    proxy_etfs: List[str] = Field(default_factory=list)
+    history: ThemeHistory
+    members: List[ThemeMemberRow]
+    brief: Optional[ThemeBriefResponse] = None
+
+
+class ThemeHistoryResponse(BaseModel):
+    meta: ThemeTrendsMeta
+    slug: str
+    history: ThemeHistory
+
+
+class TrendingCompany(BaseModel):
+    rank: int
+    ticker: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    score: float
+    close: Optional[float] = None
+    market_cap: Optional[float] = None
+    return_1d: Optional[float] = None
+    excess_5d: Optional[float] = None
+    excess_5d_vs_sector: Optional[float] = None
+    relative_volume_5d: Optional[float] = None
+    attention_z: Optional[float] = None
+    near_high_ratio: Optional[float] = None
+    themes: List[str] = Field(default_factory=list)
+    flags: List[str] = Field(default_factory=list)
+
+
+class TrendingCompaniesResponse(BaseModel):
+    meta: ThemeTrendsMeta
+    companies: List[TrendingCompany]
+
+
+class ThemeProposalItem(BaseModel):
+    id: int
+    label_en: Optional[str] = None
+    label_zh: Optional[str] = None
+    slug_suggestion: Optional[str] = None
+    rationale: Optional[str] = None
+    tickers: List[str] = Field(default_factory=list)
+    evidence: List[Dict[str, Any]] = Field(default_factory=list)
+    first_seen: date
+    last_seen: date
+    hit_count: int
+    status: Literal["pending", "accepted", "rejected", "expired"]
+
+
+class ThemeProposalsResponse(BaseModel):
+    proposals: List[ThemeProposalItem]
+
+
+class ThemeProposalDecisionRequest(BaseModel):
+    decision: Literal["accepted", "rejected"]
+
+
+class ThemeProposalDecisionResponse(BaseModel):
+    proposal: ThemeProposalItem
+    yaml_snippet: Optional[str] = None
+
+
 class FactorComputeRequest(BaseModel):
     as_of_date: date
 

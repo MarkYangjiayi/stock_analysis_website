@@ -145,3 +145,4 @@ async def test_prompt_separates_facts_relation_and_limits(monkeypatch):
     assert "不能把时间先后" in prompts[0]
     assert "过去 24 小时" not in prompts[0]
     assert "请严格根据这些新闻，分析导致" not in prompts[0]
+

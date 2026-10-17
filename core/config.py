@@ -150,6 +150,36 @@ class Settings(BaseSettings):
     INDEX_VALUATION_COMPUTE_CONCURRENCY: int = 8
     INDEX_VALUATION_SEC_TICKERS_PATH: str = "./data/sec_mapping_cache/sec_company_tickers.json.gz"
 
+    # Trending themes (docs/trending_themes_research_2026-10-10). Scheduled jobs
+    # run in the worker only; every theme API is admin-only unless THEMES_PUBLIC.
+    # Attention comes from the EODHD market-wide news feed (5 calls per
+    # 1,000-article page, about 10 calls per day); baselines need ~100 days.
+    THEMES_ENABLED: bool = True
+    THEMES_PUBLIC: bool = False
+    THEME_TAXONOMY_PATH: str = ""  # empty -> services/themes/taxonomy/themes_v1.yaml
+    THEME_NEWS_BACKFILL_START: date = date(2025, 9, 1)
+    THEME_NEWS_BACKFILL_DAYS_PER_RUN: int = Field(default=120, ge=0, le=1000)
+    THEME_NEWS_RECENT_REFRESH_DAYS: int = Field(default=3, ge=1, le=14)
+    THEME_NEWS_MAX_PAGES_PER_DAY: int = Field(default=20, ge=1, le=200)
+    THEME_NEWS_RETENTION_DAYS: int = Field(default=45, ge=7, le=400)
+    THEME_NEWS_FOCUSED_MAX_SYMBOLS: int = Field(default=5, ge=1, le=50)
+    THEME_NEWS_TIMEOUT_SECONDS: float = 60.0
+    THEME_MEMBERSHIP_MIN_ETF_WEIGHT_PCT: float = 0.5
+    THEME_MEMBERSHIP_MAX_KEYWORD_CANDIDATES: int = Field(default=40, ge=0, le=500)
+    THEME_MEMBERSHIP_BATCH_SIZE: int = Field(default=12, ge=1, le=40)
+    THEME_MEMBERSHIP_CONCURRENCY: int = Field(default=3, ge=1, le=10)
+    THEME_MEMBERSHIP_LLM_TIMEOUT_SECONDS: float = 90.0
+    THEME_MEMBERSHIP_MAX_AGE_DAYS: int = Field(default=8, ge=1, le=60)
+    THEME_MIN_RANKABLE_MEMBERS: int = Field(default=6, ge=1, le=50)
+    THEME_BACKFILL_SESSIONS: int = Field(default=120, ge=0, le=504)
+    PIPELINE_MIN_THEME_PRICE_COVERAGE: float = 0.90
+    PIPELINE_MIN_RANKABLE_THEMES: int = 10
+    THEME_BRIEFS_ENABLED: bool = True
+    THEME_BRIEF_TOP_N: int = Field(default=8, ge=0, le=30)
+    THEME_BRIEF_TIMEOUT_SECONDS: float = 90.0
+    THEME_ALERTS_ENABLED: bool = True
+    THEME_PROPOSALS_ENABLED: bool = True
+
     @property
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]

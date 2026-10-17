@@ -17,7 +17,9 @@ from zoneinfo import ZoneInfo
 
 from services.report_insights import SECTOR_SHORT, current, display_symbol, pct, pre_open, ranked_sectors
 from services.report_market import NY, number
-from services.report_renderer import _compatible, breadth_notice, compact, instant, morning_moves, value
+from services.report_renderer import (
+    _compatible, breadth_notice, compact, instant, morning_moves, render_theme_section, theme_notice, value,
+)
 from services.watchlist_signals import signal_tags
 
 
@@ -334,6 +336,17 @@ def _anomaly_panel(rows: list[dict]) -> dict | None:
     return _panel(title, ["\n".join(lines)])
 
 
+def _theme_panel(context: dict) -> dict | None:
+    """Morning-only 题材热度 panel from the saved theme_heat evidence (deterministic)."""
+    lines = render_theme_section(context)
+    if not lines:
+        return None
+    body = [line for line in lines if line and line != "**题材热度**"]
+    top = (context.get("theme_heat") or {}).get("top") or []
+    preview = " · ".join(f"#{row.get('rank')} {compact(row.get('name_zh') or row.get('slug'))}" for row in top[:2])
+    return _panel("题材热度" + (f" · {preview}" if preview else ""), ["\n".join(body)])
+
+
 def _daily_issues(context: dict, anomaly_rows: list[dict]) -> list[str]:
     quotes = context.get("quotes", [])
     issues = []
@@ -352,6 +365,8 @@ def _daily_issues(context: dict, anomaly_rows: list[dict]) -> list[str]:
     if gaps:
         issues.append("暂缺：" + "、".join(gaps))
     if notice := breadth_notice(context):
+        issues.append(notice.rstrip("。"))
+    if notice := theme_notice(context):
         issues.append(notice.rstrip("。"))
     covered = {f"{name}暂不可用。" for name in ("跨资产行情", "美债曲线", "市场宽度", "事件日历")}
     issues.extend(str(item).rstrip("。") for item in dict.fromkeys(context.get("warnings", [])) if item not in covered)
@@ -407,12 +422,17 @@ def build_daily_card(context: dict, anomaly_rows: list[dict], *, report_type: st
         elements.append(calendar)
     if panel := _anomaly_panel(anomaly_rows):
         elements.append(panel)
+    if report_type == "morning_briefing" and (themes := _theme_panel(context)):
+        elements.append(themes)
     if details := _detail_sections(context, report_type):
         elements.append(_panel("全部行情明细 · 全球股市 / 外汇 / 商品 / 债券 / 加密", details))
     available = sum(number(row.get("price")) is not None and bool(row.get("fresh")) for row in quotes)
     elements.append(_footer([f"行情 {available}/{len(quotes)} 当期可用", "EODHD 延迟报价，非正式收盘价"],
                             _daily_issues(context, anomaly_rows)))
-    elements.extend(_buttons(site_url, (("市场总览", "/market"), ("异动扫描", "/anomalies"))))
+    links = (("市场总览", "/market"), ("异动扫描", "/anomalies"))
+    if report_type == "morning_briefing" and context.get("theme_heat"):
+        links += (("题材热度", "/themes"),)
+    elements.extend(_buttons(site_url, links))
     return _card(header, f"{title}：{headline}", elements)
 
 

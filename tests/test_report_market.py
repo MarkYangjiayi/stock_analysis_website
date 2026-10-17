@@ -1,8 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+import json
+import math
 
 import httpx
 import pytest
+from sqlalchemy import select
 
+from models import DataPublication, PipelineRun, Theme, ThemeDaily
 from services import eodhd_client, report_market as market
 from services.daily_reporter import render_daily_report
 from services.report_renderer import grouped_events, morning_comparison, quality_summary, quote_line, render_events_and_quality, render_market_sections
@@ -391,3 +395,150 @@ async def test_named_quote_api_batches_and_economic_path(monkeypatch):
         assert calls[0].url.params["s"] == "QQQ.US"
         assert await eodhd_client.get_report_calendar("economic", "2026-09-14", "2026-09-15", client=client) == []
         assert calls[1].url.path == "/api/economic-events"
+
+
+# ---------------------------------------------------------------------------
+# 题材热度 (theme heat, morning report only)
+# ---------------------------------------------------------------------------
+
+
+def theme_heat(as_of="2026-09-11", **values):
+    heat = {"as_of": as_of, "expected_as_of": "2026-09-11", "pipeline_run_id": 7, "scoring_version": "theme-heat-v1",
+            "ranked": 12, "degraded": False, "pit": True,
+            "top": [{"slug": "memory-storage", "name_zh": "存储芯片", "rank": 1, "rank_change": 2, "stage": "accelerating",
+                     "stage_prev": "neutral", "heat": 85.04, "excess_21d_pct": 8.42, "b50_pct": 72.0,
+                     "leaders": ["MU.US", "WDC.US"]},
+                    {"slug": "quantum", "name_zh": "量子计算", "rank": 2, "rank_change": -1, "stage": "crowded",
+                     "stage_prev": "leading", "heat": 80.0, "excess_21d_pct": -1.5, "b50_pct": None, "leaders": []}],
+            "emerging": [{"slug": "ai-power", "name_zh": "AI电力", "rank": 6}],
+            "stage_changes": [{"slug": "ai-power", "name_zh": "AI电力", "rank": 6, "from": "neutral", "to": "emerging"},
+                              {"slug": "quantum", "name_zh": "量子计算", "rank": 2, "from": "leading", "to": "crowded"}]}
+    heat.update(values)
+    return heat
+
+
+@pytest.mark.parametrize("observed,display", [("2026-09-11", True), ("2026-09-07", True),
+    ("2026-09-06", False), ("2026-09-15", False), (None, False), ("invalid", False)])
+def test_old_or_unverifiable_theme_heat_is_not_shown(observed, display):
+    heat = theme_heat(observed)
+    context = {"report_date": "2026-09-14", "quotes": [], "theme_heat": heat}
+    detail = "\n".join(render_market_sections(context, "morning_briefing"))
+    notice = "\n".join(quality_summary(context))
+    assert ("**题材热度**" in detail) is display
+    assert ("题材热度" in notice and "不展示" in notice) is not display
+    assert context["theme_heat"] == theme_heat(observed)
+
+
+def test_theme_section_renders_top_rows_events_and_notes_after_breadth():
+    breadth = {"as_of": "2026-09-11", "universe": "S&P 500", "advances": 321, "declines": 100, "unchanged": 10,
+               "coverage_pct": 99, "pct_above_ma20": 80, "pct_above_ma50": 70, "pct_above_ma200": 60}
+    core = {"ticker": "AAPL.US", "name": "苹果", "group": "core", "price": None}
+    context = {"report_date": "2026-09-14", "quotes": [core], "breadth": breadth,
+               "theme_heat": theme_heat("2026-09-10", degraded=True, pit=False)}
+    lines = render_market_sections(context, "morning_briefing")
+    text = "\n".join(lines)
+    assert text.index("市场宽度：") < text.index("**题材热度**") < text.index("**核心资产与自选股**")
+    assert "截至 2026-09-10 的已发布题材数据；已排名 12 个题材" in text
+    assert "- 题材数据截至 2026-09-10，最新交易日 2026-09-11 尚未发布。" in text
+    assert ("- #1 存储芯片（加速）：热度 85.0，排名 ↑2；21日超额 +8.42%；MA50以上 72.0%；龙头 MU、WDC") in text
+    assert "- #2 量子计算（拥挤）：热度 80.0，排名 ↓1；21日超额 -1.50%；MA50以上 —；龙头 —" in text
+    assert "- 当日萌芽：AI电力。" in text
+    assert "- 阶段变化：量子计算 主线→拥挤。" in text
+    assert "降级" in text and "非时点成员" in text
+    assert lines[2].startswith("- 美股基准ETF")
+
+
+def test_theme_section_is_morning_only_and_gap_only_when_collected():
+    context = {"report_date": "2026-09-14", "quotes": [], "theme_heat": theme_heat()}
+    assert "**题材热度**" not in "\n".join(render_market_sections(context, "post_market_summary"))
+    legacy = {"report_date": "2026-09-14", "quotes": [], "warnings": []}
+    assert "题材热度" not in "\n".join(quality_summary(legacy))
+    assert "题材热度" not in render_daily_report([], report_type="morning_briefing", market_context=legacy)
+    missing = {**legacy, "theme_heat": None, "warnings": ["题材热度暂不可用。"]}
+    report = render_daily_report([], report_type="morning_briefing", market_context=missing)
+    assert report.count("题材热度暂不可用") == 1
+    assert "**题材热度**" not in report
+    empty = {**legacy, "theme_heat": theme_heat(top=[], emerging=[], stage_changes=[], ranked=0)}
+    assert "- 本期没有可排名的题材。" in "\n".join(render_market_sections(empty, "morning_briefing"))
+
+
+async def _seed_theme_publication(db, as_of, *, status="published", publish=True, slug="memory-storage", **values):
+    theme = await db.scalar(select(Theme).where(Theme.slug == slug))
+    if theme is None:
+        theme = Theme(slug=slug, name_en=slug, name_zh=values.pop("name_zh", "存储芯片"), definition="d", keywords=[],
+                      negative_keywords=[], proxy_etfs=[], seed_core=[], pins=[], bans=[],
+                      status=values.pop("theme_status", "active"), taxonomy_version="themes-v1")
+        db.add(theme)
+    run = PipelineRun(pipeline_name="theme_trends", target_date=as_of, status=status, stage=status,
+                      version="theme-heat-v1", quality_report=values.pop("quality_report", None))
+    db.add(run)
+    await db.flush()
+    if publish:
+        db.add(DataPublication(dataset="theme_trends", as_of_date=as_of, pipeline_run_id=run.id, status="published"))
+    row = {"scoring_version": "theme-heat-v1", "pit": True, "rankable": True, "stage": "accelerating",
+           "candidate_stage": "accelerating", "stage_prev": "neutral", "stage_changed": True, "heat_now": 85.04,
+           "rank_now": 1, "rank_change": 2, "x21": math.log(1.0842), "b50": 0.72, "leaders": ["MU.US", "WDC.US"]}
+    row.update(values)
+    db.add(ThemeDaily(source_run_id=run.id, theme_id=theme.id, date=as_of, **row))
+    await db.commit()
+    return run
+
+
+@pytest.mark.asyncio
+async def test_theme_heat_reads_only_the_latest_published_run_on_or_before_report_date(db_session):
+    with pytest.raises(ValueError, match="No published theme trends"):
+        await market.collect_theme_heat(NOW)
+    published = await _seed_theme_publication(db_session, date(2026, 9, 10), quality_report={"metrics": {"attention_degraded": True}})
+    await _seed_theme_publication(db_session, date(2026, 9, 11), status="failed", heat_now=10.0)
+    await _seed_theme_publication(db_session, date(2026, 9, 11), publish=False, heat_now=20.0)
+    await _seed_theme_publication(db_session, date(2026, 9, 15), heat_now=30.0)  # after the report date
+    retired = Theme(slug="old-theme", name_en="Old", name_zh="旧题材", definition="d", keywords=[], negative_keywords=[],
+                    proxy_etfs=[], seed_core=[], pins=[], bans=[], status="retired", taxonomy_version="themes-v1")
+    db_session.add(retired)
+    await db_session.flush()
+    db_session.add(ThemeDaily(source_run_id=published.id, theme_id=retired.id, date=date(2026, 9, 10),
+                              scoring_version="theme-heat-v1", stage="neutral", candidate_stage="neutral",
+                              rankable=True, rank_now=1, emerging_first_20=True))
+    await db_session.commit()
+    result = await market.collect_theme_heat(NOW)
+    assert json.loads(json.dumps(result, allow_nan=False)) == result
+    assert result["as_of"] == "2026-09-10" and result["expected_as_of"] == "2026-09-11"
+    assert result["pipeline_run_id"] == published.id
+    assert (result["ranked"], result["degraded"], result["pit"]) == (1, True, True)
+    assert result["top"] == [{"slug": "memory-storage", "name_zh": "存储芯片", "rank": 1, "rank_change": 2,
+                              "stage": "accelerating", "stage_prev": "neutral", "heat": 85.0, "excess_21d_pct": 8.42,
+                              "b50_pct": 72.0, "leaders": ["MU.US", "WDC.US"]}]
+    assert result["stage_changes"] == [{"slug": "memory-storage", "name_zh": "存储芯片", "rank": 1,
+                                        "from": "neutral", "to": "accelerating"}]
+    assert result["emerging"] == []
+
+
+@pytest.mark.asyncio
+async def test_theme_heat_point_in_time_ignores_memberless_themes(db_session):
+    as_of = date(2026, 9, 11)
+    run = await _seed_theme_publication(db_session, as_of, n_members=8)
+    # A theme synced after the last membership refresh: no basket, so scoring writes pit=False.
+    fresh = Theme(slug="new-theme", name_en="New", name_zh="新题材", definition="d", keywords=[], negative_keywords=[],
+                  proxy_etfs=[], seed_core=[], pins=[], bans=[], status="active", taxonomy_version="themes-v1")
+    db_session.add(fresh)
+    await db_session.flush()
+    db_session.add(ThemeDaily(source_run_id=run.id, theme_id=fresh.id, date=as_of, scoring_version="theme-heat-v1",
+                              stage="insufficient", candidate_stage="insufficient", rankable=False, pit=False,
+                              n_members=0))
+    await db_session.commit()
+    result = await market.collect_theme_heat(NOW)
+    assert (result["ranked"], result["pit"]) == (1, True)
+    context = {"report_date": "2026-09-14", "quotes": [], "theme_heat": result}
+    text = "\n".join(render_market_sections(context, "morning_briefing"))
+    assert "**题材热度**" in text and "含回填历史" not in text
+
+    backfilled = Theme(slug="backfilled", name_en="Backfilled", name_zh="回填题材", definition="d", keywords=[],
+                       negative_keywords=[], proxy_etfs=[], seed_core=[], pins=[], bans=[], status="active",
+                       taxonomy_version="themes-v1")
+    db_session.add(backfilled)
+    await db_session.flush()
+    db_session.add(ThemeDaily(source_run_id=run.id, theme_id=backfilled.id, date=as_of, scoring_version="theme-heat-v1",
+                              stage="neutral", candidate_stage="neutral", rankable=True, rank_now=2, pit=False,
+                              n_members=6))
+    await db_session.commit()
+    assert (await market.collect_theme_heat(NOW))["pit"] is False

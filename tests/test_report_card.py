@@ -468,3 +468,37 @@ def test_every_card_carries_the_feishu_bot_keyword():
                  build_weekly_card(digest(), headline="H。")):
         assert card["header"]["title"]["content"].startswith("Quantify ")
         assert card["config"]["summary"]["content"].startswith("Quantify ")
+
+
+THEME_HEAT = {"as_of": "2026-09-14", "expected_as_of": "2026-09-14", "ranked": 2, "degraded": False, "pit": True,
+              "emerging": [{"slug": "glp-1", "name_zh": "GLP-1 减重药"}], "stage_changes": [],
+              "top": [{"slug": "memory-storage", "name_zh": "存储芯片", "rank": 1, "rank_change": 2,
+                       "stage": "accelerating", "heat": 85.0, "excess_21d_pct": 8.42, "b50_pct": 72.0,
+                       "leaders": ["MU.US"]}]}
+
+
+def test_morning_card_adds_collapsed_theme_panel_and_link():
+    sample = {**context(), "theme_heat": THEME_HEAT}
+    card = build_daily_card(sample, [], report_type="morning_briefing", headline="H。", site_url="https://example.com")
+    panels = [element for element in card["body"]["elements"] if element["tag"] == "collapsible_panel"]
+    theme = next(panel for panel in panels if panel["header"]["title"]["content"].startswith("题材热度"))
+    assert theme["expanded"] is False
+    assert theme["header"]["title"]["content"] == "题材热度 · #1 存储芯片"
+    encoded = json.dumps(theme, ensure_ascii=False)
+    assert "热度 85.0，排名 ↑2" in encoded and "MA50以上 72.0%" in encoded and "当日萌芽：GLP-1 减重药" in encoded
+    assert "**题材热度**" not in encoded
+    buttons = [node["behaviors"][0]["default_url"] for node in walk(card) if isinstance(node, dict) and node.get("tag") == "button"]
+    assert buttons[-1] == "https://example.com/themes"
+
+
+def test_theme_panel_is_morning_only_and_gap_goes_to_footer():
+    sample = {**context(), "theme_heat": THEME_HEAT}
+    close = json.dumps(build_daily_card(sample, [], report_type="post_market_summary", headline="H。",
+                                        site_url="https://example.com"), ensure_ascii=False)
+    assert "题材热度" not in close and "/themes" not in close
+    missing = {**context(), "theme_heat": None, "warnings": ["题材热度暂不可用。"]}
+    card = build_daily_card(missing, [], report_type="morning_briefing", headline="H。", site_url="https://example.com")
+    panels = [element["header"]["title"]["content"] for element in card["body"]["elements"]
+              if element["tag"] == "collapsible_panel"]
+    assert not any(title.startswith("题材热度") for title in panels)
+    assert "/themes" not in json.dumps(card, ensure_ascii=False)

@@ -321,3 +321,85 @@ async def test_market_failure_still_preserves_grounded_stock_evidence(db_session
     monkeypatch.setattr(daily_reporter, "collect_market_context", failed_context)
     monkeypatch.setattr(daily_reporter.NotificationManager, "broadcast", broadcast)
     assert (await daily_reporter.generate_morning_briefing())["status"] == "delivered"
+
+
+def _theme_heat(as_of: str = "2026-08-27") -> dict:
+    return {"as_of": as_of, "expected_as_of": "2026-08-27", "pipeline_run_id": 1, "scoring_version": "theme-heat-v1",
+            "ranked": 3, "degraded": False, "pit": True,
+            "top": [{"slug": "memory-storage", "name_zh": "存储芯片", "rank": 1, "rank_change": 0, "stage": "leading",
+                     "stage_prev": "leading", "heat": 80.0, "excess_21d_pct": 4.2, "b50_pct": 66.7, "leaders": ["MU.US"]}],
+            "emerging": [], "stage_changes": []}
+
+
+def _deliver_without_scan(monkeypatch) -> list[dict]:
+    broadcasts: list[dict] = []
+
+    async def scan(**kwargs):
+        return [_pypl_anomaly()]
+
+    async def broadcast(*, title, content, channels=None, card=None):
+        broadcasts.append({"title": title, "content": content})
+        return True
+
+    monkeypatch.setattr(daily_reporter, "run_persisted_anomaly_scan", scan)
+    monkeypatch.setattr(daily_reporter.NotificationManager, "broadcast", broadcast)
+    return broadcasts
+
+
+def test_renderer_version_is_v3_1():
+    assert daily_reporter.REPORT_RENDERER_VERSION == "cross-asset-v3.1"
+
+
+@pytest.mark.asyncio
+async def test_morning_report_attaches_theme_heat_section(db_session, monkeypatch):
+    monkeypatch.setattr(daily_reporter.settings, "THEMES_ENABLED", True)
+    requested = []
+
+    async def heat(now):
+        requested.append(now)
+        return _theme_heat()
+
+    monkeypatch.setattr(daily_reporter, "collect_theme_heat", heat)
+    broadcasts = _deliver_without_scan(monkeypatch)
+    assert (await daily_reporter.generate_morning_briefing())["status"] == "delivered"
+    run = (await db_session.execute(select(DailyReportRun))).scalar_one()
+    assert len(requested) == 1 and requested[0].tzinfo is not None
+    assert run.market_context["theme_heat"]["as_of"] == "2026-08-27"
+    assert run.renderer_version == daily_reporter.REPORT_RENDERER_VERSION
+    content = broadcasts[0]["content"]
+    assert "**题材热度**" in content and "- #1 存储芯片（主线）：热度 80.0，排名 持平" in content
+    assert "题材热度暂不可用" not in content
+
+
+@pytest.mark.asyncio
+async def test_theme_heat_failure_is_a_single_gap_not_a_failed_report(db_session, monkeypatch):
+    monkeypatch.setattr(daily_reporter.settings, "THEMES_ENABLED", True)
+
+    async def unavailable(now):
+        raise ValueError("No published theme trends")
+
+    monkeypatch.setattr(daily_reporter, "collect_theme_heat", unavailable)
+    broadcasts = _deliver_without_scan(monkeypatch)
+    assert (await daily_reporter.generate_morning_briefing())["status"] == "delivered"
+    run = (await db_session.execute(select(DailyReportRun))).scalar_one()
+    assert run.market_context["theme_heat"] is None
+    assert broadcasts[0]["content"].count("题材热度暂不可用") == 1
+    assert "**题材热度**" not in broadcasts[0]["content"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled,report", [(True, "post_market_summary"), (False, "morning_briefing")])
+async def test_theme_heat_is_morning_only_and_feature_gated(db_session, monkeypatch, enabled, report):
+    monkeypatch.setattr(daily_reporter.settings, "THEMES_ENABLED", enabled)
+
+    async def unexpected(now):
+        pytest.fail("theme heat must not be collected")
+
+    monkeypatch.setattr(daily_reporter, "collect_theme_heat", unexpected)
+    broadcasts = _deliver_without_scan(monkeypatch)
+    generate = (daily_reporter.generate_post_market_summary if report == "post_market_summary"
+                else daily_reporter.generate_morning_briefing)
+    assert (await generate())["status"] == "delivered"
+    run = (await db_session.execute(select(DailyReportRun))).scalar_one()
+    assert "theme_heat" not in run.market_context
+    assert "题材热度" not in broadcasts[0]["content"]
