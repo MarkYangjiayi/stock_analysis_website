@@ -20,6 +20,9 @@ os.environ["PIPELINE_MIN_NASDAQ100_SIZE"] = "2"
 os.environ["PIPELINE_MIN_FUNDAMENTAL_COVERAGE"] = "0.80"
 os.environ["PIPELINE_REQUIRE_MULTIPLE_COVERAGE"] = "false"
 os.environ["PIPELINE_MIN_PRICE_FACTOR_COVERAGE"] = "0.80"
+# Theme jobs make real provider calls; tests opt in per case via monkeypatch.
+os.environ["THEMES_ENABLED"] = "false"
+os.environ["PIPELINE_MIN_RANKABLE_THEMES"] = "1"
 
 
 @pytest_asyncio.fixture(autouse=True)

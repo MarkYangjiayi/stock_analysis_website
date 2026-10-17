@@ -55,6 +55,88 @@ def breadth_notice(context: dict) -> str | None:
     return None
 
 
+THEME_STAGE_ZH = {
+    "emerging": "萌芽", "accelerating": "加速", "leading": "主线", "crowded": "拥挤",
+    "fading": "退潮", "neutral": "中性", "insufficient": "成员不足",
+}
+
+
+def theme_stage(raw: Any) -> str:
+    return THEME_STAGE_ZH.get(str(raw or ""), "阶段未知")
+
+
+def theme_rank_change(raw: Any) -> str:
+    """Arrows instead of signed numbers: rank moves are not colored as returns."""
+    parsed = number(raw)
+    if parsed is None:
+        return "—"
+    if parsed == 0:
+        return "持平"
+    return f"{'↑' if parsed > 0 else '↓'}{abs(int(parsed))}"
+
+
+def theme_level(raw: Any, suffix: str = "", digits: int = 1) -> str:
+    """A level (heat, share of members): no sign and no tiny-change wording."""
+    parsed = number(raw)
+    return "—" if parsed is None else f"{parsed:.{digits}f}{suffix}"
+
+
+def display_ticker(raw: Any) -> str:
+    ticker = compact(raw).upper()
+    return ticker[:-3] if ticker.endswith(".US") else ticker
+
+
+def theme_notice(context: dict) -> str | None:
+    themes = context.get("theme_heat")
+    if not themes:
+        return None
+    try:
+        age = (date.fromisoformat(context["report_date"]) - date.fromisoformat(themes["as_of"])).days
+    except (KeyError, TypeError, ValueError):
+        return "题材热度日期无法核验，不展示指标。"
+    if age < 0:
+        return "题材热度日期晚于报告日期，不展示指标。"
+    if age > 7:
+        return f"题材热度过旧（截至 {themes['as_of']}，超过7天），不展示过时指标。"
+    return None
+
+
+def render_theme_section(context: dict) -> list[str]:
+    """Deterministic 题材热度 block from the saved theme_heat evidence (no LLM text)."""
+    themes = context.get("theme_heat")
+    if not themes or theme_notice(context) is not None:
+        return []
+    as_of = themes["as_of"]
+    lines = ["", "**题材热度**", "",
+             f"截至 {as_of} 的已发布题材数据；已排名 {themes.get('ranked', 0)} 个题材，热度按公式确定性计算，非交易建议。"]
+    expected = themes.get("expected_as_of")
+    if expected and expected != as_of:
+        lines.append(f"- 题材数据截至 {as_of}，最新交易日 {expected} 尚未发布。")
+    top = themes.get("top") or []
+    if not top:
+        lines.append("- 本期没有可排名的题材。")
+    for row in top:
+        leaders = "、".join(display_ticker(ticker) for ticker in row.get("leaders") or []) or "—"
+        lines.append(f"- #{row.get('rank')} {compact(row.get('name_zh') or row.get('slug'))}（{theme_stage(row.get('stage'))}）："
+                     f"热度 {theme_level(row.get('heat'))}，排名 {theme_rank_change(row.get('rank_change'))}；"
+                     f"21日超额 {value(row.get('excess_21d_pct'), '%', True)}；"
+                     f"MA50以上 {theme_level(row.get('b50_pct'), '%')}；龙头 {leaders}")
+    emerging = themes.get("emerging") or []
+    if emerging:
+        lines.append("- 当日萌芽：" + "、".join(compact(row.get("name_zh") or row.get("slug")) for row in emerging) + "。")
+    emerged = {row.get("slug") for row in emerging}
+    changes = [row for row in themes.get("stage_changes") or [] if not (row.get("slug") in emerged and row.get("to") == "emerging")]
+    if changes:
+        shown = "；".join(f"{compact(row.get('name_zh') or row.get('slug'))} {theme_stage(row.get('from'))}→{theme_stage(row.get('to'))}"
+                         for row in changes[:6])
+        lines.append("- 阶段变化：" + shown + (f"；等 {len(changes)} 个" if len(changes) > 6 else "") + "。")
+    if themes.get("degraded"):
+        lines.append("- 数据提示：新闻关注度覆盖不足，本期热度未计入关注度分量（降级发布）。")
+    if themes.get("pit") is False:
+        lines.append("- 数据提示：含回填历史（按当前成分回算，非时点成员），排名变化仅供参考。")
+    return lines
+
+
 def quality_summary(context: dict) -> list[str]:
     quotes = context.get("quotes", [])
     current = sum(row.get("price") is not None and bool(row.get("fresh")) for row in quotes)
@@ -65,6 +147,10 @@ def quality_summary(context: dict) -> list[str]:
         unavailable.append("美债曲线")
     if not context.get("breadth"):
         unavailable.append("市场宽度")
+    # Older saved snapshots have no theme key; only a collected-but-missing
+    # section is a gap.
+    if "theme_heat" in context and not context.get("theme_heat"):
+        unavailable.append("题材热度")
     events = context.get("events")
     if not events:
         unavailable.append("事件日历")
@@ -76,6 +162,8 @@ def quality_summary(context: dict) -> list[str]:
     if unavailable:
         lines.append("- 模块缺口：" + "；".join(f"{name}暂不可用" for name in unavailable) + "。")
     if notice := breadth_notice(context):
+        lines.append("- " + notice)
+    if notice := theme_notice(context):
         lines.append("- " + notice)
     covered = {f"{name}暂不可用。" for name in unavailable}
     lines.extend(f"- {compact(warning)}" for warning in dict.fromkeys(context.get("warnings", [])) if warning not in covered)
@@ -248,6 +336,8 @@ def render_market_sections(context: dict, report_type: str) -> list[str]:
             value(breadth.get(f"pct_above_ma{period}"), "%") for period in (20, 50, 200)))
         if breadth["as_of"] != context.get("report_date"):
             lines.append("- 宽度用于历史背景，本交易日宽度尚未发布。")
+    if report_type == "morning_briefing":
+        lines.extend(render_theme_section(context))
     core = [row for row in quotes if row.get("group") == "core"]
     if core:
         lines.extend(["", "**核心资产与自选股**", ""])

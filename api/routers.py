@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,6 +107,29 @@ from services.similar_stocks import get_similar_stocks
 from api.schemas import IndexValuationResponse, SimilarStocksResponse
 from services.valuation_history import get_valuation_history
 from services.split_history import sync_full_split_history
+from core.config import settings
+from api.schemas import (
+    ThemeDetailResponse,
+    ThemeHistoryResponse,
+    ThemeListResponse,
+    ThemeProposalDecisionRequest,
+    ThemeProposalDecisionResponse,
+    ThemeProposalsResponse,
+    ThemeStage,
+    TrendingCompaniesResponse,
+)
+from services.themes.serving import (
+    ThemeNotFound,
+    ThemeProposalNotFound,
+    ThemeTrendsDateUnavailable,
+    ThemeTrendsUnavailable,
+    decide_theme_proposal,
+    get_theme_detail,
+    get_theme_history,
+    get_theme_list,
+    get_trending_companies,
+    list_theme_proposals,
+)
 import pandas as pd
 
 router = APIRouter()
@@ -877,6 +900,128 @@ async def watchlist_quotes(
     if len(symbols) > WATCHLIST_MAX_TICKERS:
         raise HTTPException(status_code=422, detail=f"At most {WATCHLIST_MAX_TICKERS} tickers can be quoted at once")
     return await get_watchlist_quotes(db, symbols)
+
+
+# Trending themes: read-only views of the published theme_trends dataset (local
+# tables only). The site is personal, so reads need the admin key unless
+# THEMES_PUBLIC opens them; proposal review is always admin-only.
+THEME_SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{0,63}$"
+
+
+async def require_theme_access(x_api_key: str = Header(default="")) -> None:
+    if settings.THEMES_PUBLIC:
+        return
+    await require_admin_api_key(x_api_key)
+
+
+@router.get(
+    "/api/v1/themes",
+    response_model=ThemeListResponse,
+    tags=["Themes"],
+    dependencies=[Depends(require_theme_access)],
+)
+async def read_themes(
+    as_of_date: Optional[date] = Query(default=None),
+    view: Literal["now", "trend"] = "now",
+    stage: Optional[ThemeStage] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_theme_list(db, as_of_date=as_of_date, view=view, stage=stage)
+    except ThemeTrendsDateUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ThemeTrendsUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/themes/{slug}",
+    response_model=ThemeDetailResponse,
+    tags=["Themes"],
+    dependencies=[Depends(require_theme_access)],
+)
+async def read_theme(
+    slug: str = Path(pattern=THEME_SLUG_PATTERN),
+    as_of_date: Optional[date] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_theme_detail(db, slug, as_of_date=as_of_date)
+    except (ThemeNotFound, ThemeTrendsDateUnavailable) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ThemeTrendsUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/themes/{slug}/history",
+    response_model=ThemeHistoryResponse,
+    tags=["Themes"],
+    dependencies=[Depends(require_theme_access)],
+)
+async def read_theme_history(
+    slug: str = Path(pattern=THEME_SLUG_PATTERN),
+    days: int = Query(252, ge=20, le=504),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_theme_history(db, slug, days=days)
+    except ThemeNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ThemeTrendsUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/trending-companies",
+    response_model=TrendingCompaniesResponse,
+    tags=["Themes"],
+    dependencies=[Depends(require_theme_access)],
+)
+async def read_trending_companies(
+    as_of_date: Optional[date] = Query(default=None),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_trending_companies(db, as_of_date=as_of_date, limit=limit)
+    except ThemeTrendsDateUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ThemeTrendsUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/personal/themes/proposals",
+    response_model=ThemeProposalsResponse,
+    tags=["Themes"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def read_theme_proposals(
+    proposal_status: Optional[Literal["pending", "accepted", "rejected", "expired"]] = Query(
+        default=None,
+        alias="status",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    return await list_theme_proposals(db, status=proposal_status)
+
+
+@router.post(
+    "/api/personal/themes/proposals/{proposal_id}/decision",
+    response_model=ThemeProposalDecisionResponse,
+    tags=["Themes"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def record_theme_proposal_decision(
+    proposal_id: int,
+    request: ThemeProposalDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await decide_theme_proposal(db, proposal_id, request.decision)
+    except ThemeProposalNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/health/live", tags=["Operations"])

@@ -238,3 +238,24 @@ async def test_prompt_separates_facts_relation_and_limits(monkeypatch):
     assert "不能把时间先后" in prompts[0]
     assert "过去 24 小时" not in prompts[0]
     assert "请严格根据这些新闻，分析导致" not in prompts[0]
+
+
+def test_theme_heat_routes_to_market_panel_and_colors_only_excess_returns():
+    context = {**CONTEXT, "quotes": [], "events": {"disabled": True},
+               "theme_heat": {"as_of": "2026-09-11", "expected_as_of": "2026-09-11", "ranked": 2, "degraded": False,
+                              "pit": True, "emerging": [], "stage_changes": [],
+                              "top": [{"slug": "memory-storage", "name_zh": "存储芯片", "rank": 1, "rank_change": 2,
+                                       "stage": "accelerating", "heat": 85.0, "excess_21d_pct": 8.42, "b50_pct": 72.0,
+                                       "leaders": ["MU.US"]}]}}
+    report = daily_reporter.render_daily_report([], report_type="morning_briefing", market_context=context)
+    card = build_daily_report_card("Quantify", report)
+    elements = card["body"]["elements"]
+    assert len(elements) <= 5
+    panels = [element for element in elements if element["tag"] == "collapsible_panel"]
+    market_panel = next(panel for panel in panels if "贵金属 / BTC" in panel["header"]["title"]["content"])
+    encoded = json.dumps(market_panel, ensure_ascii=False)
+    assert "**题材热度**" in encoded
+    assert "<font color='green'>+8.42%</font>" in encoded
+    assert "热度 85.0，排名 ↑2" in encoded and "MA50以上 72.0%" in encoded
+    assert "<font color='green'>85.0" not in encoded and "<font color='green'>72.0" not in encoded
+    assert "题材热度" not in json.dumps(elements[0], ensure_ascii=False)

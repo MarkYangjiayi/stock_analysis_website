@@ -109,3 +109,48 @@ async def test_stream_deepseek_text_yields_only_content(monkeypatch):
             "extra_body": {"thinking": {"type": "enabled"}},
         }
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("global_thinking", "thinking", "max_tokens", "expected_mode"),
+    [
+        (True, False, 4000, "disabled"),
+        (False, True, None, "enabled"),
+        (True, None, None, "enabled"),
+        (False, None, 800, "disabled"),
+    ],
+)
+async def test_generate_deepseek_json_applies_thinking_override_and_token_cap(
+    monkeypatch, global_thinking, thinking, max_tokens, expected_mode
+):
+    capture = {}
+
+    def fake_client(**kwargs):
+        return _FakeClient(_completion('{"results": []}'), capture, **kwargs)
+
+    monkeypatch.setattr(deepseek_client, "AsyncOpenAI", fake_client)
+    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "test-model")
+    monkeypatch.setattr(settings, "DEEPSEEK_THINKING_ENABLED", global_thinking)
+
+    result = await deepseek_client.generate_deepseek_json(
+        system_prompt="sys",
+        user_prompt="usr",
+        thinking=thinking,
+        max_tokens=max_tokens,
+    )
+
+    assert result == {"results": []}
+    assert capture["closed"] is True
+    expected_call = {
+        "model": "test-model",
+        "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "usr"},
+        ],
+        "response_format": {"type": "json_object"},
+        "extra_body": {"thinking": {"type": expected_mode}},
+    }
+    if max_tokens is not None:
+        expected_call["max_tokens"] = max_tokens
+    assert capture["client"].chat.completions.calls == [expected_call]

@@ -400,3 +400,66 @@ async def get_dividends(
     if to_date:
         params["to"] = to_date
     return await _fetch_from_eodhd("div", ticker, params=params, client=client)
+
+
+NEWS_MAX_LIMIT = 1000
+
+
+async def get_news(
+    *,
+    ticker: Optional[str] = None,
+    tag: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[list[Dict[str, Any]]]:
+    """Fetch one /api/news page; omitting ticker and tag returns the market-wide feed.
+
+    Each request costs 5 API calls regardless of ``limit`` (verified 2026-10-10).
+    Returns None when the provider is unavailable or the payload is not a list;
+    [] means the window genuinely has no articles.
+    """
+    if not 1 <= limit <= NEWS_MAX_LIMIT or offset < 0:
+        raise ValueError("news limit must be 1..1000 and offset must be >= 0")
+    params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    if ticker:
+        params["s"] = ticker
+    if tag:
+        params["t"] = tag
+    if from_date:
+        params["from"] = from_date
+    if to_date:
+        params["to"] = to_date
+    logger.debug("Fetching news scope=%s offset=%s limit=%s", ticker or tag or "market", offset, limit)
+    payload = await _fetch_from_eodhd("news", "", params=params, client=client)
+    if not isinstance(payload, list):
+        return None
+    return [row for row in payload if isinstance(row, dict)]
+
+
+async def get_etf_data(
+    etf_ticker: str,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[Dict[str, Any]]:
+    """Fetch ETF_Data (current Holdings plus Inception_Date); 10 API calls per request.
+
+    Returns {"holdings": [row, ...], "inception_date": "YYYY-MM-DD" | None} or None
+    when the provider is unavailable or returns an unexpected shape. Holdings rows
+    keep the provider fields (Code, Exchange, Name, Assets_%, ...) plus "_key".
+    """
+    data = await _fetch_from_eodhd("fundamentals", etf_ticker, params={"filter": "ETF_Data"}, client=client)
+    if not isinstance(data, dict):
+        return None
+    holdings = data.get("Holdings")
+    if isinstance(holdings, dict):
+        rows = [{**row, "_key": key} for key, row in holdings.items() if isinstance(row, dict)]
+    elif isinstance(holdings, list):
+        rows = [row for row in holdings if isinstance(row, dict)]
+    elif holdings is None:
+        rows = []
+    else:
+        return None
+    inception = data.get("Inception_Date")
+    return {"holdings": rows, "inception_date": inception if isinstance(inception, str) and inception else None}

@@ -41,8 +41,21 @@ async def generate_deepseek_json(
     system_prompt: str,
     user_prompt: str,
     model: str | None = None,
+    thinking: bool | None = None,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
-    """Generate one strict JSON object through DeepSeek JSON Output mode."""
+    """Generate one strict JSON object through DeepSeek JSON Output mode.
+
+    ``thinking`` overrides the global setting for batch classification calls;
+    ``None`` keeps ``DEEPSEEK_THINKING_ENABLED``.
+    """
+    extra_body = (
+        _thinking_options() if thinking is None
+        else {"thinking": {"type": "enabled" if thinking else "disabled"}}
+    )
+    options: dict[str, Any] = {}
+    if max_tokens is not None:
+        options["max_tokens"] = max_tokens
     async with _create_client() as client:
         response = await client.chat.completions.create(
             model=model or settings.DEEPSEEK_MODEL,
@@ -51,7 +64,8 @@ async def generate_deepseek_json(
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-            extra_body=_thinking_options(),
+            extra_body=extra_body,
+            **options,
         )
 
     if not response.choices:

@@ -22,8 +22,9 @@ import pandas_market_calendars as market_calendars
 from sqlalchemy import select
 
 from core.config import settings
+from core.trading_calendar import latest_completed_us_session
 from database import async_session_maker
-from models import DataPublication, MarketBreadthSnapshot, PipelineRun
+from models import DataPublication, MarketBreadthSnapshot, PipelineRun, Theme, ThemeDaily
 from services import eodhd_client
 from services.personal_workspace import get_watchlist
 from services.rrg_prices import RRG_SECTOR_NAMES
@@ -400,6 +401,102 @@ async def collect_breadth(now: datetime) -> dict:
             "coverage_pct": percentage(row.price_count, row.member_count),
         }
 
+
+
+THEME_TRENDS_DATASET = "theme_trends"
+THEME_HEAT_TOP_N = 5
+
+
+def _log_excess_pct(raw: Any) -> float | None:
+    """Stored log (excess) return -> simple percentage, e.g. ln(1.05) -> 5.0."""
+    parsed = number(raw)
+    if parsed is None:
+        return None
+    try:
+        return number(round(math.expm1(parsed) * 100, 2))
+    except OverflowError:
+        return None
+
+
+def _fraction_pct(raw: Any, digits: int = 1) -> float | None:
+    parsed = number(raw)
+    return round(parsed * 100, digits) if parsed is not None else None
+
+
+def _theme_leaders(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    leaders = []
+    for item in raw:
+        ticker = item.get("ticker") if isinstance(item, dict) else item
+        if isinstance(ticker, str) and ticker.strip():
+            leaders.append(ticker.strip().upper())
+    return leaders[:3]
+
+
+async def collect_theme_heat(now: datetime) -> dict:
+    """Latest published theme_trends session on or before the report date.
+
+    Only the publication's own run is read (rows are joined on source_run_id),
+    and the result is JSON-safe because it is persisted with the report evidence.
+    """
+    report_date = now.astimezone(NY).date()
+    async with async_session_maker() as db:
+        publication = (await db.execute(
+            select(DataPublication.as_of_date, DataPublication.pipeline_run_id, PipelineRun.quality_report)
+            .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
+            .where(DataPublication.dataset == THEME_TRENDS_DATASET, DataPublication.status == "published",
+                   PipelineRun.status == "published", DataPublication.as_of_date <= report_date)
+            .order_by(DataPublication.as_of_date.desc()).limit(1)
+        )).first()
+        if publication is None:
+            raise ValueError("No published theme trends")
+        as_of, run_id, quality = publication
+        rows = (await db.execute(
+            select(ThemeDaily, Theme).join(Theme, Theme.id == ThemeDaily.theme_id)
+            .where(ThemeDaily.source_run_id == run_id, ThemeDaily.date == as_of, Theme.status != "retired")
+        )).all()
+    if not rows:
+        raise ValueError("Published theme trends have no rows")
+    quality = quality if isinstance(quality, dict) else {}
+    metrics = quality.get("metrics") if isinstance(quality.get("metrics"), dict) else {}
+    ranked = sorted(((row, theme) for row, theme in rows if row.rankable and row.rank_now is not None),
+                    key=lambda pair: (pair[0].rank_now, pair[1].slug))
+
+    def entry(row: ThemeDaily, theme: Theme) -> dict:
+        return {"slug": theme.slug, "name_zh": theme.name_zh or theme.name_en or theme.slug,
+                "rank": int(row.rank_now) if row.rank_now is not None else None,
+                "rank_change": int(row.rank_change) if row.rank_change is not None else None,
+                "stage": row.stage, "stage_prev": row.stage_prev,
+                "heat": round(heat, 1) if (heat := number(row.heat_now)) is not None else None,
+                "excess_21d_pct": _log_excess_pct(row.x21), "b50_pct": _fraction_pct(row.b50),
+                "leaders": _theme_leaders(row.leaders)}
+
+    def rank_key(pair: tuple[ThemeDaily, Theme]) -> tuple:
+        return (pair[0].rank_now is None, pair[0].rank_now or 0, pair[1].slug)
+
+    emerging = sorted(((row, theme) for row, theme in rows if row.emerging_first_20), key=rank_key)
+    changes = sorted(((row, theme) for row, theme in ranked
+                      if row.stage_changed and row.stage_prev and row.stage_prev != row.stage
+                      and "insufficient" not in {row.stage, row.stage_prev}), key=rank_key)
+    return {
+        "as_of": as_of.isoformat(),
+        "expected_as_of": latest_completed_us_session(report_date).isoformat(),
+        "pipeline_run_id": int(run_id),
+        "scoring_version": next((row.scoring_version for row, _ in rows if row.scoring_version), None),
+        "ranked": len(ranked),
+        "degraded": bool(metrics.get("attention_degraded", quality.get("attention_degraded", False)))
+        or any(row.attention_degraded for row, _ in ranked),
+        # Like serving's meta.point_in_time: a memberless theme has no basket (scoring
+        # writes pit=False for it), so it says nothing about point-in-time membership.
+        "pit": all(row.pit for row, _ in rows if (row.n_members or 0) > 0),
+        "top": [entry(row, theme) for row, theme in ranked[:THEME_HEAT_TOP_N]],
+        "emerging": [{"slug": theme.slug, "name_zh": theme.name_zh or theme.slug,
+                      "rank": int(row.rank_now) if row.rank_now is not None else None} for row, theme in emerging],
+        "stage_changes": [{"slug": theme.slug, "name_zh": theme.name_zh or theme.slug,
+                           "rank": int(row.rank_now), "from": row.stage_prev, "to": row.stage}
+                          for row, theme in changes],
+    }
 
 async def collect_events(assets: list[Instrument], now: datetime) -> dict:
     today = now.astimezone(NY).date()
