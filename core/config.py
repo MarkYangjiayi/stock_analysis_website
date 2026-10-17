@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     
     # Notifications
     FEISHU_WEBHOOK_URL: str = ""
+    # Public site origin for card links/buttons (e.g. https://finbrain.icu).
+    # Empty disables links rather than pointing at a guessed host.
+    PUBLIC_SITE_URL: str = ""
+    # Opt-in "worker started" message; deploys already verify health.
+    NOTIFY_WORKER_STARTUP: bool = False
 
     # Delayed global snapshots need time to include the open/close. All times
     # below use America/New_York, including daylight-saving changes.
@@ -54,6 +59,12 @@ class Settings(BaseSettings):
     DAILY_REPORT_INCLUDE_WATCHLIST: bool = True
     DAILY_REPORT_WATCHLIST_LIMIT: int = Field(default=12, ge=0, le=30)
     DAILY_REPORT_EVENTS_ENABLED: bool = True
+    # Weekly digest (America/New_York). The default Saturday 08:00 runs after
+    # the overnight pipelines have published Friday's breadth/RRG/valuation.
+    WEEKLY_DIGEST_ENABLED: bool = True
+    WEEKLY_DIGEST_DAY_OF_WEEK: str = Field(default="sat", pattern=r"^(mon|tue|wed|thu|fri|sat|sun)$")
+    WEEKLY_DIGEST_HOUR: int = Field(default=8, ge=0, le=23)
+    WEEKLY_DIGEST_MINUTE: int = Field(default=0, ge=0, le=59)
 
     # Daily RSI(14) monitor. The personal watchlist is used when no explicit
     # comma-separated symbol list is configured.

@@ -296,8 +296,8 @@ Implements the stubs; returns dicts that validate against `api/schemas.py`.
   `daily_reporter._generate_and_broadcast` for `morning_briefing` only (Option B in the recon),
   rendered by `report_renderer.render_theme_section` inside `render_market_sections` (morning only,
   after the breadth block), `quality_summary` gap handling only when the key is present,
-  `"题材热度"` added to `report_card._MARKET_SECTIONS`, `REPORT_RENDERER_VERSION` →
-  `"cross-asset-v2.3"` (+ docs/daily_report_v2/README.md and deploy assertions).
+  a collapsed `题材热度` panel and `/themes` button added to `report_card.build_daily_card` (morning only), `REPORT_RENDERER_VERSION` →
+  `"cross-asset-v3.1"` after merging main's card redesign (v3.0).
 - Tests: `tests/test_theme_briefs.py`, `tests/test_theme_alerts.py`, `tests/test_theme_proposals.py`,
   plus report tests extended (stale matrix, morning-only, card routing).
 

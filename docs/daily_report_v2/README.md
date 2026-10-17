@@ -2,6 +2,38 @@
 
 开盘及盘后推送现包含全球市场和固定核心资产；没有股票越过异动阈值时，也会生成完整市场报告。报告由结构化证据确定性渲染。v2.1 的个股章节只展示已保存的新闻标题及引用，不再把 AI 因果判断当成已验证事实。
 
+## v3.0 飞书卡片重设计与周报
+
+v2 卡片先拼 Markdown 再用正则切段，首屏只有原始涨跌和数据说明，明细全部折叠。v3 改为直接用已保存的结构化证据（`market_context`）生成卡片，同一份证据始终得到同一张卡；数据库中的 Markdown 仍是完整审计正文，并新增结论行与关注列表信号。
+
+- **一句话结论**（`services/report_insights.py`）：按固定阈值从指数、板块排名、RSP/SPY 等权差、VIX、跨资产大幅变动和关注列表大幅波动生成，只描述涨跌，不推断原因，不调用 LLM。旧报价不参与；美股未开盘时明确写成“前一交易日”。结论同时作为飞书会话列表预览（`config.summary`）。
+- **首屏**：结论、8 格核心指标（标普/纳指/罗素/VIX/10Y/美元/黄金/BTC，`bisect` 在手机上排成 2×2）、11 个板块强弱条（等宽中文简称 + 方块条）、关注列表表格（涨跌标签 + 信号标签，可点击跳转网站个股页）。卡片标题颜色按标普涨跌 ±0.5% 变绿/红，其余为灰。
+- **关注列表信号**（`services/watchlist_signals.py`）：复用 RSI 监控的 RSI(14) 和日线补数；另加 52 周新高/新低（1% 以内）和今明财报标签。盘后报告仅在报价前收盘与已存收盘一致（0.5% 内）时把当日延迟收盘价并入序列，拆股等情况回退到上一存储交易日。仅 US 标的打标签。
+- **数据质量只在有问题时显示**：缺失、旧报价、模块缺口和非当期异动股合并为页脚一行 ⚠；全部正常时不出现。每条行情不再附 UTC 时间戳，只有非当期或非本报告日期的数据才标注。
+- **个股异动与全部明细**仍在折叠面板，面板标题直接显示前三只异动股。飞书表格组件只能放在卡片根节点，所以关注列表表格在首屏，明细面板用 Markdown。
+- **周报**（`services/weekly_digest.py`）：默认纽约时间周六 08:00（夏令时北京时间周六 20:00），在周五数据流水线发布之后。内容为主要资产与 11 个板块的周涨跌（EODHD 日线，复权口径）、板块轮动象限变化（已发布 RRG 价格）、标普 500 宽度周变化与 52 周新高/新低、标普 500 P/E 历史分位（月末重建估算）、关注列表周涨跌与信号、下周重要经济数据和关注列表财报。审计记录写入 `daily_report_runs`（`report_type=weekly_digest`），同一周已送达不再重复发送；没有任何可用周涨跌时不发送。
+- **其他**：worker 启动消息默认关闭（`NOTIFY_WORKER_STARTUP`）。卡片链接和按钮需要 `PUBLIC_SITE_URL`，生产 compose 已设为 `https://finbrain.icu`；未配置时不显示链接。
+
+| 新配置 | 默认 | 含义 |
+| --- | --- | --- |
+| PUBLIC_SITE_URL | 空 | 卡片链接和按钮使用的网站地址 |
+| NOTIFY_WORKER_STARTUP | false | worker 启动时是否推送 |
+| WEEKLY_DIGEST_ENABLED | true | 是否发送周报 |
+| WEEKLY_DIGEST_DAY_OF_WEEK / HOUR / MINUTE | sat / 8 / 0 | 周报时间（纽约） |
+
+预览（不发送，不写库；`--replay` 不请求任何数据源）：
+
+```bash
+python scripts/qa_daily_report_delivery.py --case post --output-dir /path/to/new-dir --replay /path/to/saved-report.json
+python scripts/qa_daily_report_delivery.py --case weekly --output-dir /path/to/new-dir
+```
+
+输出目录包含 `.md` 审计正文和 `.card.json`。确认后对同一目录追加 `--deliver` 才会发送；发送前会用保存的证据重建卡片并核对一致。
+
+群机器人开启了自定义关键词：卡片标题和 `config.summary` 必须包含 `Quantify`，否则飞书返回 code 19024（Key Words Not Found）且不显示消息；有测试固定这一点。
+
+2026-10-10 发送了两张标“测试”的卡片：9/14 盘后历史回放、10/5–10/9 周报（真实 EODHD 日线；本地库没有已发布的宽度/RRG/估值，相应模块显示为暂缺）。飞书均返回 code 0。手机端显示尚待人工确认。
+
 ## 覆盖与口径
 
 默认共 45 项行情：9 个股票市场指标、4 个外汇指标、4 个贵金属代理、2 个能源/工业金属代理、3 个债券价格代理、VIX/BTC/ETH、RSP、11 个板块 ETF 和 8 只核心股票。美国股票市场使用 SPY/QQQ/IWM ETF 代理；海外使用沪深300、恒生、恒生科技、日经225、台湾加权及欧洲斯托克50指数。美元指数使用供应商目录中核验过的 NYICDX.INDX。
@@ -43,7 +75,7 @@
 
 ## 审计与上线
 
-新增迁移 `0020_daily_report_market_context`。`DailyReportRun.source_results` 保留原来的个股异动数组；新的 `market_context` JSON 保存归一化报价、时间、前收盘、收益率、宽度、事件、异常提示和用于比较的早报快照。当前代码 `renderer_version` 为 `cross-asset-v2.3`；v2.2 无新增数据库迁移，v2.3 的题材表随 `0023_theme_trends` 迁移创建（报告本身不新增列）。旧报告无需改写。
+新增迁移 `0020_daily_report_market_context`。`DailyReportRun.source_results` 保留原来的个股异动数组；新的 `market_context` JSON 保存归一化报价、时间、前收盘、收益率、宽度、事件、异常提示和用于比较的早报快照。当前代码 `renderer_version` 为 `cross-asset-v3.1`；v2.2 与 v3.0 无新增数据库迁移，v3.1 的题材表随 `0023_theme_trends` 迁移创建（报告本身不新增列）。旧报告无需改写。
 
 部署时先备份数据库并执行 `alembic upgrade head`，再重启 worker 以加载新调度。无需新的数据源密钥；日历及海外数据可用性取决于现有 EODHD 订阅。
 
@@ -62,13 +94,13 @@ python scripts/preview_daily_report.py --report-type morning_briefing --output d
 
 复现文本只需调用 `render_daily_report(evidence['anomalies'], report_type=evidence['report_type'], market_context=evidence['market_context'])`，无需重新抓取行情。
 
-## v2.3 题材热度
+## v3.1 题材热度
 
 - 开盘报告在“板块与市场宽度”之后新增“题材热度”段落；盘后报告不展示。数据只读最新一期成功发布的 `theme_trends`（按 `DataPublication.pipeline_run_id == ThemeDaily.source_run_id` 关联，且运行状态为 published），不调用外部接口或 LLM。
 - 每行展示前 5 名题材：排名、阶段（萌芽/加速/主线/拥挤/退潮/中性）、热度、排名变化（↑/↓/持平，不按涨跌着色）、21日超额（相对 SPY，对数收益换算为简单收益，带正负号并着色）、MA50 以上成员占比和前 3 名龙头；另列当日萌芽题材及阶段变化。
 - 题材数据不是最新交易日时注明“题材数据截至 X”；超过7天、晚于报告日期或日期无法核验时只在数据提示中说明，不展示指标。关注度降级发布或含回填（非时点成员）时追加数据提示。
 - 采集失败时记为模块缺口“题材热度暂不可用”。证据快照中没有 `theme_heat` 键的旧报告（以及 `THEMES_ENABLED=false` 时）既不渲染段落也不提示缺口，回放结果不变。
-- 卡片中“题材热度”归入行情明细折叠面板，不新增面板。
+- 飞书卡片（仅开盘）在异动面板之后新增折叠面板“题材热度 · #1 题材名”，底部按钮增加“题材热度”（/themes）；数据缺口进入卡片脚注。
 - 预览脚本的开盘模式同样读取题材热度；它只读本地数据库。
 
 ## v2.2 贵金属、BTC 与涨跌颜色

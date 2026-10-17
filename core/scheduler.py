@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta
 
 from core.config import settings
 from services.daily_reporter import generate_morning_briefing, generate_post_market_summary
+from services.weekly_digest import generate_weekly_digest
 from services.screener_sync import run_screener_pipeline
 from services.quant.factor_engine import compute_factors_for_date
 from scripts.backup_sqlite import create_backup
@@ -174,6 +175,10 @@ async def scheduled_post_market_summary():
     if is_us_market_session(datetime.now(ny_tz).date()):
         return await generate_post_market_summary()
     return None
+
+
+async def scheduled_weekly_digest():
+    return await generate_weekly_digest()
 
 
 async def scheduled_rsi_monitor(reference_date: date = None):
@@ -531,6 +536,17 @@ def start_scheduler():
         replace_existing=True
     )
     
+    if settings.WEEKLY_DIGEST_ENABLED:
+        scheduler.add_job(
+            scheduled_weekly_digest,
+            'cron',
+            day_of_week=settings.WEEKLY_DIGEST_DAY_OF_WEEK,
+            hour=settings.WEEKLY_DIGEST_HOUR,
+            minute=settings.WEEKLY_DIGEST_MINUTE,
+            id="weekly_digest",
+            replace_existing=True,
+        )
+
     if not scheduler.running:
         scheduler.start()
 

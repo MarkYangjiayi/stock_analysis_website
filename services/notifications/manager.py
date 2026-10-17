@@ -15,10 +15,13 @@ class NotificationManager:
         title: str,
         content: str,
         channels: list[str] | None = None,
-        card_layout: str | None = None,
+        card: dict | None = None,
     ) -> bool:
         """
         Broadcast a message and report whether every requested channel accepted it.
+
+        ``content`` is the channel-neutral Markdown; ``card`` is an optional
+        prebuilt Feishu layout of the same evidence.
         """
         requested_channels = ["feishu"] if channels is None else channels
 
@@ -26,7 +29,7 @@ class NotificationManager:
             notifier = cls._channels.get(channel)
             if notifier:
                 logger.info(f"Broadcasting to {channel}: {title}")
-                options = {"card_layout": card_layout} if card_layout else {}
+                options = {"card": card} if card else {}
                 success = await notifier.send(title, content, **options)
                 if not success:
                     logger.warning(f"Failed to broadcast to channel: {channel}")

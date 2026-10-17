@@ -111,7 +111,7 @@ jobs:
               sleep 3
             done
             sudo docker compose exec -T backend alembic current
-            sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE)"
+            sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE); print('Weekly digest:', settings.WEEKLY_DIGEST_ENABLED, settings.WEEKLY_DIGEST_DAY_OF_WEEK, settings.WEEKLY_DIGEST_HOUR, settings.WEEKLY_DIGEST_MINUTE); print('Card site links:', bool(settings.PUBLIC_SITE_URL))"
             sudo docker compose ps
             sudo docker image prune -af
 
@@ -144,5 +144,5 @@ jobs:
               sleep 3
             done
             sudo docker compose exec -T backend alembic current
-            sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE)"
+            sudo docker compose exec -T worker python -c "from services.daily_reporter import REPORT_RENDERER_VERSION; from core.config import settings; print('Daily report renderer:', REPORT_RENDERER_VERSION); print('New York report schedule:', settings.DAILY_REPORT_MORNING_HOUR, settings.DAILY_REPORT_MORNING_MINUTE, settings.DAILY_REPORT_CLOSE_HOUR, settings.DAILY_REPORT_CLOSE_MINUTE); print('Weekly digest:', settings.WEEKLY_DIGEST_ENABLED, settings.WEEKLY_DIGEST_DAY_OF_WEEK, settings.WEEKLY_DIGEST_HOUR, settings.WEEKLY_DIGEST_MINUTE); print('Card site links:', bool(settings.PUBLIC_SITE_URL))"
             sudo docker compose ps
