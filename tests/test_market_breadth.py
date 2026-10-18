@@ -179,7 +179,7 @@ def test_alembic_upgrade_from_0003_adds_market_breadth_storage(tmp_path):
         ("RUSSELL2000", "BBB.US", LIVE_UNIVERSE_SOURCE),
         ("SP500", "AAA.US", LIVE_UNIVERSE_SOURCE),
     ]
-    assert revision == "0025_expectation_signals"
+    assert revision == "0026_data_freshness_alerts"
 
 
 def test_historical_membership_parser_supports_duplicates_and_reentry():
@@ -217,6 +217,37 @@ def test_historical_membership_parser_supports_duplicates_and_reentry():
 def test_historical_membership_parser_rejects_overlaps(rows):
     with pytest.raises(ValueError, match="Overlapping"):
         parse_historical_memberships(rows, "SP500")
+
+
+def test_historical_membership_parser_joins_same_day_handoffs():
+    # EODHD's October 2026 payload splits a ticker's tenure at renames and
+    # spin-offs: one segment ends on the day the next one starts.
+    handoffs: set[str] = set()
+    parsed = parse_historical_memberships(
+        [
+            {"Code": "CB", "StartDate": "2010-07-14", "EndDate": "2016-01-15"},
+            {"Code": "CB", "StartDate": "2016-01-15", "EndDate": None},
+            {"Code": "ARNC", "StartDate": "2016-11-01", "EndDate": "2020-04-01"},
+            {"Code": "ARNC", "StartDate": "2020-04-01", "EndDate": "2020-04-06"},
+            {"Code": "DD", "StartDate": "2017-09-01", "EndDate": "2019-04-02"},
+            {"Code": "DD", "StartDate": "2019-04-02", "EndDate": "2019-06-03"},
+            {"Code": "DD", "StartDate": "2019-06-03", "EndDate": None},
+            # A gap between tenures is still two intervals.
+            {"Code": "AAA", "StartDate": "2010-01-01", "EndDate": "2012-01-01"},
+            {"Code": "AAA", "StartDate": "2014-01-01", "EndDate": None},
+        ],
+        "SP500",
+        merged_handoffs=handoffs,
+    )
+
+    assert sorted((row["ticker"], row["effective_from"], row["effective_to"]) for row in parsed) == sorted([
+        ("CB.US", date(2010, 7, 14), None),
+        ("ARNC.US", date(2016, 11, 1), date(2020, 4, 6)),
+        ("DD.US", date(2017, 9, 1), None),
+        ("AAA.US", date(2010, 1, 1), date(2012, 1, 1)),
+        ("AAA.US", date(2014, 1, 1), None),
+    ])
+    assert handoffs == {"CB.US", "ARNC.US", "DD.US"}
 
 
 def test_historical_membership_parser_only_ignores_unknown_start_before_window():
@@ -303,6 +334,7 @@ async def test_historical_membership_publication_preserves_explicit_session_date
         assert index_ticker == "GSPC.INDX"
         return [
             {"Code": "SPA", "StartDate": "2020-01-01", "EndDate": None},
+            {"Code": "SPB", "StartDate": "2018-01-01", "EndDate": "2020-01-01"},
             {"Code": "SPB", "StartDate": "2020-01-01", "EndDate": None},
         ]
 
@@ -312,6 +344,7 @@ async def test_historical_membership_publication_preserves_explicit_session_date
     result = await refresh_historical_universe_memberships(target)
 
     assert result["as_of_date"] == target.isoformat()
+    assert result["universes"]["SP500"]["same_day_handoff_tickers"] == ["SPB.US"]
     publication = (await db_session.execute(
         select(DataPublication).where(
             DataPublication.dataset == HISTORICAL_UNIVERSE_DATASET

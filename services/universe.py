@@ -77,8 +77,13 @@ def parse_historical_memberships(
     universe: str,
     *,
     required_from: Optional[date] = None,
+    merged_handoffs: Optional[set[str]] = None,
 ) -> list[dict]:
-    """Normalize provider intervals and reject ambiguity in the required window."""
+    """Normalize provider intervals and reject ambiguity in the required window.
+
+    Tickers whose same-day handoffs were merged are added to ``merged_handoffs``
+    when the caller passes a set, so the refresh can report them.
+    """
     if universe not in INDEX_UNIVERSES:
         raise ValueError(f"Unsupported historical universe: {universe}")
 
@@ -143,21 +148,37 @@ def parse_historical_memberships(
     by_ticker: dict[str, list[dict]] = defaultdict(list)
     for interval in intervals:
         by_ticker[interval["ticker"]].append(interval)
+    merged: list[dict] = []
     for ticker, ticker_intervals in by_ticker.items():
-        previous_end: Optional[date] = None
-        previous_open = False
-        for index, interval in enumerate(ticker_intervals):
-            if index and (
-                previous_open
-                or previous_end is None
-                or interval["effective_from"] <= previous_end
+        current: Optional[dict] = None
+        for interval in ticker_intervals:
+            if current is None:
+                current = dict(interval)
+                continue
+            if (
+                current["effective_to"] is not None
+                and interval["effective_from"] == current["effective_to"]
+            ):
+                # Since October 2026 the provider splits one ticker's tenure at
+                # a rename or spin-off: the old segment ends on the day the
+                # next one starts (CB 2010-07-14..2016-01-15, then 2016-01-15..).
+                # The ticker stayed a member throughout, so join the segments.
+                current["effective_to"] = interval["effective_to"]
+                if merged_handoffs is not None:
+                    merged_handoffs.add(ticker)
+                continue
+            if (
+                current["effective_to"] is None
+                or interval["effective_from"] <= current["effective_to"]
             ):
                 raise ValueError(f"Overlapping {universe} membership intervals for {ticker}")
-            previous_end = interval["effective_to"]
-            previous_open = previous_end is None
-    if not intervals:
+            merged.append(current)
+            current = dict(interval)
+        if current is not None:
+            merged.append(current)
+    if not merged:
         raise ValueError(f"{universe} historical membership response is empty")
-    return intervals
+    return merged
 
 
 def historical_membership_required_from(target: date) -> date:
@@ -268,10 +289,12 @@ async def refresh_historical_universe_memberships(
         for universe, rows in rows_by_universe.items():
             if rows is None:
                 raise ValueError(f"Provider failed to return {universe} membership history")
+            merged_handoffs: set[str] = set()
             intervals = parse_historical_memberships(
                 rows,
                 universe,
                 required_from=required_from,
+                merged_handoffs=merged_handoffs,
             )
             normalized[universe] = intervals
             quality_metrics[universe] = validate_historical_memberships(
@@ -283,6 +306,7 @@ async def refresh_historical_universe_memberships(
             quality_metrics[universe]["excluded_or_deduplicated_source_rows"] = (
                 len(rows) - len(intervals)
             )
+            quality_metrics[universe]["same_day_handoff_tickers"] = sorted(merged_handoffs)
             anchored_tickers: set[str] = set()
             for row in rows:
                 if row.get("StartDate") not in (None, "", "null"):

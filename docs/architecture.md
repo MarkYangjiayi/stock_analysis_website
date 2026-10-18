@@ -14,6 +14,7 @@ Dedicated worker --------------------+
   |-- XNYS-aware APScheduler
   |-- data quality and publication jobs
   |-- optional daily watchlist RSI alerts
+  |-- daily stale-data alert (services/freshness_alerts.py)
   |-- optional WebSocket monitor
   `-- weekly online SQLite backup
 
@@ -106,6 +107,8 @@ Each cross-section applies sector-median missing-value handling, 1%/99% winsoriz
 - Docker Compose forces `ENVIRONMENT=production`; a missing `ADMIN_API_KEY` is logged and disables admin operations without taking public reads offline.
 - `/health/live` and `/health/ready` support orchestration.
 - `scripts/backup_sqlite.py` uses SQLite's online backup API and validates every copy.
+- A failed or deferred pipeline keeps the previous publication serving, so `services/freshness_alerts.py` checks every watched dataset against the latest completed XNYS session at 08:45 New York time (Tue-Sat). It sends one Feishu card per session that lists each lagging dataset and its latest run's error, and records each delivery in `data_freshness_alerts`.
+- The S&P 500 membership parser joins same-day handoffs: since October 2026 EODHD ends a ticker's segment on the day its next segment starts at renames and spin-offs. Genuine overlaps still fail the publication. The quality report lists the joined tickers under `same_day_handoff_tickers`.
 
 ## 8. Commands
 
