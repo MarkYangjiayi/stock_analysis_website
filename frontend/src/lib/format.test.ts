@@ -13,5 +13,7 @@ describe("shared numeric formatting", () => {
         expect(formatSignedPercent(0.125)).toBe("+12.50%");
         expect(formatSignedPercent(-0.125)).toBe("−12.50%");
         expect(formatSignedPercent(0)).toBe("0.00%");
+        expect(formatSignedPercent(0.0001, 1)).toBe("0.0%");
+        expect(formatSignedPercent(-0.00004)).toBe("0.00%");
     });
 });

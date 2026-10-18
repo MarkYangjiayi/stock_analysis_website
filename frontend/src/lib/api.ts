@@ -347,6 +347,8 @@ export interface EventsExpectationsResponse {
     wall_street_target_price?: number | null;
     dividend_yield?: number | null;
     annual_dividend_per_share?: number | null;
+    /** Same block as decision-support, so the panel and Key risks agree. */
+    expectation_signals?: ExpectationSignalsContext | null;
     data_quality_notes: string[];
 }
 
@@ -609,6 +611,8 @@ export interface ExpectationSignalsContext {
     as_of: string | null;
     max_age_days: number;
     signals: ExpectationSignalValues | null;
+    /** False when the data is stale or fewer than three analysts cover the current fiscal year. */
+    estimate_assessed?: boolean;
     estimate_signal: { direction: "cut" | "raise"; basis: "30d" | "90d" | "breadth"; severity: "warning" | "high" | null } | null;
     short_signal: { kind: "rising" | "crowded"; severity: "warning" | "high" } | null;
     notes: string[];

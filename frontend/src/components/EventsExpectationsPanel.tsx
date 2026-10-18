@@ -11,8 +11,10 @@ import {
 import type {
     EarningsExpectation,
     EventsExpectationsResponse,
+    ExpectationSignalsContext,
     StockEvent,
 } from "@/lib/api";
+import { formatSignedPercent } from "@/lib/format";
 
 interface EventsExpectationsPanelProps {
     data: EventsExpectationsResponse | null;
@@ -63,9 +65,13 @@ const eventDateLabel = (event: StockEvent) => {
     return `${formatDate(event.event_date)}${timing ? ` · ${timing}` : ""}`;
 };
 
+// Matches services/expectation_signals.py: the change is measured against the
+// earlier estimate's absolute value, so a wider expected loss reads as lowered.
+const MIN_EPS_BASE = 0.05;
+
 const expectationRevision = (expectation?: EarningsExpectation) => {
-    if (!expectation || expectation.eps_trend_current == null || expectation.eps_trend_30d == null || expectation.eps_trend_30d === 0) return null;
-    return expectation.eps_trend_current / expectation.eps_trend_30d - 1;
+    if (!expectation || expectation.eps_trend_current == null || expectation.eps_trend_30d == null || Math.abs(expectation.eps_trend_30d) < MIN_EPS_BASE) return null;
+    return (expectation.eps_trend_current - expectation.eps_trend_30d) / Math.abs(expectation.eps_trend_30d);
 };
 
 const revisionTone = (value: number | null) => {
@@ -74,6 +80,52 @@ const revisionTone = (value: number | null) => {
         ? { label: "Raised", className: "text-up", Icon: TrendingUp }
         : { label: "Lowered", className: "text-down", Icon: TrendingDown };
 };
+
+/** The verdict Key risks uses, from the same provider payload. */
+const consensusVerdict = (context: ExpectationSignalsContext) => {
+    const values = context.signals;
+    if (!context.available || !context.estimate_assessed || !values) {
+        return {
+            label: "Not assessed",
+            className: "text-fg-muted",
+            Icon: Minus,
+            detail: context.notes[0] ?? "Consensus revisions are unavailable.",
+        };
+    }
+    const signal = context.estimate_signal;
+    if (!signal) {
+        return { label: "No material revision", className: "text-flat", Icon: Minus, detail: "Below the Key-risk thresholds" };
+    }
+    const cut = signal.direction === "cut";
+    const detail = signal.basis === "breadth"
+        ? `${cut ? values.eps_revisions_down_30d : values.eps_revisions_up_30d} of ${values.eps_estimate_analysts} analysts ${cut ? "cut" : "raised"} in 30 days`
+        : `Current FY ${formatSignedPercent(signal.basis === "30d" ? values.eps_revision_30d : values.eps_revision_90d, 1)} over ${signal.basis === "30d" ? 30 : 90} days`;
+    return {
+        label: cut ? (signal.severity === "high" ? "Estimates cut · high" : "Estimates cut") : "Estimates raised",
+        className: cut ? "text-down" : "text-up",
+        Icon: cut ? TrendingDown : TrendingUp,
+        detail,
+    };
+};
+
+function ConsensusSignal({ context, targetPrice, currency }: { context: ExpectationSignalsContext; targetPrice?: number | null; currency?: string | null }) {
+    const verdict = consensusVerdict(context);
+    const values = context.signals;
+    const VerdictIcon = verdict.Icon;
+    return (
+        <>
+            <p className={`mt-2 flex items-center gap-1 text-sm font-semibold ${verdict.className}`}><VerdictIcon size={16} />{verdict.label}</p>
+            <p className="mt-1 text-xs text-fg-muted">{verdict.detail}</p>
+            {values && <>
+                <p className="mt-2 font-mono text-xs text-fg-muted">Current FY {formatSignedPercent(values.eps_revision_30d, 1)} 30d · {formatSignedPercent(values.eps_revision_90d, 1)} 90d</p>
+                <p className="mt-1 font-mono text-xs text-fg-muted">Next FY {formatSignedPercent(values.eps_next_year_revision_30d, 1)} 30d · {formatSignedPercent(values.eps_next_year_revision_90d, 1)} 90d</p>
+                <p className="mt-1 font-mono text-xs text-fg-muted">30d revisions ↑{values.eps_revisions_up_30d ?? "—"} / ↓{values.eps_revisions_down_30d ?? "—"} of {values.eps_estimate_analysts ?? "—"}</p>
+            </>}
+            {targetPrice != null && <p className="mt-2 flex items-center gap-1 font-mono text-xs text-fg-muted"><Target size={13} /> Target {formatMoney(targetPrice, currency)}</p>}
+            <p className="mt-2 text-xs text-fg-muted">Same rule as Key risks{context.as_of ? ` · as of ${formatDate(context.as_of)}` : ""}</p>
+        </>
+    );
+}
 
 function EventRow({ event, currency }: { event: StockEvent; currency?: string | null }) {
     const surprise = event.eps_surprise_percent;
@@ -221,10 +273,12 @@ export default function EventsExpectationsPanel({
                         </article>
                         <article className="surface-subtle rounded-lg border p-4">
                             <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Expectation signal</p>
-                            <p className={`mt-2 flex items-center gap-1 text-sm font-semibold ${tone.className}`}><RevisionIcon size={16} />{tone.label}</p>
-                            <p className="mt-1 font-mono text-xs text-fg-muted">EPS trend vs 30 days ago {formatPercent(revision)}</p>
-                            <p className="mt-2 font-mono text-xs text-fg-muted">30d revisions ↑{leadExpectation?.eps_revisions_up_30d ?? "—"} / ↓{leadExpectation?.eps_revisions_down_30d ?? "—"}</p>
-                            {data.wall_street_target_price != null && <p className="mt-2 flex items-center gap-1 font-mono text-xs text-fg-muted"><Target size={13} /> Target {formatMoney(data.wall_street_target_price, currency)}</p>}
+                            {data.expectation_signals ? <ConsensusSignal context={data.expectation_signals} targetPrice={data.wall_street_target_price} currency={currency} /> : <>
+                                <p className={`mt-2 flex items-center gap-1 text-sm font-semibold ${tone.className}`}><RevisionIcon size={16} />{tone.label}</p>
+                                <p className="mt-1 font-mono text-xs text-fg-muted">EPS trend vs 30 days ago {formatPercent(revision)}</p>
+                                <p className="mt-2 font-mono text-xs text-fg-muted">30d revisions ↑{leadExpectation?.eps_revisions_up_30d ?? "—"} / ↓{leadExpectation?.eps_revisions_down_30d ?? "—"}</p>
+                                {data.wall_street_target_price != null && <p className="mt-2 flex items-center gap-1 font-mono text-xs text-fg-muted"><Target size={13} /> Target {formatMoney(data.wall_street_target_price, currency)}</p>}
+                            </>}
                         </article>
                     </div>
 

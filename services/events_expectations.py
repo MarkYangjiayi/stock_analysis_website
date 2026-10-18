@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.time_utils import utc_now
 from models import RawDataSnapshot
+from services.expectation_signals import build_expectation_context
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,8 @@ def build_events_expectations_from_snapshot(
 ) -> dict[str, Any]:
     ticker = ticker.upper()
     today = reference_date or utc_now().date()
+    # The same rule and payload as Key risks, so both views agree.
+    signals = build_expectation_context(snapshot, payload, today)
     if snapshot is None:
         return {
             "ticker": ticker,
@@ -269,6 +272,7 @@ def build_events_expectations_from_snapshot(
             "wall_street_target_price": None,
             "dividend_yield": None,
             "annual_dividend_per_share": None,
+            "expectation_signals": signals,
             "data_quality_notes": ["No fundamentals snapshot is available yet."],
         }
 
@@ -285,6 +289,7 @@ def build_events_expectations_from_snapshot(
             "wall_street_target_price": None,
             "dividend_yield": None,
             "annual_dividend_per_share": None,
+            "expectation_signals": signals,
             "data_quality_notes": ["The fundamentals snapshot could not be read."],
         }
 
@@ -318,6 +323,7 @@ def build_events_expectations_from_snapshot(
         "wall_street_target_price": _safe_float(highlights.get("WallStreetTargetPrice")),
         "dividend_yield": _safe_float(highlights.get("DividendYield")),
         "annual_dividend_per_share": _safe_float(highlights.get("DividendShare")),
+        "expectation_signals": signals,
         "data_quality_notes": notes,
     }
 

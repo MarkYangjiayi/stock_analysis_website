@@ -15,8 +15,6 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.events_expectations import load_latest_fundamentals_snapshot
-
 # Current fiscal year (FY1) consensus. The Trend map also keeps every earlier
 # fiscal year under the same "0y" label, so the latest period end is current.
 TREND_PERIOD = "0y"
@@ -320,7 +318,9 @@ def _pct(value: float, digits: int = 1) -> str:
 
 
 def _signed_pct(value: float, digits: int = 1) -> str:
-    return f"{value * 100:+.{digits}f}%"
+    text = f"{value * 100:+.{digits}f}%"
+    # A change that rounds to zero reads as "0.0%", not "+0.0%" or "-0.0%".
+    return f"{0:.{digits}f}%" if float(text[:-1]) == 0 else text
 
 
 WINDOW_LABELS = {"30d": "30 days", "90d": "90 days"}
@@ -344,6 +344,14 @@ def _estimate_cut_message(signals: dict[str, Any], basis: str) -> str:
         )
     else:
         parts.append(f"Net {abs(signals['eps_revision_breadth_30d']):.0%} of covering analysts cut the current-FY EPS estimate ({counts})")
+        # The percentage changes still set the severity, so show them too.
+        current_year = [
+            f"{_signed_pct(signals[f'eps_revision_{window}'])} over {label}"
+            for window, label in WINDOW_LABELS.items()
+            if signals.get(f"eps_revision_{window}") is not None
+        ]
+        if current_year:
+            parts.append(f"current FY {', '.join(current_year)}")
     next_year = [
         f"{_signed_pct(signals[f'eps_next_year_revision_{window}'])} over {label}"
         for window, label in WINDOW_LABELS.items()
@@ -417,18 +425,32 @@ async def load_expectation_signals(
     db: AsyncSession,
     reference_date: date,
 ) -> dict[str, Any]:
-    """Signals from the ticker's latest stored fundamentals payload.
+    """Signals from the ticker's latest stored fundamentals payload."""
+    # Imported here because events_expectations builds the same context.
+    from services.events_expectations import load_latest_fundamentals_snapshot
 
-    Returns ``available=False`` with a note instead of raising, so callers can
-    show what is missing.
-    """
     snapshot, payload = await load_latest_fundamentals_snapshot(ticker.upper(), db)
+    return build_expectation_context(snapshot, payload, reference_date)
+
+
+def build_expectation_context(
+    snapshot: Any,
+    payload: Optional[dict[str, Any]],
+    reference_date: date,
+) -> dict[str, Any]:
+    """Signals from one stored fundamentals snapshot and its payload.
+
+    Key risks, the Events panel and report tags all read this, so they reach
+    the same conclusion from the same payload. Returns ``available=False``
+    with a note instead of raising, so callers can show what is missing.
+    """
     context: dict[str, Any] = {
         "available": False,
         "source": SOURCE_LABEL,
         "as_of": None,
         "max_age_days": MAX_SIGNAL_AGE_DAYS,
         "signals": None,
+        "estimate_assessed": False,
         "estimate_signal": None,
         "short_signal": None,
         "notes": [],
@@ -463,6 +485,8 @@ async def load_expectation_signals(
         context["notes"].append(
             f"Fewer than {MIN_REVISION_ANALYSTS} analysts cover the current fiscal year, so revisions are not assessed."
         )
+    else:
+        context["estimate_assessed"] = True
     if signals["short_float"] is None:
         context["notes"].append("Short interest as a share of float is unavailable.")
     return context

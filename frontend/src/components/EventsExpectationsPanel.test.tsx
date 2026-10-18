@@ -99,6 +99,58 @@ describe("EventsExpectationsPanel", () => {
         expect(screen.getByText("No event or forward-consensus data is available for this ticker yet.")).toBeInTheDocument();
     });
 
+    it("shows the Key-risk verdict when the shared signal block is present", () => {
+        // ASTS on finbrain.icu (2026-10-11): a 30-day trend of 0.0% used to read "Flat".
+        const signals = {
+            as_of: "2026-10-11", eps_period_end: "2026-12-31", eps_estimate: -2.29, eps_estimate_30d_ago: -2.29, eps_estimate_90d_ago: -1.51,
+            eps_revision_30d: 0.0001, eps_revision_90d: -0.517, eps_revisions_up_30d: 0, eps_revisions_down_30d: 4,
+            eps_estimate_analysts: 8, eps_revision_breadth_30d: -0.5, eps_next_year_revision_30d: -0.084, eps_next_year_revision_90d: -0.843,
+            shares_short: 64_828_174, shares_short_prior_month: 65_261_118, short_interest_change: -0.007, short_float: 0.217, short_ratio: 6.39,
+        };
+        render(<EventsExpectationsPanel data={{
+            ...data,
+            expectation_signals: {
+                available: true, source: "EODHD fundamentals", as_of: "2026-10-11", max_age_days: 14, signals,
+                estimate_assessed: true,
+                estimate_signal: { direction: "cut", basis: "breadth", severity: "high" },
+                short_signal: { kind: "crowded", severity: "warning" },
+                notes: [],
+            },
+        }} currency="USD" />);
+
+        expect(screen.getByText("Estimates cut · high")).toBeInTheDocument();
+        expect(screen.getByText("4 of 8 analysts cut in 30 days")).toBeInTheDocument();
+        expect(screen.getByText("Current FY 0.0% 30d · −51.7% 90d")).toBeInTheDocument();
+        expect(screen.getByText("Next FY −8.4% 30d · −84.3% 90d")).toBeInTheDocument();
+        expect(screen.getByText("Same rule as Key risks · as of Oct 11, 2026")).toBeInTheDocument();
+        expect(screen.queryByText(/EPS trend vs 30 days ago/)).not.toBeInTheDocument();
+    });
+
+    it("says why the verdict is missing instead of calling it flat", () => {
+        render(<EventsExpectationsPanel data={{
+            ...data,
+            expectation_signals: {
+                available: false, source: "EODHD fundamentals", as_of: "2026-09-01", max_age_days: 14, signals: null,
+                estimate_assessed: false, estimate_signal: null, short_signal: null,
+                notes: ["Consensus and short-interest data are 47 days old; flags need data from the last 14 days."],
+            },
+        }} />);
+
+        expect(screen.getByText("Not assessed")).toBeInTheDocument();
+        expect(screen.getByText(/47 days old/)).toBeInTheDocument();
+        expect(screen.queryByText("Flat")).not.toBeInTheDocument();
+    });
+
+    it("reads a wider expected loss as a lowered estimate", () => {
+        render(<EventsExpectationsPanel data={{
+            ...data,
+            expectations: [{ ...data.expectations[0], eps_trend_current: -2.29, eps_trend_30d: -2.0 }],
+        }} detail />);
+
+        expect(screen.getAllByText("Lowered")).toHaveLength(2);
+        expect(screen.getByText("EPS trend vs 30 days ago -14.5%")).toBeInTheDocument();
+    });
+
     it("surfaces provider freshness notes in both cockpit views", () => {
         const staleData = {
             ...data,

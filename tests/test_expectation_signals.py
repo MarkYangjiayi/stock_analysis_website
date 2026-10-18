@@ -4,13 +4,17 @@ import subprocess
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
 
+from api.schemas import EventsExpectationsResponse
 from models import ScreenerFundamentalCache, Ticker
 from services.decision_support import with_signal_warnings
+from services.events_expectations import get_events_expectations
 from services.expectation_signals import (
+    build_expectation_context,
     estimate_revision_signal,
     extract_expectation_signals,
     load_expectation_signals,
@@ -158,12 +162,27 @@ def test_signal_warnings_carry_source_and_no_evidence_id():
                     "eps_next_year_revision_30d": None, "eps_next_year_revision_90d": None}
     assert signal_warnings(breadth_only, source_date=None)[0]["message"] == (
         "Net 35% of covering analysts cut the current-FY EPS estimate "
-        "(2 up / 9 down revisions among 20 analysts in 30 days)."
+        "(2 up / 9 down revisions among 20 analysts in 30 days); current FY -1.0% over 30 days, -2.0% over 90 days."
     )
     short = warnings["short_interest"]
     assert short["title"] == "Short interest rising"
     assert short["message"] == (
         "Short interest is 6.2% of float; shares sold short changed +30% month over month; 3.4 days to cover."
+    )
+
+
+def test_breadth_cut_message_shows_the_change_that_sets_its_severity():
+    # ASTS on finbrain.icu (2026-10-11): breadth triggered the cut, the 90-day change made it high.
+    signals = {"eps_estimate_analysts": 8, "eps_revisions_up_30d": 0, "eps_revisions_down_30d": 4,
+               "eps_revision_breadth_30d": -0.5, "eps_revision_30d": 0.0001, "eps_revision_90d": -0.517,
+               "eps_next_year_revision_30d": -0.084, "eps_next_year_revision_90d": -0.843}
+    warning = signal_warnings(signals, source_date="2026-10-11")[0]
+
+    assert warning["severity"] == "high"
+    assert warning["message"] == (
+        "Net 50% of covering analysts cut the current-FY EPS estimate "
+        "(0 up / 4 down revisions among 8 analysts in 30 days); current FY 0.0% over 30 days, "
+        "-51.7% over 90 days; next FY -8.4% over 30 days, -84.3% over 90 days."
     )
 
 
@@ -209,6 +228,37 @@ async def test_signals_load_from_the_latest_snapshot_and_expire(db_session):
 
     missing = await load_expectation_signals("NONE.US", db_session, date(2026, 10, 18))
     assert missing["available"] is False and missing["signals"] is None
+
+
+@pytest.mark.asyncio
+async def test_events_panel_reaches_the_same_conclusion_as_key_risks(db_session):
+    await persist_snapshot(db_session, "EODHD", "fundamentals", _payload(), details={"ticker": "SIG.US"})
+    reference = date(2026, 10, 18)
+
+    events = await get_events_expectations("SIG.US", db_session, reference)
+    key_risks = await load_expectation_signals("SIG.US", db_session, reference)
+
+    assert events["expectation_signals"] == key_risks
+    assert events["expectation_signals"]["estimate_assessed"] is True
+    # The response model must keep the block, not silently drop it.
+    served = EventsExpectationsResponse.model_validate(events).model_dump(mode="json")
+    assert served["expectation_signals"]["estimate_signal"] == {"direction": "cut", "basis": "30d", "severity": "warning"}
+    assert served["expectation_signals"]["signals"]["eps_period_end"] == "2026-12-31"
+
+    stale = await get_events_expectations("SIG.US", db_session, date(2026, 11, 30))
+    assert stale["expectation_signals"]["available"] is False
+    assert stale["expectation_signals"]["estimate_assessed"] is False
+    assert (await get_events_expectations("NONE.US", db_session, reference))["expectation_signals"]["available"] is False
+
+
+def test_thin_coverage_is_reported_as_not_assessed():
+    payload = _payload(current_year={"epsTrendCurrent": "1.00", "epsTrend30daysAgo": "1.20",
+                                     "earningsEstimateNumberOfAnalysts": "2"})
+    context = build_expectation_context(SimpleNamespace(fetched_at=None), payload, date(2026, 10, 18))
+
+    assert context["available"] is True and context["estimate_assessed"] is False
+    assert context["estimate_signal"] is None
+    assert "Fewer than 3 analysts" in context["notes"][0]
 
 
 def test_report_tags_name_the_signal_and_its_date():
