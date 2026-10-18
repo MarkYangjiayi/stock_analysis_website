@@ -356,7 +356,7 @@ def test_migration_adds_and_removes_signal_columns(tmp_path):
         with sqlite3.connect(path) as db:
             return {row[1] for row in db.execute("PRAGMA table_info(stock_screener_snapshot)")}
 
-    alembic("upgrade", "head")
+    alembic("upgrade", "0025_expectation_signals")
     added = {"eps_revision_30d", "eps_revision_90d", "eps_revision_breadth_30d",
              "eps_estimate_analysts", "short_interest_change", "short_ratio"}
     assert added <= columns()

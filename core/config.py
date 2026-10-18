@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     WEEKLY_DIGEST_DAY_OF_WEEK: str = Field(default="sat", pattern=r"^(mon|tue|wed|thu|fri|sat|sun)$")
     WEEKLY_DIGEST_HOUR: int = Field(default=8, ge=0, le=23)
     WEEKLY_DIGEST_MINUTE: int = Field(default=0, ge=0, le=59)
+    # Stale-data alert (America/New_York, Tue-Sat). The default 08:45 runs
+    # after the overnight pipelines and their 07:50 retries, before the
+    # 10:00 morning report.
+    DATA_FRESHNESS_ALERTS_ENABLED: bool = True
+    DATA_FRESHNESS_ALERT_HOUR: int = Field(default=8, ge=0, le=23)
+    DATA_FRESHNESS_ALERT_MINUTE: int = Field(default=45, ge=0, le=59)
 
     # Daily RSI(14) monitor. The personal watchlist is used when no explicit
     # comma-separated symbol list is configured.

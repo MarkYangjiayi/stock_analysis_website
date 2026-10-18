@@ -21,6 +21,7 @@ from services.market_breadth import (
 from services.index_valuation import refresh_index_valuation, refresh_member_split_histories
 from services.universe import refresh_historical_universe_memberships
 from services.rsi_monitor import run_daily_rsi_monitor
+from services.freshness_alerts import run_data_freshness_check
 from services.themes.alerts import run_theme_alerts
 from services.themes.bootstrap import bootstrap_themes
 from services.themes.briefs import generate_theme_briefs
@@ -183,6 +184,10 @@ async def scheduled_weekly_digest():
 
 async def scheduled_rsi_monitor(reference_date: date = None):
     return await run_daily_rsi_monitor(reference_date)
+
+
+async def scheduled_data_freshness_check():
+    return await run_data_freshness_check()
 
 
 def _skipped(target: date) -> dict:
@@ -544,6 +549,18 @@ def start_scheduler():
             hour=settings.WEEKLY_DIGEST_HOUR,
             minute=settings.WEEKLY_DIGEST_MINUTE,
             id="weekly_digest",
+            replace_existing=True,
+        )
+
+    # After the overnight pipelines and their retries, before the morning report.
+    if settings.DATA_FRESHNESS_ALERTS_ENABLED:
+        scheduler.add_job(
+            scheduled_data_freshness_check,
+            'cron',
+            day_of_week='tue-sat',
+            hour=settings.DATA_FRESHNESS_ALERT_HOUR,
+            minute=settings.DATA_FRESHNESS_ALERT_MINUTE,
+            id="daily_data_freshness_check",
             replace_existing=True,
         )
 

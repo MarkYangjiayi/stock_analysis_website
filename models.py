@@ -785,6 +785,26 @@ class RsiAlert(Base):
     )
 
 
+class DataFreshnessAlert(Base):
+    """One delivered stale-data alert for a dataset and the session it missed."""
+
+    __tablename__ = "data_freshness_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dataset: Mapped[str] = mapped_column(String, index=True)
+    expected_date: Mapped[dt_date] = mapped_column(Date, index=True)
+    published_date: Mapped[Optional[dt_date]] = mapped_column(Date)
+    notified_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset",
+            "expected_date",
+            name="uix_data_freshness_alert_dataset_date",
+        ),
+    )
+
+
 class TickerValuationScenario(Base):
     """Saved transparent DCF inputs for one ticker and named scenario."""
 
