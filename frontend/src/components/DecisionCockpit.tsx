@@ -35,10 +35,12 @@ import {
     EarningsQualityPeriod,
     EarningsQualityResponse,
     EventsExpectationsResponse,
+    ExpectationSignalsContext,
     PeerMetric,
     resetPersonalValuationScenarios,
     savePersonalValuationScenarios,
 } from "@/lib/api";
+import { formatSignedPercent } from "@/lib/format";
 
 export type CockpitTab = "overview" | "valuation" | "peers" | "risks" | "brief";
 
@@ -192,19 +194,52 @@ function SummaryMetricCard({ metric, tone }: { metric: DecisionSummaryMetric; to
     );
 }
 
-function RiskCard({ warning, onShowEvidence }: { warning: DecisionWarning; onShowEvidence: () => void }) {
+const SIGNAL_SOURCE_LABELS: Partial<Record<NonNullable<DecisionWarning["category"]>, string>> = {
+    expectations: "Consensus",
+    positioning: "Short interest",
+};
+
+function RiskCard({ warning, onShowEvidence }: { warning: DecisionWarning; onShowEvidence?: () => void }) {
     const high = warning.severity === "high";
+    const sourceLabel = warning.category ? SIGNAL_SOURCE_LABELS[warning.category] : undefined;
     return (
         <article className={`rounded-lg border p-4 ${high ? "border-danger/30 bg-danger/5" : "border-caution/30 bg-caution/5"}`}>
             <div className="flex items-start gap-3">
                 <span className={`rounded-md p-2 ${high ? "bg-danger/10 text-danger" : "bg-caution/6 text-caution"}`}><ShieldAlert size={17} /></span>
                 <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">{warning.title}</h3><span className="rounded-full border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">{warning.severity}</span><span className="font-mono text-xs text-fg-muted">{warning.evidence_id}</span></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold">{warning.title}</h3>
+                        <span className="rounded-full border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">{warning.severity}</span>
+                        {warning.evidence_id && <span className="font-mono text-xs text-fg-muted">{warning.evidence_id}</span>}
+                        {sourceLabel && <span className="font-mono text-xs text-fg-muted">{sourceLabel}{warning.source_date ? ` · ${warning.source_date}` : ""}</span>}
+                    </div>
                     <p className="mt-1.5 text-sm leading-5 text-fg-muted">{warning.message}</p>
-                    <button type="button" onClick={onShowEvidence} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent-strong hover:underline">Show evidence <ChevronRight size={13} /></button>
+                    {onShowEvidence && <button type="button" onClick={onShowEvidence} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent-strong hover:underline">Show evidence <ChevronRight size={13} /></button>}
                 </div>
             </div>
         </article>
+    );
+}
+
+function ExpectationSignalsSummary({ context }: { context?: ExpectationSignalsContext }) {
+    if (!context) return null;
+    const values = context.signals;
+    const percent = (value?: number | null, digits = 1) => value == null ? "—" : `${(value * 100).toFixed(digits)}%`;
+    return (
+        <section className="rounded-lg border p-4" aria-labelledby="expectation-signals-title">
+            <h3 id="expectation-signals-title" className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                <BarChart3 size={14} /> Consensus revisions &amp; short interest
+                <span className="font-mono font-normal normal-case tracking-normal">{context.source}{context.as_of ? ` · as of ${context.as_of}` : ""}</span>
+            </h3>
+            {values && <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt className="text-xs text-fg-muted">Current-FY EPS estimate{values.eps_period_end ? ` (FY ${values.eps_period_end})` : ""}</dt><dd className="mt-1 font-mono font-semibold">{formatSignedPercent(values.eps_revision_30d, 1)} 30d · {formatSignedPercent(values.eps_revision_90d, 1)} 90d</dd><dd className="mt-0.5 font-mono text-xs text-fg-muted">Next FY {formatSignedPercent(values.eps_next_year_revision_30d, 1)} · {formatSignedPercent(values.eps_next_year_revision_90d, 1)}</dd></div>
+                <div><dt className="text-xs text-fg-muted">30-day revisions</dt><dd className="mt-1 font-mono font-semibold">↑{values.eps_revisions_up_30d ?? "—"} / ↓{values.eps_revisions_down_30d ?? "—"} of {values.eps_estimate_analysts ?? "—"} analysts</dd></div>
+                <div><dt className="text-xs text-fg-muted">Shares short vs prior month</dt><dd className="mt-1 font-mono font-semibold">{formatSignedPercent(values.short_interest_change, 0)}</dd></div>
+                <div><dt className="text-xs text-fg-muted">Short % float · days to cover</dt><dd className="mt-1 font-mono font-semibold">{percent(values.short_float)} · {values.short_ratio == null ? "—" : values.short_ratio.toFixed(1)}</dd></div>
+            </dl>}
+            {context.notes.length > 0 && <ul className="mt-3 space-y-1 text-xs text-caution">{context.notes.map((note) => <li key={note}>{note}</li>)}</ul>}
+            <p className="mt-3 text-xs leading-5 text-fg-muted">Flags: consensus EPS cut ≥3% in 30 days or ≥7.5% in 90 days in both the current and next fiscal year (screens out one-off items), or net ≥25% of analysts revising the current year down; short interest up ≥25% month over month at ≥5% of float, or ≥15% of float.</p>
+        </section>
     );
 }
 
@@ -222,7 +257,7 @@ function WarningResults({
     const displayedWarnings = limit == null ? warnings : warnings.slice(0, limit);
     return (
         <div className="space-y-3">
-            {displayedWarnings.length > 0 && <div className="grid gap-3 lg:grid-cols-2">{displayedWarnings.map((warning) => <RiskCard key={warning.id} warning={warning} onShowEvidence={() => onShowEvidence(warning.evidence_metric)} />)}</div>}
+            {displayedWarnings.length > 0 && <div className="grid gap-3 lg:grid-cols-2">{displayedWarnings.map((warning) => <RiskCard key={warning.id} warning={warning} onShowEvidence={warning.evidence_metric === "short_interest" ? undefined : () => onShowEvidence(warning.evidence_metric)} />)}</div>}
             {warnings.length === 0 && unavailableCount === 0 && <div className="rounded-lg border border-up/30 bg-up/10 p-4 text-sm text-up"><CheckCircle2 className="mr-2 inline" size={17} />No fundamental warning rule is triggered by the fully evaluated history.</div>}
             {unavailableCount > 0 && <div className="rounded-lg border border-caution/30 bg-caution/6 p-4 text-sm text-caution"><AlertTriangle className="mr-2 inline" size={17} />{unavailableCount} fundamental warning {unavailableCount === 1 ? "check is" : "checks are"} unavailable because required history is missing. No clean conclusion is shown for {unavailableCount === 1 ? "that rule" : "those rules"}.</div>}
         </div>
@@ -584,7 +619,7 @@ export default function DecisionCockpit({
                             <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">Weakest peer positions</h3><span className="text-xs text-fg-muted">Bottom three with valid coverage</span></div><div className="grid gap-3 sm:grid-cols-3">{decision.summary.weakest_peer_metrics.length ? decision.summary.weakest_peer_metrics.map((metric) => <SummaryMetricCard key={metric.key} metric={metric} tone="weak" />) : <p className="col-span-full rounded-lg border p-4 text-sm text-fg-muted">No peer metric has sufficient coverage.</p>}</div></section>
                         </div>
 
-                        <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">Triggered fundamental warnings</h3><button type="button" className="text-xs font-semibold text-accent-strong hover:underline" onClick={() => setActiveTab("risks")}>View all evidence</button></div><WarningResults warnings={decision.risks.warnings} unavailableCount={unavailableWarningCheckCount} limit={4} onShowEvidence={onShowEvidence} /></section>
+                        <section><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">Triggered warnings</h3><button type="button" className="text-xs font-semibold text-accent-strong hover:underline" onClick={() => setActiveTab("risks")}>View all evidence</button></div><WarningResults warnings={decision.risks.warnings} unavailableCount={unavailableWarningCheckCount} limit={4} onShowEvidence={onShowEvidence} /></section>
 
                         {decision.summary.coverage.missing_data_reasons.length > 0 && <section className="rounded-lg border p-4"><h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Coverage limits</h3><ul className="mt-2 space-y-1.5 text-sm text-fg-muted">{decision.summary.coverage.missing_data_reasons.map((reason) => <li key={reason}>• {reason}</li>)}</ul></section>}
                     </div>}
@@ -673,8 +708,9 @@ export default function DecisionCockpit({
                     </div>}
 
                     {activeTab === "risks" && <div className="space-y-5">
-                        <div><h3 className="text-sm font-semibold">Triggered fundamental rules</h3><p className="mt-1 text-xs text-fg-muted">Only deterministic financial-statement rules are included in Phase 1.</p></div>
+                        <div><h3 className="text-sm font-semibold">Triggered rules</h3><p className="mt-1 text-xs text-fg-muted">Deterministic financial-statement rules, plus consensus-revision and short-interest flags from the provider&apos;s latest fundamentals. Only the statement rules enter the brief&apos;s evidence registry.</p></div>
                         <WarningResults warnings={decision.risks.warnings} unavailableCount={unavailableWarningCheckCount} onShowEvidence={onShowEvidence} />
+                        <ExpectationSignalsSummary context={decision.expectation_signals} />
                         <EarningsQualityPanel
                             data={earningsQuality || decision.earnings_quality || null}
                             loading={earningsQualityLoading}

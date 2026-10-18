@@ -6,6 +6,11 @@ delayed close, but only when the quote's previous close lines up with the
 stored close; a split, distribution or bad tick then falls back to the last
 stored session instead of producing a false signal. Only US listings are
 tagged because the session walk follows the NYSE calendar.
+
+Consensus-revision and short-interest tags come from each symbol's latest
+stored fundamentals payload (services/expectation_signals.py). They are
+evaluated when the evidence is collected, so a saved report always renders
+the same tags.
 """
 from __future__ import annotations
 
@@ -22,6 +27,7 @@ from core.config import settings
 from core.trading_calendar import latest_completed_us_session
 from database import async_session_maker
 from models import DailyPrice
+from services.expectation_signals import MAX_SIGNAL_AGE_DAYS, load_expectation_signals
 from services.report_market import number
 from services.rsi_monitor import (
     PRICE_LOOKBACK_DAYS,
@@ -123,6 +129,39 @@ async def price_signals(
     return evidence
 
 
+EXPECTATION_FIELDS = (
+    "eps_revision_30d", "eps_revision_90d", "eps_next_year_revision_30d", "eps_next_year_revision_90d",
+    "eps_revisions_up_30d", "eps_revisions_down_30d", "eps_estimate_analysts",
+    "short_interest_change", "short_float",
+)
+
+
+async def expectation_signals(symbols: list[str], reference_date: date) -> dict[str, Any]:
+    """Consensus-revision and short-interest evidence per symbol; never raises."""
+    evidence: dict[str, Any] = {
+        "source": "EODHD fundamentals", "max_age_days": MAX_SIGNAL_AGE_DAYS,
+        "reference_date": reference_date.isoformat(), "items": {}, "unavailable": [],
+    }
+    try:
+        async with async_session_maker() as db:
+            for symbol in dict.fromkeys(symbols):
+                context = await load_expectation_signals(symbol, db, reference_date)
+                if not context["available"]:
+                    evidence["unavailable"].append(symbol)
+                    continue
+                values = context["signals"]
+                evidence["items"][symbol] = {
+                    "as_of": context["as_of"],
+                    **{key: values[key] for key in EXPECTATION_FIELDS},
+                    "estimate": context["estimate_signal"],
+                    "short": context["short_signal"],
+                }
+    except Exception as exc:
+        logger.warning("Expectation signals unavailable (%s)", type(exc).__name__)
+        evidence["error"] = type(exc).__name__
+    return evidence
+
+
 async def collect_watchlist_signals(context: dict, report_type: str) -> dict[str, Any]:
     """Tags for the report's core/watchlist rows; never raises."""
     core = [row for row in context.get("quotes", []) if row.get("group") == "core"]
@@ -133,7 +172,7 @@ async def collect_watchlist_signals(context: dict, report_type: str) -> dict[str
                        if row.get("fresh") and row.get("session_date") == context["report_date"]
                        and row.get("basis") == "delayed_snapshot"}
     try:
-        return await price_signals(
+        signals = await price_signals(
             [row["ticker"] for row in core],
             latest_completed_us_session(report_date),
             live_quotes=live_quotes,
@@ -141,11 +180,56 @@ async def collect_watchlist_signals(context: dict, report_type: str) -> dict[str
         )
     except Exception as exc:
         logger.warning("Watchlist signals unavailable (%s)", type(exc).__name__)
-        return {"items": {}, "error": type(exc).__name__}
+        signals = {"items": {}, "error": type(exc).__name__}
+    signals["expectations"] = await expectation_signals([row["ticker"] for row in core], report_date)
+    return signals
+
+
+def _expectation_tags(item: dict | None) -> list[dict[str, str]]:
+    if not item:
+        return []
+    tags = []
+    estimate = item.get("estimate") or {}
+    direction = estimate.get("direction")
+    if direction in {"cut", "raise"}:
+        label = "预期下修" if direction == "cut" else "预期上修"
+        basis = estimate.get("basis")
+        if basis in {"30d", "90d"}:
+            change = number(item.get(f"eps_revision_{basis}"))
+            text = f"{label} {abs(change) * 100:.1f}%" if change is not None else label
+            text += "·90天" if basis == "90d" else ""
+        else:
+            count = item.get("eps_revisions_down_30d" if direction == "cut" else "eps_revisions_up_30d")
+            text = f"{label} {count}/{item.get('eps_estimate_analysts')}家"
+        tags.append({"text": text, "color": "carmine" if direction == "cut" else "turquoise"})
+    short = item.get("short") or {}
+    if short.get("kind") == "rising" and number(item.get("short_interest_change")) is not None:
+        tags.append({"text": f"空头增加 {item['short_interest_change'] * 100:.0f}%", "color": "purple"})
+    elif short.get("kind") in {"rising", "crowded"} and number(item.get("short_float")) is not None:
+        tags.append({"text": f"空头占流通 {item['short_float'] * 100:.0f}%", "color": "purple"})
+    return tags
+
+
+def _expectation_item(ticker: str, signals: dict | None) -> dict | None:
+    return (((signals or {}).get("expectations") or {}).get("items") or {}).get(ticker)
 
 
 def signal_tags(ticker: str, signals: dict | None) -> list[dict[str, str]]:
     """Coloured tags for one symbol. Tag colour marks the signal type, not advice."""
+    return _price_tags(ticker, signals) + _expectation_tags(_expectation_item(ticker, signals))
+
+
+def signal_as_of(ticker: str, signals: dict | None) -> str:
+    """Dates behind a symbol's tags, e.g. '截至 2026-10-16；预期数据截至 2026-10-13'."""
+    price = (((signals or {}).get("items") or {}).get(ticker) or {}).get("as_of")
+    expectation = _expectation_item(ticker, signals)
+    parts = [f"截至 {price}" if price else ""]
+    if expectation and _expectation_tags(expectation):
+        parts.append(f"预期数据截至 {expectation.get('as_of')}")
+    return "；".join(part for part in parts if part)
+
+
+def _price_tags(ticker: str, signals: dict | None) -> list[dict[str, str]]:
     item = ((signals or {}).get("items") or {}).get(ticker)
     if not item:
         return []

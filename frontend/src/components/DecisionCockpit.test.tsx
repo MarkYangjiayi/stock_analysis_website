@@ -503,6 +503,63 @@ describe("DecisionCockpit", () => {
         expect(componentProps.onShowEvidence).toHaveBeenCalledWith("fcf");
     });
 
+    it("shows consensus and short-interest flags with their source instead of an evidence ID", async () => {
+        const user = userEvent.setup();
+        const componentProps = props();
+        const estimateCut = {
+            ...warning,
+            id: "estimate_cuts",
+            severity: "warning" as const,
+            title: "Analysts cutting EPS estimates",
+            message: "Current-FY consensus EPS changed -4.0% over 30 days.",
+            metric: "eps_revision_30d",
+            evidence_metric: "expectations" as const,
+            evidence_id: null,
+            category: "expectations" as const,
+            source_date: "2026-10-16",
+        };
+        const shortInterest = {
+            ...estimateCut,
+            id: "short_interest",
+            title: "Short interest rising",
+            message: "Short interest is 6.2% of float.",
+            metric: "short_interest_change",
+            evidence_metric: "short_interest" as const,
+            category: "positioning" as const,
+        };
+        render(<DecisionCockpit {...componentProps} decision={{
+            ...decision,
+            risks: { ...decision.risks, warnings: [estimateCut, shortInterest], high_count: 0, warning_count: 2 },
+            expectation_signals: {
+                available: true, source: "EODHD fundamentals", as_of: "2026-10-16", max_age_days: 14,
+                signals: {
+                    as_of: "2026-10-16", eps_period_end: "2026-12-31", eps_estimate: 4.8, eps_estimate_30d_ago: 5, eps_estimate_90d_ago: 5.2,
+                    eps_revision_30d: -0.04, eps_revision_90d: -0.0769, eps_revisions_up_30d: 2, eps_revisions_down_30d: 9,
+                    eps_estimate_analysts: 20, eps_revision_breadth_30d: -0.35, eps_next_year_revision_30d: -0.037, eps_next_year_revision_90d: -0.0714,
+                    shares_short: 13_000_000, shares_short_prior_month: 10_000_000,
+                    short_interest_change: 0.3, short_float: 0.062, short_ratio: 3.4,
+                },
+                estimate_signal: { direction: "cut", basis: "30d", severity: "warning" },
+                short_signal: { kind: "rising", severity: "warning" },
+                notes: [],
+            },
+        }} />);
+        await user.click(screen.getByRole("button", { name: "Risks" }));
+
+        expect(screen.getByText("Consensus · 2026-10-16")).toBeVisible();
+        expect(screen.getByText("Short interest · 2026-10-16")).toBeVisible();
+        expect(screen.queryByText("E30")).not.toBeInTheDocument();
+        expect(screen.getByText("−4.0% 30d · −7.7% 90d")).toBeVisible();
+        expect(screen.getByText("Next FY −3.7% · −7.1%")).toBeVisible();
+        expect(screen.getByText("↑2 / ↓9 of 20 analysts")).toBeVisible();
+        expect(screen.getByText("6.2% · 3.4")).toBeVisible();
+
+        const evidenceButtons = screen.getAllByRole("button", { name: /Show evidence/ });
+        expect(evidenceButtons).toHaveLength(1);
+        await user.click(evidenceButtons[0]);
+        expect(componentProps.onShowEvidence).toHaveBeenCalledWith("expectations");
+    });
+
     it("colors better-positioned percentiles and keeps unavailable metrics neutral", async () => {
         const user = userEvent.setup();
         const componentProps = props();

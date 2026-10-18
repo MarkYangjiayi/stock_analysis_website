@@ -192,6 +192,27 @@ def test_audit_markdown_carries_the_headline_and_signals():
     assert "<font" not in content
 
 
+def test_card_and_audit_markdown_carry_expectation_tags_with_their_date():
+    sample = context()
+    sample["watchlist_signals"]["expectations"] = {"items": {
+        "MSFT.US": {"as_of": "2026-09-12", "eps_revisions_up_30d": 21, "eps_estimate_analysts": 33,
+                    "estimate": {"direction": "raise", "basis": "breadth", "severity": None}, "short": None},
+        "NVDA.US": {"as_of": "2026-09-12", "short_interest_change": 0.41, "short_float": 0.08,
+                    "estimate": None, "short": {"kind": "rising", "severity": "warning"}},
+    }}
+    card = build_daily_card(sample, [], report_type="post_market_summary", headline="H。",
+                            site_url="https://example.com")
+    rows = {row["symbol"].split("]")[0]: row for row in next(
+        element for element in card["body"]["elements"] if element["tag"] == "table")["rows"]}
+    assert rows["[MSFT"]["signals"] == [{"text": "预期上修 21/33家", "color": "turquoise"}]
+    assert rows["[NVDA"]["signals"][-2:] == [{"text": "空头增加 41%", "color": "purple"},
+                                            {"text": "财报 09-15 盘后", "color": "violet"}]
+
+    content = daily_reporter.render_daily_report([], report_type="post_market_summary", market_context=sample)
+    assert "- MSFT：预期上修 21/33家（预期数据截至 2026-09-12）" in content
+    assert "- NVDA：RSI 28 超卖；近52周新低；空头增加 41%（截至 2026-09-14；预期数据截至 2026-09-12）" in content
+
+
 async def _seed(db_session, ticker, closes, target):
     db_session.add(Ticker(ticker=ticker))
     dates = rsi_monitor._recent_us_sessions(target, len(closes))

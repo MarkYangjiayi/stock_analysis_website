@@ -575,8 +575,43 @@ export interface DecisionWarning {
     metric: string;
     current: number | null;
     previous: number | null;
-    evidence_metric: "revenue" | "gross_margin" | "operating_margin" | "fcf" | "cash" | "debt" | "debt_to_equity" | "shares";
-    evidence_id: string;
+    evidence_metric: "revenue" | "gross_margin" | "operating_margin" | "fcf" | "cash" | "debt" | "debt_to_equity" | "shares" | "expectations" | "short_interest";
+    /** Null for consensus and short-interest flags, which stay outside the brief's evidence registry. */
+    evidence_id: string | null;
+    category?: "fundamental" | "expectations" | "positioning";
+    source_date?: string | null;
+}
+
+export interface ExpectationSignalValues {
+    as_of: string | null;
+    eps_period_end: string | null;
+    eps_estimate: number | null;
+    eps_estimate_30d_ago: number | null;
+    eps_estimate_90d_ago: number | null;
+    eps_revision_30d: number | null;
+    eps_revision_90d: number | null;
+    eps_revisions_up_30d: number | null;
+    eps_revisions_down_30d: number | null;
+    eps_estimate_analysts: number | null;
+    eps_revision_breadth_30d: number | null;
+    eps_next_year_revision_30d: number | null;
+    eps_next_year_revision_90d: number | null;
+    shares_short: number | null;
+    shares_short_prior_month: number | null;
+    short_interest_change: number | null;
+    short_float: number | null;
+    short_ratio: number | null;
+}
+
+export interface ExpectationSignalsContext {
+    available: boolean;
+    source: string;
+    as_of: string | null;
+    max_age_days: number;
+    signals: ExpectationSignalValues | null;
+    estimate_signal: { direction: "cut" | "raise"; basis: "30d" | "90d" | "breadth"; severity: "warning" | "high" | null } | null;
+    short_signal: { kind: "rising" | "crowded"; severity: "warning" | "high" } | null;
+    notes: string[];
 }
 
 export interface DecisionSummaryMetric {
@@ -804,6 +839,7 @@ export interface DecisionSupportResponse {
         high_count: number;
         warning_count: number;
     };
+    expectation_signals?: ExpectationSignalsContext;
     earnings_quality?: EarningsQualityResponse;
     evidence: DecisionEvidenceItem[];
 }

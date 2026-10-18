@@ -75,6 +75,6 @@ def test_theme_migration_matches_models_and_downgrades(tmp_path):
 
     _alembic(migrated, "upgrade", "head")
     with sqlite3.connect(migrated) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0023_theme_trends"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0024_expectation_signals"
         present = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert set(tables) <= present

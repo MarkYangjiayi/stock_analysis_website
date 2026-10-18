@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.time_utils import utc_now
 from models import (
     CorporateAction,
     DailyPrice,
@@ -21,6 +22,7 @@ from models import (
 )
 from services.personal_workspace import get_saved_valuation_scenarios
 from services.earnings_quality import get_earnings_quality
+from services.expectation_signals import load_expectation_signals, signal_warnings
 from services.screener_normalization import normalize_multiple
 from services.security_master import canonicalize_ticker
 from services.dcf import MODEL_VERSION, FORECAST_YEARS, INITIAL_GROWTH_YEARS, calculate_dcf_value, operating_forecast_cash_flows
@@ -1332,6 +1334,27 @@ def evaluate_fundamental_warnings(financial: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def with_signal_warnings(risks: dict[str, Any], signals: dict[str, Any]) -> dict[str, Any]:
+    """Add consensus and short-interest flags to the displayed key risks.
+
+    They stay out of the brief's evidence registry and the deterministic summary,
+    which describe the statement-based rules only.
+    """
+    warnings = [
+        {**warning, "category": warning.get("category", "fundamental")}
+        for warning in risks["warnings"]
+    ]
+    if signals.get("available") and signals.get("signals"):
+        warnings.extend(signal_warnings(signals["signals"], source_date=signals.get("as_of")))
+    warnings.sort(key=lambda item: (0 if item["severity"] == "high" else 1, item["id"]))
+    return {
+        **risks,
+        "warnings": warnings,
+        "high_count": sum(item["severity"] == "high" for item in warnings),
+        "warning_count": sum(item["severity"] == "warning" for item in warnings),
+    }
+
+
 async def _latest_publication(db: AsyncSession, dataset: str) -> DataPublication | None:
     result = await db.execute(
         select(DataPublication)
@@ -2069,6 +2092,7 @@ async def get_decision_support(
         earnings_quality=earnings_quality,
     )
     summary = _deterministic_summary(valuation, peers, risks, factors, financial)
+    expectation_signals = await load_expectation_signals(canonical_ticker, db, utc_now().date())
     return {
         "metadata": {
             "ticker": canonical_ticker,
@@ -2086,7 +2110,8 @@ async def get_decision_support(
         "summary": summary,
         "valuation": valuation,
         "peer_comparison": peers,
-        "risks": risks,
+        "risks": with_signal_warnings(risks, expectation_signals),
+        "expectation_signals": expectation_signals,
         "published_factors": {
             **factors,
             "as_of_date": _iso(factors["as_of_date"]),

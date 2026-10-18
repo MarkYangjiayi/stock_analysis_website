@@ -322,7 +322,14 @@ class StockScreenerSnapshot(Base):
     payout_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     insider_ownership: Mapped[Optional[Decimal]] = mapped_column(Numeric)
     institutional_ownership: Mapped[Optional[Decimal]] = mapped_column(Numeric)
-    
+    # Consensus revisions and short interest (services/expectation_signals.py)
+    eps_revision_30d: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    eps_revision_90d: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    eps_revision_breadth_30d: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    eps_estimate_analysts: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    short_interest_change: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    short_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+
     # 技术面指标 (通过近60天K线运算)
     technical_quality: Mapped[Optional[str]] = mapped_column(String)
     close: Mapped[Optional[Decimal]] = mapped_column(Numeric)
