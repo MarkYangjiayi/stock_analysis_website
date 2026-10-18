@@ -17,7 +17,7 @@ Dedicated worker --------------------+
   |-- optional WebSocket monitor
   `-- weekly online SQLite backup
 
-Immutable raw JSON.gz ---> normalized point-in-time tables ---> factor panels ---> research/backtests
+Immutable raw JSON.gz ---> normalized point-in-time tables ---> factor panels
 ```
 
 Uvicorn never owns scheduled jobs. This makes API worker scaling safe and prevents duplicate notifications or data writes. `worker.py` is the only scheduler process.
@@ -48,7 +48,6 @@ For larger offline panels, the raw files can later be converted to Parquet and q
 - `pipeline_runs`, `data_publications`: resumable job state, validation report and the dates API consumers may read.
 - `rrg_price_snapshots`, `market_breadth_snapshots`: immutable ETF prices and 252-session raw breadth counts for each successful market publication.
 - `factor_values`: named, versioned raw and normalized factor observations.
-- `strategy_definitions`, `signal_snapshots`, `backtest_runs`: reproducible research outputs.
 
 Legacy `financial_statements` and `stock_screener_snapshot` remain for dashboard compatibility. New research must use quality-gated publications and versioned factor values.
 
@@ -86,8 +85,6 @@ Backfill is resumable: tickers with sufficient coverage are skipped and every ru
 
 The public `GET /api/v1/market-overview` endpoint serves 3M/6M/1Y aligned S&P 500 arrays for sector trends, RSP/SPY, MA breadth, advances/declines, new highs/lows, McClellan and cross-sectional dispersion. Disabled Russell 2000 and combined requests return an explicit validation error. `/market` renders the arrays in one linked ECharts timeline; `/rrg` remains the rotation view and keeps its existing URL.
 
-Factor Lab backtests likewise default to S&P 500. A Russell 2000 or combined backtest is rejected unless strict historical rows continuously cover every US market session in the requested window for every required underlying index, preventing an incomplete S&P-only period from being mislabeled as a combined-universe result.
-
 ## 6. Factor methodology (`lfq-v1`)
 
 - Value: earnings yield and book-to-price.
@@ -98,21 +95,7 @@ Factor Lab backtests likewise default to S&P 500. A Russell 2000 or combined bac
 
 Each cross-section applies sector-median missing-value handling, 1%/99% winsorization, sector demeaning and z-scoring. The composite is the equal-weight mean. At least 80% of the universe must have both momentum and low-volatility observations. Factor rows are append-only by source run and record their version, availability time and sector; readers only expose the run referenced by the matching publication.
 
-The research API reports Rank IC, IC information ratio, positive IC rate, quantile returns, monotonicity, long-short spread and top-quantile turnover.
-
-## 7. Backtest rules
-
-- Factor signals must have been published by the official XNYS execution close, execute at least one later trading close and earn returns only after that execution close.
-- Membership is resolved at each signal date; missing PIT membership fails by default.
-- Prices use adjusted close with raw close fallback.
-- Portfolio construction enforces top-N, position and sector caps and may retain cash when constraints are infeasible.
-- Turnover includes cash transitions. Commission and slippage are charged on every rebalance.
-- Missing held-security prices fail by default, forcing the researcher to load a delisting return; an explicit `liquidate_last` policy is available.
-- A period with no executable, invested rebalance fails instead of reporting a misleading zero-return backtest.
-- Outputs include return, volatility, Sharpe, Sortino, drawdown, VaR/CVaR, Beta, Alpha, tracking error, information ratio, turnover, costs and sector contribution.
-- Signal snapshots are keyed by backtest run, so rerunning the same strategy never overwrites an earlier run's evidence.
-
-## 8. Security and operations
+## 7. Security and operations
 
 - Without `ADMIN_API_KEY`, production starts in read-only mode and admin APIs return 503; no default admin secret is used.
 - Admin and state-changing APIs require `X-API-Key`; expensive public research endpoints are rate-limited.
@@ -124,7 +107,7 @@ The research API reports Rank IC, IC information ratio, positive IC rate, quanti
 - `/health/live` and `/health/ready` support orchestration.
 - `scripts/backup_sqlite.py` uses SQLite's online backup API and validates every copy.
 
-## 9. Commands
+## 8. Commands
 
 ```bash
 cp .env.example .env
@@ -145,6 +128,6 @@ npm run build
 npm run dev
 ```
 
-## 10. Data boundary
+## 9. Data boundary
 
 Snapshots created before v2 did not preserve historical membership or information availability and must not be used for backtests. They remain readable by the dashboard as legacy data. Trustworthy research history begins with v2 quality-gated publications or with separately imported, verified point-in-time source data.

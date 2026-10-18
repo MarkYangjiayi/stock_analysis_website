@@ -264,7 +264,7 @@ test("the primary navigation keeps all six sections and the theme toggle on one 
             return { overflow: row.scrollWidth - row.clientWidth, wrapped };
         });
         expect(layout, `nav layout at ${width}px`).toEqual({ overflow: 0, wrapped: [] });
-        for (const name of ["Analysis", "Screener", "Anomalies", "Market", "Themes", "Factor Lab"]) {
+        for (const name of ["Analysis", "Screener", "Anomalies", "Market", "Themes"]) {
             await expect(nav.getByRole("link", { name, exact: true })).toBeInViewport({ ratio: 1 });
         }
     }

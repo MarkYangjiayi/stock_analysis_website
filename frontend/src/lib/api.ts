@@ -822,20 +822,6 @@ export interface PublishedFactorSnapshot {
     factors: Record<string, PublishedFactorValue>;
 }
 
-export interface QuantCoverage {
-    publications: Record<string, {
-        as_of_date: string;
-        published_at: string;
-    }>;
-    factors: {
-        min_date: string | null;
-        max_date: string | null;
-        date_count: number;
-        ticker_count: number;
-        names: string[];
-    };
-}
-
 export type MarketUniverse = "SP500" | "RUSSELL2000" | "SP500_RUSSELL2000";
 export type MarketPeriod = "3m" | "6m" | "1y";
 export type YieldCurvePeriod = "1y" | "3y" | "5y";
@@ -1035,41 +1021,6 @@ export interface ScreenerResponse {
     as_of_date: string | null;
 }
 
-export interface FactorResearchResult {
-    observations: number;
-    dates: number;
-    mean_rank_ic: number;
-    ic_information_ratio: number;
-    positive_ic_rate: number;
-    long_short_spread: number;
-    monotonicity: number;
-    top_quantile_turnover: number;
-    quantile_returns: Record<string, number>;
-}
-
-export interface BacktestSummary {
-    id: number;
-    status: string;
-    metrics: Record<string, number>;
-    diagnostics: Record<string, unknown>;
-}
-
-export interface EquityCurvePoint {
-    date: string;
-    equity: number;
-    daily_return: number;
-}
-
-export interface BacktestDetails extends BacktestSummary {
-    name: string;
-    config: Record<string, unknown>;
-    equity_curve: EquityCurvePoint[];
-    attribution: {
-        sector_return_contribution?: Record<string, number>;
-        [key: string]: unknown;
-    };
-}
-
 export const fetchStockData = (
     ticker: string,
     interval = "1d",
@@ -1234,9 +1185,6 @@ export const resetPersonalValuationScenarios = (
     { method: "DELETE", headers: personalHeaders(adminKey) },
 );
 
-export const fetchQuantCoverage = (signal?: AbortSignal) =>
-    apiRequest<QuantCoverage>("/api/quant/coverage", { signal });
-
 export const fetchMarketOverview = (
     universe: MarketUniverse,
     period: MarketPeriod,
@@ -1279,36 +1227,6 @@ export const fetchScreener = (payload: ScreenerPayload, signal?: AbortSignal) =>
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-        signal,
-    });
-
-export const runFactorResearch = (
-    payload: Record<string, unknown>,
-    signal?: AbortSignal,
-) => apiRequest<FactorResearchResult>("/api/quant/research", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal,
-}, 120_000);
-
-export const createBacktest = (
-    payload: Record<string, unknown>,
-    adminKey: string,
-    signal?: AbortSignal,
-) => apiRequest<BacktestSummary>("/api/quant/backtests", {
-    method: "POST",
-    headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": adminKey,
-    },
-    body: JSON.stringify(payload),
-    signal,
-}, 180_000);
-
-export const fetchBacktest = (runId: number, adminKey: string, signal?: AbortSignal) =>
-    apiRequest<BacktestDetails>(`/api/quant/backtests/${runId}`, {
-        headers: personalHeaders(adminKey),
         signal,
     });
 
