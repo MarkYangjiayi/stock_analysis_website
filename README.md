@@ -8,7 +8,7 @@
 
 # QuantDashboard - 现代全栈量化投资终端
 
-> **v2:** The system now separates API and worker lifecycles, preserves point-in-time fundamentals/universe history and corporate actions, quality-gates every publication, and includes a versioned factor lab plus cost-aware backtesting. See [the current architecture](docs/architecture.md).
+> **v2:** The system now separates API and worker lifecycles, preserves point-in-time fundamentals/universe history and corporate actions, quality-gates every publication, and publishes a versioned daily factor cross-section. See [the current architecture](docs/architecture.md).
 
 **QuantDashboard** 是一款专为个人投资者与极客打造的全栈式股票量化分析与投研平台。基于现代前后端分离架构搭建，它深度融合了数据同步抓取、基本面多因子量化评估、实时技术指标测算以及由 DeepSeek 大模型驱动的 AI 智能研报引擎。
 

@@ -828,6 +828,9 @@ class DecisionBriefCache(Base):
     )
 
 
+# The Factor Lab backtest engine was removed. These three tables are kept so
+# existing rows survive and migration 0002 (which alters signal_snapshots)
+# still applies to a blank database; nothing writes to them any more.
 class StrategyDefinition(Base):
     __tablename__ = "strategy_definitions"
 

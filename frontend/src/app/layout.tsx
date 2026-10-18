@@ -8,7 +8,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "Quantify — Low Frequency Quant Research",
-  description: "Point-in-time equity research, factor analysis and portfolio backtesting.",
+  description: "Point-in-time equity research and factor analysis.",
 };
 
 export default function RootLayout({

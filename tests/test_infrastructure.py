@@ -374,7 +374,7 @@ def test_rrg_history_days_are_bounded_before_execution():
     assert too_large.status_code == 422
 
 
-def test_public_query_limits_and_private_backtest_status_are_enforced():
+def test_public_query_limits_and_private_operations_auth_are_enforced():
     from main import app
 
     with TestClient(app) as client:
@@ -386,16 +386,16 @@ def test_public_query_limits_and_private_backtest_status_are_enforced():
             "/api/stocks/batch-factors",
             json={"tickers": [f"T{index}.US" for index in range(101)]},
         )
-        unauthorized_backtest = client.get("/api/quant/backtests/1")
-        missing_backtest = client.get(
-            "/api/quant/backtests/1",
+        unauthorized_operations = client.get("/api/operations/pipelines")
+        authorized_operations = client.get(
+            "/api/operations/pipelines",
             headers={"X-API-Key": "test-secret"},
         )
 
     assert too_many_rrg_tickers.status_code == 422
     assert too_many_batch_tickers.status_code == 422
-    assert unauthorized_backtest.status_code == 401
-    assert missing_backtest.status_code == 404
+    assert unauthorized_operations.status_code == 401
+    assert authorized_operations.status_code == 200
 
 
 def test_e2e_seed_refuses_non_test_databases():
@@ -1186,80 +1186,6 @@ async def test_factor_api_hides_rows_without_matching_publication(db_session):
     await db_session.commit()
     rows = await read_factors(as_of, db=db_session)
     assert [row["ticker"] for row in rows] == ["AAA.US"]
-
-
-@pytest.mark.asyncio
-async def test_quant_coverage_only_counts_published_factor_snapshots(db_session):
-    from api.routers import read_quant_coverage
-
-    published_date = date(2025, 1, 2)
-    published_run = PipelineRun(
-        pipeline_name="factor_cross_section",
-        target_date=published_date,
-        status="published",
-    )
-    unpublished_run = PipelineRun(
-        pipeline_name="factor_cross_section",
-        target_date=date(2025, 1, 3),
-        status="failed",
-    )
-    db_session.add_all([published_run, unpublished_run])
-    await db_session.flush()
-    db_session.add_all([
-        DataPublication(
-            dataset="factors",
-            as_of_date=published_date,
-            pipeline_run_id=published_run.id,
-            published_at=datetime(2025, 1, 2, 23, 0),
-        ),
-        DataPublication(
-            dataset="factors",
-            as_of_date=date(2025, 1, 3),
-            pipeline_run_id=unpublished_run.id,
-            published_at=datetime(2025, 1, 3, 23, 0),
-        ),
-        FactorValue(
-            ticker="AAA.US",
-            as_of_date=published_date,
-            factor_name="composite",
-            raw_value=2.0,
-            normalized_value=1.0,
-            version="lfq-v1",
-            available_at=datetime(2025, 1, 2, 22, 0),
-            source_run_id=published_run.id,
-        ),
-        FactorValue(
-            ticker="BBB.US",
-            as_of_date=published_date,
-            factor_name="value",
-            raw_value=1.0,
-            normalized_value=0.5,
-            version="lfq-v1",
-            available_at=datetime(2025, 1, 2, 22, 0),
-            source_run_id=published_run.id,
-        ),
-        FactorValue(
-            ticker="SHADOW.US",
-            as_of_date=date(2025, 1, 3),
-            factor_name="composite",
-            normalized_value=9.0,
-            version="lfq-v1",
-            available_at=datetime(2025, 1, 3, 22, 0),
-            source_run_id=unpublished_run.id,
-        ),
-    ])
-    await db_session.commit()
-
-    result = await read_quant_coverage(db=db_session)
-
-    assert result["publications"]["factors"]["as_of_date"] == "2025-01-02"
-    assert result["factors"] == {
-        "min_date": "2025-01-02",
-        "max_date": "2025-01-02",
-        "date_count": 1,
-        "ticker_count": 2,
-        "names": ["composite", "value"],
-    }
 
 
 @pytest.mark.asyncio
