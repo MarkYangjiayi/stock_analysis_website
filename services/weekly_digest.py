@@ -26,8 +26,7 @@ from services.daily_reporter import (
     _record_rendered_report,
     _record_report_evidence,
 )
-from services.decision_support import midrank_percentile
-from services.index_valuation import IndexValuationUnavailable, get_index_valuation
+from services.market_regime import valuation_summary
 from services.notifications import NotificationManager
 from services.notifications.report_card import build_weekly_card
 from services.report_insights import SECTOR_SHORT, pct, weekly_headline
@@ -174,19 +173,8 @@ async def _breadth(week_end: date, previous: date) -> dict | None:
 
 
 async def _valuation() -> dict | None:
-    try:
-        async with async_session_maker() as db:
-            payload = await get_index_valuation(db, "SP500")
-    except IndexValuationUnavailable:
-        return None  # Not yet published; the card reports the gap once.
-    points = [point for point in payload.get("points", []) if number(point.get("index_pe")) is not None]
-    if not points:
-        return None
-    latest = points[-1]
-    values = [point["index_pe"] for point in points]
-    return {"as_of": latest["date"], "index_pe": latest["index_pe"], "months": len(values),
-            "percentile": round(midrank_percentile(latest["index_pe"], values), 1),
-            "stale": bool(payload.get("meta", {}).get("stale"))}
+    # Not yet published returns None; the card reports the gap once.
+    return await valuation_summary()
 
 
 async def collect_weekly_evidence(now: datetime | None = None) -> dict[str, Any]:

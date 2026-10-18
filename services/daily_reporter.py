@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import logging
 import re
 from typing import Any
@@ -14,12 +14,24 @@ from core.config import settings
 from core.time_utils import utc_now
 from database import async_session_maker
 from models import DailyReportRun
+from services.anomaly_clusters import collect_anomaly_clusters
 from services.anomaly_scans import run_persisted_anomaly_scan
+from services.market_regime import collect_market_regime
 from services.notifications import NotificationManager
 from services.notifications.report_card import build_daily_card
 from services.report_insights import daily_headline
 from services.report_market import NY, Instrument, collect_market_context, collect_theme_heat, session_context
-from services.report_renderer import compact, instant, number, quality_summary, render_events_and_quality, render_market_sections, value
+from services.report_renderer import (
+    cluster_markdown,
+    compact,
+    instant,
+    number,
+    quality_summary,
+    regime_markdown,
+    render_events_and_quality,
+    render_market_sections,
+    value,
+)
 from services.watchlist_signals import collect_watchlist_signals, signal_as_of, signal_tags
 
 
@@ -260,7 +272,7 @@ def render_daily_report(
         stale = sum(not anomaly_observation(row, market_context)[1] for row in anomalies)
         if stale:
             lines.append(f"- 个股异动 {stale}/{len(anomalies)} 项为历史、盘前、待更新或未核验报价，勿作当前行情。")
-        lines.extend(["",
+        lines.extend(["", *regime_markdown(market_context),
                       *render_market_sections(market_context, report_type), ""])
         signals = market_context.get("watchlist_signals")
         tagged = [(row["ticker"], signal_tags(row["ticker"], signals)) for row in market_context.get("quotes", [])
@@ -276,6 +288,8 @@ def render_daily_report(
         lines.append("- 本次扫描没有可展示的个股异动；不据此判断整体市场平稳。")
     else:
         lines.append("新闻原标题仅为线索，尚未验证为此次涨跌原因。")
+        if market_context:
+            lines.extend(cluster_markdown(market_context))
     for anomaly in anomalies:
         ticker = _display_ticker(anomaly.get("ticker")) or "UNKNOWN"
         move = _format_move(anomaly.get("price_change"))
@@ -412,6 +426,7 @@ async def _generate_and_broadcast(
         await attach_theme_heat(market_context, now)
     if any(row.get("group") == "core" for row in market_context.get("quotes", [])):
         market_context["watchlist_signals"] = await collect_watchlist_signals(market_context, report_type)
+    await _attach_regime_and_clusters(market_context, anomalies, now)
     await _record_report_evidence(report_run_id, anomalies, market_context)
     try:
         content = render_daily_report(anomalies, report_type=report_type, market_context=market_context)
@@ -466,6 +481,27 @@ async def _generate_and_broadcast(
         "report_run_id": report_run_id,
         "anomalies": len(anomalies),
     }
+
+
+async def _attach_regime_and_clusters(
+    market_context: dict[str, Any],
+    anomalies: list[dict[str, Any]],
+    now: datetime,
+) -> None:
+    """Evaluate both at collection time so a saved report renders the same card."""
+    if settings.DAILY_REPORT_REGIME_ENABLED:
+        try:
+            market_context["regime"] = await asyncio.wait_for(collect_market_regime(market_context, now), 45)
+        except Exception as exc:
+            logger.warning("Market regime unavailable (%s)", type(exc).__name__)
+            market_context.setdefault("warnings", []).append("市场状态暂不可用。")
+    if settings.DAILY_REPORT_ANOMALY_CLUSTERS_ENABLED and anomalies:
+        try:
+            market_context["anomaly_clusters"] = await collect_anomaly_clusters(
+                anomalies, date.fromisoformat(market_context["report_date"])
+            )
+        except Exception as exc:
+            logger.warning("Anomaly clusters unavailable (%s)", type(exc).__name__)
 
 
 async def attach_theme_heat(market_context: dict[str, Any], now: datetime) -> None:

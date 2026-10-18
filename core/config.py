@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     DAILY_REPORT_INCLUDE_WATCHLIST: bool = True
     DAILY_REPORT_WATCHLIST_LIMIT: int = Field(default=12, ge=0, le=30)
     DAILY_REPORT_EVENTS_ENABLED: bool = True
+    # Rule-based market regime line (trend, breadth, participation, VIX,
+    # FRED high-yield spread, curve, valuation) and same-theme anomaly clusters.
+    DAILY_REPORT_REGIME_ENABLED: bool = True
+    DAILY_REPORT_ANOMALY_CLUSTERS_ENABLED: bool = True
     # Weekly digest (America/New_York). The default Saturday 08:00 runs after
     # the overnight pipelines have published Friday's breadth/RRG/valuation.
     WEEKLY_DIGEST_ENABLED: bool = True

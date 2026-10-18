@@ -18,7 +18,8 @@ from zoneinfo import ZoneInfo
 from services.report_insights import SECTOR_SHORT, current, display_symbol, pct, pre_open, ranked_sectors
 from services.report_market import NY, number
 from services.report_renderer import (
-    _compatible, breadth_notice, compact, instant, morning_moves, render_theme_section, theme_notice, value,
+    _compatible, breadth_notice, cluster_title, compact, display_ticker, instant, morning_moves,
+    render_theme_section, theme_notice, value,
 )
 from services.watchlist_signals import signal_tags
 
@@ -336,6 +337,38 @@ def _anomaly_panel(rows: list[dict]) -> dict | None:
     return _panel(title, ["\n".join(lines)])
 
 
+def _regime_block(context: dict) -> dict | None:
+    """First-screen line of rule-based states; the numbers sit in a collapsed panel."""
+    items = (context.get("regime") or {}).get("items") or []
+    if not items:
+        return None
+    return _md("**市场状态** " + " · ".join(f"{item['label']} {_font(item['state'], item['tone'])}" for item in items))
+
+
+def _regime_panel(context: dict) -> dict | None:
+    items = (context.get("regime") or {}).get("items") or []
+    if not items:
+        return None
+    lines = [
+        f"- **{item['label']} {item['state']}**：{item['detail']}" + (f" · {_day(item['as_of'])}" if item.get("as_of") else "")
+        for item in items
+    ]
+    lines.append(_font("按固定规则由数据生成；高收益债利差来自 FRED（ICE BofA）。", "grey"))
+    return _panel("市场状态依据", ["\n".join(lines)])
+
+
+def _cluster_block(context: dict) -> dict | None:
+    clusters = (context.get("anomaly_clusters") or {}).get("clusters") or []
+    if not clusters:
+        return None
+    lines = [
+        f"- {cluster_title(cluster)}，平均 {_paint(cluster['average_move'], pct(cluster['average_move'], 1))}："
+        + "、".join(display_ticker(ticker) for ticker in cluster["tickers"])
+        for cluster in clusters
+    ]
+    return _md("**异动聚类**\n" + "\n".join(lines))
+
+
 def _theme_panel(context: dict) -> dict | None:
     """Morning-only 题材热度 panel from the saved theme_heat evidence (deterministic)."""
     lines = render_theme_section(context)
@@ -366,6 +399,8 @@ def _daily_issues(context: dict, anomaly_rows: list[dict]) -> list[str]:
         issues.append("暂缺：" + "、".join(gaps))
     if notice := breadth_notice(context):
         issues.append(notice.rstrip("。"))
+    if unavailable := (context.get("regime") or {}).get("unavailable"):
+        issues.append("市场状态暂缺：" + "、".join(unavailable))
     if notice := theme_notice(context):
         issues.append(notice.rstrip("。"))
     covered = {f"{name}暂不可用。" for name in ("跨资产行情", "美债曲线", "市场宽度", "事件日历")}
@@ -411,7 +446,10 @@ def build_daily_card(context: dict, anomaly_rows: list[dict], *, report_type: st
         note = f"等权相对市值加权 {_paint(relative)}"
 
     sector_title = "板块 · 前一交易日" if pre_open(by_symbol) else "板块"
-    elements = [_headline_block(headline), *_grid(cells), *_sector_bars(sector_title, ranked_sectors(quotes), note)]
+    elements = [_headline_block(headline), *_grid(cells)]
+    if regime := _regime_block(context):
+        elements.append(regime)
+    elements.extend(_sector_bars(sector_title, ranked_sectors(quotes), note))
     table = _watch_table([row for row in quotes if row.get("group") == "core"],
                          signals=context.get("watchlist_signals"), events=context.get("events"),
                          site_url=site_url, change_label="涨跌")
@@ -420,10 +458,14 @@ def build_daily_card(context: dict, anomaly_rows: list[dict], *, report_type: st
     names = {row["ticker"]: row.get("name") for row in quotes if row.get("group") == "core"}
     if calendar := _calendar_block("今明关注", context.get("events"), names, limit=2):
         elements.append(calendar)
+    if clusters := _cluster_block(context):
+        elements.append(clusters)
     if panel := _anomaly_panel(anomaly_rows):
         elements.append(panel)
     if report_type == "morning_briefing" and (themes := _theme_panel(context)):
         elements.append(themes)
+    if regime_panel := _regime_panel(context):
+        elements.append(regime_panel)
     if details := _detail_sections(context, report_type):
         elements.append(_panel("全部行情明细 · 全球股市 / 外汇 / 商品 / 债券 / 加密", details))
     available = sum(number(row.get("price")) is not None and bool(row.get("fresh")) for row in quotes)
