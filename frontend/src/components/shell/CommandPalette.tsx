@@ -11,7 +11,6 @@ export const NAV_PAGES = [
     { name: "Anomalies", path: "/anomalies" },
     { name: "Market", path: "/market", aliases: ["/rrg", "/market/yield-curve", "/market/index-valuation"] },
     { name: "Themes", path: "/themes" },
-    { name: "Factor Lab", path: "/research" },
 ];
 
 const MARKET_PAGES = [

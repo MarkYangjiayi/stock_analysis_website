@@ -48,6 +48,10 @@ def upgrade() -> None:
                 ["ticker", "as_of_date", "factor_name", "version", "source_run_id"],
             )
 
+    # 0024 drops the backtest tables and models.py no longer defines them, so a
+    # blank database reaches this revision without signal_snapshots.
+    if not sa.inspect(op.get_bind()).has_table("signal_snapshots"):
+        return
     signal_columns = _column_names("signal_snapshots")
     signal_constraints = _unique_names("signal_snapshots")
     if "backtest_run_id" not in signal_columns:
@@ -75,9 +79,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    signal_constraints = _unique_names("signal_snapshots")
-    signal_columns = _column_names("signal_snapshots")
-    if (
+    has_signal_snapshots = sa.inspect(op.get_bind()).has_table("signal_snapshots")
+    signal_constraints = _unique_names("signal_snapshots") if has_signal_snapshots else set()
+    signal_columns = _column_names("signal_snapshots") if has_signal_snapshots else set()
+    if has_signal_snapshots and (
         "uix_strategy_signal_date" not in signal_constraints
         or "backtest_run_id" in signal_columns
     ):

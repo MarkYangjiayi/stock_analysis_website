@@ -835,59 +835,6 @@ class DecisionBriefCache(Base):
     )
 
 
-class StrategyDefinition(Base):
-    __tablename__ = "strategy_definitions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, index=True)
-    version: Mapped[str] = mapped_column(String)
-    config: Mapped[Any] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-
-    __table_args__ = (UniqueConstraint("name", "version", name="uix_strategy_version"),)
-
-
-class SignalSnapshot(Base):
-    __tablename__ = "signal_snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategy_definitions.id"), index=True)
-    backtest_run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("backtest_runs.id"), index=True)
-    ticker: Mapped[str] = mapped_column(String, index=True)
-    as_of_date: Mapped[dt_date] = mapped_column(Date, index=True)
-    score: Mapped[float] = mapped_column(Float)
-    rank: Mapped[int] = mapped_column(Integer)
-    target_weight: Mapped[Optional[float]] = mapped_column(Float)
-    factor_details: Mapped[Optional[Any]] = mapped_column(JSON)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "backtest_run_id",
-            "ticker",
-            "as_of_date",
-            name="uix_backtest_signal_date",
-        ),
-    )
-
-
-class BacktestRun(Base):
-    __tablename__ = "backtest_runs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    strategy_id: Mapped[Optional[int]] = mapped_column(ForeignKey("strategy_definitions.id"), index=True)
-    name: Mapped[str] = mapped_column(String)
-    start_date: Mapped[dt_date] = mapped_column(Date)
-    end_date: Mapped[dt_date] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String, default="running", index=True)
-    config: Mapped[Any] = mapped_column(JSON)
-    metrics: Mapped[Optional[Any]] = mapped_column(JSON)
-    equity_curve: Mapped[Optional[Any]] = mapped_column(JSON)
-    attribution: Mapped[Optional[Any]] = mapped_column(JSON)
-    diagnostics: Mapped[Optional[Any]] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-
-
 # ------------------------------------------------------------------------
 # Trending themes (题材热度)
 #

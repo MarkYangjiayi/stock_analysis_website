@@ -1,15 +1,15 @@
 """Add consensus-revision and short-interest columns to the screener snapshot.
 
-Revision ID: 0024_expectation_signals
-Revises: 0023_theme_trends
+Revision ID: 0025_expectation_signals
+Revises: 0024_drop_backtest_tables
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0024_expectation_signals"
-down_revision = "0023_theme_trends"
+revision = "0025_expectation_signals"
+down_revision = "0024_drop_backtest_tables"
 branch_labels = None
 depends_on = None
 

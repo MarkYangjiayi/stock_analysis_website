@@ -72,7 +72,7 @@ summary, which keep describing the statement rules only.
 
 ## Deploying
 
-Migration `0024_expectation_signals` adds the six screener columns. The fields
+Migration `0025_expectation_signals` adds the six screener columns. The fields
 then fill in as the screener refreshes each ticker over about a week. To fill
 them at the next screener publication instead, derive them from the stored
 payloads (no provider calls; published snapshots are not modified):

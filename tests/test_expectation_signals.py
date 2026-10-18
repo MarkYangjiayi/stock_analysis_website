@@ -293,7 +293,7 @@ def test_migration_adds_and_removes_signal_columns(tmp_path):
     path = tmp_path / "screener.db"
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
-        db.execute("INSERT INTO alembic_version VALUES ('0023_theme_trends')")
+        db.execute("INSERT INTO alembic_version VALUES ('0024_drop_backtest_tables')")
         db.execute("CREATE TABLE stock_screener_snapshot (id INTEGER PRIMARY KEY, ticker VARCHAR, date DATE, short_float NUMERIC)")
         db.execute("INSERT INTO stock_screener_snapshot VALUES (1, 'AAA.US', '2026-10-16', 0.05)")
     env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{path}", "ENVIRONMENT": "test"}
@@ -312,7 +312,7 @@ def test_migration_adds_and_removes_signal_columns(tmp_path):
     assert added <= columns()
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT ticker, short_float, short_ratio FROM stock_screener_snapshot").fetchone() == ("AAA.US", 0.05, None)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0024_expectation_signals"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0025_expectation_signals"
 
-    alembic("downgrade", "0023_theme_trends")
+    alembic("downgrade", "0024_drop_backtest_tables")
     assert columns().isdisjoint(added)

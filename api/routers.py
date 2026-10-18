@@ -1,7 +1,7 @@
 # api/routers.py
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -11,12 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import (
     AnomalyScanResponse,
-    BacktestRequest,
     EarningsQualityAnalysisRequest,
     PersonalWatchlistRequest,
     ValuationScenariosRequest,
     FactorComputeRequest,
-    FactorResearchRequest,
     EventsExpectationsResponse,
     FinancialFlowResponse,
     MarketSnapshotResponse,
@@ -29,8 +27,8 @@ from api.schemas import (
     ValuationHistoryResponse,
 )
 from database import database_ready, get_db
-from sqlalchemy import and_, select, func
-from models import BacktestRun, DailyPrice, DataPublication, FactorValue, PipelineRun
+from sqlalchemy import select
+from models import DataPublication, FactorValue, PipelineRun
 from services.data_sync import sync_ticker_data
 from services.analyzer import (
     get_analyzed_stock_data, 
@@ -85,9 +83,7 @@ from services.watchlist_quotes import MAX_TICKERS as WATCHLIST_MAX_TICKERS, get_
 from core.trading_calendar import us_market_status
 
 WATCHLIST_TICKER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-^_]{0,19}")
-from services.quant.backtest import BacktestConfig, run_and_store_backtest
 from services.quant.factor_engine import compute_and_store_factors
-from services.quant.research import evaluate_factor
 from services.freshness import assess_ticker_freshness
 from services.screener_query import get_screener_metadata, query_screener
 from services.sync_coordinator import ticker_sync_lock
@@ -130,7 +126,6 @@ from services.themes.serving import (
     get_trending_companies,
     list_theme_proposals,
 )
-import pandas as pd
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1048,133 +1043,6 @@ async def compute_factors(request: FactorComputeRequest, db: AsyncSession = Depe
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/api/quant/factors", tags=["Quant Research"])
-async def read_factors(
-    as_of_date: date,
-    factor_name: str = "composite",
-    version: str = "lfq-v1",
-    limit: int = 500,
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(FactorValue)
-        .join(
-            DataPublication,
-            and_(
-                DataPublication.dataset == "factors",
-                DataPublication.status == "published",
-                DataPublication.as_of_date == FactorValue.as_of_date,
-                DataPublication.pipeline_run_id == FactorValue.source_run_id,
-            ),
-        )
-        .join(
-            PipelineRun,
-            and_(
-                PipelineRun.id == FactorValue.source_run_id,
-                PipelineRun.status == "published",
-            ),
-        )
-        .where(
-            FactorValue.as_of_date == as_of_date,
-            FactorValue.factor_name == factor_name,
-            FactorValue.version == version,
-        )
-        .order_by(FactorValue.normalized_value.desc())
-        .limit(min(max(limit, 1), 5000))
-    )
-    return [
-        {
-            "ticker": row.ticker,
-            "as_of_date": row.as_of_date.isoformat(),
-            "factor_name": row.factor_name,
-            "raw_value": row.raw_value,
-            "normalized_value": row.normalized_value,
-            "version": row.version,
-            "available_at": row.available_at.isoformat(),
-            "details": row.details,
-        }
-        for row in result.scalars().all()
-    ]
-
-
-@router.get("/api/quant/coverage", tags=["Quant Research"])
-async def read_quant_coverage(db: AsyncSession = Depends(get_db)):
-    publication_result = await db.execute(
-        select(DataPublication)
-        .join(PipelineRun, PipelineRun.id == DataPublication.pipeline_run_id)
-        .where(
-            DataPublication.status == "published",
-            PipelineRun.status == "published",
-            DataPublication.dataset.in_(["screener", "price_history", "factors"]),
-        )
-        .order_by(DataPublication.dataset, DataPublication.as_of_date.desc())
-    )
-    latest_by_dataset = {}
-    for publication in publication_result.scalars().all():
-        if publication.dataset not in latest_by_dataset:
-            latest_by_dataset[publication.dataset] = {
-                "as_of_date": publication.as_of_date.isoformat(),
-                "published_at": publication.published_at.isoformat(),
-            }
-
-    coverage_result = await db.execute(
-        select(
-            func.min(FactorValue.as_of_date),
-            func.max(FactorValue.as_of_date),
-            func.count(func.distinct(FactorValue.as_of_date)),
-            func.count(func.distinct(FactorValue.ticker)),
-        )
-        .join(
-            DataPublication,
-            and_(
-                DataPublication.dataset == "factors",
-                DataPublication.status == "published",
-                DataPublication.as_of_date == FactorValue.as_of_date,
-                DataPublication.pipeline_run_id == FactorValue.source_run_id,
-            ),
-        )
-        .join(
-            PipelineRun,
-            and_(
-                PipelineRun.id == FactorValue.source_run_id,
-                PipelineRun.status == "published",
-            ),
-        )
-    )
-    min_date, max_date, date_count, ticker_count = coverage_result.one()
-    factor_name_result = await db.execute(
-        select(FactorValue.factor_name)
-        .join(
-            DataPublication,
-            and_(
-                DataPublication.dataset == "factors",
-                DataPublication.status == "published",
-                DataPublication.as_of_date == FactorValue.as_of_date,
-                DataPublication.pipeline_run_id == FactorValue.source_run_id,
-            ),
-        )
-        .join(
-            PipelineRun,
-            and_(
-                PipelineRun.id == FactorValue.source_run_id,
-                PipelineRun.status == "published",
-            ),
-        )
-        .distinct()
-        .order_by(FactorValue.factor_name)
-    )
-    return {
-        "publications": latest_by_dataset,
-        "factors": {
-            "min_date": min_date.isoformat() if min_date else None,
-            "max_date": max_date.isoformat() if max_date else None,
-            "date_count": date_count or 0,
-            "ticker_count": ticker_count or 0,
-            "names": list(factor_name_result.scalars().all()),
-        },
-    }
-
-
 @router.get("/api/quant/factors/{ticker}/latest", tags=["Quant Research"])
 async def read_latest_ticker_factors(ticker: str, db: AsyncSession = Depends(get_db)):
     ticker = canonicalize_ticker(ticker)
@@ -1182,111 +1050,6 @@ async def read_latest_ticker_factors(ticker: str, db: AsyncSession = Depends(get
     if snapshot is None:
         raise HTTPException(status_code=404, detail=f"No published factors are available for {ticker}")
     return snapshot
-
-
-@router.post(
-    "/api/quant/research",
-    tags=["Quant Research"],
-    dependencies=[Depends(limit_expensive_requests)],
-)
-async def research_factor(request: FactorResearchRequest, db: AsyncSession = Depends(get_db)):
-    factor_result = await db.execute(
-        select(FactorValue)
-        .join(
-            DataPublication,
-            and_(
-                DataPublication.dataset == "factors",
-                DataPublication.status == "published",
-                DataPublication.as_of_date == FactorValue.as_of_date,
-                DataPublication.pipeline_run_id == FactorValue.source_run_id,
-            ),
-        )
-        .join(
-            PipelineRun,
-            and_(
-                PipelineRun.id == FactorValue.source_run_id,
-                PipelineRun.status == "published",
-            ),
-        )
-        .where(
-            FactorValue.factor_name == request.factor_name,
-            FactorValue.version == request.factor_version,
-            FactorValue.as_of_date >= request.start_date,
-            FactorValue.as_of_date <= request.end_date,
-        )
-    )
-    factor_rows = factor_result.scalars().all()
-    factor_frame = pd.DataFrame([
-        {
-            "ticker": row.ticker,
-            "as_of_date": row.as_of_date,
-            "available_at": row.available_at,
-            "normalized_value": row.normalized_value,
-        }
-        for row in factor_rows
-    ])
-    tickers = sorted({row.ticker for row in factor_rows})
-    price_rows = []
-    price_end = request.end_date + timedelta(days=request.horizon_days * 2 + 10)
-    for start in range(0, len(tickers), 500):
-        result = await db.execute(
-            select(DailyPrice).where(
-                DailyPrice.ticker.in_(tickers[start:start + 500]),
-                DailyPrice.date >= request.start_date,
-                DailyPrice.date <= price_end,
-            )
-        )
-        price_rows.extend(result.scalars().all())
-    price_frame = pd.DataFrame([
-        {
-            "ticker": row.ticker,
-            "date": row.date,
-            "close": float(row.close) if row.close is not None else None,
-            "adjusted_close": float(row.adjusted_close) if row.adjusted_close is not None else None,
-        }
-        for row in price_rows
-    ])
-    try:
-        return evaluate_factor(factor_frame, price_frame, request.horizon_days, request.quantiles)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.post(
-    "/api/quant/backtests",
-    tags=["Quant Research"],
-    dependencies=[Depends(require_admin_api_key), Depends(limit_expensive_requests)],
-)
-async def create_backtest(request: BacktestRequest, db: AsyncSession = Depends(get_db)):
-    if request.end_date <= request.start_date:
-        raise HTTPException(status_code=422, detail="end_date must be after start_date")
-    config = BacktestConfig(**request.model_dump(exclude={"name"}))
-    try:
-        run = await run_and_store_backtest(db, config, name=request.name)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"id": run.id, "status": run.status, "metrics": run.metrics, "diagnostics": run.diagnostics}
-
-
-@router.get(
-    "/api/quant/backtests/{run_id}",
-    tags=["Quant Research"],
-    dependencies=[Depends(require_admin_api_key)],
-)
-async def read_backtest(run_id: int, db: AsyncSession = Depends(get_db)):
-    run = await db.get(BacktestRun, run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Backtest not found")
-    return {
-        "id": run.id,
-        "name": run.name,
-        "status": run.status,
-        "config": run.config,
-        "metrics": run.metrics,
-        "equity_curve": run.equity_curve,
-        "attribution": run.attribution,
-        "diagnostics": run.diagnostics,
-    }
 
 
 @router.get(
