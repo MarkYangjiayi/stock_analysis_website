@@ -557,7 +557,13 @@ function AnalysisPage() {
     }, [handlePersonalUnauthorized, loadDecision, loadEarningsQuality, personal.adminKey, ticker]);
 
     const showFinancialEvidence = async (metric: DecisionWarning["evidence_metric"]) => {
-        const metricMap: Record<DecisionWarning["evidence_metric"], FinancialEvidenceMetric> = {
+        if (metric === "expectations" || metric === "short_interest") {
+            // Consensus revisions live in the Events & Expectations panel.
+            setCockpitView("brief");
+            selectSection("events");
+            return;
+        }
+        const metricMap: Record<Exclude<DecisionWarning["evidence_metric"], "expectations" | "short_interest">, FinancialEvidenceMetric> = {
             revenue: "revenue",
             gross_margin: "gross_margin",
             operating_margin: "operating_margin",

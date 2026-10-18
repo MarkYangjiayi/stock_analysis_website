@@ -34,7 +34,7 @@ from services.report_insights import SECTOR_SHORT, pct, weekly_headline
 from services.report_market import NY, SECTOR_NAMES, collect_events, number, report_instruments
 from services.report_renderer import grouped_events, value
 from services.rrg_prices import RRG_SECTOR_NAMES
-from services.watchlist_signals import price_signals, signal_tags
+from services.watchlist_signals import expectation_signals, price_signals, signal_tags
 
 
 logger = logging.getLogger(__name__)
@@ -213,14 +213,17 @@ async def collect_weekly_evidence(now: datetime | None = None) -> dict[str, Any]
     core_items = [{"ticker": asset.ticker, "name": asset.name, "currency": asset.currency, "group": "core"} for asset in core]
     next_monday = week_end + timedelta(days=7 - week_end.weekday())
 
-    quotes, rrg, breadth, valuation, signals, events = await asyncio.gather(
+    quotes, rrg, breadth, valuation, signals, expectations, events = await asyncio.gather(
         _weekly_quotes(asset_items + sector_items + core_items, week_end, previous),
         optional("板块轮动", _rrg(previous)),
         optional("市场宽度", _breadth(week_end, previous)),
         optional("指数估值", _valuation()),
         optional("关注列表信号", price_signals([asset.ticker for asset in core], week_end), 60),
+        optional("关注列表预期信号", expectation_signals([asset.ticker for asset in core], week_end), 60),
         optional("下周日历", collect_events(core, now, start=next_monday, end=next_monday + timedelta(days=4))),
     )
+    if expectations is not None:
+        signals = {**(signals or {"items": {}}), "expectations": expectations}
     by_ticker = {row["ticker"]: row for row in quotes}
     rsp, spy = by_ticker.get("RSP.US", {}), by_ticker.get("SPY.US", {})
     relative = None

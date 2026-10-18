@@ -49,6 +49,8 @@ NONNEGATIVE_VALUE_FIELDS = frozenset({
     "volatility_1w",
     "volatility_1m",
     "atr_14",
+    "eps_estimate_analysts",
+    "short_ratio",
 })
 RETURN_FIELDS = frozenset({
     "performance_1d",

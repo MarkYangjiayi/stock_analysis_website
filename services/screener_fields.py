@@ -104,6 +104,24 @@ PEG_PRESETS = (
     {"label": "Below 2", "operator": "lt", "value": 2},
     {"label": "3 or more", "operator": "gte", "value": 3},
 )
+REVISION_PRESETS = (
+    {"label": "Raised 3%+", "operator": "gte", "value": 0.03},
+    {"label": "Cut 3%+", "operator": "lte", "value": -0.03},
+    {"label": "Cut 10%+", "operator": "lte", "value": -0.10},
+)
+REVISION_BREADTH_PRESETS = (
+    {"label": "Net 25%+ up", "operator": "gte", "value": 0.25},
+    {"label": "Net 25%+ down", "operator": "lte", "value": -0.25},
+)
+SHORT_INTEREST_CHANGE_PRESETS = (
+    {"label": "Up 25%+", "operator": "gte", "value": 0.25},
+    {"label": "Up 50%+", "operator": "gte", "value": 0.50},
+    {"label": "Down 25%+", "operator": "lte", "value": -0.25},
+)
+CONSENSUS_SOURCE_NOTE = (
+    "From the provider fundamentals behind the screener, refreshed at least weekly; "
+    "not point-in-time history."
+)
 
 
 FIELD_DEFINITIONS = [
@@ -147,6 +165,26 @@ FIELD_DEFINITIONS = [
         unit="percent",
         presets=PERCENT_PRESETS,
         description="Values above 100% can be valid when short interest exceeds the reported float.",
+    ),
+    _number(
+        "short_interest_change",
+        "Short Interest Change (1M)",
+        "Descriptive",
+        unit="percent",
+        finviz=None,
+        presets=SHORT_INTEREST_CHANGE_PRESETS,
+        description=f"Month-over-month change in shares sold short. {CONSENSUS_SOURCE_NOTE}",
+    ),
+    _number(
+        "short_ratio",
+        "Short Ratio (Days to Cover)",
+        "Descriptive",
+        finviz=None,
+        presets=(
+            {"label": "Over 5 days", "operator": "gte", "value": 5},
+            {"label": "Over 10 days", "operator": "gte", "value": 10},
+        ),
+        description=f"Shares sold short divided by average daily volume. {CONSENSUS_SOURCE_NOTE}",
     ),
     _number(
         "analyst_recommendation",
@@ -257,6 +295,56 @@ FIELD_DEFINITIONS = [
     _number("eps_growth_ttm", "EPS Growth TTM", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
     _number("eps_growth_3yr", "EPS Growth Past 3Y", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
     _number("eps_growth_5yr", "EPS Growth Past 5Y", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
+    _number(
+        "eps_revision_30d",
+        "EPS Estimate Revision (30D)",
+        "Fundamental",
+        unit="percent",
+        finviz=None,
+        presets=REVISION_PRESETS,
+        description=(
+            "Change in the current fiscal-year consensus EPS over 30 days, relative to the earlier "
+            "estimate's absolute value; unavailable when that estimate is within ±$0.05. "
+            f"{CONSENSUS_SOURCE_NOTE}"
+        ),
+    ),
+    _number(
+        "eps_revision_90d",
+        "EPS Estimate Revision (90D)",
+        "Fundamental",
+        unit="percent",
+        finviz=None,
+        presets=REVISION_PRESETS,
+        description=(
+            "Change in the current fiscal-year consensus EPS over 90 days, relative to the earlier "
+            "estimate's absolute value; unavailable when that estimate is within ±$0.05. "
+            f"{CONSENSUS_SOURCE_NOTE}"
+        ),
+    ),
+    _number(
+        "eps_revision_breadth_30d",
+        "EPS Revision Breadth (30D)",
+        "Fundamental",
+        unit="percent",
+        finviz=None,
+        presets=REVISION_BREADTH_PRESETS,
+        description=(
+            "Upward minus downward current fiscal-year EPS revisions in 30 days, divided by the "
+            f"number of covering analysts. {CONSENSUS_SOURCE_NOTE}"
+        ),
+    ),
+    _number(
+        "eps_estimate_analysts",
+        "EPS Estimate Analysts",
+        "Fundamental",
+        unit="integer",
+        finviz=None,
+        presets=(
+            {"label": "3 or more", "operator": "gte", "value": 3},
+            {"label": "10 or more", "operator": "gte", "value": 10},
+        ),
+        description=f"Analysts in the current fiscal-year EPS consensus. {CONSENSUS_SOURCE_NOTE}",
+    ),
     _number(
         "sales_growth_qoq",
         "Sales Growth QoQ",

@@ -20,7 +20,7 @@ from services.notifications.report_card import build_daily_card
 from services.report_insights import daily_headline
 from services.report_market import NY, Instrument, collect_market_context, collect_theme_heat, session_context
 from services.report_renderer import compact, instant, number, quality_summary, render_events_and_quality, render_market_sections, value
-from services.watchlist_signals import collect_watchlist_signals, signal_tags
+from services.watchlist_signals import collect_watchlist_signals, signal_as_of, signal_tags
 
 
 logger = logging.getLogger(__name__)
@@ -267,9 +267,9 @@ def render_daily_report(
                   if row.get("group") == "core"]
         tagged = [(ticker, tags) for ticker, tags in tagged if tags]
         if tagged:
-            lines.extend(["**关注列表信号（日线）**", ""])
+            lines.extend(["**关注列表信号**", ""])
             lines.extend(f"- {_display_ticker(ticker)}：{'；'.join(tag['text'] for tag in tags)}"
-                         f"（截至 {signals['items'][ticker]['as_of']}）" for ticker, tags in tagged)
+                         f"（{signal_as_of(ticker, signals)}）" for ticker, tags in tagged)
             lines.append("")
     lines.extend(["**个股异动与新闻线索**", ""])
     if not anomalies:

@@ -1128,6 +1128,8 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
             "DebtToEquity": 0.5,
             "GrossMargin": 0.4,
             "SalesGrowth5yr": 0.1,
+            "eps_revision_30d": -0.05 if index == 0 else None,
+            "short_ratio": 4.2 if index == 0 else -1,
         }
         for index, ticker in enumerate(["AAA.US", "BBB.US"])
     ])
@@ -1239,6 +1241,10 @@ async def test_daily_screener_persists_adjusted_prices_and_bulk_actions(db_sessi
         select(StockScreenerSnapshot).order_by(StockScreenerSnapshot.ticker)
     )).scalars().all()
     assert float(snapshots[0].performance_1d) == pytest.approx(0.1)
+    assert float(snapshots[0].eps_revision_30d) == pytest.approx(-0.05)
+    assert float(snapshots[0].short_ratio) == pytest.approx(4.2)
+    # Negative days-to-cover violates the definition and is dropped.
+    assert snapshots[1].eps_revision_30d is None and snapshots[1].short_ratio is None
     assert snapshots[1].performance_1d is None
     assert snapshots[1].relative_volume is None
     assert snapshots[1].technical_quality == "invalid_adjustment_factor"
