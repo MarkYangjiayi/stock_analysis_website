@@ -27,7 +27,7 @@ from api.schemas import (
     ValuationHistoryResponse,
 )
 from database import database_ready, get_db
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from models import DataPublication, FactorValue, PipelineRun
 from services.data_sync import sync_ticker_data
 from services.analyzer import (
@@ -1041,55 +1041,6 @@ async def compute_factors(request: FactorComputeRequest, db: AsyncSession = Depe
         return await compute_and_store_factors(db, request.as_of_date)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.get("/api/quant/factors", tags=["Quant Research"])
-async def read_factors(
-    as_of_date: date,
-    factor_name: str = "composite",
-    version: str = "lfq-v1",
-    limit: int = 500,
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(FactorValue)
-        .join(
-            DataPublication,
-            and_(
-                DataPublication.dataset == "factors",
-                DataPublication.status == "published",
-                DataPublication.as_of_date == FactorValue.as_of_date,
-                DataPublication.pipeline_run_id == FactorValue.source_run_id,
-            ),
-        )
-        .join(
-            PipelineRun,
-            and_(
-                PipelineRun.id == FactorValue.source_run_id,
-                PipelineRun.status == "published",
-            ),
-        )
-        .where(
-            FactorValue.as_of_date == as_of_date,
-            FactorValue.factor_name == factor_name,
-            FactorValue.version == version,
-        )
-        .order_by(FactorValue.normalized_value.desc())
-        .limit(min(max(limit, 1), 5000))
-    )
-    return [
-        {
-            "ticker": row.ticker,
-            "as_of_date": row.as_of_date.isoformat(),
-            "factor_name": row.factor_name,
-            "raw_value": row.raw_value,
-            "normalized_value": row.normalized_value,
-            "version": row.version,
-            "available_at": row.available_at.isoformat(),
-            "details": row.details,
-        }
-        for row in result.scalars().all()
-    ]
 
 
 @router.get("/api/quant/factors/{ticker}/latest", tags=["Quant Research"])

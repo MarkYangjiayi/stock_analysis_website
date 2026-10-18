@@ -1153,42 +1153,6 @@ async def test_legacy_screener_uses_canonical_values_and_primary_listings(db_ses
 
 
 @pytest.mark.asyncio
-async def test_factor_api_hides_rows_without_matching_publication(db_session):
-    from api.routers import read_factors
-
-    as_of = date(2025, 1, 2)
-    failed_run = PipelineRun(
-        pipeline_name="factor_cross_section",
-        target_date=as_of,
-        status="failed",
-    )
-    db_session.add(failed_run)
-    await db_session.flush()
-    db_session.add(FactorValue(
-        ticker="AAA.US",
-        as_of_date=as_of,
-        factor_name="composite",
-        normalized_value=1.0,
-        version="lfq-v1",
-        available_at=datetime(2025, 1, 2, 23, 0),
-        source_run_id=failed_run.id,
-    ))
-    await db_session.commit()
-
-    assert await read_factors(as_of, db=db_session) == []
-
-    failed_run.status = "published"
-    db_session.add(DataPublication(
-        dataset="factors",
-        as_of_date=as_of,
-        pipeline_run_id=failed_run.id,
-    ))
-    await db_session.commit()
-    rows = await read_factors(as_of, db=db_session)
-    assert [row["ticker"] for row in rows] == ["AAA.US"]
-
-
-@pytest.mark.asyncio
 async def test_latest_ticker_factors_uses_latest_published_run(db_session):
     from api.routers import read_latest_ticker_factors
 

@@ -48,7 +48,6 @@ For larger offline panels, the raw files can later be converted to Parquet and q
 - `pipeline_runs`, `data_publications`: resumable job state, validation report and the dates API consumers may read.
 - `rrg_price_snapshots`, `market_breadth_snapshots`: immutable ETF prices and 252-session raw breadth counts for each successful market publication.
 - `factor_values`: named, versioned raw and normalized factor observations.
-- `strategy_definitions`, `signal_snapshots`, `backtest_runs`: rows left by the removed Factor Lab backtester; kept for history and no longer written.
 
 Legacy `financial_statements` and `stock_screener_snapshot` remain for dashboard compatibility. New research must use quality-gated publications and versioned factor values.
 
