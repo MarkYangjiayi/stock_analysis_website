@@ -11,7 +11,10 @@ appear in three places:
 - **Key risks** on the Analysis page: *Analysts cutting EPS estimates* and
   *Short interest rising* / *Heavily shorted*, next to the statement rules. The
   Risks tab adds a *Consensus revisions & short interest* summary with the raw
-  values.
+  values. The *Expectation signal* card in the Events & expectations panel
+  shows the same verdict: `/api/stocks/{ticker}/events-expectations` returns
+  the same `expectation_signals` block as decision support, built from the
+  same payload by `build_expectation_context`.
 - **Feishu daily report and weekly digest**: watchlist tags such as
   `预期下修 4.2%`, `预期上修 21/33家`, `空头增加 31%` and `空头占流通 21%`.
 

@@ -18,8 +18,10 @@ export const formatMoney = (
 
 export const formatSignedPercent = (value?: number | null, digits = 2) => {
     if (value == null || !Number.isFinite(value)) return "—";
-    if (value === 0) return `${(0).toFixed(digits)}%`;
-    return `${value > 0 ? "+" : "−"}${Math.abs(value * 100).toFixed(digits)}%`;
+    const magnitude = Math.abs(value * 100).toFixed(digits);
+    // A change that rounds to zero is neutral, not "+0.0%" or "−0.0%".
+    if (Number(magnitude) === 0) return `${(0).toFixed(digits)}%`;
+    return `${value > 0 ? "+" : "−"}${magnitude}%`;
 };
 
 export const formatCompactNumber = (value?: number | null, digits = 2) =>

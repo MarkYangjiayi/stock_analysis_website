@@ -357,6 +357,52 @@ class EarningsExpectationModel(BaseModel):
     eps_trend_30d: Optional[float] = None
 
 
+class EstimateRevisionSignalModel(BaseModel):
+    direction: Literal["cut", "raise"]
+    basis: Literal["30d", "90d", "breadth"]
+    severity: Optional[Literal["warning", "high"]] = None
+
+
+class ShortInterestSignalModel(BaseModel):
+    kind: Literal["rising", "crowded"]
+    severity: Literal["warning", "high"]
+
+
+class ExpectationSignalValuesModel(BaseModel):
+    as_of: Optional[date] = None
+    eps_period_end: Optional[date] = None
+    eps_estimate: Optional[float] = None
+    eps_estimate_30d_ago: Optional[float] = None
+    eps_estimate_90d_ago: Optional[float] = None
+    eps_revision_30d: Optional[float] = None
+    eps_revision_90d: Optional[float] = None
+    eps_revisions_up_30d: Optional[int] = None
+    eps_revisions_down_30d: Optional[int] = None
+    eps_estimate_analysts: Optional[int] = None
+    eps_revision_breadth_30d: Optional[float] = None
+    eps_next_year_revision_30d: Optional[float] = None
+    eps_next_year_revision_90d: Optional[float] = None
+    shares_short: Optional[int] = None
+    shares_short_prior_month: Optional[int] = None
+    short_interest_change: Optional[float] = None
+    short_float: Optional[float] = None
+    short_ratio: Optional[float] = None
+
+
+class ExpectationSignalsModel(BaseModel):
+    """Same shape as decision-support ``expectation_signals`` (services/expectation_signals.py)."""
+
+    available: bool
+    source: str
+    as_of: Optional[date] = None
+    max_age_days: int
+    signals: Optional[ExpectationSignalValuesModel] = None
+    estimate_assessed: bool = False
+    estimate_signal: Optional[EstimateRevisionSignalModel] = None
+    short_signal: Optional[ShortInterestSignalModel] = None
+    notes: List[str] = Field(default_factory=list)
+
+
 class EventsExpectationsResponse(BaseModel):
     ticker: str
     source: str
@@ -369,6 +415,7 @@ class EventsExpectationsResponse(BaseModel):
     wall_street_target_price: Optional[float] = None
     dividend_yield: Optional[float] = None
     annual_dividend_per_share: Optional[float] = None
+    expectation_signals: Optional[ExpectationSignalsModel] = None
     data_quality_notes: List[str] = Field(default_factory=list)
 
 
