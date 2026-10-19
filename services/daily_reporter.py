@@ -36,7 +36,7 @@ from services.watchlist_signals import collect_watchlist_signals, signal_as_of, 
 
 
 logger = logging.getLogger(__name__)
-REPORT_RENDERER_VERSION = "cross-asset-v3.1"
+REPORT_RENDERER_VERSION = "cross-asset-v3.2"
 _COMPANY_SUFFIXES = re.compile(
     r"[,\s]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|holdings?|group|n\.?v|s\.?a|ag|se)\.?$",
     re.I,

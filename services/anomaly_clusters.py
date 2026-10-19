@@ -19,6 +19,7 @@ from sqlalchemy import func, or_, select
 
 from database import async_session_maker
 from models import StockScreenerSnapshot, Theme, ThemeMember, Ticker
+from services.industry_names import industry_zh
 from services.report_market import number
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,9 @@ def cluster_anomalies(
             if size < MIN_CLUSTER_SIZE:
                 continue
             members = {ticker for ticker in pool if industries.get(ticker) == industry}
-            clusters.append(_cluster("industry", industry, None, direction, members, moves))
+            # Reports are Chinese; keep the Screener's English label alongside.
+            cluster = _cluster("industry", industry_zh(industry), None, direction, members, moves)
+            clusters.append({**cluster, "industry": industry})
             pool -= members
     clusters.sort(key=lambda item: (-len(item["tickers"]), item["name"]))
     return clusters
