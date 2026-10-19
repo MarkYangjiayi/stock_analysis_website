@@ -44,7 +44,7 @@
 *   **📐 S&P 500 历史整体 P/E**
     `/market/index-valuation` 自 2010 年起逐月末重构 S&P 500 整体市盈率：严格按当月真实成分聚合 Σ公司市值 / Σ TTM 报告盈利（亏损公司保留负贡献），只发布已完成月份，并列示仅盈利公司与中位数口径。多重股权按 SEC CIK 归并为一家公司（供应商在每个类股上都报公司总股本，故公司市值取主类股口径、盈利只计一次）；单股盈利沿用 Price & valuation history 的全部披露时点与勾稽门槛；覆盖不足的月份留缺口、原因随月份落库，绝不插值。一次性回填与完整口径见 [Index Valuation](docs/index_valuation.md)。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
-    内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。
+    内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。同一客户端 15 分钟内输错 Admin Key 10 次后锁定 15 分钟（锁定期间正确的 key 也拒绝；不带 key 的请求不计数，`ADMIN_AUTH_MAX_FAILURES` / `ADMIN_AUTH_FAILURE_WINDOW_SECONDS`）。API 与页面统一加 `nosniff`、禁止被嵌入 iframe、`Referrer-Policy` 等安全响应头，生产环境加 HSTS；个人数据接口返回 `Cache-Control: no-store`。
 *   **🗓️ Today 首页（需解锁）**
     未选股票时，首页显示最新一份日报的市场状态和按题材聚类的异动（与飞书推送同一份证据），以及全部自选股的延迟行情、与日报相同规则的标签（RSI、52 周高低、预期修正、空头）和未来 7 天的美国宏观数据与财报。自选股标签和日历按请求计算，缓存 15 分钟（`/api/personal/today`，`services/today.py`）。未解锁时仍是搜索入口。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**

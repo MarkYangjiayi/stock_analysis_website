@@ -292,7 +292,7 @@ async def read_decision_support(
     include_saved = False
     api_key = request.headers.get("x-api-key")
     if api_key:
-        await require_admin_api_key(api_key)
+        await require_admin_api_key(request, api_key)
         include_saved = True
     return await get_decision_support(
         ticker,
@@ -692,7 +692,7 @@ async def read_ai_stock_report(
     include_saved = False
     api_key = request.headers.get("x-api-key")
     if api_key:
-        await require_admin_api_key(api_key)
+        await require_admin_api_key(request, api_key)
         include_saved = True
 
     async def static_report(content: str):
@@ -915,10 +915,10 @@ async def watchlist_quotes(
 THEME_SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{0,63}$"
 
 
-async def require_theme_access(x_api_key: str = Header(default="")) -> None:
+async def require_theme_access(request: Request, x_api_key: str = Header(default="")) -> None:
     if settings.THEMES_PUBLIC:
         return
-    await require_admin_api_key(x_api_key)
+    await require_admin_api_key(request, x_api_key)
 
 
 @router.get(
