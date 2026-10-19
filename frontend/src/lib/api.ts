@@ -1182,6 +1182,84 @@ export const fetchPersonalWatchlist = (adminKey: string, signal?: AbortSignal) =
         signal,
     });
 
+/** Feishu-style colour of a report tag; the colour marks the signal type, not advice. */
+export type ReportTagColor = "blue" | "orange" | "green" | "red" | "carmine" | "turquoise" | "purple" | string;
+
+export interface TodayRegimeItem {
+    key: string;
+    label: string;
+    state: string;
+    tone: "green" | "red" | "orange" | "grey" | string;
+    detail: string;
+    as_of: string | null;
+}
+
+export interface TodayCluster {
+    kind: "theme" | "industry";
+    name: string;
+    slug: string | null;
+    direction: "up" | "down";
+    tickers: string[];
+    /** Percent units, e.g. -10.77 for -10.77%. */
+    average_move: number;
+}
+
+export interface TodayMover {
+    ticker: string;
+    company_name: string | null;
+    /** Percent units, e.g. 11.92 for +11.92%. */
+    price_change: number | null;
+    quote_timestamp: string | null;
+    news_title: string | null;
+    news_link: string | null;
+}
+
+export interface TodayEvent {
+    kind: "economic" | "earnings";
+    name: string;
+    date: string;
+    session?: string | null;
+    period?: string | null;
+    actual?: number | null;
+    estimate?: number | null;
+}
+
+export interface TodayResponse {
+    generated_at: string;
+    report: {
+        run_id: number;
+        report_type: "morning_briefing" | "post_market_summary";
+        report_date: string | null;
+        captured_at: string | null;
+        status: string;
+        delivered: boolean;
+        regime: { items: TodayRegimeItem[]; unavailable: string[] } | null;
+        regime_captured_at: string | null;
+        anomaly_clusters: { as_of: string; movers: number; clusters: TodayCluster[] } | null;
+        movers: TodayMover[];
+    } | null;
+    watchlist: {
+        target: string | null;
+        items: Array<{ ticker: string; tags: Array<{ text: string; color: ReportTagColor }>; as_of: string }>;
+    } | null;
+    events: {
+        from: string;
+        to: string;
+        window_days: number;
+        economic_available: boolean;
+        earnings_available: boolean;
+        items: TodayEvent[];
+        timezone_note?: string;
+    } | null;
+    unavailable: string[];
+}
+
+export const fetchToday = (adminKey: string, signal?: AbortSignal) =>
+    apiRequest<TodayResponse>("/api/personal/today", {
+        headers: personalHeaders(adminKey),
+        signal,
+    }, 60_000);
+
 export const replacePersonalWatchlist = (
     tickers: string[],
     adminKey: string,

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronUp, Plus, Search, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronUp, LockKeyhole, Plus, Search, ShieldCheck } from "lucide-react";
 import {
     ApiError,
     DecisionSupportResponse,
@@ -32,6 +32,7 @@ import PersonalUnlockDialog from "@/components/PersonalUnlockDialog";
 import PointInTimeFactorPanel from "@/components/PointInTimeFactorPanel";
 import SimilarStocksPanel from "@/components/SimilarStocksPanel";
 import StockSnapshotPanel from "@/components/StockSnapshotPanel";
+import TodayDashboard from "@/components/today/TodayDashboard";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
 import { useWatchlistQuotes } from "@/hooks/useWatchlistQuotes";
@@ -623,13 +624,24 @@ function AnalysisPage() {
                 <div className="page-container">
                     <WatchlistSidebar compact currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} quotes={watchlistQuotes} />
 
-                    {!ticker && (
+                    {!ticker && personal.restoring && (
+                        <div className="surface-panel h-40 animate-pulse bg-surface-muted" aria-label="Restoring workspace" />
+                    )}
+
+                    {!ticker && !personal.restoring && personal.adminKey && (
+                        <TodayDashboard adminKey={personal.adminKey} watchlist={watchlist} quotes={watchlistQuotes} onSelectTicker={selectTicker} onUnauthorized={handlePersonalUnauthorized} />
+                    )}
+
+                    {!ticker && !personal.restoring && !personal.adminKey && (
                         <section className="surface-panel flex min-h-[65vh] flex-col items-center justify-center px-6 py-16 text-center">
                             <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-accent/40 bg-accent-soft text-accent"><Search size={22} /></span>
                             <p className="eyebrow mt-6">Single-security workspace</p>
                             <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Start with a ticker</h1>
                             <p className="mt-3 max-w-xl text-sm leading-6 text-fg-muted sm:text-base">Review prices, fundamentals, quality-gated point-in-time factors, news, and an optional AI synthesis in one traceable workspace.</p>
                             <p className="mt-4 text-xs text-fg-muted">Press <span className="kbd">⌘K</span> or <span className="kbd">/</span> to search from anywhere</p>
+                            <button type="button" className="secondary-button mt-6 inline-flex items-center gap-1.5" onClick={() => setUnlockOpen(true)}>
+                                <LockKeyhole size={14} /> Unlock Today: market regime, watchlist signals, next 7 days
+                            </button>
                             <div className="mt-6 flex flex-wrap justify-center gap-2">
                                 {watchlist.slice(0, 6).map((symbol) => <button key={symbol} type="button" className="secondary-button font-mono" onClick={() => selectTicker(symbol)}>{symbol.replace(".US", "")}</button>)}
                             </div>

@@ -99,6 +99,7 @@ from services.index_valuation import (
 )
 from services.yield_curve import YieldCurveUnavailable, get_yield_curve
 from services.stock_snapshot import get_market_snapshot
+from services.today import build_today
 from services.similar_stocks import get_similar_stocks
 from api.schemas import IndexValuationResponse, SimilarStocksResponse
 from services.valuation_history import get_valuation_history
@@ -504,6 +505,17 @@ async def put_personal_watchlist(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"tickers": tickers}
+
+
+@router.get(
+    "/api/personal/today",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def read_personal_today(db: AsyncSession = Depends(get_db)):
+    """Home-page Today view: the latest report's regime, clusters and movers,
+    plus watchlist tags and a seven-day calendar."""
+    return await build_today(await get_watchlist(db))
 
 
 @router.post(
