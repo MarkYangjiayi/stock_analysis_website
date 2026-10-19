@@ -22,6 +22,8 @@ os.environ["PIPELINE_REQUIRE_MULTIPLE_COVERAGE"] = "false"
 os.environ["PIPELINE_MIN_PRICE_FACTOR_COVERAGE"] = "0.80"
 # Theme jobs make real provider calls; tests opt in per case via monkeypatch.
 os.environ["THEMES_ENABLED"] = "false"
+# The regime line fetches FRED; tests opt in per case via monkeypatch.
+os.environ["DAILY_REPORT_REGIME_ENABLED"] = "false"
 os.environ["PIPELINE_MIN_RANKABLE_THEMES"] = "1"
 
 

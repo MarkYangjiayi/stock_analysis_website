@@ -413,3 +413,35 @@ def render_events_and_quality(context: dict) -> list[str]:
                  "[经济日历](https://eodhd.com/financial-apis/economic-events-data-api) · "
                  "[财报日历](https://eodhd.com/financial-apis/calendar-upcoming-earnings-ipos-and-splits)")
     return lines
+
+
+def regime_markdown(context: dict) -> list[str]:
+    """Audit lines for the rule-based market regime (services/market_regime.py)."""
+    regime = context.get("regime") or {}
+    items = regime.get("items") or []
+    if not items:
+        return []
+    lines = ["**市场状态（规则生成）**", ""]
+    for item in items:
+        as_of = f"；截至 {item['as_of']}" if item.get("as_of") else ""
+        lines.append(f"- {item['label']}：{item['state']}（{item['detail']}{as_of}）")
+    if regime.get("unavailable"):
+        lines.append(f"- 暂缺：{'、'.join(regime['unavailable'])}")
+    lines.append("")
+    return lines
+
+
+def cluster_title(cluster: dict) -> str:
+    label = cluster["name"] if cluster.get("kind") == "theme" else f"{cluster['name']}（行业）"
+    verb = "同跌" if cluster.get("direction") == "down" else "同涨"
+    return f"{label} {len(cluster['tickers'])} 只{verb}"
+
+
+def cluster_markdown(context: dict) -> list[str]:
+    """One line per same-direction group of movers (services/anomaly_clusters.py)."""
+    clusters = (context.get("anomaly_clusters") or {}).get("clusters") or []
+    return [
+        f"- 聚类：{cluster_title(cluster)}，平均 {value(cluster['average_move'], '%', True)}："
+        + "、".join(display_ticker(ticker) for ticker in cluster["tickers"])
+        for cluster in clusters
+    ]

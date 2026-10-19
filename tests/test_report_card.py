@@ -523,3 +523,56 @@ def test_theme_panel_is_morning_only_and_gap_goes_to_footer():
               if element["tag"] == "collapsible_panel"]
     assert not any(title.startswith("题材热度") for title in panels)
     assert "/themes" not in json.dumps(card, ensure_ascii=False)
+
+
+REGIME = {
+    "items": [
+        {"key": "trend", "label": "趋势", "state": "上升", "tone": "green", "detail": "SPY 距 200 日线 +8.2%", "as_of": "2026-09-11"},
+        {"key": "credit", "label": "信用", "state": "走阔", "tone": "orange", "detail": "高收益债利差 3.80%，一月 +0.45pt", "as_of": "2026-09-10"},
+    ],
+    "unavailable": ["估值"],
+}
+CLUSTERS = {"as_of": "2026-09-14", "movers": 4, "clusters": [{
+    "kind": "theme", "name": "AI 数据中心", "slug": "ai-datacenter", "direction": "down",
+    "tickers": ["NBIS.US", "CRWV.US", "APLD.US"], "average_move": -11.3,
+}]}
+
+
+def test_card_shows_regime_states_first_and_clusters_before_movers():
+    sample = {**context(), "regime": REGIME, "anomaly_clusters": CLUSTERS}
+    rows = [{"ticker": "NBIS", "company": "Nebius", "move": -11.6, "status": None, "headlines": [], "news_note": "暂无相关新闻"}]
+    card = build_daily_card(sample, rows, report_type="post_market_summary", headline="H。")
+    elements = card["body"]["elements"]
+    contents = [element.get("content", "") for element in elements]
+
+    regime_index = next(index for index, text in enumerate(contents) if text.startswith("**市场状态**"))
+    assert contents[regime_index] == (
+        "**市场状态** 趋势 <font color='green'>上升</font> · 信用 <font color='orange'>走阔</font>"
+    )
+    assert elements[regime_index - 1]["tag"] == "column_set"  # right after the headline numbers
+    cluster_index = next(index for index, text in enumerate(contents) if text.startswith("**异动聚类**"))
+    assert "AI 数据中心 3 只同跌，平均 <font color='red'>-11.3%</font>：NBIS、CRWV、APLD" in contents[cluster_index]
+    assert elements[cluster_index + 1]["tag"] == "collapsible_panel"  # the movers follow
+    encoded = json.dumps(card, ensure_ascii=False)
+    assert "市场状态依据" in encoded and "SPY 距 200 日线 +8.2% · 09-11" in encoded
+    footer = next(element["content"] for element in elements if element.get("text_size") == "notation")
+    assert "市场状态暂缺：估值" in footer
+
+
+def test_cards_without_regime_or_clusters_are_unchanged():
+    card = build_daily_card(context(), [], report_type="post_market_summary", headline="H。")
+    encoded = json.dumps(card, ensure_ascii=False)
+    assert "市场状态" not in encoded and "异动聚类" not in encoded
+
+
+def test_audit_markdown_lists_regime_and_clusters():
+    sample = {**context(), "regime": REGIME, "anomaly_clusters": CLUSTERS}
+    anomaly = {"ticker": "NBIS.US", "company_name": "Nebius", "price_change": -11.6,
+               "quote_timestamp": "2026-09-14T20:00:00Z", "news": []}
+    content = daily_reporter.render_daily_report([anomaly], report_type="post_market_summary", market_context=sample)
+
+    assert "**市场状态（规则生成）**" in content
+    assert "- 趋势：上升（SPY 距 200 日线 +8.2%；截至 2026-09-11）" in content
+    assert "- 暂缺：估值" in content
+    assert "- 聚类：AI 数据中心 3 只同跌，平均 -11.30%：NBIS、CRWV、APLD" in content
+    assert content.index("- 聚类：") < content.index("- **NBIS")
