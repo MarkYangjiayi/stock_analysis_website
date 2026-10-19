@@ -40,6 +40,7 @@ from services.analyzer import (
 from services.ai_assistant import generate_stock_report, get_cached_stock_report
 from services.earnings_quality import get_earnings_quality, serialize_analysis_run
 from services.events_expectations import get_events_expectations
+from services.quality_scorecard import get_quality_scorecard
 from services.financial_flow import get_financial_flow
 from services.filing_analysis import (
     FilingAnalysisError,
@@ -675,6 +676,15 @@ async def read_financial_flow(
 async def read_events_expectations(ticker: str, db: AsyncSession = Depends(get_db)):
     """Return cached corporate events and forward consensus evidence."""
     return await get_events_expectations(canonicalize_ticker(ticker), db)
+
+
+@router.get(
+    "/api/stocks/{ticker}/quality",
+    tags=["Stocks Analysis Read"],
+)
+async def read_quality_scorecard(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Annual-statement quality scorecard, Piotroski F-score and Altman Z from stored fundamentals."""
+    return await get_quality_scorecard(canonicalize_ticker(ticker), db)
 
 @router.get(
     "/api/stocks/{ticker}/report",

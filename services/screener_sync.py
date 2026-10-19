@@ -43,6 +43,7 @@ from services.universe import (
 from services.raw_store import persist_snapshot
 from services.data_sync import _upsert_financials
 from services.expectation_signals import SCREENER_FIELDS as EXPECTATION_FIELDS
+from services.quality_scorecard import SCREENER_FIELDS as QUALITY_FIELDS
 from services.history_backfill import (
     backfill_dividend_history_once,
     backfill_price_history,
@@ -110,6 +111,7 @@ FUNDAMENTAL_SNAPSHOT_FIELDS = (
     "operating_margin", "net_profit_margin", "payout_ratio",
     "insider_ownership", "institutional_ownership",
     *EXPECTATION_FIELDS,
+    *QUALITY_FIELDS,
 )
 
 
@@ -1132,6 +1134,7 @@ async def run_screener_pipeline(target_date: str = None, observe_current_univers
                 "operating_margin", "net_profit_margin", "payout_ratio",
                 "insider_ownership", "institutional_ownership",
                 *EXPECTATION_FIELDS,
+                *QUALITY_FIELDS,
             )
             legacy_aliases = {
                 "market_cap": ("MarketCapitalization", "MarketCap"),

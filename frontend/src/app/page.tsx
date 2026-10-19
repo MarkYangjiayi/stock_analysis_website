@@ -40,6 +40,7 @@ import { useStatusBar, type StatusItem } from "@/store/useStatusBar";
 import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
 import AnalysisNavigation, { isAnalysisSection, type AnalysisSection } from "@/components/analysis/AnalysisNavigation";
 import FinancialSnapshot from "@/components/analysis/FinancialSnapshot";
+import QualityScorecardPanel from "@/components/analysis/QualityScorecardPanel";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { formatSignedPercent } from "@/lib/format";
 
@@ -743,6 +744,7 @@ function AnalysisPage() {
                                                 </section>
                                                 <FinancialSnapshot stock={stockData} snapshot={marketSnapshot} statementDate={decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials} onDetails={() => selectSection("financials")} />
                                             </div>
+                                            <QualityScorecardPanel key={`quality-${stockData.profile.ticker}`} ticker={stockData.profile.ticker} />
                                             <SimilarStocksPanel key={stockData.profile.ticker} ticker={stockData.profile.ticker} watchlist={watchlist} unlocked={personal.isUnlocked} onSelect={selectTicker} onAdd={addToWatchlist} onRemove={removeFromWatchlist} />
                                         </>}
                                     />
