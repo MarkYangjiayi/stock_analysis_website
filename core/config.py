@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     VALUATION_EQUITY_RISK_PREMIUM: float = 0.06
     VALUATION_FALLBACK_DEBT_SPREAD: float = 0.015
     VALUATION_FALLBACK_TAX_RATE: float = 0.21
+    # A company that does not report interest expense (Apple since fiscal 2024)
+    # otherwise has no FCFF. The page DCF then adds an estimate (average book
+    # debt times the fallback cost of debt), labelled as such; the assumption
+    # functions stay strict by default (2026-09-10 repair V02).
+    VALUATION_ESTIMATE_MISSING_INTEREST: bool = True
     VALUATION_FALLBACK_FCF_GROWTH: float = 0.05
     VALUATION_TERMINAL_GROWTH_RATE: float = 0.025
     VALUATION_MARKET_ASSUMPTIONS_AS_OF: str = "2026-09-09"

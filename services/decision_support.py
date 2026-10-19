@@ -1816,6 +1816,7 @@ def build_company_valuation_assumptions(
         assumptions_as_of=settings.VALUATION_MARKET_ASSUMPTIONS_AS_OF,
         beta_source=beta_source,
         valuation_date=str(getattr(snapshot, "date", None) or date.today()),
+        estimate_missing_interest=settings.VALUATION_ESTIMATE_MISSING_INTEREST,
     )
     growth = derive_growth_scenarios(
         current_fcf=current.get("fcf"),

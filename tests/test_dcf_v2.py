@@ -231,3 +231,20 @@ def test_nonpositive_equity_residual_is_diagnostic_not_a_negative_stock_price():
     assert base['intrinsic_value_per_share'] is None
     assert result['sensitivity']['values'][2][2] is None
     assert 'equity residual' in result['sensitivity']['cell_reasons'][2][2]
+
+
+def test_unreported_interest_is_estimated_only_when_asked_and_labelled():
+    strict = wacc(1, interest=None)
+    estimated = estimate_company_wacc(market_cap=1000, beta=1, latest_debt=100, prior_debt=90, average_debt=95,
+        interest_expense=None, income_tax_expense=20, income_before_tax=100, current_price=10, shares=100,
+        risk_free_rate=.04, equity_risk_premium=.06, fallback_debt_spread=.015, fallback_tax_rate=.21,
+        assumptions_as_of="2026-09-09", valuation_date="2026-09-10", estimate_missing_interest=True)
+
+    assert strict["interest_expense_for_fcff"] is None and strict["interest_expense_source"] == "unavailable"
+    assert estimated["interest_expense_for_fcff"] == pytest.approx(95 * .055)
+    assert estimated["interest_expense_source"] == "estimated"
+    assert estimated["wacc"] == pytest.approx(strict["wacc"])  # Only the cash-flow bridge changes.
+    assert any("not reported" in note for note in estimated["notes"])
+    # A reported figure is never replaced by the estimate.
+    reported = wacc(1, interest=90)
+    assert reported["interest_expense_for_fcff"] == 90 and reported["interest_expense_source"] == "reported"
