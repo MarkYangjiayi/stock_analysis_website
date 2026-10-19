@@ -33,6 +33,8 @@
     个股页顶部提供无黑盒总分的决策驾驶舱：由公司历史增长信号生成 Bear/Base/Bull 三种五年 FCFF 经营情景；三者共享按 CAPM、资本结构、债务成本和税盾估算的公司 WACC 与成熟期增长率；另提供 WACC × terminal growth 5×5 敏感性矩阵，以及以 Base 假设反解的市场隐含五年 FCFF 增长率。页面同时展示 20 项行业/板块 midrank 分位、确定性基本面预警、分析师 EPS 预期下修与空头仓位预警（[规则](docs/expectation_signals.md)；同一组指标也可在 Screener 筛选、并作为飞书自选股标签推送），以及价格、Screener、财报和因子的独立来源日期。缺失数据会给出明确原因，不会回填为零估值。
 *   **🧾 Earnings Quality / 一次性损益**
     Analysis 页先用本地结构化财报生成可追溯的异常候选与数据质量提示；美国 SEC 公司可在解锁后按单个年度或季度点击分析对应 10-K/10-Q 与同期 earnings 8-K。页面浏览、同步和定时任务不会批量调用 SEC 或 AI。Reported 始终为默认口径，只有金额、税后勾稽和 SEC 引用全部通过验证时才并列显示 normalized Net Income / adjusted EPS，且 adjusted 结果不进入 DCF、ROE、P/E、peer benchmark 或 factor score。
+*   **🏅 质量评分卡**
+    用最多 6 个财年的年报给 5 项支柱打分（盈利能力、增长持续性、现金转化、资产负债表、资本配置），附 Piotroski F 分数和 Altman Z；按固定阈值打分，银行/保险与 REIT 换模板。Analysis 页 Overview 显示评分卡，筛选器可按综合分、各支柱、F 分数和 Z 值筛选。规则与阈值见 [docs/quality_scorecard.md](docs/quality_scorecard.md)。
 *   **🤖 Evidence-cited AI Brief**
     DeepSeek 简报仅按需生成，并且只能使用驾驶舱输出的稳定证据 ID。四个分析章节都必须包含 `[E#]` 引用；未知或缺失引用会被拒绝，只有校验通过的结果才会按证据哈希缓存。AI 不可用时不影响确定性驾驶舱。
 *   **📊 专业级沉浸交互图表**

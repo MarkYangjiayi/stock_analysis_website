@@ -118,6 +118,15 @@ SHORT_INTEREST_CHANGE_PRESETS = (
     {"label": "Up 50%+", "operator": "gte", "value": 0.50},
     {"label": "Down 25%+", "operator": "lte", "value": -0.25},
 )
+QUALITY_SCORE_PRESETS = (
+    {"label": "High (70+)", "operator": "gte", "value": 70},
+    {"label": "Solid (55+)", "operator": "gte", "value": 55},
+    {"label": "Weak (under 40)", "operator": "lt", "value": 40},
+)
+QUALITY_SOURCE_NOTE = (
+    "Scored 0-100 from up to six fiscal years of annual statements against fixed thresholds "
+    "(docs/quality_scorecard.md); not point-in-time history."
+)
 CONSENSUS_SOURCE_NOTE = (
     "From the provider fundamentals behind the screener, refreshed at least weekly; "
     "not point-in-time history."
@@ -374,6 +383,58 @@ FIELD_DEFINITIONS = [
         default=True,
     ),
     _number("roic", "Return on Invested Capital", "Fundamental", unit="percent", presets=PERCENT_PRESETS),
+    _number(
+        "quality_score",
+        "Quality Score",
+        "Fundamental",
+        finviz=None,
+        presets=QUALITY_SCORE_PRESETS,
+        description=(
+            "Average of the profitability, growth, cash-conversion, balance-sheet and capital-allocation "
+            "pillars; needs at least three. Banks, insurers and capital-markets firms use ROE and skip "
+            f"cash conversion and leverage. {QUALITY_SOURCE_NOTE}"
+        ),
+    ),
+    _number("quality_profitability", "Quality: Profitability", "Fundamental", finviz=None, presets=QUALITY_SCORE_PRESETS,
+            description=f"ROIC level and the share of years at 8% or more (ROE for financials). {QUALITY_SOURCE_NOTE}"),
+    _number("quality_growth", "Quality: Growth Durability", "Fundamental", finviz=None, presets=QUALITY_SCORE_PRESETS,
+            description=f"Revenue CAGR and the share of years with revenue growth. {QUALITY_SOURCE_NOTE}"),
+    _number("quality_cash_conversion", "Quality: Cash Conversion", "Fundamental", finviz=None, presets=QUALITY_SCORE_PRESETS,
+            description=f"Free cash flow over net income across the window, and the latest accruals ratio. {QUALITY_SOURCE_NOTE}"),
+    _number("quality_balance_sheet", "Quality: Balance Sheet", "Fundamental", finviz=None, presets=QUALITY_SCORE_PRESETS,
+            description=f"Net debt to EBITDA and interest coverage in the latest fiscal year. {QUALITY_SOURCE_NOTE}"),
+    _number("quality_capital_allocation", "Quality: Capital Allocation", "Fundamental", finviz=None, presets=QUALITY_SCORE_PRESETS,
+            description=f"Share-count change across the window and stock compensation over revenue. {QUALITY_SOURCE_NOTE}"),
+    _number(
+        "piotroski_f_score",
+        "Piotroski F-Score",
+        "Fundamental",
+        finviz=None,
+        presets=(
+            {"label": "Strong (7-9)", "operator": "gte", "value": 7},
+            {"label": "Weak (0-3)", "operator": "lte", "value": 3},
+        ),
+        description="Nine pass/fail checks on the latest fiscal year against the prior one; blank unless all nine can be assessed.",
+    ),
+    _number(
+        "altman_z",
+        "Altman Z-Score",
+        "Fundamental",
+        finviz=None,
+        presets=(
+            {"label": "Safe (over 2.99)", "operator": "gt", "value": 2.99},
+            {"label": "Distress (under 1.81)", "operator": "lt", "value": 1.81},
+        ),
+        description="Original Altman Z with market equity, latest fiscal year; not computed for financials or REITs.",
+    ),
+    _number("roic_5y_avg", "ROIC (5Y Average)", "Fundamental", unit="percent", finviz=None, presets=PERCENT_PRESETS,
+            description=f"After-tax EBIT over invested capital, averaged across up to six fiscal years. {QUALITY_SOURCE_NOTE}"),
+    _number("fcf_conversion_5y", "FCF Conversion (5Y)", "Fundamental", unit="percent", finviz=None,
+            presets=({"label": "Over 90%", "operator": "gte", "value": 0.9}, {"label": "Under 50%", "operator": "lt", "value": 0.5}),
+            description=f"Total free cash flow over total net income across the window; blank when total net income is not positive. {QUALITY_SOURCE_NOTE}"),
+    _number("share_change_5y", "Share Count Change (5Y)", "Fundamental", unit="percent", finviz=None,
+            presets=({"label": "Buybacks (down 5%+)", "operator": "lte", "value": -0.05}, {"label": "Dilution (up 10%+)", "operator": "gte", "value": 0.10}),
+            description=f"Change in shares outstanding across up to five fiscal years. {QUALITY_SOURCE_NOTE}"),
     _number(
         "current_ratio",
         "Current Ratio",

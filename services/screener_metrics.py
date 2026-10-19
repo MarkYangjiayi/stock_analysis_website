@@ -12,6 +12,7 @@ import pandas_ta_classic as ta
 
 from core.trading_calendar import is_us_market_session
 from services.expectation_signals import screener_values as expectation_screener_values
+from services.quality_scorecard import screener_values as quality_screener_values
 from services.screener_normalization import (
     normalize_multiple,
     normalize_public_screener_values,
@@ -539,6 +540,7 @@ def extract_fundamental_metrics(payload: dict) -> dict[str, Any]:
         "insider_ownership": safe_percentage_points(shares.get("PercentInsiders")),
         "institutional_ownership": safe_percentage_points(shares.get("PercentInstitutions")),
         **expectation_screener_values(payload),
+        **quality_screener_values(payload),
     }
     return dict(normalize_public_screener_values(result))
 
