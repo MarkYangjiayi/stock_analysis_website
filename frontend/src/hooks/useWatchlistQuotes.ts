@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchWatchlistQuotes, type MarketStatusResponse, type WatchlistQuoteItem } from "@/lib/api";
 
-const MAX_TICKERS = 20;
+const MAX_TICKERS = 40;
+// The quotes endpoint accepts at most 20 tickers per request.
+const REQUEST_LIMIT = 20;
 const LIVE_POLL_MS = 60_000;
 const IDLE_POLL_MS = 10 * 60_000;
 const CLOSE_SETTLE_MS = 30 * 60_000;
@@ -35,11 +37,14 @@ export function useWatchlistQuotes(tickers: string[]) {
         };
         const load = async () => {
             controller?.abort();
-            controller = new AbortController();
+            const current = new AbortController();
+            controller = current;
             try {
-                const response = await fetchWatchlistQuotes(symbols, controller.signal);
-                market = response.market;
-                setResult({ key, market, quotes: Object.fromEntries(response.items.map((item) => [item.ticker, item])) });
+                const chunks = Array.from({ length: Math.ceil(symbols.length / REQUEST_LIMIT) },
+                    (_, index) => symbols.slice(index * REQUEST_LIMIT, (index + 1) * REQUEST_LIMIT));
+                const responses = await Promise.all(chunks.map((chunk) => fetchWatchlistQuotes(chunk, current.signal)));
+                market = responses[0].market;
+                setResult({ key, market, quotes: Object.fromEntries(responses.flatMap((response) => response.items).map((item) => [item.ticker, item])) });
             } catch (error) {
                 if (error instanceof DOMException && error.name === "AbortError") return;
                 // Keep showing the previous snapshot; the next poll retries.
