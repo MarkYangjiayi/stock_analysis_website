@@ -2,6 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
 import pytest_asyncio
 
 
@@ -25,6 +26,16 @@ os.environ["THEMES_ENABLED"] = "false"
 # The regime line fetches FRED; tests opt in per case via monkeypatch.
 os.environ["DAILY_REPORT_REGIME_ENABLED"] = "false"
 os.environ["PIPELINE_MIN_RANKABLE_THEMES"] = "1"
+
+
+@pytest.fixture(autouse=True)
+def reset_admin_auth_lockout():
+    # Many tests send a wrong key on purpose; one test's failures must not lock out the next.
+    from core.security import admin_auth_limiter
+
+    admin_auth_limiter.reset()
+    yield
+    admin_auth_limiter.reset()
 
 
 @pytest_asyncio.fixture(autouse=True)
