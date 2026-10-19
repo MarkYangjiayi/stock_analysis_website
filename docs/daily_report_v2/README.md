@@ -49,7 +49,7 @@ python scripts/qa_daily_report_delivery.py --case weekly --output-dir /path/to/n
   | 估值 | 已发布的标普 500 月末市盈率在历史序列中的分位 | ≥ 80 偏贵；≤ 20 便宜；其余中性 |
 
   FRED 的公开 CSV 不需要密钥，磁盘缓存 12 小时（`DATA_DIR/fred_hy_oas_cache.json`）；拉取失败时沿用缓存。ICE 授权限制，FRED 只提供约最近 3 年的数据，所以分位是 3 年分位。
-- **异动聚类**（`services/anomaly_clusters.py`）：同一方向的异动股中，至少 3 只属于同一题材（优先，按当日有效题材成员）或同一筛选器行业时，在异动明细上方先列出该组和平均涨跌。每只股票只归入一组，只描述共同涨跌，不推断原因。起因：2026-10-16 跌幅前 10 名都是 AI 数据中心、硬件和软件股，却被逐只写成"无法确认原因"。
+- **异动聚类**（`services/anomaly_clusters.py`）：同一方向的异动股中，至少 3 只属于同一题材（优先，按当日有效题材成员）或同一筛选器行业时，在异动明细上方先列出该组和平均涨跌；行业名按 `services/industry_names.py` 显示中文（未收录的保留英文）。每只股票只归入一组，只描述共同涨跌，不推断原因。起因：2026-10-16 跌幅前 10 名都是 AI 数据中心、硬件和软件股，却被逐只写成"无法确认原因"。
 - 两者都在采集证据时计算并存进 `market_context`（`regime`、`anomaly_clusters`），保存的报告重放时得到同一张卡。开关：`DAILY_REPORT_REGIME_ENABLED`、`DAILY_REPORT_ANOMALY_CLUSTERS_ENABLED`，默认开启。
 
 ## 覆盖与口径
@@ -93,7 +93,7 @@ python scripts/qa_daily_report_delivery.py --case weekly --output-dir /path/to/n
 
 ## 审计与上线
 
-新增迁移 `0020_daily_report_market_context`。`DailyReportRun.source_results` 保留原来的个股异动数组；新的 `market_context` JSON 保存归一化报价、时间、前收盘、收益率、宽度、事件、异常提示和用于比较的早报快照。当前代码 `renderer_version` 为 `cross-asset-v3.1`；v2.2 与 v3.0 无新增数据库迁移，v3.1 的题材表随 `0023_theme_trends` 迁移创建（报告本身不新增列）。旧报告无需改写。
+新增迁移 `0020_daily_report_market_context`。`DailyReportRun.source_results` 保留原来的个股异动数组；新的 `market_context` JSON 保存归一化报价、时间、前收盘、收益率、宽度、事件、异常提示和用于比较的早报快照。当前代码 `renderer_version` 为 `cross-asset-v3.2`（v3.2 加市场状态与异动聚类，不新增列）；v2.2 与 v3.0 无新增数据库迁移，v3.1 的题材表随 `0023_theme_trends` 迁移创建（报告本身不新增列）。旧报告无需改写。
 
 部署时先备份数据库并执行 `alembic upgrade head`，再重启 worker 以加载新调度。无需新的数据源密钥；日历及海外数据可用性取决于现有 EODHD 订阅。
 

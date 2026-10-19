@@ -346,8 +346,8 @@ def _deliver_without_scan(monkeypatch) -> list[dict]:
     return broadcasts
 
 
-def test_renderer_version_is_v3_1():
-    assert daily_reporter.REPORT_RENDERER_VERSION == "cross-asset-v3.1"
+def test_renderer_version_is_v3_2():
+    assert daily_reporter.REPORT_RENDERER_VERSION == "cross-asset-v3.2"
 
 
 @pytest.mark.asyncio
