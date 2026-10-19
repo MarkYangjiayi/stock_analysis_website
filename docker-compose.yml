@@ -43,7 +43,8 @@ services:
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
       - ALL_PROXY=socks5h://warp:9091
-      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com,api.deepseek.com,.deepseek.com
+      # 飞书直连、不经 WARP：2026-10-19 早报在 WARP 这一跳连接超时而丢失。
+      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com,api.deepseek.com,.deepseek.com,open.feishu.cn,.feishu.cn,.larksuite.com
     depends_on:
       data-permissions:
         condition: service_completed_successfully
@@ -76,7 +77,8 @@ services:
       - HTTP_PROXY=socks5h://warp:9091
       - HTTPS_PROXY=socks5h://warp:9091
       - ALL_PROXY=socks5h://warp:9091
-      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com,api.deepseek.com,.deepseek.com
+      # 飞书直连、不经 WARP：2026-10-19 早报在 WARP 这一跳连接超时而丢失。
+      - NO_PROXY=localhost,127.0.0.1,yahoo.com,.yahoo.com,finance.yahoo.com,api.deepseek.com,.deepseek.com,open.feishu.cn,.feishu.cn,.larksuite.com
     depends_on:
       backend:
         condition: service_healthy
