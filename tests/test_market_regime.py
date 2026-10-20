@@ -205,8 +205,8 @@ def test_leftover_movers_group_by_industry():
     clusters = cluster_anomalies(moves, {}, industries)
 
     assert clusters == [{
-        "kind": "industry", "name": "Semiconductors", "slug": None, "direction": "up",
-        "tickers": ["B.US", "A.US", "C.US"], "average_move": 8.2,
+        "kind": "industry", "name": "半导体", "slug": None, "direction": "up",
+        "tickers": ["B.US", "A.US", "C.US"], "average_move": 8.2, "industry": "Semiconductors",
     }]
 
 
@@ -241,7 +241,7 @@ async def test_collect_clusters_reads_active_members_and_screener_industries(db_
 
     assert evidence["movers"] == 8
     assert [(item["kind"], item["name"], len(item["tickers"])) for item in evidence["clusters"]] == [
-        ("industry", "Software", 3),
+        ("industry", "软件", 3),
     ]
 
 
@@ -278,3 +278,13 @@ async def test_report_attaches_regime_and_clusters_only_when_enabled(monkeypatch
     failed = {"report_date": "2026-10-16"}
     await daily_reporter._attach_regime_and_clusters(failed, [], NOW)
     assert failed["warnings"] == ["市场状态暂不可用。"]
+
+
+def test_every_screener_industry_has_a_chinese_name():
+    from services.industry_names import INDUSTRY_ZH, industry_zh
+
+    assert industry_zh("Software - Infrastructure") == "基础软件"
+    assert industry_zh("Brand New Industry") == "Brand New Industry"
+    assert industry_zh(None) is None
+    # Names are unique so two industries never read as one group.
+    assert len(set(INDUSTRY_ZH.values())) == len(INDUSTRY_ZH)

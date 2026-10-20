@@ -33,6 +33,8 @@
     个股页顶部提供无黑盒总分的决策驾驶舱：由公司历史增长信号生成 Bear/Base/Bull 三种五年 FCFF 经营情景；三者共享按 CAPM、资本结构、债务成本和税盾估算的公司 WACC 与成熟期增长率；另提供 WACC × terminal growth 5×5 敏感性矩阵，以及以 Base 假设反解的市场隐含五年 FCFF 增长率。页面同时展示 20 项行业/板块 midrank 分位、确定性基本面预警、分析师 EPS 预期下修与空头仓位预警（[规则](docs/expectation_signals.md)；同一组指标也可在 Screener 筛选、并作为飞书自选股标签推送），以及价格、Screener、财报和因子的独立来源日期。缺失数据会给出明确原因，不会回填为零估值。
 *   **🧾 Earnings Quality / 一次性损益**
     Analysis 页先用本地结构化财报生成可追溯的异常候选与数据质量提示；美国 SEC 公司可在解锁后按单个年度或季度点击分析对应 10-K/10-Q 与同期 earnings 8-K。页面浏览、同步和定时任务不会批量调用 SEC 或 AI。Reported 始终为默认口径，只有金额、税后勾稽和 SEC 引用全部通过验证时才并列显示 normalized Net Income / adjusted EPS，且 adjusted 结果不进入 DCF、ROE、P/E、peer benchmark 或 factor score。
+*   **🏅 质量评分卡**
+    用最多 6 个财年的年报给 5 项支柱打分（盈利能力、增长持续性、现金转化、资产负债表、资本配置），附 Piotroski F 分数和 Altman Z；按固定阈值打分，银行/保险与 REIT 换模板。Analysis 页 Overview 显示评分卡，筛选器可按综合分、各支柱、F 分数和 Z 值筛选。规则与阈值见 [docs/quality_scorecard.md](docs/quality_scorecard.md)。
 *   **🤖 Evidence-cited AI Brief**
     DeepSeek 简报仅按需生成，并且只能使用驾驶舱输出的稳定证据 ID。四个分析章节都必须包含 `[E#]` 引用；未知或缺失引用会被拒绝，只有校验通过的结果才会按证据哈希缓存。AI 不可用时不影响确定性驾驶舱。
 *   **📊 专业级沉浸交互图表**
@@ -44,7 +46,7 @@
 *   **📐 S&P 500 历史整体 P/E**
     `/market/index-valuation` 自 2010 年起逐月末重构 S&P 500 整体市盈率：严格按当月真实成分聚合 Σ公司市值 / Σ TTM 报告盈利（亏损公司保留负贡献），只发布已完成月份，并列示仅盈利公司与中位数口径。多重股权按 SEC CIK 归并为一家公司（供应商在每个类股上都报公司总股本，故公司市值取主类股口径、盈利只计一次）；单股盈利沿用 Price & valuation history 的全部披露时点与勾稽门槛；覆盖不足的月份留缺口、原因随月份落库，绝不插值。一次性回填与完整口径见 [Index Valuation](docs/index_valuation.md)。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
-    内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。
+    内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。同一客户端 15 分钟内输错 Admin Key 10 次后锁定 15 分钟（锁定期间正确的 key 也拒绝；不带 key 的请求不计数，`ADMIN_AUTH_MAX_FAILURES` / `ADMIN_AUTH_FAILURE_WINDOW_SECONDS`）。API 与页面统一加 `nosniff`、禁止被嵌入 iframe、`Referrer-Policy` 等安全响应头，生产环境加 HSTS；个人数据接口返回 `Cache-Control: no-store`。
 *   **🗓️ Today 首页（需解锁）**
     未选股票时，首页显示最新一份日报的市场状态和按题材聚类的异动（与飞书推送同一份证据），以及全部自选股的延迟行情、与日报相同规则的标签（RSI、52 周高低、预期修正、空头）和未来 7 天的美国宏观数据与财报。自选股标签和日历按请求计算，缓存 15 分钟（`/api/personal/today`，`services/today.py`）。未解锁时仍是搜索入口。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**

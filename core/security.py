@@ -3,14 +3,68 @@ import ipaddress
 import secrets
 import time
 from collections import defaultdict, deque
-from typing import Deque, DefaultDict, Union
+from typing import Deque, DefaultDict, Optional, Union
 
 from fastapi import Header, HTTPException, Request, status
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from core.config import settings
 
 
-async def require_admin_api_key(x_api_key: str = Header(default="")) -> None:
+class AuthFailureLimiter:
+    """Lock a client out after repeated wrong admin keys.
+
+    While locked out even the right key is refused, so a guess cannot be
+    confirmed. Limits are read from settings on every check.
+    """
+
+    def __init__(self) -> None:
+        self._failures: DefaultDict[str, Deque[float]] = defaultdict(deque)
+
+    def _recent(self, client: str, now: float) -> Deque[float]:
+        failures = self._failures[client]
+        cutoff = now - settings.ADMIN_AUTH_FAILURE_WINDOW_SECONDS
+        while failures and failures[0] <= cutoff:
+            failures.popleft()
+        return failures
+
+    def check(self, client: str) -> None:
+        now = time.monotonic()
+        failures = self._recent(client, now)
+        if not failures:
+            self._failures.pop(client, None)
+        elif len(failures) >= settings.ADMIN_AUTH_MAX_FAILURES:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed attempts; retry later",
+            )
+
+    def record_failure(self, client: str) -> None:
+        now = time.monotonic()
+        self._recent(client, now).append(now)
+        if len(self._failures) > 1000:
+            for stale in [key for key, values in self._failures.items() if not self._recent(key, now)]:
+                del self._failures[stale]
+
+    def reset(self) -> None:
+        self._failures.clear()
+
+
+admin_auth_limiter = AuthFailureLimiter()
+
+
+def _verify_admin_key(request: Optional[Request], x_api_key: str) -> None:
+    client = _client_identifier(request) if request is not None else "unknown"
+    admin_auth_limiter.check(client)
+    if not x_api_key or not secrets.compare_digest(x_api_key, settings.ADMIN_API_KEY):
+        # A missing key is a locked page, not a guess.
+        if x_api_key:
+            admin_auth_limiter.record_failure(client)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+
+async def require_admin_api_key(request: Request, x_api_key: str = Header(default="")) -> None:
     """Protect state-changing and operational endpoints.
 
     Development remains convenient when no key is configured. Production
@@ -23,11 +77,11 @@ async def require_admin_api_key(x_api_key: str = Header(default="")) -> None:
                 detail="Admin operations are disabled",
             )
         return
-    if not x_api_key or not secrets.compare_digest(x_api_key, settings.ADMIN_API_KEY):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+    _verify_admin_key(request, x_api_key)
 
 
 async def require_configured_admin_api_key(
+    request: Request,
     x_api_key: str = Header(default=""),
 ) -> None:
     """Require an explicitly configured key even outside production.
@@ -40,11 +94,44 @@ async def require_configured_admin_api_key(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin operations are disabled",
         )
-    if not x_api_key or not secrets.compare_digest(x_api_key, settings.ADMIN_API_KEY):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key",
-        )
+    _verify_admin_key(request, x_api_key)
+
+
+class SecurityHeadersMiddleware:
+    """Baseline browser protections on every API response.
+
+    Pure ASGI so streamed responses (the AI brief) are not buffered. Personal
+    data is never stored by browsers or proxies.
+    """
+
+    HEADERS = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+    }
+
+    def __init__(self, app: ASGIApp, *, hsts: bool = False) -> None:
+        self.app = app
+        self.headers = dict(self.HEADERS)
+        if hsts:
+            self.headers["Strict-Transport-Security"] = "max-age=31536000"
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        personal = scope.get("path", "").startswith("/api/personal/")
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in self.headers.items():
+                    headers.setdefault(name, value)
+                if personal:
+                    headers["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 class SlidingWindowRateLimiter:

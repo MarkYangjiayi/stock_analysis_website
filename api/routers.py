@@ -40,6 +40,7 @@ from services.analyzer import (
 from services.ai_assistant import generate_stock_report, get_cached_stock_report
 from services.earnings_quality import get_earnings_quality, serialize_analysis_run
 from services.events_expectations import get_events_expectations
+from services.quality_scorecard import get_quality_scorecard
 from services.financial_flow import get_financial_flow
 from services.filing_analysis import (
     FilingAnalysisError,
@@ -292,7 +293,7 @@ async def read_decision_support(
     include_saved = False
     api_key = request.headers.get("x-api-key")
     if api_key:
-        await require_admin_api_key(api_key)
+        await require_admin_api_key(request, api_key)
         include_saved = True
     return await get_decision_support(
         ticker,
@@ -676,6 +677,15 @@ async def read_events_expectations(ticker: str, db: AsyncSession = Depends(get_d
     """Return cached corporate events and forward consensus evidence."""
     return await get_events_expectations(canonicalize_ticker(ticker), db)
 
+
+@router.get(
+    "/api/stocks/{ticker}/quality",
+    tags=["Stocks Analysis Read"],
+)
+async def read_quality_scorecard(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Annual-statement quality scorecard, Piotroski F-score and Altman Z from stored fundamentals."""
+    return await get_quality_scorecard(canonicalize_ticker(ticker), db)
+
 @router.get(
     "/api/stocks/{ticker}/report",
     tags=["AI Report Generation"],
@@ -692,7 +702,7 @@ async def read_ai_stock_report(
     include_saved = False
     api_key = request.headers.get("x-api-key")
     if api_key:
-        await require_admin_api_key(api_key)
+        await require_admin_api_key(request, api_key)
         include_saved = True
 
     async def static_report(content: str):
@@ -915,10 +925,10 @@ async def watchlist_quotes(
 THEME_SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{0,63}$"
 
 
-async def require_theme_access(x_api_key: str = Header(default="")) -> None:
+async def require_theme_access(request: Request, x_api_key: str = Header(default="")) -> None:
     if settings.THEMES_PUBLIC:
         return
-    await require_admin_api_key(x_api_key)
+    await require_admin_api_key(request, x_api_key)
 
 
 @router.get(

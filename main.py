@@ -5,6 +5,7 @@ from database import init_db
 from api.routers import router as api_router
 import logging
 from core.config import settings
+from core.security import SecurityHeadersMiddleware
 from services.anomaly_scans import (
     recover_interrupted_anomaly_scans,
     shutdown_anomaly_scan_tasks,
@@ -60,6 +61,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# HSTS only in production, where the site is served over HTTPS.
+app.add_middleware(SecurityHeadersMiddleware, hsts=settings.ENVIRONMENT.lower() == "production")
 
 # 注册所有业务路由
 app.include_router(api_router)

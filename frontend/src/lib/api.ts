@@ -1104,6 +1104,54 @@ export const fetchEventsExpectations = (ticker: string, signal?: AbortSignal) =>
         { signal },
     );
 
+export interface QualityMetric {
+    value: number | null;
+    /** 0-100 between the weak and strong thresholds. */
+    score: number | null;
+    label: string;
+    unit: "percent" | "ratio";
+    weak: number;
+    strong: number;
+}
+
+export interface QualityPillar {
+    key: "profitability" | "growth" | "cash_conversion" | "balance_sheet" | "capital_allocation";
+    label: string;
+    score: number | null;
+    metrics: string[];
+    applicable: boolean;
+}
+
+export interface QualityScorecardResponse {
+    ticker: string;
+    available: boolean;
+    template: "standard" | "financial" | "reit" | null;
+    industry?: string | null;
+    score: number | null;
+    grade: string | null;
+    pillars: QualityPillar[];
+    metrics: Record<string, QualityMetric>;
+    piotroski: {
+        score: number | null;
+        available: number;
+        checks: Array<{ key: string; label: string; passed: boolean | null }>;
+        fiscal_years?: string[];
+    } | null;
+    altman: {
+        z: number;
+        zone: "safe" | "grey" | "distress";
+        zone_label: string;
+        fiscal_year: string;
+    } | null;
+    fiscal_years: string[];
+    source: string;
+    fetched_at: string | null;
+    notes: string[];
+}
+
+export const fetchQualityScorecard = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<QualityScorecardResponse>(`/api/stocks/${encodeURIComponent(ticker)}/quality`, { signal });
+
 export const fetchLatestTickerFactors = (ticker: string, signal?: AbortSignal) =>
     apiRequest<PublishedFactorSnapshot>(`/api/quant/factors/${encodeURIComponent(ticker)}/latest`, { signal });
 

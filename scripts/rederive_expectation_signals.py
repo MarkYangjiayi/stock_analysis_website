@@ -42,7 +42,14 @@ def _read_payload(path: str) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-async def rederive(*, force: bool = False, dry_run: bool = False) -> dict[str, int]:
+async def rederive(
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    fields: tuple[str, ...] = SCREENER_FIELDS,
+    derive=screener_values,
+) -> dict[str, int]:
+    """Derive ``fields`` with ``derive(payload)``; the quality scorecard reuses this."""
     counts = {"cached": 0, "updated": 0, "already_present": 0, "no_raw_snapshot": 0, "unreadable": 0}
     async with async_session_maker() as db:
         rows = (await db.execute(
@@ -54,7 +61,7 @@ async def rederive(*, force: bool = False, dry_run: bool = False) -> dict[str, i
     pending = []
     for cache_row, storage_path in rows:
         data = dict(cache_row.normalized_data or {})
-        if not force and all(field in data for field in SCREENER_FIELDS):
+        if not force and all(field in data for field in fields):
             counts["already_present"] += 1
             continue
         if not storage_path:
@@ -66,7 +73,7 @@ async def rederive(*, force: bool = False, dry_run: bool = False) -> dict[str, i
             logger.warning("Skipping %s: %s", cache_row.ticker, type(exc).__name__)
             counts["unreadable"] += 1
             continue
-        data.update(normalize_public_screener_values(screener_values(payload)))
+        data.update(normalize_public_screener_values(derive(payload)))
         pending.append((cache_row.ticker, data))
 
     if not dry_run:
