@@ -242,11 +242,42 @@ async def test_validated_brief_is_cached_once_and_served(db_session, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_invalid_bullet_is_dropped_and_recorded(db_session, monkeypatch, deepseek_key):
+    await _seed_memory_theme(db_session)
+
+    def partly_invalid(prompt, attempt):
+        payload = _valid_payload(prompt)
+        metrics = _metric_ids(_prompt_evidence(prompt))
+        heat, rank = metrics["heat_now"], metrics["rank_now"]
+        payload["facts"] = [line.replace("+10.00%", "+12.00%") for line in payload["facts"]]
+        payload["facts"].append(
+            f"题材热度 {heat['value']['display']}，排名第 {rank['value']['display']} 位。[{heat['id']}][{rank['id']}]")
+        return payload
+
+    calls = []
+    monkeypatch.setattr(briefs, "generate_deepseek_json", _fake_llm(calls, partly_invalid))
+    result = await briefs.generate_theme_briefs(AS_OF)
+    # The fabricated and the two-citation bullets are dropped; the rest is kept on the first attempt.
+    assert (result["generated"], result["fallback"]) == (1, 0) and len(calls) == 1
+    brief = (await db_session.execute(select(ThemeBrief))).scalar_one()
+    assert brief.model != briefs.TEMPLATE_MODEL and brief.validation_report["attempts"] == 1
+    assert "+12.00%" not in brief.content and "x21" not in brief.content and "][E" not in brief.content
+    assert "60.0" in brief.content and "同期新闻包括" in brief.content
+    dropped = brief.validation_report["dropped_bullets"]
+    assert len(dropped) == 2 and all(reason.startswith("盘面事实: ") for reason in dropped)
+    assert any("+12.00%" in reason for reason in dropped)
+    assert any("exactly one [E#] citation" in reason for reason in dropped)
+
+
+@pytest.mark.asyncio
 async def test_invalid_output_is_repaired_or_never_cached(db_session, monkeypatch, deepseek_key):
     await _seed_memory_theme(db_session)
 
     def fabricated(prompt, attempt):
+        # The only risk bullet states a wrong B50, so the 风险与反方 section has nothing left.
         payload = _valid_payload(prompt)
+        b50 = _metric_ids(_prompt_evidence(prompt))["b50"]
+        payload["risks"] = [f"B50 为 99.9%，宽度扩散仍待确认。[{b50['id']}]"]
         payload["facts"] = [line.replace("+10.00%", "+12.00%") for line in payload["facts"]]
         return payload
 
@@ -256,11 +287,14 @@ async def test_invalid_output_is_repaired_or_never_cached(db_session, monkeypatc
     # Invalid model output is never cached; the validated template stands in.
     assert result["failed"] == 0 and result["fallback_slugs"] == ["memory-storage"]
     assert len(calls) == briefs.MAX_BRIEF_ATTEMPTS
-    assert "上一次输出未通过校验" in calls[1]["user"] and "+12.00%" in calls[1]["user"]
+    # One repair names every dropped bullet's problem, not only the first.
+    repair = calls[1]["user"]
+    assert "上一次输出未通过校验" in repair and "No valid bullet left in the 风险与反方 section" in repair
+    assert "'99.9%'" in repair and "'+12.00%'" in repair
     template = (await db_session.execute(select(ThemeBrief))).scalar_one()
     assert template.model == briefs.TEMPLATE_MODEL and template.prompt_version == briefs.TEMPLATE_PROMPT_VERSION
     assert template.validation_report["fallback"] == "template"
-    assert "+12.00%" not in template.content and "[E" in template.content
+    assert "99.9%" not in template.content and "[E" in template.content
 
     calls.clear()
     monkeypatch.setattr(briefs, "generate_deepseek_json", _fake_llm(
@@ -269,8 +303,8 @@ async def test_invalid_output_is_repaired_or_never_cached(db_session, monkeypatc
     assert result["generated"] == 1 and len(calls) == 2
     brief = (await db_session.execute(
         select(ThemeBrief).where(ThemeBrief.model != briefs.TEMPLATE_MODEL))).scalar_one()
-    assert brief.validation_report["attempts"] == 2
-    assert "+12.00%" not in brief.content
+    assert brief.validation_report["attempts"] == 2 and brief.validation_report["dropped_bullets"] == []
+    assert "99.9%" not in brief.content
     # The model brief written after the template is the one served.
     served = await briefs.latest_theme_brief(db_session, brief.theme_id, AS_OF)
     assert served["model"] == brief.model

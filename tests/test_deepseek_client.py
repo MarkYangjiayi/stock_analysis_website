@@ -91,7 +91,7 @@ async def test_stream_deepseek_text_yields_only_content(monkeypatch):
     monkeypatch.setattr(deepseek_client, "AsyncOpenAI", fake_client)
     monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr(settings, "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "deepseek-v4-flash")
+    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "deepseek-flash")
     monkeypatch.setattr(settings, "DEEPSEEK_THINKING_ENABLED", True)
 
     result = [
@@ -103,7 +103,7 @@ async def test_stream_deepseek_text_yields_only_content(monkeypatch):
     assert capture["closed"] is True
     assert capture["client"].chat.completions.calls == [
         {
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-flash",
             "messages": [{"role": "user", "content": "流式报告"}],
             "stream": True,
             "extra_body": {"thinking": {"type": "enabled"}},

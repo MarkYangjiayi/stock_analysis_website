@@ -137,8 +137,10 @@ non-US listings must be dropped by intersecting with the universe.
      "evidence_quote","confidence"}]}` validated with pydantic. Hard checks: ticker in batch, no
      duplicates, `evidence_quote` (whitespace-normalized, lowercased) is a substring of the
      normalized description, else status `invalid_quote`; exposure 0 → `rejected`.
-     Cache in `theme_member_verifications` keyed by `input_hash = sha256(prompt_version, model,
-     theme slug, definition, ticker, description)`; reuse cached rows, never re-ask.
+     Cache in `theme_member_verifications` keyed by `input_hash = sha256(prompt_version,
+     VERIFICATION_CACHE_ID, theme slug, definition, ticker, description)`; reuse cached rows, never
+     re-ask. `VERIFICATION_CACHE_ID` is fixed (not the API model id, which is still recorded in
+     `model`), so changing `DEEPSEEK_MODEL` does not re-verify existing candidates.
      If `DEEPSEEK_API_KEY` is empty, skip LLM (use the etf_only/seed fallbacks from §2) and warn.
   6. Diff against open intervals: close removed members (`valid_to = as_of`), insert new
      (`valid_from = as_of`); a tier/weight/evidence change closes and reopens. Pins/bans apply.
@@ -443,6 +445,7 @@ These supersede the sections above where they differ.
   - Evidence items carry one display value each.
   - The validator adds rules for metric words, ticker binding, sign, plain text only and no headline numbers outside a verbatim quote. A verbatim copy of the cited headline (quoted or not) is one opaque span for the sentence and number checks.
   - Over-long sections are truncated to their caps rather than rejected.
+  - A bullet that fails its own checks (for example two numbers, or two citations) is dropped rather than failing the whole brief; the reasons are stored in `validation_report.dropped_bullets`. An attempt fails only when a section is left with no valid bullet, and its repair prompt lists every dropped bullet's problem. In a 2026-10-20 sample of 24 live outputs, 6 passed whole and 23 passed after dropping.
   - When three attempts fail, a deterministic template brief built from evidence labels is validated and stored with `model="template"`. The UI labels it, and the next run retries the LLM.
   - The UI renders only `#theme-evidence-E#` links from brief text.
 - **Proposals (§3.7).**

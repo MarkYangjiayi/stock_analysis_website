@@ -135,7 +135,7 @@ EODHD_API_KEY=your_eodhd_api_key
 # DeepSeek API (AI Reporting)
 DEEPSEEK_API_KEY=your_deepseek_api_key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-flash
 DEEPSEEK_THINKING_ENABLED=false
 
 # Required only for user-triggered SEC filing analysis. Use a real organization/email identity.

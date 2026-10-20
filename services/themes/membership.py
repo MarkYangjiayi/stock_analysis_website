@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 THEME_MEMBERSHIP_DATASET = "theme_membership"
 MEMBERSHIP_PROMPT_VERSION = "theme-membership-v1"
+# Verdicts are cached under this id, not the API model id: re-verifying ~800 candidates
+# flips ~9% of borderline verdicts, so renaming the model must not reshuffle membership.
+# The value is the model id the cache was built with; change it only to re-verify all.
+VERIFICATION_CACHE_ID = "deepseek-v4-flash"
 
 ETF_HOLDINGS_SOURCE = "eodhd"
 ETF_FETCH_CONCURRENCY = 2
@@ -539,8 +543,10 @@ class VerificationBatch(BaseModel):
     results: list[VerificationItem]
 
 
-def verification_input_hash(theme: ThemeSpec, ticker: str, description: str, model: str) -> str:
-    raw = "\0".join((MEMBERSHIP_PROMPT_VERSION, model, theme.slug, theme.definition, ticker, description))
+def verification_input_hash(
+    theme: ThemeSpec, ticker: str, description: str, cache_id: str = VERIFICATION_CACHE_ID,
+) -> str:
+    raw = "\0".join((MEMBERSHIP_PROMPT_VERSION, cache_id, theme.slug, theme.definition, ticker, description))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -1051,7 +1057,7 @@ async def refresh_theme_membership(as_of: date) -> dict:
         hashes: dict[int, dict[str, str]] = {}
         for theme in themes:
             hashes[theme.id] = {
-                ticker: verification_input_hash(theme, ticker, universe[ticker].description or "", model)
+                ticker: verification_input_hash(theme, ticker, universe[ticker].description or "")
                 for ticker in candidates_by_theme[theme.id]
                 if universe[ticker].description
             }
