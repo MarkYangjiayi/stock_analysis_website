@@ -24,10 +24,34 @@ interface BarColorParam {
     value?: number | null;
 }
 
+interface LegendTooltipParam {
+    name?: string;
+}
+
 const LOWER_LABELS: Record<LowerMetric, string> = {
     net_advances: "Net advances",
     new_high_low: "New highs − new lows",
     mcclellan: "McClellan oscillator",
+};
+
+// The API labels are abbreviated for the RRG chart; hover text has room for the full SPDR sector names.
+const SECTOR_FULL_NAMES: Record<string, string> = {
+    "XLK.US": "Technology",
+    "XLF.US": "Financials",
+    "XLV.US": "Health Care",
+    "XLY.US": "Consumer Discretionary",
+    "XLP.US": "Consumer Staples",
+    "XLE.US": "Energy",
+    "XLI.US": "Industrials",
+    "XLB.US": "Materials",
+    "XLU.US": "Utilities",
+    "XLRE.US": "Real Estate",
+    "XLC.US": "Communication Services",
+};
+
+const LEGEND_NAMES: Record<string, string> = {
+    SPY: "S&P 500 (cap-weighted)",
+    "RSP/SPY": "Equal-weight vs cap-weighted S&P 500",
 };
 
 const asDisplayNumber = (value: number | null | undefined, digits = 1) =>
@@ -66,6 +90,10 @@ export default function MarketOverviewChart({
                 ? data.breadth.new_high_low_pct
                 : data.breadth.mcclellan;
         const trendKey = trendMode === "relative" ? "relative_to_spy_index" : "absolute_index";
+        const sectorNames: Record<string, string> = Object.fromEntries(data.sector_trends.map((sector) => [
+            sector.ticker,
+            SECTOR_FULL_NAMES[sector.ticker] ?? sector.label,
+        ]));
         const topLegend = data.sector_trends.map((sector) => sector.ticker);
         if (trendMode === "absolute") topLegend.push("SPY");
         topLegend.push("RSP/SPY");
@@ -176,7 +204,7 @@ export default function MarketOverviewChart({
             const sectorRows = data.sector_trends.map((sector, sectorIndex) => {
                 const value = sector[trendKey][index];
                 const color = sectorColor(sectorIndex);
-                return `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${color}"></i>${sector.ticker}</span><b>${asDisplayNumber(value, 2)}</b></div>`;
+                return `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${color}"></i>${sector.ticker} <span style="color:${axisColor}">${sectorNames[sector.ticker]}</span></span><b>${asDisplayNumber(value, 2)}</b></div>`;
             }).join("");
             const benchmarkRow = trendMode === "absolute"
                 ? `<div style="display:flex;justify-content:space-between;gap:18px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${benchmarkColor}"></i>SPY</span><b>${asDisplayNumber(data.benchmark.absolute_index[index], 2)}</b></div>`
@@ -188,12 +216,12 @@ export default function MarketOverviewChart({
                 ${benchmarkRow}
                 <div style="display:flex;justify-content:space-between;gap:18px;margin-top:4px"><span><i style="display:inline-block;width:12px;border-top:2px dashed ${proxyColor};margin-right:6px;vertical-align:middle"></i>RSP/SPY</span><b>${asDisplayNumber(data.rsp_spy_index[index], 2)}</b></div>
                 <div style="border-top:1px solid ${colors.border};margin:7px 0"></div>
-                <div style="display:flex;justify-content:space-between"><span>Above MA20 / 50 / 200</span><b>${asDisplayNumber(breadth.pct_above_ma20[index])} / ${asDisplayNumber(breadth.pct_above_ma50[index])} / ${asDisplayNumber(breadth.pct_above_ma200[index])}%</b></div>
-                <div style="display:flex;justify-content:space-between"><span>Net advances</span><b>${asDisplayNumber(breadth.net_advances_pct[index])}%</b></div>
-                <div style="display:flex;justify-content:space-between"><span>New highs / lows</span><b>${asDisplayNumber(breadth.new_high_pct[index])}% / ${asDisplayNumber(breadth.new_low_pct[index])}%</b></div>
-                <div style="display:flex;justify-content:space-between"><span>McClellan</span><b>${asDisplayNumber(breadth.mcclellan[index], 2)}</b></div>
-                <div style="display:flex;justify-content:space-between"><span>Dispersion 1D / 20D EMA</span><b>${asPercent(breadth.dispersion_1d[index])} / ${asPercent(breadth.dispersion_20d[index])}</b></div>
-                <div style="display:flex;justify-content:space-between"><span>Members / price coverage</span><b>${breadth.member_count[index] ?? "—"} / ${asDisplayNumber(breadth.price_coverage_pct[index])}%</b></div>
+                <div style="display:flex;justify-content:space-between;gap:18px"><span>Above MA20 / 50 / 200</span><b>${asDisplayNumber(breadth.pct_above_ma20[index])} / ${asDisplayNumber(breadth.pct_above_ma50[index])} / ${asDisplayNumber(breadth.pct_above_ma200[index])}%</b></div>
+                <div style="display:flex;justify-content:space-between;gap:18px"><span>Net advances</span><b>${asDisplayNumber(breadth.net_advances_pct[index])}%</b></div>
+                <div style="display:flex;justify-content:space-between;gap:18px"><span>New highs / lows</span><b>${asDisplayNumber(breadth.new_high_pct[index])}% / ${asDisplayNumber(breadth.new_low_pct[index])}%</b></div>
+                <div style="display:flex;justify-content:space-between;gap:18px"><span>McClellan</span><b>${asDisplayNumber(breadth.mcclellan[index], 2)}</b></div>
+                <div style="display:flex;justify-content:space-between;gap:18px"><span>Dispersion 1D / 20D EMA</span><b>${asPercent(breadth.dispersion_1d[index])} / ${asPercent(breadth.dispersion_20d[index])}</b></div>
+                <div style="display:flex;justify-content:space-between;gap:18px"><span>Members / price coverage</span><b>${breadth.member_count[index] ?? "—"} / ${asDisplayNumber(breadth.price_coverage_pct[index])}%</b></div>
             </div>`;
         };
 
@@ -242,6 +270,13 @@ export default function MarketOverviewChart({
                     right: 24,
                     data: topLegend,
                     textStyle: { ...axisText, fontSize: 11 },
+                    tooltip: {
+                        show: true,
+                        formatter: ({ name = "" }: LegendTooltipParam) => {
+                            const fullName = sectorNames[name] ?? LEGEND_NAMES[name];
+                            return fullName ? `${name} · ${fullName}` : name;
+                        },
+                    },
                     pageTextStyle: axisText,
                     pageIconColor: colors.brand,
                     pageIconInactiveColor: colors.border,
