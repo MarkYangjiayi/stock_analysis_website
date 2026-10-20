@@ -56,6 +56,9 @@ DEFAULT_SCENARIOS: list[dict[str, Any]] = [
 ]
 
 SCENARIO_NAMES = ("bear", "base", "bull")
+# With interest for at least this many of the four TTM quarters, the page DCF
+# annualizes them instead of estimating interest from debt.
+MIN_ANNUALIZED_INTEREST_QUARTERS = 2
 VALUATION_MULTIPLES = {
     "pe_ratio",
     "forward_pe",
@@ -1045,6 +1048,7 @@ def build_financial_context(
                     "operating_income",
                     "net_income",
                     "interest_expense",
+                    "interest_expense_annualized",
                     "income_before_tax",
                     "income_tax_expense",
                     "fcf",
@@ -1055,12 +1059,24 @@ def build_financial_context(
         revenue = _sum_complete(points_in_window, "revenue")
         gross_profit = _sum_complete(points_in_window, "gross_profit")
         operating_income = _sum_complete(points_in_window, "operating_income")
+        interest_quarters = [
+            abs(value)
+            for value in (_safe_float(point.get("interest_expense")) for point in points_in_window)
+            if value is not None
+        ]
         result = {
             "revenue": revenue,
             "gross_profit": gross_profit,
             "operating_income": operating_income,
             "net_income": _sum_complete(points_in_window, "net_income"),
             "interest_expense": _sum_complete(points_in_window, "interest_expense"),
+            # Only the page DCF uses these, when some quarters lack interest.
+            "interest_expense_quarters": len(interest_quarters),
+            "interest_expense_annualized": (
+                sum(interest_quarters) * len(points_in_window) / len(interest_quarters)
+                if MIN_ANNUALIZED_INTEREST_QUARTERS <= len(interest_quarters) < len(points_in_window)
+                else None
+            ),
             "income_before_tax": _sum_complete(points_in_window, "income_before_tax"),
             "income_tax_expense": _sum_complete(points_in_window, "income_tax_expense"),
             "fcf": _sum_complete(points_in_window, "fcf"),
@@ -1798,13 +1814,22 @@ def build_company_valuation_assumptions(
     else:
         selected_beta = None
         beta_source = None
+    interest_expense = current.get("interest_expense")
+    annualized_from_quarters = None
+    if (
+        interest_expense is None
+        and settings.VALUATION_ESTIMATE_MISSING_INTEREST
+        and current.get("interest_expense_annualized") is not None
+    ):
+        interest_expense = current["interest_expense_annualized"]
+        annualized_from_quarters = current.get("interest_expense_quarters")
     wacc = estimate_company_wacc(
         market_cap=snapshot.market_cap if snapshot else None,
         beta=selected_beta,
         latest_debt=latest.get("debt"),
         prior_debt=prior.get("debt"),
         average_debt=latest.get("average_debt_1yr"),
-        interest_expense=current.get("interest_expense"),
+        interest_expense=interest_expense,
         income_tax_expense=current.get("income_tax_expense"),
         income_before_tax=current.get("income_before_tax"),
         current_price=current_price,
@@ -1816,6 +1841,8 @@ def build_company_valuation_assumptions(
         assumptions_as_of=settings.VALUATION_MARKET_ASSUMPTIONS_AS_OF,
         beta_source=beta_source,
         valuation_date=str(getattr(snapshot, "date", None) or date.today()),
+        estimate_missing_interest=settings.VALUATION_ESTIMATE_MISSING_INTEREST,
+        annualized_from_quarters=annualized_from_quarters,
     )
     growth = derive_growth_scenarios(
         current_fcf=current.get("fcf"),

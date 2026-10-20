@@ -2401,3 +2401,64 @@ def test_personal_decision_support_migration_up_and_down(tmp_path):
     with sqlite3.connect(database_path) as connection:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert expected <= tables
+
+
+@pytest.mark.parametrize("estimate", [True, False])
+def test_page_dcf_estimates_unreported_interest_only_when_enabled(monkeypatch, estimate):
+    from types import SimpleNamespace
+
+    from core.config import settings
+    from services.decision_support import build_company_valuation_assumptions
+
+    monkeypatch.setattr(settings, "VALUATION_ESTIMATE_MISSING_INTEREST", estimate)
+    records = []
+    for fiscal_date in (date(2025, 12, 31), date(2025, 9, 30), date(2025, 6, 30), date(2025, 3, 31),
+                        date(2024, 12, 31), date(2024, 9, 30), date(2024, 6, 30), date(2024, 3, 31)):
+        statement = _quarterly_statement("NOINT.US", fiscal_date)
+        statement.income_statement.pop("interestExpense")
+        records.append(statement)
+    financial = build_financial_context(records)
+    snapshot = SimpleNamespace(market_cap=5000, provider_beta=1.1, beta_1yr=None, shares_outstanding=None,
+                               date=date(2026, 1, 15), sales_growth_3yr=0.05, sales_growth_5yr=0.05)
+
+    basis = build_company_valuation_assumptions(financial, snapshot, 50.0)
+
+    assert basis["cash_flow"]["available"] is estimate
+    assert basis["wacc"]["interest_expense_source"] == ("estimated" if estimate else "unavailable")
+    if estimate:
+        assert basis["cash_flow"]["after_tax_interest_adjustment"] > 0
+    else:
+        assert basis["cash_flow"]["reason"] == "After-tax interest is required to align free cash flow with WACC."
+
+
+@pytest.mark.parametrize(("missing", "estimate", "source", "interest"), [
+    (1, True, "annualized", 4.0),    # three quarters of 1.0 annualized to 4.0
+    (3, True, "estimated", None),    # one quarter is too few to annualize
+    (1, False, "unavailable", None),
+    (3, False, "unavailable", None),
+])
+def test_page_dcf_annualizes_partially_reported_interest(monkeypatch, missing, estimate, source, interest):
+    from types import SimpleNamespace
+
+    from core.config import settings
+    from services.decision_support import build_company_valuation_assumptions
+
+    monkeypatch.setattr(settings, "VALUATION_ESTIMATE_MISSING_INTEREST", estimate)
+    dates = (date(2025, 12, 31), date(2025, 9, 30), date(2025, 6, 30), date(2025, 3, 31),
+             date(2024, 12, 31), date(2024, 9, 30), date(2024, 6, 30), date(2024, 3, 31))
+    records = []
+    for index, fiscal_date in enumerate(dates):
+        statement = _quarterly_statement("PART.US", fiscal_date)
+        if index < missing:
+            statement.income_statement.pop("interestExpense")
+        records.append(statement)
+    financial = build_financial_context(records)
+    snapshot = SimpleNamespace(market_cap=5000, provider_beta=1.1, beta_1yr=None, shares_outstanding=None,
+                               date=date(2026, 1, 15), sales_growth_3yr=0.05, sales_growth_5yr=0.05)
+
+    basis = build_company_valuation_assumptions(financial, snapshot, 50.0)
+
+    assert basis["wacc"]["interest_expense_source"] == source
+    assert basis["cash_flow"]["available"] is estimate
+    if interest is not None:
+        assert basis["wacc"]["interest_expense_for_fcff"] == pytest.approx(interest)

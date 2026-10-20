@@ -48,8 +48,17 @@ def estimate_company_wacc(
     assumptions_as_of: str,
     beta_source: str | None = None,
     valuation_date: str | None = None,
+    estimate_missing_interest: bool = False,
+    annualized_from_quarters: int | None = None,
 ) -> dict[str, Any]:
-    """Estimate one current WACC using the same broad structure as GuruFocus."""
+    """Estimate one current WACC using the same broad structure as GuruFocus.
+
+    By default unreported interest is never turned into a cash-flow input. With
+    ``estimate_missing_interest`` the FCFF bridge gets average book debt times
+    the fallback cost of debt, marked ``interest_expense_source="estimated"``.
+    ``annualized_from_quarters`` says the interest passed in annualizes that
+    many reported quarters; it is marked ``"annualized"``.
+    """
 
     notes: list[str] = []
     raw_beta = _number(beta)
@@ -117,6 +126,13 @@ def estimate_company_wacc(
     reported_interest = _number(interest_expense)
     if reported_interest is not None:
         reported_interest = abs(reported_interest)
+    interest_estimated = False
+    interest_annualized = annualized_from_quarters is not None and reported_interest is not None
+    if interest_annualized:
+        notes.append(
+            f"Interest expense is reported for {annualized_from_quarters} of the last four quarters; "
+            "the TTM figure annualizes those quarters."
+        )
     if average_book_debt == 0:
         cost_of_debt = 0.0
         debt_cost_source = "debt_free"
@@ -134,8 +150,13 @@ def estimate_company_wacc(
     elif average_book_debt is not None and average_book_debt > 0:
         cost_of_debt = risk_free_rate + fallback_debt_spread
         debt_cost_source = "risk_free_plus_fallback_spread"
-        interest_for_fcff = reported_interest
-        notes.append("Reported interest did not produce a usable debt cost; a configured spread was used.")
+        if reported_interest is None and estimate_missing_interest:
+            interest_for_fcff = average_book_debt * cost_of_debt
+            interest_estimated = True
+            notes.append("Interest expense is not reported; the cost of debt uses a configured spread, and FCFF adds an estimate of average book debt times that cost.")
+        else:
+            interest_for_fcff = reported_interest
+            notes.append("Reported interest did not produce a usable debt cost; a configured spread was used.")
     else:
         cost_of_debt = None
         debt_cost_source = "unavailable"
@@ -176,7 +197,7 @@ def estimate_company_wacc(
         "available": wacc is not None,
         "wacc": wacc,
         "method": "CAPM plus after-tax book-debt cost",
-        "quality": "estimated_with_fallbacks" if fallback_used else "calculated",
+        "quality": "estimated_with_fallbacks" if fallback_used or interest_annualized else "calculated",
         "assumptions_as_of": assumptions_as_of,
         "risk_free_rate": risk_free_rate,
         "equity_risk_premium": equity_risk_premium,
@@ -187,7 +208,12 @@ def estimate_company_wacc(
         "risk_free_source": "configured_nominal_government_yield",
         "erp_source": "configured_forward_policy_not_fitted_to_prices",
         "capital_structure_debt": capital_debt,
-        "interest_expense_source": "reported" if reported_interest is not None else ("debt_free" if capital_debt == 0 else "unavailable"),
+        "interest_expense_source": (
+            "estimated" if interest_estimated
+            else "annualized" if interest_annualized
+            else "reported" if reported_interest is not None
+            else ("debt_free" if capital_debt == 0 else "unavailable")
+        ),
         "beta_source": resolved_beta_source,
         "cost_of_equity": cost_of_equity,
         "equity_value": equity_value,
