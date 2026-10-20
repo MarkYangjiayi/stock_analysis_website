@@ -13,7 +13,9 @@ and tickers matching the cited fact, no causal wording, plain text only) and
 ``ai_assistant.validate_evidence_numbers`` is inserted into ``theme_briefs``,
 together with the source ``pipeline_run_id``. ``latest_theme_brief`` skips a
 brief whose run no longer backs its date's publication (a same-date re-run).
-Failures are logged and never cached.
+A bullet that fails its own checks is dropped (``salvaged_brief_content``); an
+attempt fails only when a section has no valid bullet left. Failures are logged
+and never cached.
 """
 
 from __future__ import annotations
@@ -769,6 +771,85 @@ def _without_cited_headline(sentence: str, item: dict[str, Any]) -> str:
     return sentence
 
 
+@dataclass(frozen=True)
+class _EvidenceIndex:
+    items: dict[str, dict[str, Any]]
+    vocabulary: set[str]
+    member_tickers: set[str]
+
+
+def _evidence_index(evidence: list[dict[str, Any]]) -> _EvidenceIndex:
+    items = {str(item.get("id")): item for item in evidence if item.get("id")}
+    vocabulary = {term for terms in METRIC_TERMS.values() for term in terms}
+    vocabulary.update(str(term) for item in items.values() for term in item.get("terms") or [] if term)
+    member_tickers = {
+        str(item["ticker"]) for item in items.values() if item.get("kind") == "member_metric" and item.get("ticker")
+    }
+    return _EvidenceIndex(items, vocabulary, member_tickers)
+
+
+def _check_bullet(title: str, line: str, index: _EvidenceIndex, identity_strings: Sequence[str]) -> None:
+    """Citation, binding and wording checks for one ``- `` bullet of section ``title``."""
+    if not line.startswith("- "):
+        raise EvidenceCitationError(f"Every line in the {title} section must be a '- ' bullet.")
+    body = line[2:].strip()
+    citations = CITATION_RE.findall(body)
+    trailing = _TRAILING_CITATION_RE.search(body)
+    if len(citations) != 1 or trailing is None:
+        raise EvidenceCitationError(
+            f"Every bullet in the {title} section must end with exactly one [E#] citation."
+        )
+    evidence_id = trailing.group(1)
+    item = index.items.get(evidence_id)
+    if item is None:
+        raise EvidenceCitationError(f"Unknown evidence citations: {evidence_id}.")
+    kind = str(item.get("kind"))
+    allowed = SECTION_ALLOWED_KINDS[title]
+    if allowed is not None and kind not in allowed:
+        raise EvidenceCitationError(
+            f"The {title} section cites {evidence_id} ({kind}), which is not allowed there."
+        )
+    sentence = body[:trailing.start()].rstrip()
+    sentence = sentence[:-1].rstrip() if sentence.endswith(("。", ".")) else sentence
+    if not sentence:
+        raise EvidenceCitationError(f"A bullet in the {title} section has no text.")
+    # Only the exact cited headline is exempt from the markup check; quoted spans
+    # are skipped for the sentence and number checks only when quoting a headline.
+    plain = _without_cited_headline(sentence, item)
+    unquoted = _without_cited_headline(_QUOTED_RE.sub(" ", sentence), item) if kind == "news" else plain
+    if _MARKUP_RE.search(plain) or "://" in sentence or re.search(r"<[^>]*>", sentence):
+        raise EvidenceCitationError(
+            "Bullets must be plain text: links, URLs, e-mail addresses, Markdown and HTML are not allowed."
+        )
+    if _SENTENCE_END_RE.search(unquoted):
+        raise EvidenceCitationError(f"Each bullet in the {title} section must be one sentence.")
+    if _ADVICE_RE.search(sentence):
+        raise EvidenceCitationError("The brief must not contain trading advice.")
+    if _CAUSAL_RE.search(sentence):
+        raise EvidenceCitationError(
+            "No bullet may use causal wording or claim that a headline or anything else caused a move."
+        )
+    if kind == "news" and NEWS_PHRASE not in sentence:
+        raise EvidenceCitationError(f"Bullets citing a headline must use the phrase {NEWS_PHRASE}.")
+    # A headline can hold several numbers; outside a verbatim quote none may be restated.
+    if kind == "news" and _states_number(unquoted, identity_strings):
+        raise EvidenceCitationError(
+            "Bullets citing a headline must not restate its numbers; describe the headline in words."
+        )
+    if _NEGATIVE_UNSIGNED_RE.search(sentence):
+        raise EvidenceCitationError(
+            "Copy negative values with their minus sign (for example -3.20%), not 下跌/下降 with an unsigned number."
+        )
+    _check_value_binding(
+        sentence,
+        evidence_id,
+        item,
+        vocabulary=index.vocabulary,
+        member_tickers=index.member_tickers,
+        identity_strings=identity_strings,
+    )
+
+
 def validate_theme_brief(
     content: str,
     evidence: list[dict[str, Any]],
@@ -782,12 +863,7 @@ def validate_theme_brief(
     """
     if not content or len(content) > BRIEF_MAX_CHARS:
         raise EvidenceCitationError("The generated brief is empty or too long.")
-    items = {str(item.get("id")): item for item in evidence if item.get("id")}
-    vocabulary = {term for terms in METRIC_TERMS.values() for term in terms}
-    vocabulary.update(str(term) for item in items.values() for term in item.get("terms") or [] if term)
-    member_tickers = {
-        str(item["ticker"]) for item in items.values() if item.get("kind") == "member_metric" and item.get("ticker")
-    }
+    index = _evidence_index(evidence)
     sections: dict[str, list[str]] = {}
     order: list[str] = []
     current: Optional[str] = None
@@ -815,65 +891,8 @@ def validate_theme_brief(
         bullets = sections[title]
         if not bullets:
             raise EvidenceCitationError(f"The {title} section has no bullet.")
-        allowed = SECTION_ALLOWED_KINDS[title]
         for line in bullets:
-            if not line.startswith("- "):
-                raise EvidenceCitationError(f"Every line in the {title} section must be a '- ' bullet.")
-            body = line[2:].strip()
-            citations = CITATION_RE.findall(body)
-            trailing = _TRAILING_CITATION_RE.search(body)
-            if len(citations) != 1 or trailing is None:
-                raise EvidenceCitationError(
-                    f"Every bullet in the {title} section must end with exactly one [E#] citation."
-                )
-            evidence_id = trailing.group(1)
-            item = items.get(evidence_id)
-            if item is None:
-                raise EvidenceCitationError(f"Unknown evidence citations: {evidence_id}.")
-            kind = str(item.get("kind"))
-            if allowed is not None and kind not in allowed:
-                raise EvidenceCitationError(
-                    f"The {title} section cites {evidence_id} ({kind}), which is not allowed there."
-                )
-            sentence = body[:trailing.start()].rstrip()
-            sentence = sentence[:-1].rstrip() if sentence.endswith(("。", ".")) else sentence
-            if not sentence:
-                raise EvidenceCitationError(f"A bullet in the {title} section has no text.")
-            # Only the exact cited headline is exempt from the markup check; quoted spans
-            # are skipped for the sentence and number checks only when quoting a headline.
-            plain = _without_cited_headline(sentence, item)
-            unquoted = _without_cited_headline(_QUOTED_RE.sub(" ", sentence), item) if kind == "news" else plain
-            if _MARKUP_RE.search(plain) or "://" in sentence or re.search(r"<[^>]*>", sentence):
-                raise EvidenceCitationError(
-                    "Bullets must be plain text: links, URLs, e-mail addresses, Markdown and HTML are not allowed."
-                )
-            if _SENTENCE_END_RE.search(unquoted):
-                raise EvidenceCitationError(f"Each bullet in the {title} section must be one sentence.")
-            if _ADVICE_RE.search(sentence):
-                raise EvidenceCitationError("The brief must not contain trading advice.")
-            if _CAUSAL_RE.search(sentence):
-                raise EvidenceCitationError(
-                    "No bullet may use causal wording or claim that a headline or anything else caused a move."
-                )
-            if kind == "news" and NEWS_PHRASE not in sentence:
-                raise EvidenceCitationError(f"Bullets citing a headline must use the phrase {NEWS_PHRASE}.")
-            # A headline can hold several numbers; outside a verbatim quote none may be restated.
-            if kind == "news" and _states_number(unquoted, identity_strings):
-                raise EvidenceCitationError(
-                    "Bullets citing a headline must not restate its numbers; describe the headline in words."
-                )
-            if _NEGATIVE_UNSIGNED_RE.search(sentence):
-                raise EvidenceCitationError(
-                    "Copy negative values with their minus sign (for example -3.20%), not 下跌/下降 with an unsigned number."
-                )
-            _check_value_binding(
-                sentence,
-                evidence_id,
-                item,
-                vocabulary=vocabulary,
-                member_tickers=member_tickers,
-                identity_strings=identity_strings,
-            )
+            _check_bullet(title, line, index, identity_strings)
 
 
 def _clean_bullet(raw: str) -> str:
@@ -919,6 +938,42 @@ def validated_brief_content(payload: Any, context: BriefContext) -> str:
         _numbers_view(content, context.evidence), context.evidence, identity_strings=context.identity_strings
     )
     return content
+
+
+def salvaged_brief_content(payload: Any, context: BriefContext) -> tuple[str, list[str]]:
+    """``validated_brief_content`` that drops each bullet failing its own checks.
+
+    A bullet cites one fact, so dropping it never changes what the others claim.
+    Only a section left with no valid bullet fails the payload, and the error lists
+    every dropped bullet's reason so one repair can fix them all. Returns the
+    content and the reasons for the dropped bullets.
+    """
+    sections = _BriefSections.model_validate(payload)
+    index = _evidence_index(context.evidence)
+    kept: dict[str, list[str]] = {}
+    dropped: list[str] = []
+    for key, title in SECTION_KEYS.items():
+        kept[key] = []
+        for raw in getattr(sections, key):
+            bullet = _clean_bullet(raw)
+            if not bullet:
+                continue
+            line = f"- {bullet}"
+            try:
+                _check_bullet(title, line, index, context.identity_strings)
+                validate_evidence_numbers(
+                    _numbers_view(line, context.evidence), context.evidence, identity_strings=context.identity_strings
+                )
+            except EvidenceCitationError as exc:
+                dropped.append(f"{title}: {exc}")
+            else:
+                kept[key].append(raw)
+    empty = [title for key, title in SECTION_KEYS.items() if not kept[key]]
+    if empty:
+        raise EvidenceCitationError(
+            f"No valid bullet left in the {', '.join(empty)} section. Problems: {' | '.join(dropped)}"
+        )
+    return validated_brief_content(kept, context), dropped
 
 
 def user_prompt(context: BriefContext) -> str:
@@ -996,8 +1051,15 @@ async def _cached_brief_exists(
     return True
 
 
-async def _generate_validated(context: BriefContext, model: str) -> tuple[Optional[str], int, Optional[str]]:
-    """(content, attempts, failure) where content is None unless it validated."""
+@dataclass
+class _Generation:
+    content: Optional[str]  # None unless it validated
+    attempts: int
+    failure: Optional[str] = None
+    dropped: list[str] = field(default_factory=list)
+
+
+async def _generate_validated(context: BriefContext, model: str) -> _Generation:
     base = user_prompt(context)
     prompt = base
     for attempt in range(1, MAX_BRIEF_ATTEMPTS + 1):
@@ -1013,14 +1075,15 @@ async def _generate_validated(context: BriefContext, model: str) -> tuple[Option
                 ),
                 timeout=settings.THEME_BRIEF_TIMEOUT_SECONDS,
             )
-            return validated_brief_content(payload, context), attempt, None
+            content, dropped = salvaged_brief_content(payload, context)
+            return _Generation(content, attempt, dropped=dropped)
         except (asyncio.TimeoutError, ValueError, ValidationError) as exc:
             # EvidenceCitationError, JSON decode errors and pydantic errors are ValueErrors.
             if attempt >= MAX_BRIEF_ATTEMPTS:
-                return None, attempt, type(exc).__name__
+                return _Generation(None, attempt, type(exc).__name__)
             logger.info("Retrying theme brief for %s: %s", context.slug, type(exc).__name__)
             prompt = repair_prompt(base, payload, exc) if payload is not None else base
-    return None, MAX_BRIEF_ATTEMPTS, "exhausted"
+    return _Generation(None, MAX_BRIEF_ATTEMPTS, "exhausted")
 
 
 TEMPLATE_MODEL = "template"
@@ -1116,20 +1179,24 @@ async def _brief_for_context(context: BriefContext, model: str, semaphore: async
         return "cached"
     async with semaphore:
         try:
-            content, attempts, failure = await _generate_validated(context, model)
+            generation = await _generate_validated(context, model)
         except Exception as exc:
             logger.warning("Theme brief provider unavailable for %s: %s", context.slug, type(exc).__name__)
             return await _template_fallback(context, type(exc).__name__)
-    if content is None:
-        logger.warning("Theme brief for %s failed validation after %s attempts: %s", context.slug, attempts, failure)
-        return await _template_fallback(context, failure or "validation")
+    if generation.content is None:
+        logger.warning("Theme brief for %s failed validation after %s attempts: %s",
+                       context.slug, generation.attempts, generation.failure)
+        return await _template_fallback(context, generation.failure or "validation")
+    if generation.dropped:
+        logger.info("Theme brief for %s dropped %s invalid bullets", context.slug, len(generation.dropped))
     return await _store_brief(
-        context, evidence_hash, model=model, prompt_version=THEME_BRIEF_PROMPT_VERSION, content=content,
+        context, evidence_hash, model=model, prompt_version=THEME_BRIEF_PROMPT_VERSION, content=generation.content,
         validation_report={
             "status": "validated",
-            "attempts": attempts,
+            "attempts": generation.attempts,
             "validators": ["theme_sections", "value_binding", "evidence_numbers"],
             "evidence_count": len(context.evidence),
+            "dropped_bullets": [reason[:300] for reason in generation.dropped],
             "source_run_id": context.source_run_id,
         },
     )

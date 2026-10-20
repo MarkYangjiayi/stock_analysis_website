@@ -443,6 +443,7 @@ These supersede the sections above where they differ.
   - Evidence items carry one display value each.
   - The validator adds rules for metric words, ticker binding, sign, plain text only and no headline numbers outside a verbatim quote. A verbatim copy of the cited headline (quoted or not) is one opaque span for the sentence and number checks.
   - Over-long sections are truncated to their caps rather than rejected.
+  - A bullet that fails its own checks (for example two numbers, or two citations) is dropped rather than failing the whole brief; the reasons are stored in `validation_report.dropped_bullets`. An attempt fails only when a section is left with no valid bullet, and its repair prompt lists every dropped bullet's problem. In a 2026-10-20 sample of 24 live outputs, 6 passed whole and 23 passed after dropping.
   - When three attempts fail, a deterministic template brief built from evidence labels is validated and stored with `model="template"`. The UI labels it, and the next run retries the LLM.
   - The UI renders only `#theme-evidence-E#` links from brief text.
 - **Proposals (§3.7).**
