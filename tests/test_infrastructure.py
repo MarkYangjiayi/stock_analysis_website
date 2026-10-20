@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+import zstandard
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
@@ -1489,11 +1490,63 @@ def test_online_backup_is_consistent(tmp_path):
         connection.execute("CREATE TABLE values_table (value INTEGER)")
         connection.execute("INSERT INTO values_table VALUES (42)")
     backup = create_backup(source, tmp_path / "backups", retention=2)
-    assert not Path(f"{backup}-wal").exists()
-    assert not Path(f"{backup}-shm").exists()
-    with sqlite3.connect(backup) as connection:
+    assert backup.name.endswith(".db.zst")
+    # Only the compressed copy remains: no uncompressed copy, sidecars or temp file.
+    assert [path.name for path in backup.parent.iterdir()] == [backup.name]
+    restored = tmp_path / "restored.db"
+    restored.write_bytes(zstandard.ZstdDecompressor().decompress(backup.read_bytes()))
+    with sqlite3.connect(restored) as connection:
         assert connection.execute("SELECT value FROM values_table").fetchone()[0] == 42
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+
+
+def test_online_backup_retention_counts_uncompressed_and_compressed_copies(tmp_path):
+    source = tmp_path / "source.db"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE values_table (value INTEGER)")
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    newer = backup_dir / "source-20261018T070000Z.db"
+    older = backup_dir / "source-20261011T070000Z.db.zst"
+    oldest = backup_dir / "source-20261004T070000Z.db"
+    for age_days, path in enumerate((newer, older, oldest), start=1):
+        path.write_bytes(b"earlier backup")
+        stamp = (datetime.now() - timedelta(days=age_days)).timestamp()
+        os.utime(path, (stamp, stamp))
+    Path(f"{oldest}-wal").write_bytes(b"")
+    stale_temporary = backup_dir / "source-20261011T070000Z.db.zst.tmp"
+    stale_temporary.write_bytes(b"interrupted compression")
+    other_database = backup_dir / "other-20261004T070000Z.db"
+    other_database.write_bytes(b"another database")
+
+    backup = create_backup(source, backup_dir, retention=2)
+
+    assert sorted(path.name for path in backup_dir.iterdir()) == sorted(
+        [backup.name, newer.name, other_database.name]
+    )
+
+
+def test_online_backup_keeps_verified_copy_when_compression_fails(tmp_path, monkeypatch, caplog):
+    source = tmp_path / "source.db"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE values_table (value INTEGER)")
+        connection.execute("INSERT INTO values_table VALUES (7)")
+    backup_dir = tmp_path / "backups"
+
+    class CorruptingDecompressor:
+        def copy_stream(self, compressed, target, read_size, write_size):
+            target.write(b"not the backup")
+            return 0, len(b"not the backup")
+
+    monkeypatch.setattr("scripts.backup_sqlite.zstandard.ZstdDecompressor", CorruptingDecompressor)
+
+    backup = create_backup(source, backup_dir, retention=2)
+
+    assert backup.name.endswith(".db")
+    assert [path.name for path in backup_dir.iterdir()] == [backup.name]
+    assert "Could not compress SQLite backup" in caplog.text
+    with sqlite3.connect(backup) as connection:
+        assert connection.execute("SELECT value FROM values_table").fetchone()[0] == 7
 
 
 def test_online_backup_rejects_insufficient_space_without_writing(tmp_path, monkeypatch):
