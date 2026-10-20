@@ -24,6 +24,9 @@ vi.mock("echarts-for-react", () => ({
         const tooltip = option.tooltip as {
             formatter?: (params: Array<{ dataIndex: number }>) => string;
         };
+        const legendTooltip = (option.legend as Array<{
+            tooltip?: { formatter?: (params: { name: string }) => string };
+        }>)[0].tooltip;
         return (
             <div
                 data-testid="echarts"
@@ -35,6 +38,9 @@ vi.mock("echarts-for-react", () => ({
                 data-wheel-zoom={String(dataZoom[0].zoomOnMouseWheel)}
                 data-wheel-move={String(dataZoom[0].moveOnMouseWheel)}
                 data-tooltip={tooltip.formatter?.([{ dataIndex: 0 }]) || ""}
+                data-legend-tooltip={JSON.stringify(
+                    ["XLK.US", "XLY.US", "RSP/SPY"].map((name) => legendTooltip?.formatter?.({ name })),
+                )}
             />
         );
     },
@@ -65,6 +71,24 @@ describe("MarketOverviewChart", () => {
         expect(chart).toHaveAttribute("data-linked", "all");
         expect(chart).toHaveAttribute("data-wheel-zoom", "false");
         expect(chart).toHaveAttribute("data-wheel-move", "false");
+    });
+
+    it("names each sector ETF on hover", () => {
+        render(
+            <MarketOverviewChart
+                data={makeMarketOverviewFixture()}
+                trendMode="relative"
+                lowerMetric="net_advances"
+            />,
+        );
+
+        const chart = screen.getByTestId("echarts");
+        expect(JSON.parse(chart.getAttribute("data-legend-tooltip") || "[]")).toEqual([
+            "XLK.US · Technology",
+            "XLY.US · Consumer Discretionary",
+            "RSP/SPY · Equal-weight vs cap-weighted S&P 500",
+        ]);
+        expect(chart.getAttribute("data-tooltip")).toContain("Communication Services");
     });
 
     it("adds SPY without replacing the fixed RSP/SPY proxy in absolute mode", () => {
