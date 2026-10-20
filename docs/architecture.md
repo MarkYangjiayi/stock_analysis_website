@@ -106,7 +106,7 @@ Each cross-section applies sector-median missing-value handling, 1%/99% winsoriz
 - The backend container runs as a non-root Python 3.12 user and applies Alembic migrations before Uvicorn.
 - Docker Compose forces `ENVIRONMENT=production`; a missing `ADMIN_API_KEY` is logged and disables admin operations without taking public reads offline.
 - `/health/live` and `/health/ready` support orchestration.
-- `scripts/backup_sqlite.py` uses SQLite's online backup API and validates every copy.
+- `scripts/backup_sqlite.py` uses SQLite's online backup API and runs `PRAGMA quick_check` on every copy. A copy that passes is compressed with zstd (level 9, about a tenth of the size) and stored as `.db.zst`; the uncompressed file is deleted only after the compressed one restores to the same SHA-256. If compression fails, the verified uncompressed copy is kept and the error is logged. Retention counts both forms. To restore, run `zstd -d <backup>.db.zst -o <target>.db` on the host.
 - A failed or deferred pipeline keeps the previous publication serving, so `services/freshness_alerts.py` checks every watched dataset against the latest completed XNYS session at 08:45 New York time (Tue-Sat). It sends one Feishu card per session that lists each lagging dataset and its latest run's error, and records each delivery in `data_freshness_alerts`.
 - The S&P 500 membership parser joins same-day handoffs: since October 2026 EODHD ends a ticker's segment on the day its next segment starts at renames and spin-offs. Genuine overlaps still fail the publication. The quality report lists the joined tickers under `same_day_handoff_tickers`.
 
