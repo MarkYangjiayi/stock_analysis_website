@@ -45,6 +45,12 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    # Deploys share one server, one images.tar.gz and one predeploy directory.
+    # On 2026-10-20 two overlapping runs stopped each other's backups and
+    # deleted each other's images, so a later run waits for the current one.
+    concurrency:
+      group: production-server
+      cancel-in-progress: false
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -85,15 +91,26 @@ jobs:
             # Fail before downtime if a consistent, integrity-checked backup
             # cannot be made. Keep deployment snapshots separate from weekly
             # backups, retaining only the latest deployment snapshot locally.
-            sudo docker compose exec -T backend python -c "from pathlib import Path; from core.config import settings; from scripts.backup_sqlite import create_backup; print(create_backup(backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=1))"
+            if [ -n "$(sudo docker compose ps --status running --quiet backend)" ]; then
+              sudo docker compose exec -T backend python -c "from pathlib import Path; from core.config import settings; from scripts.backup_sqlite import create_backup; print(create_backup(backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=1))"
 
-            # Keep the shared WARP service running, but release the application
-            # containers and their old images before unpacking the new release.
-            sudo docker compose stop backend worker frontend
-            sudo docker compose rm -f backend worker frontend data-permissions
-            sudo docker image prune -af
+              # Keep the shared WARP service running, but release the application
+              # containers and their old images before unpacking the new release.
+              sudo docker compose stop backend worker frontend
+              sudo docker compose rm -f backend worker frontend data-permissions
+              sudo docker image prune -af
+              sudo docker load -i images.tar.gz
+            else
+              # An interrupted deploy left the backend stopped, possibly with its
+              # images already pruned. The database is idle, so take the backup
+              # with the new image before anything starts or migrates it.
+              sudo docker compose stop backend worker frontend
+              sudo docker compose rm -f backend worker frontend data-permissions
+              sudo docker image prune -af
+              sudo docker load -i images.tar.gz
+              sudo docker compose run --rm --no-deps -T backend python -c "from pathlib import Path; from core.config import settings; from scripts.backup_sqlite import create_backup; print(create_backup(backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=1))"
+            fi
 
-            sudo docker load -i images.tar.gz
             if ! sudo docker compose up -d --remove-orphans; then
               sudo docker compose ps
               sudo docker compose logs --tail=200 backend worker frontend
@@ -118,6 +135,9 @@ jobs:
   recover:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    concurrency:
+      group: production-server
+      cancel-in-progress: false
     steps:
       - name: Resume loaded services and verify health
         uses: appleboy/ssh-action@v1.0.3

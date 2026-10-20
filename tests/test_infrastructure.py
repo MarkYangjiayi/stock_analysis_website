@@ -2560,6 +2560,13 @@ def test_compose_initializes_bind_mount_permissions():
     assert "ENVIRONMENT=production" in compose["services"]["worker"]["environment"]
 
 
+def test_server_jobs_never_overlap():
+    jobs = yaml.safe_load(Path(".github/workflows/deploy.yml").read_text())["jobs"]
+    expected = {"group": "production-server", "cancel-in-progress": False}
+    assert jobs["deploy"]["concurrency"] == expected
+    assert jobs["recover"]["concurrency"] == expected
+
+
 def test_deploy_waits_for_service_health_and_fails_closed():
     workflow = yaml.safe_load(Path(".github/workflows/deploy.yml").read_text())
     deploy_steps = workflow["jobs"]["deploy"]["steps"]
@@ -2576,6 +2583,17 @@ def test_deploy_waits_for_service_health_and_fails_closed():
     assert "exit 1" in script
     assert "backup_dir=Path(settings.BACKUP_DIR) / 'predeploy', retention=1" in script
     assert script.index("create_backup(") < script.index("docker compose stop backend")
+    # With the backend already stopped, the backup runs from the new image
+    # after it is loaded and before any service starts.
+    stopped = script.index("\nelse\n")
+    assert script.index("docker compose ps --status running --quiet backend") < stopped
+    assert (
+        stopped
+        < script.index("docker load -i images.tar.gz", stopped)
+        < script.index("docker compose run --rm --no-deps -T backend python -c", stopped)
+        < script.index("docker compose up -d --remove-orphans")
+    )
+    assert script.count("retention=1))") == 2
     assert "docker compose exec -T backend alembic current" in script
     assert "docker compose exec -T worker python -c" in script
     assert "REPORT_RENDERER_VERSION" in script
