@@ -448,8 +448,11 @@ export interface DecisionValuation {
             average_debt: number | null;
             cost_of_debt: number | null;
             debt_cost_source: string;
-            /** "estimated" when unreported interest was estimated from book debt × the fallback cost of debt. */
-            interest_expense_source?: "reported" | "estimated" | "debt_free" | "unavailable";
+            /**
+             * "annualized" when some TTM quarters lack interest and the reported ones are annualized;
+             * "estimated" when no usable quarters exist and interest is book debt × the fallback cost of debt.
+             */
+            interest_expense_source?: "reported" | "annualized" | "estimated" | "debt_free" | "unavailable";
             tax_rate: number;
             equity_weight: number | null;
             debt_weight: number | null;

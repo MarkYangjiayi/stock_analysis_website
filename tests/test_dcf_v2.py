@@ -248,3 +248,16 @@ def test_unreported_interest_is_estimated_only_when_asked_and_labelled():
     # A reported figure is never replaced by the estimate.
     reported = wacc(1, interest=90)
     assert reported["interest_expense_for_fcff"] == 90 and reported["interest_expense_source"] == "reported"
+
+
+def test_annualized_interest_sets_debt_cost_and_is_labelled():
+    result = estimate_company_wacc(market_cap=1000, beta=1, latest_debt=100, prior_debt=90, average_debt=95,
+        interest_expense=4.0, income_tax_expense=20, income_before_tax=100, current_price=10, shares=100,
+        risk_free_rate=.04, equity_risk_premium=.06, fallback_debt_spread=.015, fallback_tax_rate=.21,
+        assumptions_as_of="2026-09-09", valuation_date="2026-09-10", annualized_from_quarters=3)
+
+    assert result["interest_expense_source"] == "annualized"
+    assert result["interest_expense_for_fcff"] == 4.0
+    assert result["cost_of_debt"] == pytest.approx(4.0 / 95)
+    assert result["quality"] == "estimated_with_fallbacks"
+    assert any("3 of the last four quarters" in note for note in result["notes"])

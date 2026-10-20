@@ -49,12 +49,15 @@ def estimate_company_wacc(
     beta_source: str | None = None,
     valuation_date: str | None = None,
     estimate_missing_interest: bool = False,
+    annualized_from_quarters: int | None = None,
 ) -> dict[str, Any]:
     """Estimate one current WACC using the same broad structure as GuruFocus.
 
     By default unreported interest is never turned into a cash-flow input. With
     ``estimate_missing_interest`` the FCFF bridge gets average book debt times
     the fallback cost of debt, marked ``interest_expense_source="estimated"``.
+    ``annualized_from_quarters`` says the interest passed in annualizes that
+    many reported quarters; it is marked ``"annualized"``.
     """
 
     notes: list[str] = []
@@ -124,6 +127,12 @@ def estimate_company_wacc(
     if reported_interest is not None:
         reported_interest = abs(reported_interest)
     interest_estimated = False
+    interest_annualized = annualized_from_quarters is not None and reported_interest is not None
+    if interest_annualized:
+        notes.append(
+            f"Interest expense is reported for {annualized_from_quarters} of the last four quarters; "
+            "the TTM figure annualizes those quarters."
+        )
     if average_book_debt == 0:
         cost_of_debt = 0.0
         debt_cost_source = "debt_free"
@@ -188,7 +197,7 @@ def estimate_company_wacc(
         "available": wacc is not None,
         "wacc": wacc,
         "method": "CAPM plus after-tax book-debt cost",
-        "quality": "estimated_with_fallbacks" if fallback_used else "calculated",
+        "quality": "estimated_with_fallbacks" if fallback_used or interest_annualized else "calculated",
         "assumptions_as_of": assumptions_as_of,
         "risk_free_rate": risk_free_rate,
         "equity_risk_premium": equity_risk_premium,
@@ -201,6 +210,7 @@ def estimate_company_wacc(
         "capital_structure_debt": capital_debt,
         "interest_expense_source": (
             "estimated" if interest_estimated
+            else "annualized" if interest_annualized
             else "reported" if reported_interest is not None
             else ("debt_free" if capital_debt == 0 else "unavailable")
         ),
