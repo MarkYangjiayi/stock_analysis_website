@@ -24,7 +24,7 @@
 |---|---|---|---|
 | 题材定义 | `services/themes/taxonomy/themes_v1.yaml`（Git 维护，20 个题材） | 每次作业同步 | 0 |
 | 成员候选 | 代理 ETF 持仓（`fundamentals/{ETF}?filter=ETF_Data`）、业务描述关键词、人工种子 | 每周日 | 约 36 只 ETF × 10 ≈ 360 次/周 |
-| 成员核验 | DeepSeek JSON 模式，必须给出业务描述里的逐字引用，结果按输入哈希缓存 | 每周日，只核验新增或变化的候选 | 0（DeepSeek 每月约 $1） |
+| 成员核验 | DeepSeek JSON 模式，必须给出业务描述里的逐字引用，结果按输入哈希缓存（不含模型名，换模型不会重新核验） | 每周日，只核验新增或变化的候选 | 0（DeepSeek 每月约 $1） |
 | 价格、成交量 | 本地 `daily_prices`（screener 已同步） | 每日 | 0 |
 | 代理 ETF 价格 | `eod/{ETF}` | 每日 | 约 37 次/天 |
 | 新闻关注度 | 全市场 `/api/news`（不带 ticker），每页 1,000 篇 | 每日 | 约 10 次/天；回填一年约 3,700 次 |

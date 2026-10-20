@@ -390,6 +390,33 @@ async def test_fabricated_quote_rejected_and_answers_cached(tmp_path, monkeypatc
     assert second["unchanged"] == 1
 
 
+async def test_model_id_change_reuses_cached_verdicts(tmp_path, monkeypatch, db_session, llm, reference_session):
+    _write_taxonomy(tmp_path, monkeypatch, [_theme()])
+    _patch_etfs(monkeypatch, {"DRAM.US": _etf_payload({"MU": 10.0, "XYZ": 5.0})})
+    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "model-a")
+    _patch_universe(monkeypatch, [_profile("MU.US"), _profile("XYZ.US")])
+    await membership.refresh_theme_membership(D1)
+    assert {call["model"] for call in llm.calls} == {"model-a"}
+
+    # Renaming the model id must not re-verify (and reshuffle) existing candidates.
+    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "model-b")
+    llm.calls.clear()
+    second = await membership.refresh_theme_membership(D2)
+    assert llm.calls == [] and second["verification"]["cached"] == 2
+    assert (second["opened"], second["closed"], second["changed"]) == (0, 0, 0)
+
+    # A changed description is new input: it is verified with, and recorded under, the current model.
+    reference_session["session"] = D3
+    _patch_universe(monkeypatch, [_profile("MU.US"), _profile("XYZ.US", "XYZ Corp builds HBM stacks for AI")])
+    third = await membership.refresh_theme_membership(D3)
+    assert llm.tickers_seen() == ["XYZ.US"] and {call["model"] for call in llm.calls} == {"model-b"}
+    assert third["verification"]["cached"] == 1
+    models = (await db_session.execute(
+        select(ThemeMemberVerification.ticker, ThemeMemberVerification.model).order_by(ThemeMemberVerification.id)
+    )).all()
+    assert models == [("MU.US", "model-a"), ("XYZ.US", "model-a"), ("XYZ.US", "model-b")]
+
+
 async def test_no_key_falls_back_to_seed_and_heavy_etf_holdings(tmp_path, monkeypatch, db_session):
     monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "")
     verifier = FakeVerifier()

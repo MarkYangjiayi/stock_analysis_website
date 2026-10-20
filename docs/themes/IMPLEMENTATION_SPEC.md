@@ -137,8 +137,10 @@ non-US listings must be dropped by intersecting with the universe.
      "evidence_quote","confidence"}]}` validated with pydantic. Hard checks: ticker in batch, no
      duplicates, `evidence_quote` (whitespace-normalized, lowercased) is a substring of the
      normalized description, else status `invalid_quote`; exposure 0 → `rejected`.
-     Cache in `theme_member_verifications` keyed by `input_hash = sha256(prompt_version, model,
-     theme slug, definition, ticker, description)`; reuse cached rows, never re-ask.
+     Cache in `theme_member_verifications` keyed by `input_hash = sha256(prompt_version,
+     VERIFICATION_CACHE_ID, theme slug, definition, ticker, description)`; reuse cached rows, never
+     re-ask. `VERIFICATION_CACHE_ID` is fixed (not the API model id, which is still recorded in
+     `model`), so changing `DEEPSEEK_MODEL` does not re-verify existing candidates.
      If `DEEPSEEK_API_KEY` is empty, skip LLM (use the etf_only/seed fallbacks from §2) and warn.
   6. Diff against open intervals: close removed members (`valid_to = as_of`), insert new
      (`valid_from = as_of`); a tier/weight/evidence change closes and reopens. Pins/bans apply.
