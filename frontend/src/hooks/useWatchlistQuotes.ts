@@ -19,9 +19,16 @@ export const quotePollInterval = (market: MarketStatusResponse | null, now = Dat
     return IDLE_POLL_MS;
 };
 
-export function useWatchlistQuotes(tickers: string[]) {
+export interface QuoteFeed {
+    key: string;
+    quotes: Record<string, WatchlistQuoteItem>;
+    market: MarketStatusResponse | null;
+}
+
+/** Polled delayed quotes and the market phase they were served in; a new ``refreshKey`` reloads at once. */
+export function useQuoteFeed(tickers: string[], refreshKey = 0): QuoteFeed {
     const key = useMemo(() => [...new Set(tickers)].slice(0, MAX_TICKERS).join(","), [tickers]);
-    const [result, setResult] = useState<{ key: string; quotes: Record<string, WatchlistQuoteItem>; market: MarketStatusResponse | null }>({ key: "", quotes: {}, market: null });
+    const [result, setResult] = useState<QuoteFeed>({ key: "", quotes: {}, market: null });
 
     useEffect(() => {
         if (!key) return;
@@ -64,8 +71,12 @@ export function useWatchlistQuotes(tickers: string[]) {
             controller?.abort();
             document.removeEventListener("visibilitychange", onVisibility);
         };
-    }, [key]);
+    }, [key, refreshKey]);
 
     // Drop data from a previous ticker set instead of showing mismatched rows.
-    return result.key === key ? result.quotes : {};
+    return result.key === key ? result : { key, quotes: {}, market: null };
+}
+
+export function useWatchlistQuotes(tickers: string[]) {
+    return useQuoteFeed(tickers).quotes;
 }

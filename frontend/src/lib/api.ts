@@ -1286,7 +1286,8 @@ export interface TodayResponse {
         captured_at: string | null;
         status: string;
         delivered: boolean;
-        regime: { items: TodayRegimeItem[]; unavailable: string[] } | null;
+        /** ``overview_stale`` marks trend, breadth and participation read from an older market overview. */
+        regime: { items: TodayRegimeItem[]; unavailable: string[]; overview_stale?: boolean } | null;
         regime_captured_at: string | null;
         anomaly_clusters: { as_of: string; movers: number; clusters: TodayCluster[] } | null;
         movers: TodayMover[];

@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, type TodayResponse } from "@/lib/api";
+import { ApiError, type MarketStatusResponse, type TodayResponse, type WatchlistQuotesResponse } from "@/lib/api";
 
-const apiMocks = vi.hoisted(() => ({ fetchToday: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ fetchToday: vi.fn(), fetchWatchlistQuotes: vi.fn() }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/api")>(),
@@ -67,6 +67,26 @@ const quotes = {
     "ASTS.US": { ticker: "ASTS.US", quote: { price: 50.12, previous_close: 52, change: -1.88, change_pct: -0.0362, as_of: "2026-10-19T19:00:00Z", session_date: "2026-10-19" }, sparkline: [] },
 };
 
+const indexQuote = (ticker: string, price: number, previous: number, sessionDate = "2026-10-19") => ({
+    ticker,
+    quote: { price, previous_close: previous, change: price - previous, change_pct: (price - previous) / previous,
+        as_of: `${sessionDate}T15:22:00Z`, session_date: sessionDate },
+    sparkline: [],
+});
+
+const indexQuotes = (phase: MarketStatusResponse["phase"] = "open", sessionDate = "2026-10-19"): WatchlistQuotesResponse => ({
+    market: { phase, session_date: "2026-10-19", opens_at: "2026-10-19T13:30:00Z", closes_at: "2026-10-19T20:00:00Z",
+        next_open: "2026-10-20T13:30:00Z", as_of: "2026-10-19T15:37:00Z" },
+    delay_minutes: 15,
+    // Mega caps fall while the equal-weight index edges up.
+    items: [
+        indexQuote("SPY.US", 764.26, 773.09, sessionDate),
+        indexQuote("QQQ.US", 709.21, 725.2, sessionDate),
+        indexQuote("RSP.US", 217.03, 216.64, sessionDate),
+        indexQuote("VIX.INDX", 18.7, 16.68, sessionDate),
+    ],
+});
+
 const renderDashboard = (props: Partial<Parameters<typeof TodayDashboard>[0]> = {}) => {
     const onSelectTicker = vi.fn();
     const onUnauthorized = vi.fn();
@@ -78,6 +98,8 @@ const renderDashboard = (props: Partial<Parameters<typeof TodayDashboard>[0]> = 
 describe("TodayDashboard", () => {
     beforeEach(() => {
         apiMocks.fetchToday.mockReset();
+        apiMocks.fetchWatchlistQuotes.mockReset();
+        apiMocks.fetchWatchlistQuotes.mockResolvedValue(indexQuotes());
     });
 
     it("shows the report regime, grouped movers, watchlist tags and the next seven days", async () => {
@@ -88,6 +110,9 @@ describe("TodayDashboard", () => {
         expect(within(regime).getByText("震荡")).toHaveClass("text-fg-muted");
         expect(within(regime).getByText("走阔")).toHaveClass("text-caution");
         expect(within(regime).getByText("Unavailable: 估值")).toBeInTheDocument();
+        // The badge names the close behind the price readings, not the capture time.
+        expect(within(regime).getByText("As of 10/16 close")).toBeInTheDocument();
+        expect(within(regime).getByText(/Rule-based states on daily closes, captured 10\/16 16:30 ET/)).toBeInTheDocument();
         expect(apiMocks.fetchToday).toHaveBeenCalledWith("test-key", expect.any(AbortSignal));
 
         const movers = screen.getByRole("region", { name: "Movers by theme" });
@@ -111,6 +136,36 @@ describe("TodayDashboard", () => {
 
         fireEvent.click(within(movers).getByText("VICR"));
         expect(onSelectTicker).toHaveBeenCalledWith("VICR.US");
+    });
+
+    it("shows today's delayed index moves under the close-based states", async () => {
+        apiMocks.fetchToday.mockResolvedValue(today());
+        renderDashboard();
+
+        const moves = await screen.findByRole("group", { name: "Index moves" });
+        expect(within(moves).getByText("今日盘中")).toBeInTheDocument();
+        expect(within(moves).getByText("11:22 ET")).toBeInTheDocument();
+        expect(within(moves).getByText("−1.14%")).toHaveClass("text-down");
+        expect(within(moves).getByText("−2.20%")).toHaveClass("text-down");
+        expect(within(moves).getByText("+0.18%")).toHaveClass("text-up");
+        // VIX shows its level; its rise is not coloured as a gain.
+        expect(within(moves).getByText("+12.1%")).toHaveClass("text-fg-muted");
+        expect(apiMocks.fetchWatchlistQuotes).toHaveBeenCalledWith(["SPY.US", "QQQ.US", "RSP.US", "VIX.INDX"], expect.any(AbortSignal));
+
+        fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
+        await waitFor(() => expect(apiMocks.fetchWatchlistQuotes).toHaveBeenCalledTimes(2));
+        expect(apiMocks.fetchToday).toHaveBeenCalledTimes(2);
+    });
+
+    // Before the open, and just after it while the delayed feed still carries the previous close.
+    it.each(["pre", "open"] as const)("labels an earlier session's index moves by their close date (%s)", async (phase) => {
+        apiMocks.fetchToday.mockResolvedValue(today());
+        apiMocks.fetchWatchlistQuotes.mockResolvedValue(indexQuotes(phase, "2026-10-16"));
+        renderDashboard();
+
+        const moves = await screen.findByRole("group", { name: "Index moves" });
+        expect(within(moves).getByText("10/16 收盘")).toBeInTheDocument();
+        expect(within(moves).queryByText(/ET$/)).not.toBeInTheDocument();
     });
 
     it("explains an empty start and names unavailable sections", async () => {
