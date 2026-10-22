@@ -4,9 +4,11 @@ Seven readings, each with a state, a colour and the number behind it:
 trend, breadth, participation, volatility, credit, the yield curve and
 valuation. Inputs come from data the reports already rely on (the published
 market overview, the report's own quotes and Treasury rates, the published
-index P/E) plus FRED's high-yield spread. A reading whose input is missing is
-left out and named, never guessed. The result is stored with the report
-evidence, so a saved report always renders the same line.
+index P/E) plus FRED's high-yield spread. The overview publishes overnight, so
+a report taken after the close extends trend and participation with its own
+SPY and RSP closing quotes. A reading whose input is missing is left out and
+named, never guessed. The result is stored with the report evidence, so a
+saved report always renders the same line.
 """
 
 from __future__ import annotations
@@ -20,8 +22,9 @@ from database import async_session_maker
 from services.credit_spreads import CreditSpreadUnavailable, get_hy_oas
 from services.decision_support import midrank_percentile
 from services.index_valuation import IndexValuationUnavailable, get_index_valuation
-from services.market_breadth import get_market_overview
+from services.market_breadth import RSP_TICKER, get_market_overview
 from services.report_market import number
+from services.rrg_prices import RRG_BENCHMARK
 
 logger = logging.getLogger(__name__)
 
@@ -89,17 +92,58 @@ def breadth_reading(overview: dict) -> Optional[dict[str, Any]]:
 
 
 def participation_reading(overview: dict) -> Optional[dict[str, Any]]:
+    """Equal weight against cap weight: how widely gains or losses are shared, not their direction."""
     ratio = _finite(overview.get("rsp_spy_index") or [])
     if len(ratio) < 22 or ratio[-22] <= 0:
         return None
     change = ratio[-1] / ratio[-22] - 1
     if change >= PARTICIPATION_BAND:
-        state, tone = "普涨", GOOD
+        state, tone = "广泛", GOOD
     elif change <= -PARTICIPATION_BAND:
         state, tone = "集中", WARN
     else:
         state, tone = "均衡", NEUTRAL
-    return _item("participation", state, tone, f"等权相对市值加权 21 日 {change:+.1%}", (overview.get("meta") or {}).get("as_of_date"))
+    verb = "跑赢" if change >= 0 else "跑输"
+    return _item("participation", state, tone, f"等权{verb}市值加权 21 日 {change:+.1%}", (overview.get("meta") or {}).get("as_of_date"))
+
+
+def with_session_close(overview: dict, quotes: list[dict]) -> Optional[dict]:
+    """The overview with SPY and RSP/SPY extended by the report's closing quotes.
+
+    Only quotes taken after the regular close of the session that follows the
+    overview's last date qualify, so a morning report and a stale overview stay
+    as published. Breadth needs every member's close and is not extended. The
+    quotes are raw prices, so on an ex-dividend day the move includes the
+    payout until the overnight publication replaces it.
+    """
+    rows = {row.get("ticker"): row for row in quotes}
+    dates = overview.get("dates") or []
+    moves = []
+    for ticker in (RRG_BENCHMARK, RSP_TICKER):
+        row = rows.get(ticker) or {}
+        session = row.get("session") or {}
+        price, previous = number(row.get("price")), number(row.get("previous_close"))
+        if (
+            row.get("status") != "available" or session.get("state") != "已收盘"
+            or row.get("session_date") != session.get("expected_date")
+            or not dates or session.get("previous_date") != dates[-1]
+            or not price or not previous or price <= 0 or previous <= 0
+        ):
+            return None
+        moves.append(price / previous)
+    spy_move, rsp_move = moves
+    benchmark = (overview.get("benchmark") or {}).get("absolute_index") or []
+    ratio = overview.get("rsp_spy_index") or []
+    if not benchmark or not ratio or number(benchmark[-1]) is None or number(ratio[-1]) is None:
+        return None
+    session_date = rows[RRG_BENCHMARK]["session_date"]
+    return {
+        **overview,
+        "meta": {**(overview.get("meta") or {}), "as_of_date": session_date},
+        "dates": [*dates, session_date],
+        "benchmark": {**overview["benchmark"], "absolute_index": [*benchmark, benchmark[-1] * spy_move]},
+        "rsp_spy_index": [*ratio, ratio[-1] * rsp_move / spy_move],
+    }
 
 
 def volatility_reading(vix: Optional[float], as_of: Optional[str]) -> Optional[dict[str, Any]]:
@@ -174,11 +218,13 @@ def build_regime(
     hy_oas: Optional[dict],
     treasury: Optional[dict],
     valuation: Optional[dict],
+    closing_overview: Optional[dict] = None,
 ) -> dict[str, Any]:
+    prices = closing_overview or overview
     readings = {
-        "trend": trend_reading(overview) if overview else None,
+        "trend": trend_reading(prices) if prices else None,
         "breadth": breadth_reading(overview) if overview else None,
-        "participation": participation_reading(overview) if overview else None,
+        "participation": participation_reading(prices) if prices else None,
         "volatility": volatility_reading(vix, vix_as_of),
         "credit": credit_reading(hy_oas),
         "curve": curve_reading(treasury),
@@ -241,6 +287,7 @@ async def collect_market_regime(context: dict, now: datetime) -> dict[str, Any]:
         hy_oas=hy_oas,
         treasury=context.get("treasury"),
         valuation=valuation,
+        closing_overview=with_session_close(overview, context.get("quotes", [])) if overview else None,
     )
     if hy_oas is not None:
         regime["credit_source"] = {"series": hy_oas["series"], "url": hy_oas["source_url"], "from_cache": hy_oas.get("from_cache_after_failure", False)}

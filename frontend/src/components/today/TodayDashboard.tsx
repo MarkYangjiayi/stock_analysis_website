@@ -6,6 +6,7 @@ import { ArrowUpRight, CalendarDays, RefreshCw } from "lucide-react";
 import {
     ApiError,
     fetchToday,
+    type MarketStatusResponse,
     type ReportTagColor,
     type TodayCluster,
     type TodayEvent,
@@ -15,6 +16,7 @@ import {
     type WatchlistQuoteItem,
 } from "@/lib/api";
 import { formatSignedPercent } from "@/lib/format";
+import { useQuoteFeed, type QuoteFeed } from "@/hooks/useWatchlistQuotes";
 import { DataState } from "@/components/ui/DataState";
 import { Panel, SectionHeader } from "@/components/ui/Panel";
 import { Sparkline } from "@/components/ui/Sparkline";
@@ -28,6 +30,18 @@ interface TodayDashboardProps {
 }
 
 const REPORT_LABELS: Record<string, string> = { morning_briefing: "Morning report", post_market_summary: "Post-market report" };
+
+// Trend, breadth and participation are read from daily closes; the regime badge names the newest one.
+const CLOSE_READINGS = new Set(["trend", "breadth", "participation"]);
+
+// Today's delayed index moves, shown under the states; they never feed the rules.
+const INDEX_QUOTES = [
+    { ticker: "SPY.US", name: "标普500" },
+    { ticker: "QQQ.US", name: "纳斯达克100" },
+    { ticker: "RSP.US", name: "标普等权" },
+    { ticker: "VIX.INDX", name: "波动率" },
+];
+const INDEX_TICKERS = INDEX_QUOTES.map((item) => item.ticker);
 
 // Report tones are Feishu colours; warnings use the caution (violet) token so they never read as the amber accent.
 const toneClass = (tone: string) =>
@@ -56,6 +70,23 @@ const newYorkTime = (iso?: string | null) => {
     }).format(parsed).replace(",", "")} ET`;
 };
 
+const newYorkClock = (iso: string) => {
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return `${new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(parsed)} ET`;
+};
+
+const monthDay = (isoDate: string) => `${isoDate.slice(5, 7)}/${isoDate.slice(8, 10)}`;
+
+/** Which session the index row shows. Just after the open the delayed feed still carries the previous close. */
+const indexSession = (market: MarketStatusResponse | null, sessionDate: string) => {
+    if (!market?.session_date || sessionDate !== market.session_date) return { label: `${monthDay(sessionDate)} 收盘`, today: false };
+    if (market.phase === "open") return { label: "今日盘中", today: true };
+    return { label: market.phase === "pre" ? "今日盘前" : "今日收盘", today: true };
+};
+
 const dayLabel = (isoDate: string) => {
     const parsed = new Date(`${isoDate}T12:00:00Z`);
     if (Number.isNaN(parsed.getTime())) return isoDate;
@@ -69,15 +100,50 @@ const sessionLabel = (session?: string | null) => {
     return session || "time n/a";
 };
 
-function RegimePanel({ report }: { report: NonNullable<TodayResponse["report"]> | null }) {
+function IndexMoves({ feed }: { feed: QuoteFeed }) {
+    const quoted = INDEX_QUOTES.flatMap((item) => {
+        const quote = feed.quotes[item.ticker]?.quote;
+        return quote ? [{ ...item, quote }] : [];
+    });
+    if (!quoted.length) return null;
+    const latest = quoted.reduce((newest, row) => (row.quote.as_of > newest.quote.as_of ? row : newest)).quote;
+    const session = indexSession(feed.market, latest.session_date);
+    return (
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 border-t px-4 py-2 text-sm" role="group" aria-label="Index moves">
+            <span className="text-xs font-semibold text-fg-muted">
+                {session.label}
+                {session.today && <span className="ml-1.5 font-mono font-normal">{newYorkClock(latest.as_of)}</span>}
+            </span>
+            {quoted.map(({ ticker, name, quote }) => (
+                <span key={ticker} className="inline-flex items-baseline gap-1.5">
+                    <span className="font-mono font-semibold">{ticker.split(".")[0]}</span>
+                    <span className="text-xs text-fg-muted">{name}</span>
+                    {ticker === "VIX.INDX" ? (
+                        // A rising VIX is not a gain, so its change stays uncoloured.
+                        <span className="num">{quote.price.toFixed(1)} <span className="text-fg-muted">{formatSignedPercent(quote.change_pct, 1)}</span></span>
+                    ) : (
+                        <span className={`num ${changeClass(quote.change)}`}>{formatSignedPercent(quote.change_pct)}</span>
+                    )}
+                </span>
+            ))}
+            <span className="text-xs text-fg-muted sm:ml-auto">Delayed ~15 min; the states above use daily closes.</span>
+        </div>
+    );
+}
+
+function RegimePanel({ report, indexFeed }: { report: NonNullable<TodayResponse["report"]> | null; indexFeed: QuoteFeed }) {
     const regime = report?.regime;
+    const closeBasis = (regime?.items || [])
+        .flatMap((item) => (CLOSE_READINGS.has(item.key) && item.as_of ? [item.as_of] : []))
+        .sort()
+        .at(-1);
     return (
         <Panel aria-label="Market regime">
             <SectionHeader
                 eyebrow="Market regime"
                 title="市场状态"
-                description="Rule-based states from the latest daily report, the same line the Feishu push shows."
-                action={report?.regime_captured_at ? <DataState label={`Captured ${newYorkTime(report.regime_captured_at)}`} tone="ready" /> : undefined}
+                description={`Rule-based states on daily closes${report?.regime_captured_at ? `, captured ${newYorkTime(report.regime_captured_at)}` : ""}; the same line the Feishu push shows.`}
+                action={closeBasis ? <DataState label={`As of ${monthDay(closeBasis)} close`} tone={regime?.overview_stale ? "stale" : "neutral"} /> : undefined}
             />
             {!regime?.items.length ? (
                 <p className="px-4 pb-4 text-sm text-fg-muted">No report with a market regime has been collected yet.</p>
@@ -98,6 +164,7 @@ function RegimePanel({ report }: { report: NonNullable<TodayResponse["report"]> 
                     )}
                 </>
             )}
+            <IndexMoves feed={indexFeed} />
         </Panel>
     );
 }
@@ -311,6 +378,8 @@ export default function TodayDashboard({ adminKey, watchlist, quotes, onSelectTi
     const earnings = useMemo(() => new Map(
         (data?.events?.items || []).filter((item) => item.kind === "earnings").map((item) => [item.name, item] as const),
     ), [data]);
+    // Refresh reloads the index row too; otherwise it polls like the watchlist quotes.
+    const indexFeed = useQuoteFeed(INDEX_TICKERS, version);
     const report = data?.report ?? null;
 
     if (loading && !data) {
@@ -354,7 +423,7 @@ export default function TodayDashboard({ adminKey, watchlist, quotes, onSelectTi
                 </div>
             </header>
             {error && <div className="error-panel" role="alert">{error} The previous snapshot remains visible.</div>}
-            <RegimePanel report={report} />
+            <RegimePanel report={report} indexFeed={indexFeed} />
             {/* minmax(0, …) keeps the wide watchlist table scrolling inside its panel on phones. */}
             <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                 <WatchlistPanel data={data?.watchlist ?? null} watchlist={watchlist} quotes={quotes} earnings={earnings} onSelectTicker={onSelectTicker} />

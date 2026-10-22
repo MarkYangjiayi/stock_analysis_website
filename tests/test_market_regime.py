@@ -25,10 +25,18 @@ NOW = datetime(2026, 10, 19, 14, 0, tzinfo=timezone.utc)
 def _overview(closes, breadth=None, ratio=None, stale=False):
     return {
         "meta": {"as_of_date": "2026-10-16", "stale": stale},
+        "dates": ["2026-10-15", "2026-10-16"],
         "benchmark": {"absolute_index": closes},
         "breadth": {"pct_above_ma200": breadth or []},
         "rsp_spy_index": ratio or [],
     }
+
+
+def _close_quote(ticker, price, previous_close, state="已收盘", status="available", previous_date="2026-10-16"):
+    """A report quote row as services/report_market.py stores it for the 2026-10-19 session."""
+    return {"ticker": ticker, "price": price, "previous_close": previous_close, "status": status,
+            "session_date": "2026-10-19",
+            "session": {"state": state, "expected_date": "2026-10-19", "previous_date": previous_date}}
 
 
 # --- FRED high-yield spread ------------------------------------------------
@@ -108,10 +116,55 @@ def test_breadth_levels_and_weekly_change(series, state, detail):
     assert (reading["state"], reading["detail"]) == (state, detail)
 
 
-@pytest.mark.parametrize(("end", "state"), [(102.0, "普涨"), (98.5, "集中"), (100.5, "均衡")])
-def test_participation_uses_the_21_session_equal_weight_ratio(end, state):
+@pytest.mark.parametrize(
+    ("end", "state", "detail"),
+    [
+        (102.0, "广泛", "等权跑赢市值加权 21 日 +2.0%"),
+        (98.5, "集中", "等权跑输市值加权 21 日 -1.5%"),
+        (100.5, "均衡", "等权跑赢市值加权 21 日 +0.5%"),
+    ],
+)
+def test_participation_uses_the_21_session_equal_weight_ratio(end, state, detail):
     reading = participation_reading(_overview([], ratio=[100.0] * 21 + [end]))
-    assert reading["state"] == state
+    assert (reading["state"], reading["detail"]) == (state, detail)
+
+
+def test_closing_quotes_extend_trend_and_participation_but_not_breadth():
+    overview = _overview([100 + day * 0.1 for day in range(252)], breadth=[55.0] * 6, ratio=[100.0] * 22)
+    # SPY falls 5% on the day while RSP gains 1%.
+    quotes = [_close_quote("SPY.US", 95.0, 100.0), _close_quote("RSP.US", 101.0, 100.0)]
+
+    closing = market_regime.with_session_close(overview, quotes)
+    regime = build_regime(overview=overview, closing_overview=closing, vix=None, vix_as_of=None,
+                          hy_oas=None, treasury=None, valuation=None)
+    items = {item["key"]: item for item in regime["items"]}
+
+    assert (items["trend"]["state"], items["trend"]["as_of"]) == ("震荡", "2026-10-19")
+    assert items["trend"]["detail"] == "SPY 距 200 日线 +3.1%"
+    assert (items["participation"]["state"], items["participation"]["detail"], items["participation"]["as_of"]) == (
+        "广泛", "等权跑赢市值加权 21 日 +6.3%", "2026-10-19")
+    assert items["breadth"]["as_of"] == "2026-10-16"
+    # The published overview itself is left as it was.
+    assert overview["meta"]["as_of_date"] == "2026-10-16" and len(overview["benchmark"]["absolute_index"]) == 252
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"state": "盘中"},  # a morning report's intraday quote
+        {"status": "stale"},
+        {"previous_date": "2026-10-15"},  # the overview missed a session
+    ],
+)
+def test_closing_quotes_must_be_the_close_of_the_next_session(change):
+    overview = _overview([100.0] * 252, ratio=[100.0] * 22)
+    quotes = [_close_quote("SPY.US", 95.0, 100.0, **change), _close_quote("RSP.US", 101.0, 100.0)]
+    assert market_regime.with_session_close(overview, quotes) is None
+
+
+def test_closing_quotes_need_both_spy_and_rsp():
+    overview = _overview([100.0] * 252, ratio=[100.0] * 22)
+    assert market_regime.with_session_close(overview, [_close_quote("SPY.US", 95.0, 100.0)]) is None
 
 
 @pytest.mark.parametrize(("vix", "state"), [(13.0, "平静"), (17.5, "正常"), (24.0, "偏高"), (35.0, "恐慌")])
@@ -173,6 +226,29 @@ async def test_collect_market_regime_reads_each_source(monkeypatch):
         ("信用", "平稳"), ("利率曲线", "偏平"), ("估值", "偏贵"),
     ]
     assert regime["unavailable"] == [] and regime["credit_source"]["series"] == "BAMLH0A0HYM2"
+
+
+@pytest.mark.asyncio
+async def test_post_market_regime_reads_trend_and_participation_through_the_close(monkeypatch):
+    async def overview(db, universe, period):
+        return _overview([100 + day * 0.1 for day in range(252)], breadth=[55.0] * 6, ratio=[100.0] * 22)
+
+    async def no_spread(now=None):
+        raise CreditSpreadUnavailable("offline")
+
+    async def no_valuation():
+        return None
+
+    monkeypatch.setattr(market_regime, "get_market_overview", overview)
+    monkeypatch.setattr(market_regime, "get_hy_oas", no_spread)
+    monkeypatch.setattr(market_regime, "valuation_summary", no_valuation)
+    context = {"quotes": [_close_quote("SPY.US", 95.0, 100.0), _close_quote("RSP.US", 101.0, 100.0)]}
+
+    regime = await market_regime.collect_market_regime(context, NOW)
+
+    assert {item["key"]: item["as_of"] for item in regime["items"]} == {
+        "trend": "2026-10-19", "breadth": "2026-10-16", "participation": "2026-10-19",
+    }
 
 
 # --- anomaly clusters --------------------------------------------------------
