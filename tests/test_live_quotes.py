@@ -264,17 +264,28 @@ async def test_open_session_without_any_quote_uses_daily_close_as_base(db_sessio
 @pytest.mark.asyncio
 async def test_after_close_serves_settled_delayed_close(db_session, monkeypatch):
     await _seed(db_session)
-    now = CLOSE + timedelta(minutes=20)
-    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1640.00, CLOSE - timedelta(minutes=1)))
+    now = CLOSE + timedelta(minutes=70)
+    # As observed on 2026-10-26: stamped 16:25 ET, priced at the official close.
+    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1668.72, CLOSE + timedelta(minutes=25)))
 
     result = await live_quotes.get_live_quote(db_session, "MELI.US", now=now)
 
     assert result["market"]["phase"] == "post"
     assert result["quote"]["source"] == "close"
     assert result["quote"]["session_date"] == SESSION
-    assert result["quote"]["price"] == 1640.00
+    assert result["quote"]["price"] == 1668.72
     # No lease once the closing print has had time to arrive.
     assert await db_session.get(LiveQuoteLease, "MELI.US") is None
+
+
+@pytest.mark.asyncio
+async def test_last_pre_bell_minute_is_not_the_close(db_session, monkeypatch):
+    await _seed(db_session)
+    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1668.90, CLOSE - timedelta(minutes=1)))
+
+    result = await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=16))
+
+    assert result["quote"] is None
 
 
 @pytest.mark.asyncio
