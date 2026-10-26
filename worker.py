@@ -11,7 +11,7 @@ from core.config import settings
 from core.scheduler import shutdown_scheduler, start_scheduler
 from database import init_db
 from services.notifications import NotificationManager
-from services.ws_monitor import ws_monitor
+from services.live_quotes import live_quote_hub
 from services.catchup import catch_up_latest_publications
 from services.anomaly_scans import recover_interrupted_anomaly_scans
 from services.rsi_monitor import run_daily_rsi_monitor
@@ -41,9 +41,10 @@ async def run_worker() -> None:
         except NotImplementedError:
             pass
 
-    monitor_task = None
-    if settings.ENABLE_WS_MONITOR:
-        monitor_task = asyncio.create_task(ws_monitor.start())
+    # One EODHD WebSocket serves both the analysis-page live quotes and the move monitor.
+    quote_task = None
+    if settings.LIVE_QUOTES_ENABLED or settings.ENABLE_WS_MONITOR:
+        quote_task = asyncio.create_task(live_quote_hub.run())
 
     if settings.NOTIFY_WORKER_STARTUP:
         await NotificationManager.broadcast("System Status", "Quantify worker started. 🚀")
@@ -51,9 +52,9 @@ async def run_worker() -> None:
         await stop_event.wait()
     finally:
         shutdown_scheduler()
-        if monitor_task:
-            monitor_task.cancel()
-            await asyncio.gather(monitor_task, return_exceptions=True)
+        if quote_task:
+            quote_task.cancel()
+            await asyncio.gather(quote_task, return_exceptions=True)
 
 
 if __name__ == "__main__":

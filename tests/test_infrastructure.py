@@ -1370,32 +1370,6 @@ async def test_batch_factor_scores_use_constant_database_queries(db_session, mon
     }
 
 
-@pytest.mark.asyncio
-async def test_ws_monitor_backs_off_after_short_clean_disconnect(monkeypatch):
-    from services.ws_monitor import WSMonitor
-
-    monitor = WSMonitor()
-    connect_calls = 0
-    sleeps = []
-
-    async def short_connection():
-        nonlocal connect_calls
-        connect_calls += 1
-        if connect_calls == 3:
-            raise asyncio.CancelledError
-
-    async def record_sleep(delay):
-        sleeps.append(delay)
-
-    monkeypatch.setattr(monitor, "connect", short_connection)
-    monkeypatch.setattr("services.ws_monitor.asyncio.sleep", record_sleep)
-
-    with pytest.raises(asyncio.CancelledError):
-        await monitor.start()
-
-    assert sleeps == [1, 2]
-
-
 def test_quality_gate_detects_duplicates_and_low_coverage():
     failed = validate_screener_records([
         {"ticker": "AAA.US", "close": 10},

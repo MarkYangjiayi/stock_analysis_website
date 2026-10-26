@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timezone
+from functools import lru_cache
 from typing import Literal, Optional, TypedDict
 from zoneinfo import ZoneInfo
 
@@ -60,6 +61,14 @@ def _session_bounds(session_date: date) -> tuple[datetime, datetime]:
         _XNYS.session_open(label).to_pydatetime(),
         _XNYS.session_close(label).to_pydatetime(),
     )
+
+
+@lru_cache(maxsize=32)
+def us_session_bounds(session_date: date) -> Optional[tuple[datetime, datetime]]:
+    """Aware UTC open and close of an XNYS session, or None when the date is not a session."""
+    if not is_us_market_session(session_date):
+        return None
+    return _session_bounds(session_date)
 
 
 def us_market_status(now: datetime) -> UsMarketStatus:

@@ -817,6 +817,39 @@ class DataFreshnessAlert(Base):
     )
 
 
+class LiveQuoteLease(Base):
+    """A ticker an analysis page is showing; the worker streams it while the lease lasts."""
+
+    __tablename__ = "live_quote_leases"
+
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class LiveQuote(Base):
+    """Latest regular-session trade the worker received from the EODHD WebSocket."""
+
+    __tablename__ = "live_quotes"
+
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)
+    price: Mapped[float] = mapped_column(Float)
+    traded_at: Mapped[datetime] = mapped_column(DateTime)
+    session_date: Mapped[dt_date] = mapped_column(Date)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class LiveQuoteFeed(Base):
+    """Single-row heartbeat of the worker's WebSocket: whether it is up and which tickers it streams."""
+
+    __tablename__ = "live_quote_feed"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    tickers: Mapped[list] = mapped_column(JSON, default=list)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+
 class TickerValuationScenario(Base):
     """Saved transparent DCF inputs for one ticker and named scenario."""
 

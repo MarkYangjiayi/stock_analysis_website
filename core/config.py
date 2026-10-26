@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     # Watchlist quotes poll once a minute per open tab; provider symbols are what EODHD bills.
     WATCHLIST_QUOTE_REQUESTS_PER_MINUTE: int = 30
     WATCHLIST_PROVIDER_SYMBOLS_PER_MINUTE: int = 120
+    # The analysis header polls its live quote every 3 seconds per open tab.
+    LIVE_QUOTE_REQUESTS_PER_MINUTE: int = 90
     TRUSTED_PROXY_IPS: str = "127.0.0.1,::1,172.16.0.0/12"
 
     # On-demand anomaly scans are persisted and run outside the HTTP request.
@@ -132,6 +134,12 @@ class Settings(BaseSettings):
     # Background workers are intentionally disabled in the web process. Run
     # `python worker.py` as a separate service instead.
     RUN_BACKGROUND_TASKS: bool = False
+    # The worker holds the only EODHD WebSocket. It streams the tickers analysis
+    # pages lease during the regular session (plus WS_SYMBOLS when the monitor is
+    # on). EODHD allows 50 symbols per API token across every socket, local runs
+    # with the same key included, so the worker leaves headroom.
+    LIVE_QUOTES_ENABLED: bool = True
+    LIVE_QUOTE_MAX_SYMBOLS: int = Field(default=45, ge=1, le=50)
     ENABLE_WS_MONITOR: bool = False
     WS_SYMBOLS: str = "AAPL,NVDA,TSLA,ASTS"
     WS_WINDOW_SECONDS: int = 300
