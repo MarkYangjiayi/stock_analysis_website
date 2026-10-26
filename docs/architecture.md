@@ -15,7 +15,7 @@ Dedicated worker --------------------+
   |-- data quality and publication jobs
   |-- optional daily watchlist RSI alerts
   |-- daily stale-data alert (services/freshness_alerts.py)
-  |-- optional WebSocket monitor
+  |-- live quote hub: the only EODHD WebSocket (analysis-page prices, optional move monitor)
   `-- weekly online SQLite backup
 
 Immutable raw JSON.gz ---> normalized point-in-time tables ---> factor panels
@@ -30,6 +30,19 @@ refreshes stale daily price histories on demand, and sends one Feishu digest
 for RSI(14) values at or beyond the configured 30/70 thresholds. Successfully
 delivered ticker/date alerts are persisted so worker restarts cannot duplicate
 the same daily alert.
+
+The analysis page header shows real-time trades during the regular session
+(`services/live_quotes.py`). EODHD allows 50 WebSocket symbols per API token
+across every socket, so the worker holds the only connection and SQLite is the
+interface to it: each 3-second poll of `GET /api/v1/quotes/live` renews a
+one-minute row in `live_quote_leases`; the worker subscribes leased tickers
+(newest first, up to `LIVE_QUOTE_MAX_SYMBOLS`, with `WS_SYMBOLS` pinned while
+the move monitor is on), writes the latest regular-session trade to
+`live_quotes` about once a second, and keeps a heartbeat in `live_quote_feed`.
+The socket is open only while something is leased in the session (plus five
+minutes for the closing print). When the heartbeat is stale or a ticker is not
+streamed, the API serves the 15-minute delayed quote; after the close it serves
+that session's close until the daily bar lands.
 
 ## 2. Storage choices
 

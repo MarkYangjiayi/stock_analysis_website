@@ -188,6 +188,14 @@ async def _histories(db: AsyncSession, tickers: list[str], now: datetime) -> dic
     return history
 
 
+async def get_delayed_quote(ticker: str, now: Optional[datetime] = None) -> Optional[dict[str, Any]]:
+    """One delayed quote from the same per-ticker cache and provider budget as the watchlist."""
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    async with _fetch_lock:
+        await _refresh_quotes([ticker], now, quote_ttl(us_market_status(now), now))
+    return _quote_cache.get(ticker, (now, None))[1]
+
+
 async def get_watchlist_quotes(
     db: AsyncSession,
     tickers: list[str],

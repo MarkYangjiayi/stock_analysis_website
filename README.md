@@ -47,6 +47,8 @@
     `/market/index-valuation` 自 2010 年起逐月末重构 S&P 500 整体市盈率：严格按当月真实成分聚合 Σ公司市值 / Σ TTM 报告盈利（亏损公司保留负贡献），只发布已完成月份，并列示仅盈利公司与中位数口径。多重股权按 SEC CIK 归并为一家公司（供应商在每个类股上都报公司总股本，故公司市值取主类股口径、盈利只计一次）；单股盈利沿用 Price & valuation history 的全部披露时点与勾稽门槛；覆盖不足的月份留缺口、原因随月份落库，绝不插值。一次性回填与完整口径见 [Index Valuation](docs/index_valuation.md)。
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
     内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。同一客户端 15 分钟内输错 Admin Key 10 次后锁定 15 分钟（锁定期间正确的 key 也拒绝；不带 key 的请求不计数，`ADMIN_AUTH_MAX_FAILURES` / `ADMIN_AUTH_FAILURE_WINDOW_SECONDS`）。API 与页面统一加 `nosniff`、禁止被嵌入 iframe、`Referrer-Policy` 等安全响应头，生产环境加 HSTS；个人数据接口返回 `Cache-Control: no-store`。
+*   **⏱️ 个股页实时价**
+    美股常规交易时段（09:30–16:00 ET），个股页头部显示 EODHD WebSocket 推送的成交价（延迟约 2–6 秒），涨跌以延迟行情的昨收为基准，与自选股侧边栏一致；WebSocket 不可用时退回 15 分钟延迟价。盘前盘后不显示盘外成交，头部显示最近一个交易日的收盘价，当天收盘价在次日日线同步后由日线接管。Worker 持有唯一一条 WebSocket（EODHD 每个 API key 最多 50 个代码，所有连接合计），只订阅正在被浏览的个股页，最多 `LIVE_QUOTE_MAX_SYMBOLS`=45 个；自选股和 Today 页仍用 15 分钟延迟价（`/api/v1/quotes/live`，`services/live_quotes.py`）。
 *   **🗓️ Today 首页（需解锁）**
     未选股票时，首页显示最新一份日报的市场状态和按题材聚类的异动（与飞书推送同一份证据），以及全部自选股的延迟行情、与日报相同规则的标签（RSI、52 周高低、预期修正、空头）和未来 7 天的美国宏观数据与财报。自选股标签和日历按请求计算，缓存 15 分钟（`/api/personal/today`，`services/today.py`）。未解锁时仍是搜索入口。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
@@ -54,7 +56,7 @@
     *   **Scheduled Daily Reporter**: 美股交易日默认美东 10:00 / 16:30 生成并推送开盘、盘后报告，包含全球股票市场、外汇、商品/债券 ETF 代理、VIX/加密资产、日频美债收益率与 bp 变化、板块/已发布市场宽度、固定核心资产与自选股、事件日历、带新闻引用的个股异动，以及盘后相对早报的变化。首屏另有一行规则生成的市场状态（趋势、宽度、参与度、VIX、FRED 高收益债利差、利率曲线、估值），同一题材或行业的异动股会先聚成一组再逐只列出。逐项标注数据日期、延迟和缺失状态，并保存可重放证据。配置与本地预览见 [Daily Report v2](docs/daily_report_v2/README.md)。
     *   **Daily RSI Monitor**: 可选监控服务端 watchlist（或独立配置的一批股票），在日线 RSI(14) 进入超卖/超买区时汇总飞书提醒，并按股票与交易日去重。
     *   **数据过期提醒**: 美东周二至周六 08:45 检查筛选器、日线价格、板块 ETF 价格、标普 500 历史成分、市场宽度、因子、指数市盈率（启用题材时还有题材热度）是否已更新到最近完成的交易日；落后的数据集汇总成一张飞书卡片，附最近一次运行的失败原因，每个数据集每个交易日只提醒一次（`DATA_FRESHNESS_ALERTS_ENABLED`）。
-    *   **Real-time WebSocket Monitor**: 独立 Worker 可选挂载盯盘 Daemon，避免多 Uvicorn worker 重复调度。直接接入 WebSocket 行情流，基于滑动时间窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）与告警冷却**。
+    *   **Real-time WebSocket Monitor**: 可选（`ENABLE_WS_MONITOR`），与个股页实时价共用 Worker 里的同一条 WebSocket，`WS_SYMBOLS` 常驻订阅。基于滑动时间窗口计算，**支持自定义熔断阈值（如绝对波幅 ≥1.5%）与告警冷却**。
 ---
 
 ## 🛠 技术栈概览 (Tech Stack)

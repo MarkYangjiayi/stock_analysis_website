@@ -893,3 +893,14 @@ class WatchlistQuotesResponse(BaseModel):
     market: MarketStatusResponse
     delay_minutes: int
     items: List[WatchlistQuoteItem]
+
+
+class LiveQuotePrice(WatchlistQuote):
+    # realtime: streamed trade in the session; delayed: 15-minute feed; close: the session's closing price.
+    source: Literal["realtime", "delayed", "close"]
+
+
+class LiveQuoteResponse(BaseModel):
+    ticker: str
+    market: MarketStatusResponse
+    quote: Optional[LiveQuotePrice] = None

@@ -22,6 +22,7 @@ from api.schemas import (
     TreasuryYieldCurveResponse,
     MarketStatusResponse,
     WatchlistQuotesResponse,
+    LiveQuoteResponse,
     PeerMultiplesResponse,
     StockDataResponse,
     ValuationHistoryResponse,
@@ -75,12 +76,14 @@ from services.anomaly_scans import (
 )
 from core.security import (
     limit_expensive_requests,
+    limit_live_quote_requests,
     limit_watchlist_quote_requests,
     require_admin_api_key,
     require_configured_admin_api_key,
 )
 from services.security_master import canonicalize_ticker
 from services.watchlist_quotes import MAX_TICKERS as WATCHLIST_MAX_TICKERS, get_watchlist_quotes
+from services.live_quotes import get_live_quote
 from core.trading_calendar import us_market_status
 
 WATCHLIST_TICKER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-^_]{0,19}")
@@ -917,6 +920,23 @@ async def watchlist_quotes(
     if len(symbols) > WATCHLIST_MAX_TICKERS:
         raise HTTPException(status_code=422, detail=f"At most {WATCHLIST_MAX_TICKERS} tickers can be quoted at once")
     return await get_watchlist_quotes(db, symbols)
+
+
+@router.get(
+    "/api/v1/quotes/live",
+    response_model=LiveQuoteResponse,
+    tags=["Market Analysis Read"],
+    dependencies=[Depends(limit_live_quote_requests)],
+)
+async def live_quote(
+    ticker: str = Query(..., max_length=24, description="One ticker, e.g. MELI.US"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Analysis header price: real-time trade in the regular session, else the 15-minute delayed quote; after the close, the session's closing price until its daily bar lands."""
+    value = ticker.strip()
+    if not WATCHLIST_TICKER_PATTERN.fullmatch(value):
+        raise HTTPException(status_code=422, detail=f"Invalid ticker: {value[:24]}")
+    return await get_live_quote(db, canonicalize_ticker(value))
 
 
 # Trending themes: read-only views of the published theme_trends dataset (local

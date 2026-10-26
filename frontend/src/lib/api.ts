@@ -1464,6 +1464,22 @@ export const fetchWatchlistQuotes = (tickers: string[], signal?: AbortSignal) =>
         20_000,
     );
 
+/** realtime: streamed trade in the session; delayed: 15-minute feed; close: the session's closing price. */
+export type LiveQuoteSource = "realtime" | "delayed" | "close";
+
+export interface LiveQuote extends WatchlistQuote {
+    source: LiveQuoteSource;
+}
+
+export interface LiveQuoteResponse {
+    ticker: string;
+    market: MarketStatusResponse;
+    quote: LiveQuote | null;
+}
+
+export const fetchLiveQuote = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<LiveQuoteResponse>(`/api/v1/quotes/live?ticker=${encodeURIComponent(ticker)}`, { signal }, 10_000);
+
 // Trending themes. Mirrors the Theme* models in api/schemas.py. Returns are simple
 // fractions (0.05 == +5%); missing values stay null and render as "—".
 export type ThemeStage = "emerging" | "accelerating" | "leading" | "crowded" | "fading" | "neutral" | "insufficient";

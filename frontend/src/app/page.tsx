@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronUp, LockKeyhole, Plus, Search, ShieldCheck } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ChevronUp, LockKeyhole, Plus, Search, ShieldCheck } from "lucide-react";
 import {
     ApiError,
     DecisionSupportResponse,
@@ -35,14 +35,15 @@ import StockSnapshotPanel from "@/components/StockSnapshotPanel";
 import TodayDashboard from "@/components/today/TodayDashboard";
 import WatchlistSidebar from "@/components/WatchlistSidebar";
 import { usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
+import { useLiveQuote } from "@/hooks/useLiveQuote";
 import { useWatchlistQuotes } from "@/hooks/useWatchlistQuotes";
 import { useStatusBar, type StatusItem } from "@/store/useStatusBar";
 import type { FinancialEvidenceMetric } from "@/components/FinancialTrendChart";
 import AnalysisNavigation, { isAnalysisSection, type AnalysisSection } from "@/components/analysis/AnalysisNavigation";
 import FinancialSnapshot from "@/components/analysis/FinancialSnapshot";
+import PriceHeadline, { resolveHeadlinePrice } from "@/components/analysis/PriceHeadline";
 import QualityScorecardPanel from "@/components/analysis/QualityScorecardPanel";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { formatSignedPercent } from "@/lib/format";
 
 const StockValuationChart = dynamic(() => import("@/components/StockValuationChart"), {
     ssr: false,
@@ -158,6 +159,7 @@ function AnalysisPage() {
     const clearStatus = useStatusBar((state) => state.clearStatus);
     const watchlist = personal.watchlist;
     const watchlistQuotes = useWatchlistQuotes(watchlist);
+    const liveQuote = useLiveQuote(stockData?.profile.ticker ?? null);
     const handlePersonalUnauthorized = personal.handleUnauthorized;
     const stockRequestRef = useRef<AbortController | null>(null);
     const factorRequestRef = useRef<AbortController | null>(null);
@@ -592,8 +594,7 @@ function AnalysisPage() {
 
     const latest = stockData?.historical_data.filter((point) => point.close != null).at(-1);
     const previous = stockData?.historical_data.filter((point) => point.close != null).at(-2);
-    const change = latest?.close != null && previous?.close != null ? latest.close - previous.close : null;
-    const changePct = change != null && previous?.close ? change / previous.close : null;
+    const headline = resolveHeadlinePrice(latest, previous, liveQuote?.quote ?? null);
 
     const financialsDate = decision?.metadata.financial_statement_date || marketSnapshot?.source_dates.financials || null;
     const statusCurrency = stockData?.profile.currency || "USD";
@@ -686,11 +687,7 @@ function AnalysisPage() {
                                         </div>
                                     </div>
                                     <div className="flex shrink-0 items-center justify-between gap-4 sm:items-start sm:gap-5">
-                                        <div className="sm:text-right">
-                                            <div className="flex items-baseline gap-1.5 sm:justify-end"><span className="font-mono text-xs text-fg-muted">{stockData.profile.currency || "USD"}</span><span className="font-mono text-2xl font-medium tracking-tight sm:text-[28px]">{latest?.close?.toFixed(2) ?? "—"}</span></div>
-                                            {change != null && <p className={`mt-0.5 flex items-center gap-1 font-mono text-sm font-medium sm:justify-end ${change > 0 ? "text-up" : change < 0 ? "text-down" : "text-flat"}`}>{change > 0 ? <ArrowUpRight size={14} /> : change < 0 ? <ArrowDownRight size={14} /> : null}{change > 0 ? "+" : change < 0 ? "−" : ""}{Math.abs(change).toFixed(2)} {changePct == null ? "" : `(${formatSignedPercent(changePct)})`}</p>}
-                                            <p className="mt-1 font-mono text-xs text-fg-muted">Adjusted close · {latest?.date || "Date unavailable"}</p>
-                                        </div>
+                                        <PriceHeadline currency={stockData.profile.currency || "USD"} headline={headline} />
                                         {watchlist.includes(stockData.profile.ticker) ? <span className="research-link"><Check size={15} /> In watchlist</span> : <button type="button" onClick={() => addToWatchlist(stockData.profile.ticker)} className="secondary-button min-h-9 shrink-0 px-3 py-1.5 text-xs"><Plus size={14} /> {personal.isUnlocked ? "Watchlist" : "Unlock to add"}</button>}
                                     </div>
                                 </div>
