@@ -54,8 +54,6 @@ IDLE_DISCONNECT = timedelta(minutes=5)
 CLOSE_TAIL = timedelta(minutes=5)
 # The closing auction prints at the bell, a moment after the official close timestamp.
 CLOSE_PRINT_SLACK = timedelta(seconds=5)
-# The delayed quote's last regular-session minute bar starts one minute before the close.
-CLOSE_BAR = timedelta(minutes=1)
 FEED_STALE_AFTER = timedelta(seconds=15)
 HEARTBEAT_SECONDS = 5.0
 POLL_SECONDS = 1.0
@@ -411,11 +409,10 @@ async def _closing_quote(db: AsyncSession, ticker: str, status: dict[str, Any], 
     closes_at = bounds[1]
     delayed = await watchlist_quotes.get_delayed_quote(ticker, now)
     previous_close = await _previous_close(db, ticker, session_date, delayed)
-    if (
-        delayed is not None
-        and delayed["session_date"] == session_date
-        and closes_at - CLOSE_BAR <= delayed["as_of"] <= closes_at
-    ):
+    # Once the delayed feed's timestamp passes the bell its price is the official close:
+    # after-hours prints do not move it, while its last pre-bell minute is not the close
+    # (2026-10-26: five tickers matched Yahoo's regular close, not their after-hours or 15:59 prices).
+    if delayed is not None and delayed["session_date"] == session_date and delayed["as_of"] >= closes_at:
         return _quote(delayed["price"], delayed["as_of"], session_date, previous_close, "close")
     trade = await db.get(LiveQuote, ticker)
     # Only a stream that was up at the bell holds the close; an earlier trade is not the closing price.
