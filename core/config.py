@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     # the key cannot be guessed online. Requests without a key are not counted.
     ADMIN_AUTH_MAX_FAILURES: int = Field(default=10, ge=1)
     ADMIN_AUTH_FAILURE_WINDOW_SECONDS: int = Field(default=900, ge=60)
+    # Browser sessions exchanged for the admin key last this long and are
+    # renewed every time the site is opened.
+    ADMIN_SESSION_DAYS: int = Field(default=30, ge=1, le=365)
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     EXPENSIVE_REQUESTS_PER_MINUTE: int = 3
     # Watchlist quotes poll once a minute per open tab; provider symbols are what EODHD bills.

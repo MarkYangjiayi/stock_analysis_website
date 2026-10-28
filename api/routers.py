@@ -78,11 +78,15 @@ from services.anomaly_scans import (
     serialize_anomaly_scan,
 )
 from core.security import (
+    clear_admin_session_cookie,
+    has_admin_session,
+    has_optional_admin_access,
     limit_expensive_requests,
     limit_live_quote_requests,
     limit_watchlist_quote_requests,
     require_admin_api_key,
     require_configured_admin_api_key,
+    set_admin_session_cookie,
 )
 from services.security_master import canonicalize_ticker
 from services.watchlist_quotes import MAX_TICKERS as WATCHLIST_MAX_TICKERS, get_watchlist_quotes
@@ -296,11 +300,7 @@ async def read_decision_support(
     db: AsyncSession = Depends(get_db),
 ):
     """Return deterministic decision evidence; saved assumptions are opt-in via Admin Key."""
-    include_saved = False
-    api_key = request.headers.get("x-api-key")
-    if api_key:
-        await require_admin_api_key(request, api_key)
-        include_saved = True
+    include_saved = await has_optional_admin_access(request)
     return await get_decision_support(
         ticker,
         db,
@@ -487,6 +487,36 @@ async def remove_personal_valuation_scenarios(
         "is_saved": False,
         "scenarios": defaults,
     }
+
+
+@router.post("/api/auth/session", tags=["Personal Workspace"])
+async def create_admin_session(
+    request: Request,
+    response: Response,
+    x_api_key: str = Header(default=""),
+):
+    """Exchange the admin key for an HttpOnly browser session cookie."""
+    if not x_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+    await require_admin_api_key(request, x_api_key)
+    expires_at = set_admin_session_cookie(response)
+    return {"authenticated": True, "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat()}
+
+
+@router.get("/api/auth/session", tags=["Personal Workspace"])
+async def read_admin_session(request: Request, response: Response):
+    """Report whether the browser is signed in, renewing the session if it is."""
+    if not has_admin_session(request):
+        clear_admin_session_cookie(response)
+        return {"authenticated": False, "expires_at": None}
+    expires_at = set_admin_session_cookie(response)
+    return {"authenticated": True, "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat()}
+
+
+@router.delete("/api/auth/session", tags=["Personal Workspace"])
+async def delete_admin_session(response: Response):
+    clear_admin_session_cookie(response)
+    return {"authenticated": False, "expires_at": None}
 
 
 @router.get(
@@ -742,11 +772,7 @@ async def read_ai_stock_report(
     Generate an optional AI brief from decision-support evidence only.
     """
     ticker = canonicalize_ticker(ticker)
-    include_saved = False
-    api_key = request.headers.get("x-api-key")
-    if api_key:
-        await require_admin_api_key(request, api_key)
-        include_saved = True
+    include_saved = await has_optional_admin_access(request)
 
     async def static_report(content: str):
         yield content

@@ -1,4 +1,7 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+// Without an explicit URL, call the API on the page's own host so the admin
+// session cookie stays same-site in local dev (localhost and 127.0.0.1 differ).
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+    || (typeof window === "undefined" ? "http://127.0.0.1:8000" : `${window.location.protocol}//${window.location.hostname}:8000`);
 
 export class ApiError extends Error {
     status: number;
@@ -46,6 +49,8 @@ export async function apiRequest<T>(
         const headers = new Headers(init.headers);
         if (!headers.has("Accept")) headers.set("Accept", "application/json");
         const response = await fetch(`${API_BASE_URL}${path}`, {
+            // The admin session is an HttpOnly cookie; dev serves the API from another port.
+            credentials: "include",
             ...init,
             headers,
             signal: controller.signal,
@@ -1155,20 +1160,29 @@ export const fetchQualityScorecard = (ticker: string, signal?: AbortSignal) =>
 export const fetchLatestTickerFactors = (ticker: string, signal?: AbortSignal) =>
     apiRequest<PublishedFactorSnapshot>(`/api/quant/factors/${encodeURIComponent(ticker)}/latest`, { signal });
 
-const personalHeaders = (adminKey?: string, json = false) => {
-    const headers: Record<string, string> = {};
-    if (adminKey) headers["X-API-Key"] = adminKey;
-    if (json) headers["Content-Type"] = "application/json";
-    return headers;
-};
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+export interface AdminSessionStatus {
+    authenticated: boolean;
+    expires_at: string | null;
+}
+
+/** Exchange the Admin Key for an HttpOnly session cookie; the key is not kept in the browser. */
+export const createAdminSession = (adminKey: string) =>
+    apiRequest<AdminSessionStatus>("/api/auth/session", { method: "POST", headers: { "X-API-Key": adminKey } });
+
+/** Whether this browser holds a session; a valid one is renewed for another 30 days. */
+export const fetchAdminSession = () => apiRequest<AdminSessionStatus>("/api/auth/session");
+
+export const deleteAdminSession = () =>
+    apiRequest<AdminSessionStatus>("/api/auth/session", { method: "DELETE" });
 
 export const fetchDecisionSupport = (
     ticker: string,
-    adminKey?: string,
     signal?: AbortSignal,
 ) => apiRequest<DecisionSupportResponse>(
     `/api/stocks/${encodeURIComponent(ticker)}/decision-support`,
-    { headers: personalHeaders(adminKey), signal },
+    { signal },
 );
 
 export const fetchPeerMultiples = (
@@ -1193,13 +1207,12 @@ export const startEarningsQualityAnalysis = (
     ticker: string,
     periodEnd: string,
     periodType: EarningsQualityPeriodType,
-    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<EarningsQualityAnalysis>(
     `/api/personal/stocks/${encodeURIComponent(ticker)}/earnings-quality/analyses`,
     {
         method: "POST",
-        headers: personalHeaders(adminKey, true),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ period_end: periodEnd, period_type: periodType }),
         signal,
     },
@@ -1208,11 +1221,10 @@ export const startEarningsQualityAnalysis = (
 export const fetchEarningsQualityAnalysis = (
     ticker: string,
     analysisId: number,
-    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<EarningsQualityAnalysis>(
     `/api/stocks/${encodeURIComponent(ticker)}/earnings-quality/analyses/${analysisId}`,
-    { headers: personalHeaders(adminKey), signal },
+    { signal },
 );
 
 export const calculateDecisionValuation = (
@@ -1223,15 +1235,14 @@ export const calculateDecisionValuation = (
     `/api/stocks/${encodeURIComponent(ticker)}/valuation/calculate`,
     {
         method: "POST",
-        headers: personalHeaders(undefined, true),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ scenarios }),
         signal,
     },
 );
 
-export const fetchPersonalWatchlist = (adminKey: string, signal?: AbortSignal) =>
+export const fetchPersonalWatchlist = (signal?: AbortSignal) =>
     apiRequest<{ tickers: string[] }>("/api/personal/watchlist", {
-        headers: personalHeaders(adminKey),
         signal,
     });
 
@@ -1308,44 +1319,39 @@ export interface TodayResponse {
     unavailable: string[];
 }
 
-export const fetchToday = (adminKey: string, signal?: AbortSignal) =>
+export const fetchToday = (signal?: AbortSignal) =>
     apiRequest<TodayResponse>("/api/personal/today", {
-        headers: personalHeaders(adminKey),
         signal,
     }, 60_000);
 
 /** Single-ticker edits, so a stale page cannot overwrite edits made from another client. */
 export const addPersonalWatchlistItem = (
     ticker: string,
-    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<{ tickers: string[]; added: boolean }>("/api/personal/watchlist/items", {
     method: "POST",
-    headers: personalHeaders(adminKey, true),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ ticker }),
     signal,
 });
 
 export const removePersonalWatchlistItem = (
     ticker: string,
-    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<{ tickers: string[]; removed: boolean }>(
     `/api/personal/watchlist/items/${encodeURIComponent(ticker)}`,
     {
         method: "DELETE",
-        headers: personalHeaders(adminKey),
         signal,
     },
 );
 
 export const importPersonalWatchlist = (
     tickers: string[],
-    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<{ tickers: string[]; imported: boolean }>("/api/personal/watchlist/import", {
     method: "POST",
-    headers: personalHeaders(adminKey, true),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ tickers }),
     signal,
 });
@@ -1353,22 +1359,20 @@ export const importPersonalWatchlist = (
 export const savePersonalValuationScenarios = (
     ticker: string,
     scenarios: DecisionValuationScenarioInput[],
-    adminKey: string,
 ) => apiRequest<{ ticker: string; is_saved: boolean; scenarios: DecisionValuationScenarioInput[] }>(
     `/api/personal/stocks/${encodeURIComponent(ticker)}/valuation-scenarios`,
     {
         method: "PUT",
-        headers: personalHeaders(adminKey, true),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ scenarios }),
     },
 );
 
 export const resetPersonalValuationScenarios = (
     ticker: string,
-    adminKey: string,
 ) => apiRequest<{ ticker: string; is_saved: boolean; scenarios: DecisionValuationScenarioInput[] }>(
     `/api/personal/stocks/${encodeURIComponent(ticker)}/valuation-scenarios`,
-    { method: "DELETE", headers: personalHeaders(adminKey) },
+    { method: "DELETE" },
 );
 
 export const fetchMarketOverview = (
@@ -1706,7 +1710,6 @@ export interface ThemeProposalDecisionResponse {
 
 export const fetchThemes = (
     { asOfDate, view, stage }: { asOfDate?: string | null; view: ThemeView; stage?: ThemeStage | null },
-    adminKey: string,
     signal?: AbortSignal,
 ) => {
     const params = new URLSearchParams({ view });
@@ -1714,21 +1717,20 @@ export const fetchThemes = (
     if (stage) params.set("stage", stage);
     return apiRequest<ThemeListResponse>(
         `/api/v1/themes?${params.toString()}`,
-        { headers: personalHeaders(adminKey), signal },
+        { signal },
         60_000,
     );
 };
 
 export const fetchThemeDetail = (
     slug: string,
-    adminKey: string,
     asOfDate?: string | null,
     signal?: AbortSignal,
 ) => {
     const query = asOfDate ? `?${new URLSearchParams({ as_of_date: asOfDate }).toString()}` : "";
     return apiRequest<ThemeDetailResponse>(
         `/api/v1/themes/${encodeURIComponent(slug)}${query}`,
-        { headers: personalHeaders(adminKey), signal },
+        { signal },
         60_000,
     );
 };
@@ -1736,17 +1738,15 @@ export const fetchThemeDetail = (
 export const fetchThemeHistory = (
     slug: string,
     days: number,
-    adminKey: string,
     signal?: AbortSignal,
 ) => apiRequest<ThemeHistoryResponse>(
     `/api/v1/themes/${encodeURIComponent(slug)}/history?days=${encodeURIComponent(days)}`,
-    { headers: personalHeaders(adminKey), signal },
+    { signal },
     60_000,
 );
 
 export const fetchTrendingCompanies = (
     { asOfDate, limit }: { asOfDate?: string | null; limit?: number },
-    adminKey: string,
     signal?: AbortSignal,
 ) => {
     const params = new URLSearchParams();
@@ -1755,29 +1755,27 @@ export const fetchTrendingCompanies = (
     const query = params.toString();
     return apiRequest<TrendingCompaniesResponse>(
         `/api/v1/trending-companies${query ? `?${query}` : ""}`,
-        { headers: personalHeaders(adminKey), signal },
+        { signal },
         60_000,
     );
 };
 
 export const fetchThemeProposals = (
-    adminKey: string,
     status?: ThemeProposalStatus | null,
     signal?: AbortSignal,
 ) => apiRequest<ThemeProposalsResponse>(
     `/api/personal/themes/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`,
-    { headers: personalHeaders(adminKey), signal },
+    { signal },
 );
 
 export const decideThemeProposal = (
     id: number,
     decision: ThemeProposalDecision,
-    adminKey: string,
 ) => apiRequest<ThemeProposalDecisionResponse>(
     `/api/personal/themes/proposals/${encodeURIComponent(id)}/decision`,
     {
         method: "POST",
-        headers: personalHeaders(adminKey, true),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ decision }),
     },
 );

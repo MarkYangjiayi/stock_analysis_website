@@ -108,7 +108,7 @@ function EvidenceList({ proposalId, items, className }: { proposalId: number; it
 }
 
 /** Owner review queue for worker-suggested themes; accepting returns a taxonomy YAML snippet. */
-export default function ThemeProposalsPanel({ adminKey, onUnauthorized }: { adminKey: string; onUnauthorized: () => void }) {
+export default function ThemeProposalsPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
     const [filter, setFilter] = useState<StatusFilter>("pending");
     const [proposals, setProposals] = useState<ThemeProposalItem[] | null>(null);
     const [loading, setLoading] = useState(true);
@@ -122,7 +122,7 @@ export default function ThemeProposalsPanel({ adminKey, onUnauthorized }: { admi
         setLoading(true);
         setError("");
         try {
-            const response = await fetchThemeProposals(adminKey, filter === "pending" ? "pending" : null, signal);
+            const response = await fetchThemeProposals(filter === "pending" ? "pending" : null, signal);
             setProposals(response.proposals);
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
@@ -135,7 +135,7 @@ export default function ThemeProposalsPanel({ adminKey, onUnauthorized }: { admi
         } finally {
             if (!signal?.aborted) setLoading(false);
         }
-    }, [adminKey, filter, onUnauthorized]);
+    }, [filter, onUnauthorized]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -147,7 +147,7 @@ export default function ThemeProposalsPanel({ adminKey, onUnauthorized }: { admi
         setDeciding(proposal.id);
         setError("");
         try {
-            const result = await decideThemeProposal(proposal.id, decision, adminKey);
+            const result = await decideThemeProposal(proposal.id, decision);
             setProposals((current) => current?.map((item) => (item.id === result.proposal.id ? result.proposal : item)) ?? null);
             const snippet = result.yaml_snippet;
             if (snippet) setSnippets((current) => ({ ...current, [proposal.id]: snippet }));

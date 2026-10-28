@@ -34,12 +34,14 @@ export default function PersonalUnlockDialog({ open, loading, error, onClose, on
                     <button type="button" className="rounded-md p-2 text-fg-muted hover:bg-surface-muted hover:text-fg" onClick={close} aria-label="Close unlock dialog"><X size={18} /></button>
                 </div>
                 <h2 id="unlock-title" className="mt-4 text-xl font-semibold">Unlock personal workspace</h2>
-                <p className="mt-2 text-sm leading-6 text-fg-muted">The key unlocks your server watchlist and saved valuation scenarios for this browser session. It is never written to LocalStorage.</p>
+                <p className="mt-2 text-sm leading-6 text-fg-muted">The key unlocks your server watchlist and saved valuation scenarios. This browser stays signed in for 30 days, renewed each visit; the key itself is not stored in the browser.</p>
                 <form className="mt-5 space-y-4" onSubmit={submit}>
+                    {/* A fixed username lets password managers save and autofill the key as one entry. */}
+                    <input type="text" name="username" autoComplete="username" value="finbrain-admin" readOnly hidden aria-hidden="true" tabIndex={-1} />
                     <label className="block text-xs font-semibold uppercase tracking-wide text-fg-muted" htmlFor="personal-admin-key">Admin Key</label>
                     <div className="relative">
                         <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" size={16} />
-                        <input id="personal-admin-key" autoFocus type="password" autoComplete="current-password" className="control-field pl-10" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Enter Admin Key" />
+                        <input id="personal-admin-key" name="password" autoFocus type="password" autoComplete="current-password" className="control-field pl-10" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Enter Admin Key" />
                     </div>
                     {error && <div className="error-panel" role="alert">{error}</div>}
                     <button type="submit" className="primary-button w-full" disabled={loading || !key.trim()}>{loading ? "Unlocking…" : "Unlock workspace"}</button>

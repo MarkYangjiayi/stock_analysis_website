@@ -49,7 +49,7 @@ interface DecisionCockpitProps {
     decision: DecisionSupportResponse | null;
     loading: boolean;
     error: string;
-    adminKey: string | null;
+    unlocked: boolean;
     onUnlock: () => void;
     onUnauthorized: () => void;
     onRetry: () => void;
@@ -269,7 +269,7 @@ export default function DecisionCockpit({
     decision,
     loading,
     error,
-    adminKey,
+    unlocked,
     onUnlock,
     onUnauthorized,
     onRetry,
@@ -441,7 +441,7 @@ export default function DecisionCockpit({
     };
 
     const save = async () => {
-        if (!adminKey) {
+        if (!unlocked) {
             onUnlock();
             return;
         }
@@ -454,7 +454,6 @@ export default function DecisionCockpit({
             await savePersonalValuationScenarios(
                 requestTicker,
                 calculatedInputs,
-                adminKey,
             );
             if (!valuationRequestIsCurrent(requestTicker, requestVersion)) return;
             setSaveMessage("Saved for this ticker.");
@@ -476,7 +475,7 @@ export default function DecisionCockpit({
         setSaveMessage("");
         const defaults = (valuation?.default_scenarios || DEFAULT_SCENARIOS).map((item) => ({ ...item }));
         setScenarioDrafts(toScenarioDrafts(defaults));
-        if (!adminKey) {
+        if (!unlocked) {
             await calculate(defaults);
             return;
         }
@@ -485,7 +484,7 @@ export default function DecisionCockpit({
         valuationRequestVersionRef.current = requestVersion;
         setValuationBusy(true);
         try {
-            await resetPersonalValuationScenarios(requestTicker, adminKey);
+            await resetPersonalValuationScenarios(requestTicker);
             if (!valuationRequestIsCurrent(requestTicker, requestVersion)) return;
             // The delete is authoritative. Do not leave saved assumptions on
             // screen while the parent refresh is delayed or records an error.
@@ -562,8 +561,8 @@ export default function DecisionCockpit({
                         <h2 id="decision-cockpit-title" className={hideNavigation ? "text-lg font-semibold" : "mt-1 text-xl font-semibold sm:text-2xl"}>{hideNavigation ? tabs.find((tab) => tab.key === activeTab)?.label : "Decision Cockpit"}</h2>
                         {!hideNavigation && <p className="mt-1.5 max-w-2xl text-sm leading-6 text-fg-muted">Transparent scenarios, peer context, and deterministic fundamental checks. No aggregate score.</p>}
                     </div>
-                    <button type="button" onClick={adminKey ? undefined : onUnlock} className={adminKey ? "status-pill cursor-default" : "secondary-button min-h-9 px-3 py-1.5"}>
-                        {adminKey ? <><CheckCircle2 size={14} /> Personal workspace unlocked</> : <><KeyRound size={14} /> Unlock personal workspace</>}
+                    <button type="button" onClick={unlocked ? undefined : onUnlock} className={unlocked ? "status-pill cursor-default" : "secondary-button min-h-9 px-3 py-1.5"}>
+                        {unlocked ? <><CheckCircle2 size={14} /> Personal workspace unlocked</> : <><KeyRound size={14} /> Unlock personal workspace</>}
                     </button>
                 </div>
                 {decision && <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t pt-3 font-mono text-xs text-fg-muted">
@@ -677,7 +676,7 @@ export default function DecisionCockpit({
                                 return <article key={scenario.scenario} className="rounded-lg border p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold capitalize">{scenario.scenario}</h3><span className="font-mono text-lg font-semibold">{result?.available ? formatMoney(result.intrinsic_value_per_share) : "Unavailable"}</span></div><label className="mt-4 block text-xs font-medium uppercase tracking-wide text-fg-muted">Initial 5Y FCF growth<div className="relative mt-1"><input type="number" min={-20} max={50} step="0.1" value={scenario.fcf_growth_rate} disabled={valuationBusy || !!scenario.operating_forecast} onChange={(event) => editScenario(index, "fcf_growth_rate", event.target.value)} className="control-field py-2 pr-6 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60" aria-label={`${scenario.scenario} FCF growth`} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">%</span></div></label>{result?.available ? <p className={`mt-3 font-mono text-xs font-semibold ${(result.upside_downside ?? 0) >= 0 ? "text-up" : "text-down"}`}>{result.upside_downside == null ? "Current-price comparison unavailable" : `${result.upside_downside >= 0 ? "+" : ""}${(result.upside_downside * 100).toFixed(1)}% vs current price`}</p> : <ul className="mt-3 text-xs text-caution">{result?.reasons?.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</article>;
                             })}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2"><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void calculate()}><Calculator size={15} /> Calculate</button><button type="button" className="primary-button" disabled={valuationBusy} onClick={() => void save()}><Save size={15} /> {adminKey ? "Save scenarios" : "Unlock to save"}</button><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void reset()}><RotateCcw size={15} /> Reset defaults</button>{valuationBusy && <LoaderCircle className="animate-spin text-accent" size={18} />}{saveMessage && <span className="text-xs font-semibold text-up">{saveMessage}</span>}</div>
+                        <div className="flex flex-wrap items-center gap-2"><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void calculate()}><Calculator size={15} /> Calculate</button><button type="button" className="primary-button" disabled={valuationBusy} onClick={() => void save()}><Save size={15} /> {unlocked ? "Save scenarios" : "Unlock to save"}</button><button type="button" className="secondary-button" disabled={valuationBusy} onClick={() => void reset()}><RotateCcw size={15} /> Reset defaults</button>{valuationBusy && <LoaderCircle className="animate-spin text-accent" size={18} />}{saveMessage && <span className="text-xs font-semibold text-up">{saveMessage}</span>}</div>
                         {valuationError && <div className="error-panel" role="alert">{valuationError}</div>}
                         <section className="overflow-hidden rounded-lg border"><header className="surface-subtle border-b p-4"><h3 className="text-sm font-semibold">Base-case WACC / terminal sensitivity</h3><p className="mt-1 text-xs text-fg-muted">Intrinsic value per share · Base FCF growth {(valuation.sensitivity.fcf_growth_rate * 100).toFixed(1)}% · WACC ±1/2 points · terminal growth ±0.5/1 point</p></header><div className="overflow-x-auto p-3"><table className="w-full min-w-[620px] border-separate border-spacing-1 text-right font-mono text-xs"><thead><tr><th className="p-2 text-left text-fg-muted">Terminal ↓ / WACC →</th>{valuation.sensitivity.wacc_values.map((wacc) => <th key={wacc} className="p-2 text-fg-muted">{(wacc * 100).toFixed(1)}%</th>)}</tr></thead><tbody>{valuation.sensitivity.terminal_growth_values.map((terminal, rowIndex) => <tr key={`${terminal}-${rowIndex}`}><th className="p-2 text-left text-fg-muted">{(terminal * 100).toFixed(1)}%</th>{valuation.sensitivity.values[rowIndex].map((value, columnIndex) => <td key={columnIndex} title={valuation.sensitivity.cell_reasons[rowIndex][columnIndex] || undefined} className={`rounded-md border p-2.5 font-medium ${rowIndex === 2 && columnIndex === 2 ? "border-accent bg-accent-soft font-semibold text-accent-strong" : "bg-surface-muted"}`}>{value == null ? "—" : formatMoney(value)}</td>)}</tr>)}</tbody></table></div></section>
                         <div className="rounded-lg border p-4 text-xs text-fg-muted">Base terminal value contribution: {valuation.scenarios[1]?.terminal_share_of_enterprise_value == null ? "—" : `${(valuation.scenarios[1].terminal_share_of_enterprise_value! * 100).toFixed(1)}% of enterprise value`}. Historical continuation assumes sustainable reinvestment within FCFF; an operating forecast explicitly links mature reinvestment to growth and terminal ROIC.</div>
@@ -715,7 +714,7 @@ export default function DecisionCockpit({
                             data={earningsQuality || decision.earnings_quality || null}
                             loading={earningsQualityLoading}
                             error={earningsQualityError}
-                            adminKey={adminKey}
+                            unlocked={unlocked}
                             busyPeriod={earningsQualityBusyPeriod}
                             onUnlock={onUnlock}
                             onAnalyze={onAnalyzeEarningsPeriod}
@@ -723,7 +722,7 @@ export default function DecisionCockpit({
                         <section className="rounded-lg border p-4"><h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-muted"><Database size={14} /> Data-quality notes</h3>{decision.risks.data_quality_notes.length ? <ul className="mt-3 space-y-2 text-sm text-fg-muted">{decision.risks.data_quality_notes.map((note) => <li key={`${note.code}-${note.message}`} className="rounded-md bg-surface-muted p-3"><span className="font-mono text-xs text-fg-muted">{note.code}</span><p className="mt-1">{note.message}</p></li>)}</ul> : <p className="mt-2 text-sm text-fg-muted">No data-quality limitation was recorded for these checks.</p>}</section>
                     </div>}
 
-                    {activeTab === "brief" && <div className="space-y-5"><EventsExpectationsPanel data={eventsExpectations} loading={eventsExpectationsLoading} error={eventsExpectationsError} currency={decision.metadata.currency} detail /><div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} adminKey={adminKey} onUnauthorized={onUnauthorized} embedded disabledReason={briefIsOutOfSync ? "The displayed valuation uses working assumptions that are not in the server evidence yet. Save the scenarios, or reset them to the server-backed values, before generating a brief." : undefined} /><aside className="rounded-lg border p-4"><h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-fg-muted">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-md bg-surface-muted p-2.5 text-xs"><span className={`font-mono font-semibold ${item.available ? "text-up" : "text-fg-muted"}`}>{item.id}</span><div><p className="font-semibold">{item.label}</p><p className="mt-0.5 font-mono text-xs text-fg-muted">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div></div>}
+                    {activeTab === "brief" && <div className="space-y-5"><EventsExpectationsPanel data={eventsExpectations} loading={eventsExpectationsLoading} error={eventsExpectationsError} currency={decision.metadata.currency} detail /><div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]"><AIReport ticker={ticker} evidenceKey={briefEvidenceKey} unlocked={unlocked} onUnauthorized={onUnauthorized} embedded disabledReason={briefIsOutOfSync ? "The displayed valuation uses working assumptions that are not in the server evidence yet. Save the scenarios, or reset them to the server-backed values, before generating a brief." : undefined} /><aside className="rounded-lg border p-4"><h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Evidence registry</h3><p className="mt-2 text-xs leading-5 text-fg-muted">The generator receives these stable records only. Unknown citations are rejected before display or caching.</p><div className="custom-scrollbar mt-3 max-h-[420px] space-y-2 overflow-y-auto">{decision.evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-md bg-surface-muted p-2.5 text-xs"><span className={`font-mono font-semibold ${item.available ? "text-up" : "text-fg-muted"}`}>{item.id}</span><div><p className="font-semibold">{item.label}</p><p className="mt-0.5 font-mono text-xs text-fg-muted">{item.available ? item.source_date || "current evidence" : "unavailable"}</p></div></div>)}</div></aside></div></div>}
                 </div>
             )}
         </section>

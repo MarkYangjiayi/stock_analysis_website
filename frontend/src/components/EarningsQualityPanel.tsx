@@ -22,7 +22,7 @@ interface EarningsQualityPanelProps {
     data: EarningsQualityResponse | null;
     loading?: boolean;
     error?: string;
-    adminKey?: string | null;
+    unlocked?: boolean;
     busyPeriod?: string | null;
     onUnlock?: () => void;
     onAnalyze?: (period: EarningsQualityPeriod) => Promise<void> | void;
@@ -56,7 +56,7 @@ export default function EarningsQualityPanel({
     data,
     loading = false,
     error = "",
-    adminKey = null,
+    unlocked = false,
     busyPeriod = null,
     onUnlock,
     onAnalyze,
@@ -163,7 +163,7 @@ export default function EarningsQualityPanel({
 
                                 {analysis?.status === "waiting_for_filing" && <div className="rounded-lg border border-info/30 bg-info/10 p-3 text-xs text-info"><p className="font-semibold">SEC filing not available yet</p><p className="mt-1">{analysis.error_message || "The matching filing has not been submitted for this reporting period. Check again after it is filed."}</p></div>}
 
-                                {(!analysis || analysis.status === "failed" || analysis.status === "waiting_for_filing") && <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-fg-muted">Runs only for this period after you click. It is never part of sync, scheduling, or batch work.</p>{!data.sec_analysis.supported ? <span className="text-xs font-medium text-fg-muted">{data.sec_analysis.reason}</span> : <button type="button" disabled={isBusy} onClick={() => adminKey ? void onAnalyze?.(period) : onUnlock?.()} className="primary-button shrink-0"><span>{adminKey ? <FileSearch size={15} /> : <KeyRound size={15} />}</span>{adminKey ? (analysis?.status === "failed" ? "Retry filing analysis" : analysis?.status === "waiting_for_filing" ? "Check for filing" : "Analyze filing") : "Unlock to analyze"}</button>}</div>}
+                                {(!analysis || analysis.status === "failed" || analysis.status === "waiting_for_filing") && <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-fg-muted">Runs only for this period after you click. It is never part of sync, scheduling, or batch work.</p>{!data.sec_analysis.supported ? <span className="text-xs font-medium text-fg-muted">{data.sec_analysis.reason}</span> : <button type="button" disabled={isBusy} onClick={() => unlocked ? void onAnalyze?.(period) : onUnlock?.()} className="primary-button shrink-0"><span>{unlocked ? <FileSearch size={15} /> : <KeyRound size={15} />}</span>{unlocked ? (analysis?.status === "failed" ? "Retry filing analysis" : analysis?.status === "waiting_for_filing" ? "Check for filing" : "Analyze filing") : "Unlock to analyze"}</button>}</div>}
                             </div>}
                         </article>
                     );

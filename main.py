@@ -57,7 +57,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=False,
+    # The admin session cookie must reach the API from the dev frontend's port;
+    # never with a wildcard, which would let any site send it.
+    allow_credentials="*" not in settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

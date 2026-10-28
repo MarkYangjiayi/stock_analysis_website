@@ -29,13 +29,12 @@ export function ThemePageHeader({ eyebrow, title, description, aside, children }
 }
 
 export interface ThemeAccess {
-    adminKey: string;
     onUnauthorized: () => void;
 }
 
 /**
- * Theme data is private to the personal workspace: nothing is fetched until the Admin Key is
- * restored or entered, and a rejected key (401) drops back to this locked state.
+ * Theme data is private to the personal workspace: nothing is fetched until the session is
+ * restored or the Admin Key entered, and a rejected session (401) drops back to this locked state.
  */
 export default function ThemeAccessGate({
     header,
@@ -57,8 +56,8 @@ export default function ThemeAccessGate({
                         <p className="mt-4 text-sm text-fg-muted">Restoring your personal workspace…</p>
                     </section>
                 </>
-            ) : personal.adminKey ? (
-                children({ adminKey: personal.adminKey, onUnauthorized: personal.handleUnauthorized })
+            ) : personal.isUnlocked ? (
+                children({ onUnauthorized: personal.handleUnauthorized })
             ) : (
                 <>
                     <ThemePageHeader {...header} />

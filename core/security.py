@@ -1,11 +1,14 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import ipaddress
 import secrets
 import time
 from collections import defaultdict, deque
-from typing import Deque, DefaultDict, Optional, Union
+from typing import Deque, DefaultDict, Optional, Tuple, Union
 
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Header, HTTPException, Request, Response, status
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -54,9 +57,75 @@ class AuthFailureLimiter:
 admin_auth_limiter = AuthFailureLimiter()
 
 
+ADMIN_SESSION_COOKIE = "finbrain_admin_session"
+_ADMIN_SESSION_VERSION = "v1"
+
+
+def _admin_session_signature(payload: str) -> str:
+    # Keyed by the admin key, so rotating it ends every browser session.
+    key = hmac.new(settings.ADMIN_API_KEY.encode(), b"finbrain-admin-session", hashlib.sha256).digest()
+    digest = hmac.new(key, payload.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+def issue_admin_session(now: Optional[float] = None) -> Tuple[str, int]:
+    """Return a signed session token and its expiry as a Unix timestamp."""
+    expires_at = int(time.time() if now is None else now) + settings.ADMIN_SESSION_DAYS * 86400
+    payload = f"{_ADMIN_SESSION_VERSION}.{expires_at}"
+    return f"{payload}.{_admin_session_signature(payload)}", expires_at
+
+
+def admin_session_is_valid(token: str, now: Optional[float] = None) -> bool:
+    if not settings.ADMIN_API_KEY and settings.ENVIRONMENT.lower() == "production":
+        return False
+    try:
+        version, expires, signature = token.split(".")
+        expires_at = int(expires)
+    except ValueError:
+        return False
+    if version != _ADMIN_SESSION_VERSION:
+        return False
+    if not secrets.compare_digest(signature, _admin_session_signature(f"{version}.{expires}")):
+        return False
+    return expires_at > (time.time() if now is None else now)
+
+
+def has_admin_session(request: Request) -> bool:
+    return admin_session_is_valid(request.cookies.get(ADMIN_SESSION_COOKIE, ""))
+
+
+def _admin_session_cookie_options() -> dict:
+    # HttpOnly keeps the session away from page scripts; Strict keeps other
+    # sites from riding it. The cookie is only sent to the API.
+    return {
+        "path": "/api",
+        "httponly": True,
+        "samesite": "strict",
+        "secure": settings.ENVIRONMENT.lower() == "production",
+    }
+
+
+def set_admin_session_cookie(response: Response) -> int:
+    token, expires_at = issue_admin_session()
+    response.set_cookie(
+        ADMIN_SESSION_COOKIE,
+        token,
+        max_age=settings.ADMIN_SESSION_DAYS * 86400,
+        **_admin_session_cookie_options(),
+    )
+    return expires_at
+
+
+def clear_admin_session_cookie(response: Response) -> None:
+    response.delete_cookie(ADMIN_SESSION_COOKIE, **_admin_session_cookie_options())
+
+
 def _verify_admin_key(request: Optional[Request], x_api_key: str) -> None:
     client = _client_identifier(request) if request is not None else "unknown"
     admin_auth_limiter.check(client)
+    # A browser session stands in for the key; an explicit key always wins.
+    if not x_api_key and request is not None and has_admin_session(request):
+        return
     if not x_api_key or not secrets.compare_digest(x_api_key, settings.ADMIN_API_KEY):
         # A missing key is a locked page, not a guess.
         if x_api_key:
@@ -97,6 +166,19 @@ async def require_configured_admin_api_key(
     _verify_admin_key(request, x_api_key)
 
 
+async def has_optional_admin_access(request: Request) -> bool:
+    """Whether a public endpoint may add personal data to its response.
+
+    Anonymous requests are fine; a wrong key still fails rather than silently
+    falling back to the public view.
+    """
+    api_key = request.headers.get("x-api-key", "")
+    if not api_key and not has_admin_session(request):
+        return False
+    await require_admin_api_key(request, api_key)
+    return True
+
+
 class SecurityHeadersMiddleware:
     """Baseline browser protections on every API response.
 
@@ -120,7 +202,7 @@ class SecurityHeadersMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        personal = scope.get("path", "").startswith("/api/personal/")
+        personal = scope.get("path", "").startswith(("/api/personal/", "/api/auth/"))
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":

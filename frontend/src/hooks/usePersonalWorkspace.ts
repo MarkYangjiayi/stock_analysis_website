@@ -4,11 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
     ApiError,
     addPersonalWatchlistItem,
+    createAdminSession,
+    deleteAdminSession,
+    fetchAdminSession,
     fetchPersonalWatchlist,
     importPersonalWatchlist,
     removePersonalWatchlistItem,
 } from "@/lib/api";
 
+/** Where the Admin Key used to sit before the session moved to an HttpOnly cookie; cleared on load. */
 export const PERSONAL_SESSION_KEY = "personal_workspace_api_key";
 export const LEGACY_WATCHLIST_KEY = "my_watchlist";
 export const WATCHLIST_MIGRATION_KEY = "personal_watchlist_migration_attempted";
@@ -39,7 +43,7 @@ export const readLegacyWatchlist = (): string[] => {
 };
 
 export function usePersonalWorkspace() {
-    const [adminKey, setAdminKey] = useState<string | null>(null);
+    const [unlocked, setUnlocked] = useState(false);
     const [watchlist, setWatchlist] = useState<string[]>([]);
     const [restoring, setRestoring] = useState(true);
     const [unlocking, setUnlocking] = useState(false);
@@ -56,40 +60,45 @@ export function usePersonalWorkspace() {
 
     const lock = useCallback((message = "") => {
         watchlistMutationVersionRef.current += 1;
-        window.sessionStorage.removeItem(PERSONAL_SESSION_KEY);
-        setAdminKey(null);
+        setUnlocked(false);
         confirmedWatchlistRef.current = legacyRef.current;
         applyWatchlist(legacyRef.current);
         setError(message);
+        // Best effort: a cookie the server already rejects needs no clearing.
+        void deleteAdminSession().catch(() => undefined);
     }, [applyWatchlist]);
 
     const handleUnauthorized = useCallback(() => {
-        lock("The personal workspace was locked because the Admin Key was rejected.");
+        lock("The personal workspace was locked because the session was rejected. Unlock it again with the Admin Key.");
     }, [lock]);
 
-    const authenticate = useCallback(async (key: string, restoringSession = false) => {
+    // Load the server watchlist once the browser holds a session cookie.
+    const openWorkspace = useCallback(async () => {
+        const serverWatchlist = await fetchPersonalWatchlist();
+        const migrationAttempted = window.localStorage.getItem(WATCHLIST_MIGRATION_KEY) === "true";
+        const authoritative = migrationAttempted
+            ? { tickers: serverWatchlist.tickers, imported: false }
+            : await importPersonalWatchlist(legacyRef.current);
+        window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
+        setUnlocked(true);
+        confirmedWatchlistRef.current = authoritative.tickers;
+        applyWatchlist(authoritative.tickers);
+    }, [applyWatchlist]);
+
+    const authenticate = useCallback(async (key: string) => {
         const normalizedKey = key.trim();
         if (!normalizedKey) {
             setError("Enter the Admin Key to unlock personal data.");
             return false;
         }
-        if (!restoringSession) setUnlocking(true);
+        setUnlocking(true);
         setError("");
         try {
-            const serverWatchlist = await fetchPersonalWatchlist(normalizedKey);
-            const migrationAttempted = window.localStorage.getItem(WATCHLIST_MIGRATION_KEY) === "true";
-            const authoritative = migrationAttempted
-                ? { tickers: serverWatchlist.tickers, imported: false }
-                : await importPersonalWatchlist(legacyRef.current, normalizedKey);
-            window.sessionStorage.setItem(PERSONAL_SESSION_KEY, normalizedKey);
-            window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
-            setAdminKey(normalizedKey);
-            confirmedWatchlistRef.current = authoritative.tickers;
-            applyWatchlist(authoritative.tickers);
+            await createAdminSession(normalizedKey);
+            await openWorkspace();
             return true;
         } catch (caught) {
-            window.sessionStorage.removeItem(PERSONAL_SESSION_KEY);
-            setAdminKey(null);
+            setUnlocked(false);
             setError(
                 caught instanceof ApiError && caught.status === 401
                     ? "The Admin Key was rejected."
@@ -99,24 +108,32 @@ export function usePersonalWorkspace() {
             );
             return false;
         } finally {
-            if (!restoringSession) setUnlocking(false);
+            setUnlocking(false);
         }
-    }, [applyWatchlist]);
+    }, [openWorkspace]);
 
     useEffect(() => {
         legacyRef.current = readLegacyWatchlist();
         confirmedWatchlistRef.current = legacyRef.current;
         applyWatchlist(legacyRef.current);
-        const savedKey = window.sessionStorage.getItem(PERSONAL_SESSION_KEY);
-        if (!savedKey) {
-            setRestoring(false);
-            return;
-        }
-        void authenticate(savedKey, true).finally(() => setRestoring(false));
-    }, [applyWatchlist, authenticate]);
+        window.sessionStorage.removeItem(PERSONAL_SESSION_KEY);
+        const restore = async () => {
+            try {
+                const session = await fetchAdminSession();
+                if (session.authenticated) await openWorkspace();
+            } catch (caught) {
+                if (!(caught instanceof ApiError && caught.status === 401)) {
+                    setError(caught instanceof Error ? caught.message : "Unable to restore the personal workspace.");
+                }
+            } finally {
+                setRestoring(false);
+            }
+        };
+        void restore();
+    }, [applyWatchlist, openWorkspace]);
 
     useEffect(() => {
-        if (!adminKey) return;
+        if (!unlocked) return;
         // Pick up edits made from another tab or the command line when the page comes back into view.
         const refresh = () => {
             if (document.visibilityState !== "visible" || watchlistRefreshPendingRef.current) return;
@@ -124,7 +141,7 @@ export function usePersonalWorkspace() {
             const mutationVersion = watchlistMutationVersionRef.current;
             watchlistRequestQueueRef.current = watchlistRequestQueueRef.current.then(async () => {
                 try {
-                    const result = await fetchPersonalWatchlist(adminKey);
+                    const result = await fetchPersonalWatchlist();
                     if (mutationVersion !== watchlistMutationVersionRef.current) return;
                     confirmedWatchlistRef.current = result.tickers;
                     applyWatchlist(result.tickers);
@@ -141,14 +158,14 @@ export function usePersonalWorkspace() {
             window.removeEventListener("focus", refresh);
             document.removeEventListener("visibilitychange", refresh);
         };
-    }, [adminKey, applyWatchlist, handleUnauthorized]);
+    }, [applyWatchlist, handleUnauthorized, unlocked]);
 
     const mutateWatchlist = useCallback(async (
         ticker: string,
         optimistic: (current: string[], symbol: string) => string[],
-        send: (symbol: string, key: string) => Promise<{ tickers: string[] }>,
+        send: (symbol: string) => Promise<{ tickers: string[] }>,
     ) => {
-        if (!adminKey) {
+        if (!unlocked) {
             setError("Unlock the personal workspace to edit the watchlist.");
             return false;
         }
@@ -160,7 +177,7 @@ export function usePersonalWorkspace() {
         setError("");
         const request = watchlistRequestQueueRef.current.then(async () => {
             try {
-                const result = await send(symbol, adminKey);
+                const result = await send(symbol);
                 confirmedWatchlistRef.current = result.tickers;
                 if (mutationVersion === watchlistMutationVersionRef.current) {
                     applyWatchlist(result.tickers);
@@ -178,27 +195,26 @@ export function usePersonalWorkspace() {
         });
         watchlistRequestQueueRef.current = request.then(() => undefined);
         return request;
-    }, [adminKey, applyWatchlist, handleUnauthorized]);
+    }, [applyWatchlist, handleUnauthorized, unlocked]);
 
     const addToWatchlist = useCallback((ticker: string) => mutateWatchlist(
         ticker,
         (current, symbol) => (current.includes(symbol) ? current : [symbol, ...current]),
-        addPersonalWatchlistItem,
+        (symbol) => addPersonalWatchlistItem(symbol),
     ), [mutateWatchlist]);
 
     const removeFromWatchlist = useCallback((ticker: string) => mutateWatchlist(
         ticker,
         (current, symbol) => current.filter((item) => item !== symbol),
-        removePersonalWatchlistItem,
+        (symbol) => removePersonalWatchlistItem(symbol),
     ), [mutateWatchlist]);
 
     return {
-        adminKey,
         watchlist,
         restoring,
         unlocking,
         error,
-        isUnlocked: Boolean(adminKey),
+        isUnlocked: unlocked,
         unlock: authenticate,
         lock,
         handleUnauthorized,

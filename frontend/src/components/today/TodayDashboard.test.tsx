@@ -90,7 +90,7 @@ const indexQuotes = (phase: MarketStatusResponse["phase"] = "open", sessionDate 
 const renderDashboard = (props: Partial<Parameters<typeof TodayDashboard>[0]> = {}) => {
     const onSelectTicker = vi.fn();
     const onUnauthorized = vi.fn();
-    render(<TodayDashboard adminKey="test-key" watchlist={["ASTS.US", "UNH.US"]} quotes={quotes}
+    render(<TodayDashboard watchlist={["ASTS.US", "UNH.US"]} quotes={quotes}
         onSelectTicker={onSelectTicker} onUnauthorized={onUnauthorized} {...props} />);
     return { onSelectTicker, onUnauthorized };
 };
@@ -113,7 +113,7 @@ describe("TodayDashboard", () => {
         // The badge names the close behind the price readings, not the capture time.
         expect(within(regime).getByText("As of 10/16 close")).toBeInTheDocument();
         expect(within(regime).getByText(/Rule-based states on daily closes, captured 10\/16 16:30 ET/)).toBeInTheDocument();
-        expect(apiMocks.fetchToday).toHaveBeenCalledWith("test-key", expect.any(AbortSignal));
+        expect(apiMocks.fetchToday).toHaveBeenCalledWith(expect.any(AbortSignal));
 
         const movers = screen.getByRole("region", { name: "Movers by theme" });
         expect(within(movers).getByText("AI 新云 / 算力租赁")).toBeInTheDocument();

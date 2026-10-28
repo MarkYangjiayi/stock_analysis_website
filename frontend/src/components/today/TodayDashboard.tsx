@@ -22,7 +22,6 @@ import { Panel, SectionHeader } from "@/components/ui/Panel";
 import { Sparkline } from "@/components/ui/Sparkline";
 
 interface TodayDashboardProps {
-    adminKey: string;
     watchlist: string[];
     quotes: Record<string, WatchlistQuoteItem>;
     onSelectTicker: (ticker: string) => void;
@@ -349,15 +348,15 @@ function MoversPanel({ report, onSelectTicker }: { report: NonNullable<TodayResp
 }
 
 /** Owner-only home view: the latest report's regime and movers plus live watchlist context. */
-export default function TodayDashboard({ adminKey, watchlist, quotes, onSelectTicker, onUnauthorized }: TodayDashboardProps) {
+export default function TodayDashboard({ watchlist, quotes, onSelectTicker, onUnauthorized }: TodayDashboardProps) {
     const [version, setVersion] = useState(0);
     // The settled result remembers which request produced it, so loading is derived, not set in the effect.
-    const requestKey = `${adminKey}|${watchlist.join(",")}|${version}`;
+    const requestKey = `${watchlist.join(",")}|${version}`;
     const [result, setResult] = useState<{ key: string; data: TodayResponse | null; error: string }>({ key: "", data: null, error: "" });
 
     useEffect(() => {
         const controller = new AbortController();
-        fetchToday(adminKey, controller.signal)
+        fetchToday(controller.signal)
             .then((response) => setResult({ key: requestKey, data: response, error: "" }))
             .catch((caught: unknown) => {
                 if (caught instanceof DOMException && caught.name === "AbortError") return;
@@ -369,7 +368,7 @@ export default function TodayDashboard({ adminKey, watchlist, quotes, onSelectTi
                 setResult((previous) => ({ key: requestKey, data: previous.data, error: message }));
             });
         return () => controller.abort();
-    }, [adminKey, onUnauthorized, requestKey]);
+    }, [onUnauthorized, requestKey]);
 
     const loading = result.key !== requestKey;
     const data = result.data;

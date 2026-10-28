@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PERSONAL_SESSION_KEY, WATCHLIST_MIGRATION_KEY } from "@/hooks/usePersonalWorkspace";
+import { WATCHLIST_MIGRATION_KEY } from "@/hooks/usePersonalWorkspace";
 import { ApiError } from "@/lib/api";
 import { useStatusBar } from "@/store/useStatusBar";
 import {
@@ -13,6 +13,9 @@ import {
 } from "@/test/themesFixture";
 
 const apiMocks = vi.hoisted(() => ({
+    createAdminSession: vi.fn(),
+    fetchAdminSession: vi.fn(),
+    deleteAdminSession: vi.fn(),
     fetchThemes: vi.fn(),
     fetchTrendingCompanies: vi.fn(),
     fetchThemeProposals: vi.fn(),
@@ -50,8 +53,8 @@ const storage = () => {
     } as Storage;
 };
 
-const unlockSession = (key = "test-key") => {
-    window.sessionStorage.setItem(PERSONAL_SESSION_KEY, key);
+const unlockSession = () => {
+    apiMocks.fetchAdminSession.mockResolvedValue({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
     window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
 };
 
@@ -68,6 +71,9 @@ const cellTexts = (row: HTMLElement) => within(row).getAllByRole("cell").map((ce
 describe("ThemesPage", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        apiMocks.fetchAdminSession.mockResolvedValue({ authenticated: false, expires_at: null });
+        apiMocks.createAdminSession.mockResolvedValue({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
+        apiMocks.deleteAdminSession.mockResolvedValue({ authenticated: false, expires_at: null });
         Object.defineProperty(window, "localStorage", { value: storage(), configurable: true });
         Object.defineProperty(window, "sessionStorage", { value: storage(), configurable: true });
         useStatusBar.getState().clearStatus();
@@ -94,9 +100,10 @@ describe("ThemesPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Unlock workspace" }));
 
         expect(await screen.findByRole("table", { name: "Theme leaderboard" })).toBeInTheDocument();
-        expect(apiMocks.fetchPersonalWatchlist).toHaveBeenCalledWith("typed-key");
-        expect(apiMocks.fetchThemes).toHaveBeenCalledWith({ view: "now", stage: null }, "typed-key", expect.any(AbortSignal));
-        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBe("typed-key");
+        expect(apiMocks.createAdminSession).toHaveBeenCalledWith("typed-key");
+        expect(apiMocks.fetchPersonalWatchlist).toHaveBeenCalledWith();
+        expect(apiMocks.fetchThemes).toHaveBeenCalledWith({ view: "now", stage: null }, expect.any(AbortSignal));
+        expect(window.sessionStorage.length).toBe(0);
     });
 
     it("renders the leaderboard, KPI strip and status bar from a restored session", async () => {
@@ -104,7 +111,7 @@ describe("ThemesPage", () => {
         const { unmount } = render(<ThemesPage />);
 
         const row = await waitFor(() => rowFor("AI compute"));
-        expect(apiMocks.fetchThemes).toHaveBeenCalledWith({ view: "now", stage: null }, "test-key", expect.any(AbortSignal));
+        expect(apiMocks.fetchThemes).toHaveBeenCalledWith({ view: "now", stage: null }, expect.any(AbortSignal));
         expect(within(row).getByText("AI算力")).toBeInTheDocument();
         expect(within(row).getByText("Leading")).toBeInTheDocument();
         expect(within(row).getByText("78.4")).toBeInTheDocument();
@@ -187,7 +194,6 @@ describe("ThemesPage", () => {
 
         await waitFor(() => expect(apiMocks.fetchThemes).toHaveBeenLastCalledWith(
             { view: "now", stage: "crowded" },
-            "test-key",
             expect.any(AbortSignal),
         ));
         await waitFor(() => expect(within(leaderboard()).queryByRole("link", { name: "AI compute" })).not.toBeInTheDocument());
@@ -197,7 +203,6 @@ describe("ThemesPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Trend (20D)" }));
         await waitFor(() => expect(apiMocks.fetchThemes).toHaveBeenLastCalledWith(
             { view: "trend", stage: "crowded" },
-            "test-key",
             expect.any(AbortSignal),
         ));
         expect(within(leaderboard()).getByRole("columnheader", { name: "Heat 20D" })).toBeInTheDocument();
@@ -205,7 +210,6 @@ describe("ThemesPage", () => {
         fireEvent.click(within(stageFilter).getByRole("button", { name: "All stages" }));
         await waitFor(() => expect(apiMocks.fetchThemes).toHaveBeenLastCalledWith(
             { view: "trend", stage: null },
-            "test-key",
             expect.any(AbortSignal),
         ));
         expect(apiMocks.fetchThemes).toHaveBeenCalledTimes(4);
@@ -227,13 +231,13 @@ describe("ThemesPage", () => {
     });
 
     it("relocks the workspace when the key is rejected", async () => {
-        unlockSession("revoked-key");
+        unlockSession();
         apiMocks.fetchThemes.mockRejectedValue(new ApiError("Invalid API key", 401, "Invalid API key"));
         render(<ThemesPage />);
 
         expect(await screen.findByRole("heading", { name: "Themes are private to your workspace" })).toBeInTheDocument();
-        expect(screen.getByText("The personal workspace was locked because the Admin Key was rejected.")).toBeInTheDocument();
-        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
+        expect(screen.getByText("The personal workspace was locked because the session was rejected. Unlock it again with the Admin Key.")).toBeInTheDocument();
+        expect(apiMocks.deleteAdminSession).toHaveBeenCalled();
         expect(apiMocks.fetchThemes).toHaveBeenCalledTimes(1);
     });
 
@@ -262,7 +266,7 @@ describe("ThemesPage", () => {
         fireEvent.click(screen.getByRole("tab", { name: "Trending companies" }));
         const table = await screen.findByRole("table", { name: "Trending companies" });
         expect(screen.getByRole("tab", { name: "Trending companies" })).toHaveAttribute("aria-selected", "true");
-        expect(apiMocks.fetchTrendingCompanies).toHaveBeenCalledWith({ limit: 50 }, "test-key", expect.any(AbortSignal));
+        expect(apiMocks.fetchTrendingCompanies).toHaveBeenCalledWith({ limit: 50 }, expect.any(AbortSignal));
 
         const ionq = (await within(table).findByRole("link", { name: "IONQ" })).closest("tr")!;
         expect(within(ionq).getByRole("link", { name: "Quantum computing" })).toHaveAttribute("href", "/themes/quantum-computing");
@@ -288,7 +292,7 @@ describe("ThemesPage", () => {
 
         fireEvent.click(screen.getByRole("tab", { name: "Trending companies" }));
         expect(await screen.findByRole("heading", { name: "Themes are private to your workspace" })).toBeInTheDocument();
-        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
+        expect(apiMocks.deleteAdminSession).toHaveBeenCalled();
     });
 
     it("reviews proposals and shows the taxonomy snippet after accepting", async () => {
@@ -302,7 +306,7 @@ describe("ThemesPage", () => {
 
         fireEvent.click(screen.getByRole("tab", { name: "Proposals" }));
         expect(await screen.findByRole("heading", { name: "Humanoid robots" })).toBeInTheDocument();
-        expect(apiMocks.fetchThemeProposals).toHaveBeenCalledWith("test-key", "pending", expect.any(AbortSignal));
+        expect(apiMocks.fetchThemeProposals).toHaveBeenCalledWith("pending", expect.any(AbortSignal));
         expect(screen.getByRole("link", { name: "HSAI" })).toHaveAttribute("href", "/?ticker=HSAI.US");
         // The worker lists company profiles (E1–E3) before headlines; the cited headline still leads the card.
         const card = screen.getByRole("heading", { name: "Humanoid robots" }).closest("li")!;
@@ -315,13 +319,13 @@ describe("ThemesPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Accept" }));
         expect(await screen.findByText("Add to services/themes/taxonomy/themes_v1.yaml")).toBeInTheDocument();
-        expect(apiMocks.decideThemeProposal).toHaveBeenCalledWith(7, "accepted", "test-key");
+        expect(apiMocks.decideThemeProposal).toHaveBeenCalledWith(7, "accepted");
         expect(screen.getByText(/slug: humanoid-robots/)).toBeInTheDocument();
         expect(screen.getByText("accepted")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "All" }));
-        await waitFor(() => expect(apiMocks.fetchThemeProposals).toHaveBeenLastCalledWith("test-key", null, expect.any(AbortSignal)));
+        await waitFor(() => expect(apiMocks.fetchThemeProposals).toHaveBeenLastCalledWith(null, expect.any(AbortSignal)));
     });
 
     it("shows a cited headline even when the cluster has more companies than the card lists", async () => {
@@ -365,14 +369,14 @@ describe("ThemesPage", () => {
         fireEvent.click(screen.getByRole("tab", { name: "Themes" }));
         fireEvent.click(screen.getByRole("tab", { name: "Proposals" }));
         fireEvent.click(screen.getByRole("button", { name: "All" }));
-        await waitFor(() => expect(apiMocks.fetchThemeProposals).toHaveBeenLastCalledWith("test-key", null, expect.any(AbortSignal)));
+        await waitFor(() => expect(apiMocks.fetchThemeProposals).toHaveBeenLastCalledWith(null, expect.any(AbortSignal)));
         expect(await screen.findByText("accepted")).toBeInTheDocument();
         expect(screen.queryByText("Add to services/themes/taxonomy/themes_v1.yaml")).not.toBeInTheDocument();
 
         apiMocks.decideThemeProposal.mockClear();
         fireEvent.click(screen.getByRole("button", { name: "Show snippet" }));
         expect(await screen.findByText("Add to services/themes/taxonomy/themes_v1.yaml")).toBeInTheDocument();
-        expect(apiMocks.decideThemeProposal).toHaveBeenCalledWith(7, "accepted", "test-key");
+        expect(apiMocks.decideThemeProposal).toHaveBeenCalledWith(7, "accepted");
         expect(screen.getByText(/slug: humanoid-robots/)).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Show snippet" })).not.toBeInTheDocument();
 
@@ -385,7 +389,7 @@ describe("ThemesPage", () => {
         apiMocks.decideThemeProposal.mockClear();
         fireEvent.click(screen.getByRole("button", { name: "Accept instead" }));
         expect(await screen.findByText("Add to services/themes/taxonomy/themes_v1.yaml")).toBeInTheDocument();
-        expect(apiMocks.decideThemeProposal).toHaveBeenCalledWith(7, "accepted", "test-key");
+        expect(apiMocks.decideThemeProposal).toHaveBeenCalledWith(7, "accepted");
         expect(screen.getByText("accepted")).toBeInTheDocument();
     });
 });

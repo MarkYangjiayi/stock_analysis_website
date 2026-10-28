@@ -1,12 +1,15 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PERSONAL_SESSION_KEY, WATCHLIST_MIGRATION_KEY } from "@/hooks/usePersonalWorkspace";
+import { WATCHLIST_MIGRATION_KEY } from "@/hooks/usePersonalWorkspace";
 import { ApiError, type ThemeHistory } from "@/lib/api";
 import { useStatusBar } from "@/store/useStatusBar";
 import { makeThemeBrief, makeThemeDetailFixture, makeThemeHistory, makeThemeMeta } from "@/test/themesFixture";
 
 const apiMocks = vi.hoisted(() => ({
+    createAdminSession: vi.fn(),
+    fetchAdminSession: vi.fn(),
+    deleteAdminSession: vi.fn(),
     fetchThemeDetail: vi.fn(),
     fetchThemeHistory: vi.fn(),
     fetchPersonalWatchlist: vi.fn(),
@@ -46,8 +49,8 @@ const storage = () => {
     } as Storage;
 };
 
-const unlockSession = (key = "test-key") => {
-    window.sessionStorage.setItem(PERSONAL_SESSION_KEY, key);
+const unlockSession = () => {
+    apiMocks.fetchAdminSession.mockResolvedValue({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
     window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
 };
 
@@ -61,6 +64,9 @@ const memberRow = (ticker: string) => {
 describe("ThemeDetailPage", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        apiMocks.fetchAdminSession.mockResolvedValue({ authenticated: false, expires_at: null });
+        apiMocks.createAdminSession.mockResolvedValue({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
+        apiMocks.deleteAdminSession.mockResolvedValue({ authenticated: false, expires_at: null });
         navigation.slug = "ai-compute";
         Object.defineProperty(window, "localStorage", { value: storage(), configurable: true });
         Object.defineProperty(window, "sessionStorage", { value: storage(), configurable: true });
@@ -90,7 +96,7 @@ describe("ThemeDetailPage", () => {
         render(<ThemeDetailPage />);
 
         expect(await screen.findByRole("heading", { level: 1, name: "AI compute" })).toBeInTheDocument();
-        expect(apiMocks.fetchThemeDetail).toHaveBeenCalledWith("ai-compute", "test-key", null, expect.any(AbortSignal));
+        expect(apiMocks.fetchThemeDetail).toHaveBeenCalledWith("ai-compute", null, expect.any(AbortSignal));
         expect(screen.getByText("AI算力")).toBeInTheDocument();
         expect(screen.getByText(/design, manufacture or supply accelerated computing/)).toBeInTheDocument();
         expect(screen.getByText("artificial intelligence")).toHaveClass("eyebrow");
@@ -168,7 +174,7 @@ describe("ThemeDetailPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "1Y" }));
         await waitFor(() => expect(screen.getByTestId("theme-detail-chart")).toHaveAttribute("data-sessions", "252"));
-        expect(apiMocks.fetchThemeHistory).toHaveBeenCalledWith("ai-compute", 252, "test-key", expect.any(AbortSignal));
+        expect(apiMocks.fetchThemeHistory).toHaveBeenCalledWith("ai-compute", 252, expect.any(AbortSignal));
 
         fireEvent.click(screen.getByRole("button", { name: "120D" }));
         expect(screen.getByTestId("theme-detail-chart")).toHaveAttribute("data-sessions", "6");
@@ -195,7 +201,7 @@ describe("ThemeDetailPage", () => {
 
         expect(await screen.findByRole("heading", { name: "Theme not found" })).toBeInTheDocument();
         expect(screen.getByText(/retired-theme/)).toBeInTheDocument();
-        expect(apiMocks.fetchThemeDetail).toHaveBeenCalledWith("retired-theme", "test-key", null, expect.any(AbortSignal));
+        expect(apiMocks.fetchThemeDetail).toHaveBeenCalledWith("retired-theme", null, expect.any(AbortSignal));
     });
 
     it.each(["AI-Compute", "ai_compute", "-ai-compute", "a".repeat(65)])("shows not found without a request for the malformed slug %s", async (slug) => {
@@ -221,13 +227,13 @@ describe("ThemeDetailPage", () => {
     });
 
     it("relocks the workspace when the key is rejected", async () => {
-        unlockSession("revoked-key");
+        unlockSession();
         apiMocks.fetchThemeDetail.mockRejectedValue(new ApiError("Invalid API key", 401, "Invalid API key"));
         render(<ThemeDetailPage />);
 
         expect(await screen.findByRole("heading", { name: "Themes are private to your workspace" })).toBeInTheDocument();
-        expect(screen.getByText("The personal workspace was locked because the Admin Key was rejected.")).toBeInTheDocument();
-        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
+        expect(screen.getByText("The personal workspace was locked because the session was rejected. Unlock it again with the Admin Key.")).toBeInTheDocument();
+        expect(apiMocks.deleteAdminSession).toHaveBeenCalled();
         expect(apiMocks.fetchThemeDetail).toHaveBeenCalledTimes(1);
     });
 

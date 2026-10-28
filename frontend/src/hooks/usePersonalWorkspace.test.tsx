@@ -4,6 +4,9 @@ import { ApiError } from "@/lib/api";
 import { LEGACY_WATCHLIST_KEY, PERSONAL_SESSION_KEY, WATCHLIST_MIGRATION_KEY, readLegacyWatchlist, usePersonalWorkspace } from "@/hooks/usePersonalWorkspace";
 
 const apiMocks = vi.hoisted(() => ({
+    createAdminSession: vi.fn(),
+    fetchAdminSession: vi.fn(),
+    deleteAdminSession: vi.fn(),
     fetchPersonalWatchlist: vi.fn(),
     importPersonalWatchlist: vi.fn(),
     addPersonalWatchlistItem: vi.fn(),
@@ -34,24 +37,58 @@ describe("usePersonalWorkspace", () => {
         };
         Object.defineProperty(window, "localStorage", { value: storage(), configurable: true });
         Object.defineProperty(window, "sessionStorage", { value: storage(), configurable: true });
+        apiMocks.createAdminSession.mockResolvedValue({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
+        apiMocks.fetchAdminSession.mockResolvedValue({ authenticated: false, expires_at: null });
+        apiMocks.deleteAdminSession.mockResolvedValue({ authenticated: false, expires_at: null });
         apiMocks.fetchPersonalWatchlist.mockResolvedValue({ tickers: [] });
         apiMocks.importPersonalWatchlist.mockResolvedValue({ tickers: ["AAPL.US", "NVDA.US"], imported: true });
         apiMocks.addPersonalWatchlistItem.mockResolvedValue({ tickers: ["MSFT.US", "AAPL.US", "NVDA.US"], added: true });
         apiMocks.removePersonalWatchlistItem.mockResolvedValue({ tickers: ["NVDA.US"], removed: true });
     });
 
-    it("restores a session-only key and transactionally imports the legacy watchlist", async () => {
+    it("restores a cookie session and transactionally imports the legacy watchlist", async () => {
         window.localStorage.setItem(LEGACY_WATCHLIST_KEY, JSON.stringify(["AAPL", "NVDA", "AAPL.US"]));
-        window.sessionStorage.setItem(PERSONAL_SESSION_KEY, "session-secret");
+        // A key left over from before sessions moved to a cookie is discarded, not reused.
+        window.sessionStorage.setItem(PERSONAL_SESSION_KEY, "old-secret");
+        apiMocks.fetchAdminSession.mockResolvedValueOnce({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
         const { result } = renderHook(() => usePersonalWorkspace());
 
         await waitFor(() => expect(result.current.restoring).toBe(false));
-        expect(apiMocks.fetchPersonalWatchlist).toHaveBeenCalledWith("session-secret");
-        expect(apiMocks.importPersonalWatchlist).toHaveBeenCalledWith(["AAPL.US", "NVDA.US"], "session-secret");
+        expect(apiMocks.createAdminSession).not.toHaveBeenCalled();
+        expect(apiMocks.fetchPersonalWatchlist).toHaveBeenCalledWith();
+        expect(apiMocks.importPersonalWatchlist).toHaveBeenCalledWith(["AAPL.US", "NVDA.US"]);
         expect(result.current.watchlist).toEqual(["AAPL.US", "NVDA.US"]);
         expect(result.current.isUnlocked).toBe(true);
-        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBe("session-secret");
+        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
         expect(window.localStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
+    });
+
+    it("stays locked without a session and never stores the key it is given", async () => {
+        const { result } = renderHook(() => usePersonalWorkspace());
+        await waitFor(() => expect(result.current.restoring).toBe(false));
+        expect(result.current.isUnlocked).toBe(false);
+        expect(apiMocks.fetchPersonalWatchlist).not.toHaveBeenCalled();
+
+        await act(async () => { await result.current.unlock("  session-secret "); });
+        expect(apiMocks.createAdminSession).toHaveBeenCalledWith("session-secret");
+        expect(result.current.isUnlocked).toBe(true);
+        expect(window.sessionStorage.length).toBe(0);
+        for (let index = 0; index < window.localStorage.length; index += 1) {
+            expect(window.localStorage.getItem(window.localStorage.key(index)!)).not.toContain("session-secret");
+        }
+    });
+
+    it("reports a rejected key without unlocking", async () => {
+        apiMocks.createAdminSession.mockRejectedValueOnce(new ApiError("Invalid API key", 401));
+        const { result } = renderHook(() => usePersonalWorkspace());
+        await waitFor(() => expect(result.current.restoring).toBe(false));
+
+        let unlocked = true;
+        await act(async () => { unlocked = await result.current.unlock("guess"); });
+        expect(unlocked).toBe(false);
+        expect(result.current.isUnlocked).toBe(false);
+        expect(result.current.error).toBe("The Admin Key was rejected.");
+        expect(apiMocks.fetchPersonalWatchlist).not.toHaveBeenCalled();
     });
 
     it("preserves an intentionally empty legacy watchlist", () => {
@@ -61,23 +98,23 @@ describe("usePersonalWorkspace", () => {
         expect(window.localStorage.getItem(LEGACY_WATCHLIST_KEY)).toBe("[]");
     });
 
-    it("uses the server as authority after unlock and clears the key on a 401", async () => {
+    it("uses the server as authority after unlock and ends the session on a 401", async () => {
         const { result } = renderHook(() => usePersonalWorkspace());
         await waitFor(() => expect(result.current.restoring).toBe(false));
         await act(async () => { await result.current.unlock("session-secret"); });
 
         await act(async () => { await result.current.addToWatchlist("msft"); });
-        expect(apiMocks.addPersonalWatchlistItem).toHaveBeenCalledWith("MSFT.US", "session-secret");
+        expect(apiMocks.addPersonalWatchlistItem).toHaveBeenCalledWith("MSFT.US");
         expect(result.current.watchlist).toEqual(["MSFT.US", "AAPL.US", "NVDA.US"]);
 
         await act(async () => { await result.current.removeFromWatchlist("AAPL.US"); });
-        expect(apiMocks.removePersonalWatchlistItem).toHaveBeenCalledWith("AAPL.US", "session-secret");
+        expect(apiMocks.removePersonalWatchlistItem).toHaveBeenCalledWith("AAPL.US");
         expect(result.current.watchlist).toEqual(["NVDA.US"]);
 
         apiMocks.removePersonalWatchlistItem.mockRejectedValueOnce(new ApiError("Invalid API key", 401));
         await act(async () => { await result.current.removeFromWatchlist("NVDA.US"); });
         expect(result.current.isUnlocked).toBe(false);
-        expect(window.sessionStorage.getItem(PERSONAL_SESSION_KEY)).toBeNull();
+        expect(apiMocks.deleteAdminSession).toHaveBeenCalledTimes(1);
     });
 
     it("serializes overlapping edits and ignores stale responses", async () => {
@@ -117,8 +154,8 @@ describe("usePersonalWorkspace", () => {
             await removeRequest;
         });
         expect(result.current.watchlist).toEqual(["MSFT.US", "NVDA.US"]);
-        expect(apiMocks.addPersonalWatchlistItem).toHaveBeenCalledWith("MSFT.US", "session-secret");
-        expect(apiMocks.removePersonalWatchlistItem).toHaveBeenCalledWith("AAPL.US", "session-secret");
+        expect(apiMocks.addPersonalWatchlistItem).toHaveBeenCalledWith("MSFT.US");
+        expect(apiMocks.removePersonalWatchlistItem).toHaveBeenCalledWith("AAPL.US");
     });
 
     it("reloads the watchlist when the page comes back into view", async () => {
@@ -130,7 +167,7 @@ describe("usePersonalWorkspace", () => {
         act(() => { window.dispatchEvent(new Event("focus")); });
 
         await waitFor(() => expect(result.current.watchlist).toEqual(["TSLA.US", "AAPL.US", "NVDA.US"]));
-        expect(apiMocks.fetchPersonalWatchlist).toHaveBeenLastCalledWith("session-secret");
+        expect(apiMocks.fetchPersonalWatchlist).toHaveBeenLastCalledWith();
     });
 
     it("drops a reload that started before a newer local edit", async () => {
@@ -165,7 +202,7 @@ describe("usePersonalWorkspace", () => {
     it("does not re-import legacy data after the one-time migration was attempted", async () => {
         window.localStorage.setItem(LEGACY_WATCHLIST_KEY, JSON.stringify(["AAPL.US"]));
         window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
-        window.sessionStorage.setItem(PERSONAL_SESSION_KEY, "session-secret");
+        apiMocks.fetchAdminSession.mockResolvedValueOnce({ authenticated: true, expires_at: "2026-11-27T00:00:00+00:00" });
         apiMocks.fetchPersonalWatchlist.mockResolvedValueOnce({ tickers: [] });
         const { result } = renderHook(() => usePersonalWorkspace());
 
