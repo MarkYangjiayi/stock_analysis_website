@@ -32,7 +32,9 @@ SPARKLINE_SESSIONS = 30
 DELAY_MINUTES = 15
 LIVE_TTL = timedelta(seconds=60)
 IDLE_TTL = timedelta(minutes=30)
-CLOSE_SETTLE = timedelta(minutes=DELAY_MINUTES + 15)
+# The delayed feed reaches the bell about 15 minutes late and picks up after-hours prints
+# for another 15-20 (2026-10-27); keep refreshing each minute until it holds the close.
+CLOSE_SETTLE = timedelta(minutes=DELAY_MINUTES + 30)
 HISTORY_LOOKBACK = timedelta(days=60)
 # Local history older than this is treated as missing for sparkline purposes.
 HISTORY_MAX_GAP = timedelta(days=7)

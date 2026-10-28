@@ -20,6 +20,7 @@ const newYorkTime = (iso: string, withSeconds: boolean) => {
 const quoteLabel = (quote: LiveQuote) => {
     if (quote.source === "realtime") return `Real-time · ${newYorkTime(quote.as_of, true)}`;
     if (quote.source === "delayed") return `Delayed 15 min · ${newYorkTime(quote.as_of, false)}`;
+    if (quote.source === "last") return `Last trade · ${newYorkTime(quote.as_of, true)}`;
     return `Close · ${quote.session_date}`;
 };
 

@@ -37,9 +37,11 @@ describe("analysis header price", () => {
         expect(screen.getByText(/−174\.28 \(−9\.63%\)/)).toHaveClass("text-down");
     });
 
-    it("labels the delayed fallback and the session close", () => {
+    it("labels the delayed fallback, the last trade before the close is published, and the close", () => {
         expect(resolveHeadlinePrice(friday, thursday, quote({ source: "delayed", as_of: "2026-10-26T15:05:00Z" })).label)
             .toBe("Delayed 15 min · 11:05 ET");
+        expect(resolveHeadlinePrice(friday, thursday, quote({ source: "last", as_of: "2026-10-26T19:59:57.034Z" })).label)
+            .toBe("Last trade · 15:59:57 ET");
         expect(resolveHeadlinePrice(friday, thursday, quote({ source: "close", as_of: "2026-10-26T19:59:00Z" })).label)
             .toBe("Close · 2026-10-26");
     });
@@ -55,6 +57,7 @@ describe("analysis header price", () => {
     it("polls fast in the session, while the close settles, and otherwise waits for the open", () => {
         expect(livePollInterval(status({ phase: "open" }))).toBe(3_000);
         expect(livePollInterval(status({ phase: "post" }), Date.parse("2026-10-26T20:10:00Z"))).toBe(30_000);
+        expect(livePollInterval(status({ phase: "post" }), Date.parse("2026-10-26T20:40:00Z"))).toBe(30_000);
         expect(livePollInterval(status({ phase: "post" }), Date.parse("2026-10-26T21:00:00Z"))).toBe(600_000);
         expect(livePollInterval(status({ phase: "pre" }), Date.parse("2026-10-27T13:25:00Z"))).toBe(301_000);
         expect(livePollInterval(null)).toBe(30_000);

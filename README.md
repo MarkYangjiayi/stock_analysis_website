@@ -48,7 +48,7 @@
 *   **📋 联动侧边栏与持久化自选 (Watchlist)**
     内置暗黑悬浮侧边栏。个人自选和每只股票的估值假设持久化到服务端 SQLite，并由现有 `X-API-Key` 保护；浏览器只在当前 `sessionStorage` 会话保存 Admin Key。首次解锁会在服务端列表为空时幂等导入旧 `my_watchlist` LocalStorage 数据，之后以服务端为准。同一客户端 15 分钟内输错 Admin Key 10 次后锁定 15 分钟（锁定期间正确的 key 也拒绝；不带 key 的请求不计数，`ADMIN_AUTH_MAX_FAILURES` / `ADMIN_AUTH_FAILURE_WINDOW_SECONDS`）。API 与页面统一加 `nosniff`、禁止被嵌入 iframe、`Referrer-Policy` 等安全响应头，生产环境加 HSTS；个人数据接口返回 `Cache-Control: no-store`。
 *   **⏱️ 个股页实时价**
-    美股常规交易时段（09:30–16:00 ET），个股页头部显示 EODHD WebSocket 推送的成交价（延迟约 2–6 秒），涨跌以延迟行情的昨收为基准，与自选股侧边栏一致；WebSocket 不可用时退回 15 分钟延迟价。盘前盘后不显示盘外成交，头部显示最近一个交易日的收盘价，当天收盘价在次日日线同步后由日线接管。Worker 持有唯一一条 WebSocket（EODHD 每个 API key 最多 50 个代码，所有连接合计），只订阅正在被浏览的个股页，最多 `LIVE_QUOTE_MAX_SYMBOLS`=45 个；自选股和 Today 页仍用 15 分钟延迟价（`/api/v1/quotes/live`，`services/live_quotes.py`）。
+    美股常规交易时段（09:30–16:00 ET），个股页头部显示 EODHD WebSocket 推送的成交价（延迟约 2–6 秒），涨跌以延迟行情的昨收为基准，与自选股侧边栏一致；WebSocket 不可用时退回 15 分钟延迟价。盘前盘后不显示盘外成交（EODHD 的 WebSocket 不推收盘集合竞价，16:00 起都是盘后成交）。收盘后头部先显示当天最后一笔常规成交（`Last trade`），EODHD 当天日线出来（约收盘后 20 分钟）即换成官方收盘价；日线接口失败时，收盘 35 分钟后改用已稳定的延迟报价。当天收盘价在次日日线同步后由日线接管。Worker 持有唯一一条 WebSocket（EODHD 每个 API key 最多 50 个代码，所有连接合计），只订阅正在被浏览的个股页，最多 `LIVE_QUOTE_MAX_SYMBOLS`=45 个；自选股和 Today 页仍用 15 分钟延迟价（`/api/v1/quotes/live`，`services/live_quotes.py`）。
 *   **🗓️ Today 首页（需解锁）**
     未选股票时，首页显示最新一份日报的市场状态和按题材聚类的异动（与飞书推送同一份证据），以及全部自选股的延迟行情、与日报相同规则的标签（RSI、52 周高低、预期修正、空头）和未来 7 天的美国宏观数据与财报。自选股标签和日历按请求计算，缓存 15 分钟（`/api/personal/today`，`services/today.py`）。未解锁时仍是搜索入口。
 *   **📡 智能盯盘与多渠道触达网络 (Bot & Notifications)**
