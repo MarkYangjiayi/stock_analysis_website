@@ -166,7 +166,7 @@ const props = () => ({
     decision,
     loading: false,
     error: "",
-    adminKey: null,
+    unlocked: false,
     onUnlock: vi.fn(),
     onUnauthorized: vi.fn(),
     onRetry: vi.fn(),
@@ -385,13 +385,13 @@ describe("DecisionCockpit", () => {
 
     it("saves and resets scenarios when the workspace is unlocked", async () => {
         const user = userEvent.setup();
-        const componentProps = { ...props(), adminKey: "secret" };
+        const componentProps = { ...props(), unlocked: true };
         render(<DecisionCockpit {...componentProps} />);
         await user.click(screen.getByRole("button", { name: "Valuation" }));
         await user.click(screen.getByRole("button", { name: "Save scenarios" }));
-        expect(apiMocks.savePersonalValuationScenarios).toHaveBeenCalledWith("AAA.US", scenarios, "secret");
+        expect(apiMocks.savePersonalValuationScenarios).toHaveBeenCalledWith("AAA.US", scenarios);
         await user.click(screen.getByRole("button", { name: "Reset defaults" }));
-        expect(apiMocks.resetPersonalValuationScenarios).toHaveBeenCalledWith("AAA.US", "secret");
+        expect(apiMocks.resetPersonalValuationScenarios).toHaveBeenCalledWith("AAA.US");
         expect(apiMocks.calculateDecisionValuation).toHaveBeenLastCalledWith("AAA.US", scenarios);
     });
 
@@ -403,7 +403,7 @@ describe("DecisionCockpit", () => {
                 resolveSave = resolve;
             }),
         );
-        render(<DecisionCockpit {...props()} adminKey="secret" />);
+        render(<DecisionCockpit {...props()} unlocked />);
         await user.click(screen.getByRole("button", { name: "Valuation" }));
         const growth = screen.getByRole("spinbutton", { name: "bear FCF growth" });
         await user.click(screen.getByRole("button", { name: "Save scenarios" }));
@@ -435,7 +435,7 @@ describe("DecisionCockpit", () => {
         };
         const componentProps = {
             ...props(),
-            adminKey: "secret",
+            unlocked: true,
             decision: { ...decision, valuation: savedValuation },
         };
         render(<DecisionCockpit {...componentProps} />);
@@ -454,7 +454,7 @@ describe("DecisionCockpit", () => {
     it("shows a bounded error when reset succeeds but default recalculation fails", async () => {
         const user = userEvent.setup();
         apiMocks.calculateDecisionValuation.mockRejectedValueOnce(new Error("calculation timed out"));
-        const componentProps = { ...props(), adminKey: "secret" };
+        const componentProps = { ...props(), unlocked: true };
         render(<DecisionCockpit {...componentProps} />);
         await user.click(screen.getByRole("button", { name: "Valuation" }));
         await user.click(screen.getByRole("button", { name: "Reset defaults" }));

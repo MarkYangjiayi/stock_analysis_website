@@ -123,7 +123,7 @@ describe("EarningsQualityPanel", () => {
         expect(onUnlock).toHaveBeenCalledOnce();
         expect(onAnalyze).not.toHaveBeenCalled();
 
-        rerender(<EarningsQualityPanel data={response()} adminKey="secret" onAnalyze={onAnalyze} onUnlock={onUnlock} />);
+        rerender(<EarningsQualityPanel data={response()} unlocked onAnalyze={onAnalyze} onUnlock={onUnlock} />);
         await user.click(screen.getByRole("button", { name: /analyze filing/i }));
         expect(onAnalyze).toHaveBeenCalledOnce();
         expect(onAnalyze.mock.calls[0][0].period_end).toBe("2025-12-31");
@@ -131,7 +131,7 @@ describe("EarningsQualityPanel", () => {
 
     it("shows adjusted NI and EPS only for a verified cached result", async () => {
         const user = userEvent.setup();
-        render(<EarningsQualityPanel data={response(true)} adminKey="secret" />);
+        render(<EarningsQualityPanel data={response(true)} unlocked />);
 
         await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
         expect(screen.getByText("Verified adjusted")).toBeInTheDocument();
@@ -143,7 +143,7 @@ describe("EarningsQualityPanel", () => {
     it("disables repeat submission while the selected period is being queued", async () => {
         const user = userEvent.setup();
         const onAnalyze = vi.fn();
-        render(<EarningsQualityPanel data={response()} adminKey="secret" busyPeriod="quarterly:2025-12-31" onAnalyze={onAnalyze} />);
+        render(<EarningsQualityPanel data={response()} unlocked busyPeriod="quarterly:2025-12-31" onAnalyze={onAnalyze} />);
 
         await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
         const analyzeButton = screen.getByRole("button", { name: /analyze filing/i });
@@ -162,7 +162,7 @@ describe("EarningsQualityPanel", () => {
         analysis.validation_report.eps_failures = [{ code: "adjusted_eps_unverified", message: "Adjusted diluted EPS is not source-reconciled." }];
         data.quarterly[0].verified_normalized.adjusted_eps = null;
 
-        render(<EarningsQualityPanel data={data} adminKey="secret" />);
+        render(<EarningsQualityPanel data={data} unlocked />);
         await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
 
         expect(screen.getAllByText("120").length).toBeGreaterThan(0);
@@ -193,7 +193,7 @@ describe("EarningsQualityPanel", () => {
         }];
         data.quarterly[0].verified_normalized = null;
 
-        render(<EarningsQualityPanel data={data} adminKey="secret" />);
+        render(<EarningsQualityPanel data={data} unlocked />);
 
         expect(screen.getByText("Filing candidates flagged")).toBeInTheDocument();
         expect(screen.getByText("1 filing flag")).toBeInTheDocument();
@@ -224,7 +224,7 @@ describe("EarningsQualityPanel", () => {
         analysis.validation_report.verified = false;
         data.quarterly[0].verified_normalized = null;
 
-        render(<EarningsQualityPanel data={data} adminKey="secret" />);
+        render(<EarningsQualityPanel data={data} unlocked />);
 
         expect(screen.getByText("Filing candidates flagged")).toBeInTheDocument();
         expect(screen.getByText("1 filing flag")).toBeInTheDocument();
@@ -248,7 +248,7 @@ describe("EarningsQualityPanel", () => {
         analysis.retryable = true;
         data.quarterly[0].verified_normalized = null;
 
-        render(<EarningsQualityPanel data={data} adminKey="secret" onAnalyze={onAnalyze} />);
+        render(<EarningsQualityPanel data={data} unlocked onAnalyze={onAnalyze} />);
         await user.click(screen.getByRole("button", { name: /2025-12-31/i }));
 
         expect(screen.getByText("SEC filing not available yet")).toBeInTheDocument();

@@ -9,13 +9,14 @@ import { API_BASE_URL } from "@/lib/api";
 interface AIReportProps {
     ticker: string;
     evidenceKey: string;
-    adminKey?: string | null;
+    /** Personal scenarios join the brief when unlocked; the session cookie carries the access. */
+    unlocked?: boolean;
     onUnauthorized?: () => void;
     embedded?: boolean;
     disabledReason?: string;
 }
 
-export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized, embedded = false, disabledReason }: AIReportProps) {
+export default function AIReport({ ticker, evidenceKey, unlocked = false, onUnauthorized, embedded = false, disabledReason }: AIReportProps) {
     const [report, setReport] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -27,7 +28,7 @@ export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized
         setError("");
         setLoading(false);
         return () => abortRef.current?.abort();
-    }, [ticker, evidenceKey, adminKey, disabledReason]);
+    }, [ticker, evidenceKey, unlocked, disabledReason]);
 
     const loadReport = async () => {
         if (disabledReason) return;
@@ -40,7 +41,7 @@ export default function AIReport({ ticker, evidenceKey, adminKey, onUnauthorized
         try {
             const response = await fetch(`${API_BASE_URL}/api/stocks/${encodeURIComponent(ticker)}/report`, {
                 signal: controller.signal,
-                headers: adminKey ? { "X-API-Key": adminKey } : undefined,
+                credentials: "include",
             });
             if (!response.ok) {
                 if (response.status === 401) onUnauthorized?.();

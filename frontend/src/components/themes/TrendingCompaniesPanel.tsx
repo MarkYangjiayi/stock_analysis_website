@@ -28,11 +28,9 @@ const FLAGS: Record<string, { label: string; className: string; icon: typeof Fla
 
 /** Cross-sectional company trend ranking for the same theme publication. */
 export default function TrendingCompaniesPanel({
-    adminKey,
     onUnauthorized,
     themeNames,
 }: {
-    adminKey: string;
     onUnauthorized: () => void;
     themeNames: Record<string, string>;
 }) {
@@ -45,7 +43,7 @@ export default function TrendingCompaniesPanel({
         setLoading(true);
         setError("");
         try {
-            setData(await fetchTrendingCompanies({ limit: 50 }, adminKey, signal));
+            setData(await fetchTrendingCompanies({ limit: 50 }, signal));
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
             if (caught instanceof ApiError && caught.status === 401) {
@@ -57,7 +55,7 @@ export default function TrendingCompaniesPanel({
         } finally {
             if (!signal?.aborted) setLoading(false);
         }
-    }, [adminKey, onUnauthorized]);
+    }, [onUnauthorized]);
 
     useEffect(() => {
         const controller = new AbortController();

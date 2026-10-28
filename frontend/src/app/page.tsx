@@ -221,21 +221,22 @@ function AnalysisPage() {
         }
     }, []);
 
-    const loadDecision = useCallback(async (symbol: string, adminKey?: string | null) => {
+    // ``unlocked`` changes what the server returns (saved scenarios ride on the session cookie).
+    const loadDecision = useCallback(async (symbol: string, unlocked: boolean) => {
         decisionRequestRef.current?.abort();
         const controller = new AbortController();
         decisionRequestRef.current = controller;
         setDecisionLoading(true);
         setDecisionError("");
         try {
-            const result = await fetchDecisionSupport(symbol, adminKey || undefined, controller.signal);
+            const result = await fetchDecisionSupport(symbol, controller.signal);
             if (!controller.signal.aborted) setDecision(result);
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
-            if (caught instanceof ApiError && caught.status === 401 && adminKey) {
+            if (caught instanceof ApiError && caught.status === 401 && unlocked) {
                 handlePersonalUnauthorized();
                 try {
-                    const publicResult = await fetchDecisionSupport(symbol, undefined, controller.signal);
+                    const publicResult = await fetchDecisionSupport(symbol, controller.signal);
                     if (!controller.signal.aborted) setDecision(publicResult);
                     return;
                 } catch (fallbackError) {
@@ -351,8 +352,7 @@ function AnalysisPage() {
     ))?.id ?? null;
 
     useEffect(() => {
-        const adminKey = personal.adminKey;
-        if (!requestedTicker || !cachedActiveEarningsAnalysisId || earningsQualityBusyPeriod || !adminKey) return;
+        if (!requestedTicker || !cachedActiveEarningsAnalysisId || earningsQualityBusyPeriod || !personal.isUnlocked) return;
         const controller = new AbortController();
         const analysisId = cachedActiveEarningsAnalysisId;
         const poll = async () => {
@@ -360,14 +360,14 @@ function AnalysisPage() {
                 let active = true;
                 while (!controller.signal.aborted && active) {
                     await waitForPoll(1_500, controller.signal);
-                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, adminKey, controller.signal);
+                    const analysis = await fetchEarningsQualityAnalysis(requestedTicker, analysisId, controller.signal);
                     active = analysis.status === "queued" || analysis.status === "running";
                     if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
                 }
                 if (!controller.signal.aborted) {
                     await Promise.all([
                         loadEarningsQuality(requestedTicker),
-                        loadDecision(requestedTicker, personal.adminKey),
+                        loadDecision(requestedTicker, personal.isUnlocked),
                     ]);
                 }
             } catch (caught) {
@@ -377,7 +377,7 @@ function AnalysisPage() {
         };
         void poll();
         return () => controller.abort();
-    }, [cachedActiveEarningsAnalysisId, earningsQualityBusyPeriod, loadDecision, loadEarningsQuality, personal.adminKey, requestedTicker]);
+    }, [cachedActiveEarningsAnalysisId, earningsQualityBusyPeriod, loadDecision, loadEarningsQuality, personal.isUnlocked, requestedTicker]);
 
     useEffect(() => {
         if (!requestedTicker) {
@@ -440,9 +440,9 @@ function AnalysisPage() {
             setDecisionError("");
             return;
         }
-        void loadDecision(requestedTicker, personal.adminKey);
+        void loadDecision(requestedTicker, personal.isUnlocked);
         return () => decisionRequestRef.current?.abort();
-    }, [decisionRefreshVersion, loadDecision, personal.adminKey, requestedTicker]);
+    }, [decisionRefreshVersion, loadDecision, personal.isUnlocked, requestedTicker]);
 
     const selectTicker = (symbol: string) => router.push(`/?ticker=${encodeURIComponent(symbol.toUpperCase())}`);
 
@@ -511,12 +511,12 @@ function AnalysisPage() {
 
     const refreshDecision = useCallback(async () => {
         if (!ticker) return;
-        await loadDecision(ticker, personal.adminKey);
-    }, [loadDecision, personal.adminKey, ticker]);
+        await loadDecision(ticker, personal.isUnlocked);
+    }, [loadDecision, personal.isUnlocked, ticker]);
 
     const analyzeEarningsPeriod = useCallback(async (period: EarningsQualityPeriod) => {
         if (!ticker) return;
-        if (!personal.adminKey) {
+        if (!personal.isUnlocked) {
             setUnlockOpen(true);
             return;
         }
@@ -524,7 +524,6 @@ function AnalysisPage() {
         const controller = new AbortController();
         earningsAnalysisRequestRef.current = controller;
         const requestTicker = ticker;
-        const adminKey = personal.adminKey;
         const key = `${period.period_type}:${period.period_end}`;
         setEarningsQualityBusyPeriod(key);
         setEarningsQualityError("");
@@ -533,19 +532,18 @@ function AnalysisPage() {
                 requestTicker,
                 period.period_end,
                 period.period_type,
-                adminKey,
                 controller.signal,
             );
             if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
             while (!controller.signal.aborted && (analysis.status === "queued" || analysis.status === "running")) {
                 await waitForPoll(1_500, controller.signal);
-                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, adminKey, controller.signal);
+                analysis = await fetchEarningsQualityAnalysis(requestTicker, analysis.id, controller.signal);
                 if (!controller.signal.aborted) setEarningsQuality((current) => attachEarningsAnalysis(current, analysis));
             }
             if (!controller.signal.aborted) {
                 await Promise.all([
                     loadEarningsQuality(requestTicker),
-                    loadDecision(requestTicker, personal.adminKey),
+                    loadDecision(requestTicker, personal.isUnlocked),
                 ]);
             }
         } catch (caught) {
@@ -558,7 +556,7 @@ function AnalysisPage() {
         } finally {
             if (!controller.signal.aborted) setEarningsQualityBusyPeriod(null);
         }
-    }, [handlePersonalUnauthorized, loadDecision, loadEarningsQuality, personal.adminKey, ticker]);
+    }, [handlePersonalUnauthorized, loadDecision, loadEarningsQuality, personal.isUnlocked, ticker]);
 
     const showFinancialEvidence = async (metric: DecisionWarning["evidence_metric"]) => {
         if (metric === "expectations" || metric === "short_interest") {
@@ -630,11 +628,11 @@ function AnalysisPage() {
                         <div className="surface-panel h-40 animate-pulse bg-surface-muted" aria-label="Restoring workspace" />
                     )}
 
-                    {!ticker && !personal.restoring && personal.adminKey && (
-                        <TodayDashboard adminKey={personal.adminKey} watchlist={watchlist} quotes={watchlistQuotes} onSelectTicker={selectTicker} onUnauthorized={handlePersonalUnauthorized} />
+                    {!ticker && !personal.restoring && personal.isUnlocked && (
+                        <TodayDashboard watchlist={watchlist} quotes={watchlistQuotes} onSelectTicker={selectTicker} onUnauthorized={handlePersonalUnauthorized} />
                     )}
 
-                    {!ticker && !personal.restoring && !personal.adminKey && (
+                    {!ticker && !personal.restoring && !personal.isUnlocked && (
                         <section className="surface-panel flex min-h-[65vh] flex-col items-center justify-center px-6 py-16 text-center">
                             <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-accent/40 bg-accent-soft text-accent"><Search size={22} /></span>
                             <p className="eyebrow mt-6">Single-security workspace</p>
@@ -713,7 +711,7 @@ function AnalysisPage() {
                                         decision={decision}
                                         loading={decisionLoading}
                                         error={decisionError}
-                                        adminKey={personal.adminKey}
+                                        unlocked={personal.isUnlocked}
                                         onUnlock={() => setUnlockOpen(true)}
                                         onUnauthorized={personal.handleUnauthorized}
                                         onRetry={() => void refreshDecision()}

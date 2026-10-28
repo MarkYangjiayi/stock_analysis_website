@@ -83,7 +83,7 @@ function ThemeTabs({ active, onChange }: { active: ThemesTab; onChange: (tab: Th
     );
 }
 
-function ThemesDashboard({ adminKey, onUnauthorized }: ThemeAccess) {
+function ThemesDashboard({ onUnauthorized }: ThemeAccess) {
     const [view, setView] = useState<ThemeView>("now");
     const [stage, setStage] = useState<StageFilter>("all");
     const [display, setDisplay] = useState<DisplayMode>("table");
@@ -99,7 +99,7 @@ function ThemesDashboard({ adminKey, onUnauthorized }: ThemeAccess) {
         setLoading(true);
         setError("");
         try {
-            const response = await fetchThemes({ view, stage: stage === "all" ? null : stage }, adminKey, signal);
+            const response = await fetchThemes({ view, stage: stage === "all" ? null : stage }, signal);
             setData(response);
             setThemeNames((current) => ({
                 ...current,
@@ -116,7 +116,7 @@ function ThemesDashboard({ adminKey, onUnauthorized }: ThemeAccess) {
         } finally {
             if (!signal?.aborted) setLoading(false);
         }
-    }, [adminKey, onUnauthorized, stage, view]);
+    }, [onUnauthorized, stage, view]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -220,8 +220,8 @@ function ThemesDashboard({ adminKey, onUnauthorized }: ThemeAccess) {
                             )}
                         </>
                     )}
-                    {tab === "companies" && <TrendingCompaniesPanel adminKey={adminKey} onUnauthorized={onUnauthorized} themeNames={themeNames} />}
-                    {tab === "proposals" && <ThemeProposalsPanel adminKey={adminKey} onUnauthorized={onUnauthorized} />}
+                    {tab === "companies" && <TrendingCompaniesPanel onUnauthorized={onUnauthorized} themeNames={themeNames} />}
+                    {tab === "proposals" && <ThemeProposalsPanel onUnauthorized={onUnauthorized} />}
                 </div>
             </section>
 

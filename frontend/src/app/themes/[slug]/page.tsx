@@ -85,7 +85,7 @@ function Kpi({ label, value, detail, valueClass = "" }: { label: string; value: 
     );
 }
 
-function ThemeDetail({ slug, adminKey, onUnauthorized }: ThemeAccess & { slug: string }) {
+function ThemeDetail({ slug, onUnauthorized }: ThemeAccess & { slug: string }) {
     const [data, setData] = useState<ThemeDetailResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -100,7 +100,7 @@ function ThemeDetail({ slug, adminKey, onUnauthorized }: ThemeAccess & { slug: s
         setError("");
         setNotFound(false);
         try {
-            setData(await fetchThemeDetail(slug, adminKey, null, signal));
+            setData(await fetchThemeDetail(slug, null, signal));
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
             if (caught instanceof ApiError && caught.status === 401) {
@@ -114,7 +114,7 @@ function ThemeDetail({ slug, adminKey, onUnauthorized }: ThemeAccess & { slug: s
         } finally {
             if (!signal?.aborted) setLoading(false);
         }
-    }, [adminKey, onUnauthorized, slug]);
+    }, [onUnauthorized, slug]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -126,7 +126,7 @@ function ThemeDetail({ slug, adminKey, onUnauthorized }: ThemeAccess & { slug: s
     const loadLongHistory = useCallback(async (signal?: AbortSignal) => {
         setHistoryError("");
         try {
-            const response = await fetchThemeHistory(slug, 252, adminKey, signal);
+            const response = await fetchThemeHistory(slug, 252, signal);
             setLongHistory(response.history);
         } catch (caught) {
             if (caught instanceof DOMException && caught.name === "AbortError") return;
@@ -136,7 +136,7 @@ function ThemeDetail({ slug, adminKey, onUnauthorized }: ThemeAccess & { slug: s
             }
             setHistoryError(caught instanceof Error ? caught.message : "Unable to load the 1Y history.");
         }
-    }, [adminKey, onUnauthorized, slug]);
+    }, [onUnauthorized, slug]);
 
     useEffect(() => {
         if (range !== "252" || longHistory) return;
