@@ -668,6 +668,7 @@ class ThemeListResponse(BaseModel):
 class ThemeMemberRow(BaseModel):
     ticker: str
     name: Optional[str] = None
+    market_cap: Optional[float] = None
     tier: Literal["core", "peripheral"]
     weight: float
     exposure: int

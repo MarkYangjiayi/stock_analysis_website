@@ -128,13 +128,15 @@ describe("ThemeDetailPage", () => {
         expect(within(nvda).getByText("ETF SMH")).toBeInTheDocument();
         expect(within(nvda).getByText("#1")).toBeInTheDocument();
         expect(within(nvda).getByText("1.34×")).toBeInTheDocument();
+        expect(within(nvda).getByText("$4.7T")).toBeInTheDocument();
 
         const sparse = within(memberRow("SMCI")).getAllByRole("cell").map((cell) => cell.textContent?.trim());
         expect(sparse[1]).toBe("SMCI");
         expect(sparse[2]).toBe("—");
-        expect(sparse[4]).toMatch(/^—Exposure 1\/3/);
-        expect(sparse[4]).toContain("ETF only · unverified");
-        expect(sparse.slice(5, 12)).toEqual(["—", "—", "—", "—", "—", "—", "—"]);
+        expect(sparse[3]).toBe("—");
+        expect(sparse[5]).toMatch(/^—Exposure 1\/3/);
+        expect(sparse[5]).toContain("ETF only · unverified");
+        expect(sparse.slice(6, 13)).toEqual(["—", "—", "—", "—", "—", "—", "—"]);
 
         await waitFor(() => expect(useStatusBar.getState().items).toEqual([{ label: "Themes", value: "2026-10-09", tone: "ready" }]));
         expect(useStatusBar.getState().note).toBe("scoring theme-heat-v1");

@@ -235,6 +235,7 @@ export function makeThemeMember(overrides: Partial<ThemeMemberRow> = {}): ThemeM
     return {
         ticker: "NVDA.US",
         name: "NVIDIA Corporation",
+        market_cap: 4_700_000_000_000,
         tier: "core",
         weight: 0.15,
         exposure: 3,
@@ -299,6 +300,7 @@ export function makeThemeDetailFixture(overrides: Partial<ThemeDetailResponse> =
             makeThemeMember({
                 ticker: "SMCI.US",
                 name: null,
+                market_cap: null,
                 tier: "peripheral",
                 weight: 0.04,
                 exposure: 1,
