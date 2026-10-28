@@ -1464,8 +1464,8 @@ export const fetchWatchlistQuotes = (tickers: string[], signal?: AbortSignal) =>
         20_000,
     );
 
-/** realtime: streamed trade in the session; delayed: 15-minute feed; close: the session's closing price. */
-export type LiveQuoteSource = "realtime" | "delayed" | "close";
+/** realtime: streamed trade in the session; delayed: 15-minute feed; last: the session's last regular trade before its close is published; close: the official close. */
+export type LiveQuoteSource = "realtime" | "delayed" | "last" | "close";
 
 export interface LiveQuote extends WatchlistQuote {
     source: LiveQuoteSource;

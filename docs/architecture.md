@@ -40,9 +40,11 @@ one-minute row in `live_quote_leases`; the worker subscribes leased tickers
 the move monitor is on), writes the latest regular-session trade to
 `live_quotes` about once a second, and keeps a heartbeat in `live_quote_feed`.
 The socket is open only while something is leased in the session (plus five
-minutes for the closing print). When the heartbeat is stale or a ticker is not
-streamed, the API serves the 15-minute delayed quote; after the close it serves
-that session's close until the daily bar lands.
+minutes for trades that arrive after the bell; EODHD streams no closing auction
+print). When the heartbeat is stale or a ticker is not streamed, the API serves
+the 15-minute delayed quote. After the close it serves the session's last
+regular trade until EODHD's EOD bar for the session carries the official close
+(about 20 minutes after the bell), then that close until the daily bar lands.
 
 ## 2. Storage choices
 

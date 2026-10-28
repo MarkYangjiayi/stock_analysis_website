@@ -10,13 +10,14 @@ every socket, so the worker holds the only connection and allocates it:
   first, up to ``LIVE_QUOTE_MAX_SYMBOLS``. WS_SYMBOLS are pinned while the
   intraday move monitor is on. A symbol stays subscribed for a grace period
   after its lease lapses, and the socket closes after five idle minutes or once
-  the session's closing print has had time to arrive.
+  the session's last trades have arrived after the bell.
 * The latest regular-session trade per ticker goes to ``live_quotes`` about once
   a second; ``live_quote_feed`` carries the connection heartbeat.
 
 ``get_live_quote`` serves the header: the streamed trade while the session is
-open, else the delayed quote; after the close, that session's closing price
-until the daily bar for it lands.
+open, else the delayed quote. After the close it serves the session's last
+regular trade until EODHD's EOD bar for the session carries the official close,
+then that close until the daily bar for it lands.
 """
 
 import asyncio
@@ -38,7 +39,7 @@ from core.time_utils import utc_now
 from core.trading_calendar import NEW_YORK, latest_completed_us_session, us_market_status, us_session_bounds
 from database import async_session_maker
 from models import DailyPrice, LiveQuote, LiveQuoteFeed, LiveQuoteLease, Ticker
-from services import watchlist_quotes
+from services import eodhd_client, watchlist_quotes
 from services.ws_monitor import monitor_symbols, ws_monitor
 
 
@@ -50,10 +51,13 @@ LEASE_TTL = timedelta(seconds=60)
 # Keep a symbol after its lease lapses so flipping between pages does not churn subscriptions.
 UNSUBSCRIBE_GRACE = timedelta(minutes=2)
 IDLE_DISCONNECT = timedelta(minutes=5)
-# Stay connected this long after the close so the closing print arrives.
+# Stay connected this long after the close: the session's last trades arrive up to six seconds late.
 CLOSE_TAIL = timedelta(minutes=5)
-# The closing auction prints at the bell, a moment after the official close timestamp.
-CLOSE_PRINT_SLACK = timedelta(seconds=5)
+# EODHD publishes the session's EOD bar, with the official close, about 20 minutes after the bell.
+OFFICIAL_CLOSE_RETRY = timedelta(seconds=60)
+# The delayed feed passes the bell about 15 minutes late and keeps picking up after-hours
+# prints for another 15-20 (2026-10-27); only after that does it hold the official close.
+DELAYED_CLOSE_SETTLE = timedelta(minutes=35)
 FEED_STALE_AFTER = timedelta(seconds=15)
 HEARTBEAT_SECONDS = 5.0
 POLL_SECONDS = 1.0
@@ -62,8 +66,10 @@ REJECTED_RETRY_SECONDS = 60.0
 MAX_RECONNECT_DELAY = 60
 
 _US_BASE = re.compile(r"[A-Z0-9]+(?:-[A-Z0-9]+)?")
+# Per ticker: the session, when its EOD bar was last asked for, and its close once published.
+_official_closes: dict[str, tuple[date, datetime, Optional[float]]] = {}
 
-QuoteSource = Literal["realtime", "delayed", "close"]
+QuoteSource = Literal["realtime", "delayed", "last", "close"]
 
 
 def ws_symbol(ticker: str) -> Optional[str]:
@@ -87,7 +93,7 @@ def _aware(moment: datetime) -> datetime:
 
 
 def in_live_window(now: datetime) -> bool:
-    """The regular session plus the tail in which its closing print arrives."""
+    """The regular session plus the tail in which its last trades arrive."""
     status = us_market_status(now)
     if status["phase"] == "open":
         return True
@@ -96,13 +102,17 @@ def in_live_window(now: datetime) -> bool:
 
 
 def regular_session_date(traded_at: datetime) -> Optional[date]:
-    """Session of a trade printed during regular hours (closing print included), else None."""
+    """Session of a trade printed during regular hours, else None.
+
+    EODHD streams no closing auction print: everything stamped from the bell on is an
+    extended-hours trade (2026-10-27), so the bell itself is outside the session.
+    """
     session_date = traded_at.astimezone(NEW_YORK).date()
     bounds = us_session_bounds(session_date)
     if bounds is None:
         return None
     opens_at, closes_at = bounds
-    return session_date if opens_at <= traded_at <= closes_at + CLOSE_PRINT_SLACK else None
+    return session_date if opens_at <= traded_at < closes_at else None
 
 
 class LiveQuoteHub:
@@ -395,6 +405,37 @@ async def _session_quote(db: AsyncSession, ticker: str, status: dict[str, Any], 
     return None
 
 
+async def _official_close(ticker: str, session_date: date, closes_at: datetime, now: datetime) -> Optional[float]:
+    """The session's official close from its EOD bar.
+
+    Asked once a minute until the delayed feed would have settled too, so a freshly
+    published bar that EODHD revises is picked up; after that the close is kept.
+    """
+    cached = _official_closes.get(ticker)
+    previous = cached[2] if cached is not None and cached[0] == session_date else None
+    if cached is not None and cached[0] == session_date:
+        fetched_at = cached[1]
+        if now - fetched_at < OFFICIAL_CLOSE_RETRY or (previous is not None and fetched_at >= closes_at + DELAYED_CLOSE_SETTLE):
+            return previous
+    close = None
+    try:
+        rows = await eodhd_client.get_eod_historical_data(ticker, session_date.isoformat(), session_date.isoformat())
+    except Exception as exc:  # Keep what was published; the next poll asks again.
+        logger.warning("EOD close unavailable for %s (%s)", ticker, type(exc).__name__)
+        rows = None
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict) and row.get("date") == session_date.isoformat():
+            try:
+                value = float(row.get("close"))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value) and value > 0:
+                close = value
+    close = close if close is not None else previous
+    _official_closes[ticker] = (session_date, now, close)
+    return close
+
+
 async def _closing_quote(db: AsyncSession, ticker: str, status: dict[str, Any], now: datetime) -> Optional[dict[str, Any]]:
     """The last completed session's close, until the daily bar for that session carries it."""
     today = now.astimezone(NEW_YORK).date()
@@ -408,21 +449,30 @@ async def _closing_quote(db: AsyncSession, ticker: str, status: dict[str, Any], 
         return None
     closes_at = bounds[1]
     delayed = await watchlist_quotes.get_delayed_quote(ticker, now)
+    if delayed is not None and delayed["session_date"] != session_date:
+        delayed = None
     previous_close = await _previous_close(db, ticker, session_date, delayed)
-    # Once the delayed feed's timestamp passes the bell its price is the official close:
-    # after-hours prints do not move it, while its last pre-bell minute is not the close
-    # (2026-10-26: five tickers matched Yahoo's regular close, not their after-hours or 15:59 prices).
-    if delayed is not None and delayed["session_date"] == session_date and delayed["as_of"] >= closes_at:
+    official = await _official_close(ticker, session_date, closes_at, now)
+    if official is not None:
+        return _quote(official, closes_at, session_date, previous_close, "close")
+    if delayed is not None and delayed["as_of"] >= closes_at and now >= closes_at + DELAYED_CLOSE_SETTLE:
         return _quote(delayed["price"], delayed["as_of"], session_date, previous_close, "close")
+    # Until the close is known, the newest regular-session price: the streamed trade, or the
+    # delayed feed's last minute before the bell when the ticker was not streamed.
+    last: list[tuple[datetime, float]] = []
     trade = await db.get(LiveQuote, ticker)
-    # Only a stream that was up at the bell holds the close; an earlier trade is not the closing price.
-    if trade is not None and trade.session_date == session_date and _aware(trade.traded_at) >= closes_at:
-        return _quote(trade.price, _aware(trade.traded_at), session_date, previous_close, "close")
-    return None
+    if trade is not None and trade.session_date == session_date and _aware(trade.traded_at) < closes_at:
+        last.append((_aware(trade.traded_at), trade.price))
+    if delayed is not None and delayed["as_of"] < closes_at:
+        last.append((delayed["as_of"], delayed["price"]))
+    if not last:
+        return None
+    as_of, price = max(last)
+    return _quote(price, as_of, session_date, previous_close, "last")
 
 
 async def get_live_quote(db: AsyncSession, ticker: str, now: Optional[datetime] = None) -> dict[str, Any]:
-    """Header price: the streamed trade in the session, else the delayed quote; after it, the close."""
+    """Header price: the streamed trade in the session, else the delayed quote; after it, the last trade, then the close."""
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     status = us_market_status(now)
     known = await db.get(Ticker, ticker) is not None

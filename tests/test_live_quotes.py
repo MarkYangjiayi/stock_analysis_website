@@ -30,11 +30,23 @@ CLOSE = utc(2026, 10, 6, 20, 0)   # Tue 16:00 ET
 SESSION = date(2026, 10, 6)
 
 
+def _eod(close, calls=None):
+    async def fake(ticker, from_date=None, to_date=None, client=None):
+        if calls is not None:
+            calls.append(ticker)
+        return [] if close is None else [{"date": from_date, "close": close, "adjusted_close": close}]
+    return fake
+
+
 @pytest.fixture(autouse=True)
-def fresh_caches():
+def fresh_caches(monkeypatch):
     watchlist_quotes.reset_caches()
+    live_quotes._official_closes.clear()
+    # No EOD bar for the session unless a test publishes one.
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", _eod(None))
     yield
     watchlist_quotes.reset_caches()
+    live_quotes._official_closes.clear()
 
 
 class FakeSocket:
@@ -71,7 +83,11 @@ def test_ws_symbols_map_site_tickers():
 
 def test_only_regular_session_trades_count():
     assert live_quotes.regular_session_date(utc(2026, 10, 6, 13, 30)) == SESSION
-    assert live_quotes.regular_session_date(CLOSE + timedelta(milliseconds=300)) == SESSION  # closing print
+    assert live_quotes.regular_session_date(CLOSE - timedelta(milliseconds=100)) == SESSION
+    # No closing auction print is streamed: from the bell on, prints are extended hours
+    # (AAPL printed 347.15 four seconds after the 2026-10-27 bell; the close was 347.10).
+    assert live_quotes.regular_session_date(CLOSE) is None
+    assert live_quotes.regular_session_date(CLOSE + timedelta(seconds=4)) is None
     assert live_quotes.regular_session_date(utc(2026, 10, 6, 13, 29)) is None  # pre-market
     assert live_quotes.regular_session_date(CLOSE + timedelta(minutes=1)) is None  # after hours
     assert live_quotes.regular_session_date(utc(2026, 10, 10, 15, 0)) is None  # Saturday
@@ -262,47 +278,79 @@ async def test_open_session_without_any_quote_uses_daily_close_as_base(db_sessio
 
 
 @pytest.mark.asyncio
-async def test_after_close_serves_settled_delayed_close(db_session, monkeypatch):
+async def test_after_close_serves_official_close_from_the_eod_bar(db_session, monkeypatch):
     await _seed(db_session)
-    now = CLOSE + timedelta(minutes=70)
-    # As observed on 2026-10-26: stamped 16:25 ET, priced at the official close.
-    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1668.72, CLOSE + timedelta(minutes=25)))
+    eod_calls: list[str] = []
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", _eod(None, eod_calls))
+    # As observed on 2026-10-27: past the bell the delayed feed still showed 1680.72, not the close.
+    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1680.72, CLOSE))
+    await _stream(db_session, heartbeat=CLOSE, traded_at=CLOSE - timedelta(seconds=3), price=1681.11)
 
-    result = await live_quotes.get_live_quote(db_session, "MELI.US", now=now)
+    before = (await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=16)))["quote"]
+    assert (before["source"], before["price"]) == ("last", 1681.11)
+    # Asked at most once a minute until EODHD publishes the bar.
+    await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=16, seconds=30))
+    assert eod_calls == ["MELI.US"]
+
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", _eod(1680.51, eod_calls))
+    result = await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=20))
 
     assert result["market"]["phase"] == "post"
-    assert result["quote"]["source"] == "close"
-    assert result["quote"]["session_date"] == SESSION
-    assert result["quote"]["price"] == 1668.72
-    # No lease once the closing print has had time to arrive.
+    quote = result["quote"]
+    assert (quote["source"], quote["price"], quote["as_of"], quote["session_date"]) == ("close", 1680.51, CLOSE, SESSION)
+    assert quote["change_pct"] == pytest.approx(1680.51 / 1810.15 - 1)
+    # Re-asked each minute while a fresh bar could still be revised, kept through a failed call,
+    # then kept for good.
+    async def eod_down(ticker, from_date=None, to_date=None, client=None):
+        eod_calls.append(ticker)
+        raise TimeoutError
+
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", eod_down)
+    kept = (await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=21)))["quote"]
+    assert (kept["source"], kept["price"]) == ("close", 1680.51)
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", _eod(1680.51, eod_calls))
+    await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=40))
+    await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=50))
+    assert len(eod_calls) == 4
+    # No lease once the session's last trades have arrived.
     assert await db_session.get(LiveQuoteLease, "MELI.US") is None
 
 
 @pytest.mark.asyncio
-async def test_last_pre_bell_minute_is_not_the_close(db_session, monkeypatch):
+async def test_until_the_close_is_published_the_header_shows_the_last_regular_trade(db_session, monkeypatch):
     await _seed(db_session)
-    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1668.90, CLOSE - timedelta(minutes=1)))
+    now = CLOSE + timedelta(minutes=3)
+    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1638.00, CLOSE - timedelta(minutes=15)))
+    await _stream(db_session, heartbeat=now, traded_at=CLOSE - timedelta(seconds=1), price=1641.25)
 
-    result = await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=16))
+    quote = (await live_quotes.get_live_quote(db_session, "MELI.US", now=now))["quote"]
+    assert (quote["source"], quote["price"], quote["as_of"]) == ("last", 1641.25, CLOSE - timedelta(seconds=1))
 
-    assert result["quote"] is None
+    # A trade streamed hours earlier loses to the delayed feed's later minute.
+    row = await db_session.get(LiveQuote, "MELI.US")
+    row.traded_at = naive(OPEN)
+    await db_session.commit()
+    quote = (await live_quotes.get_live_quote(db_session, "MELI.US", now=now))["quote"]
+    assert (quote["source"], quote["price"], quote["as_of"]) == ("last", 1638.00, CLOSE - timedelta(minutes=15))
 
 
 @pytest.mark.asyncio
-async def test_after_close_uses_stream_only_when_it_saw_the_bell(db_session, monkeypatch):
+async def test_delayed_feed_past_the_bell_counts_as_the_close_only_once_settled(db_session, monkeypatch):
     await _seed(db_session)
-    now = CLOSE + timedelta(minutes=3)
-    # Fifteen minutes late, the delayed feed is not the close yet.
-    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1638.00, CLOSE - timedelta(minutes=15)))
-    await _stream(db_session, heartbeat=now, traded_at=CLOSE + timedelta(milliseconds=200), price=1641.25)
 
-    quote = (await live_quotes.get_live_quote(db_session, "MELI.US", now=now))["quote"]
-    assert (quote["source"], quote["price"]) == ("close", 1641.25)
+    async def eod_down(ticker, from_date=None, to_date=None, client=None):
+        raise TimeoutError
 
-    row = await db_session.get(LiveQuote, "MELI.US")
-    row.traded_at = naive(CLOSE - timedelta(minutes=2))
-    await db_session.commit()
-    assert (await live_quotes.get_live_quote(db_session, "MELI.US", now=now))["quote"] is None
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", eod_down)
+    await _stream(db_session, heartbeat=CLOSE, traded_at=CLOSE - timedelta(seconds=2), price=1681.11)
+    # 2026-10-27, BRK-B: stamped 16:05 the delayed feed showed an after-hours 543.07; the close was 542.99.
+    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1683.00, CLOSE + timedelta(minutes=5)))
+    drifting = (await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=20)))["quote"]
+    assert (drifting["source"], drifting["price"]) == ("last", 1681.11)
+
+    monkeypatch.setattr(eodhd_client, "get_live_quotes", _delayed(1680.51, CLOSE + timedelta(minutes=25)))
+    settled = (await live_quotes.get_live_quote(db_session, "MELI.US", now=CLOSE + timedelta(minutes=40)))["quote"]
+    assert (settled["source"], settled["price"]) == ("close", 1680.51)
 
 
 @pytest.mark.asyncio
@@ -315,6 +363,7 @@ async def test_daily_bar_supersedes_the_close_without_provider_calls(db_session,
         return []
 
     monkeypatch.setattr(eodhd_client, "get_live_quotes", fake)
+    monkeypatch.setattr(eodhd_client, "get_eod_historical_data", _eod(1640.0, calls))
     premarket = utc(2026, 10, 7, 12, 0)  # Wed 08:00 ET
     result = await live_quotes.get_live_quote(db_session, "MELI.US", now=premarket)
 

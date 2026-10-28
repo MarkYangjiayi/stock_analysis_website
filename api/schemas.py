@@ -896,8 +896,9 @@ class WatchlistQuotesResponse(BaseModel):
 
 
 class LiveQuotePrice(WatchlistQuote):
-    # realtime: streamed trade in the session; delayed: 15-minute feed; close: the session's closing price.
-    source: Literal["realtime", "delayed", "close"]
+    # realtime: streamed trade in the session; delayed: 15-minute feed;
+    # last: the session's last regular trade before its close is published; close: the official close.
+    source: Literal["realtime", "delayed", "last", "close"]
 
 
 class LiveQuoteResponse(BaseModel):

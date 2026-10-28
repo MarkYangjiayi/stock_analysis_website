@@ -51,6 +51,11 @@ def test_quote_ttl_refreshes_only_while_quotes_can_move():
     assert watchlist_quotes.quote_ttl(us_market_status(open_now), open_now) == watchlist_quotes.LIVE_TTL
     settling = utc(2026, 10, 6, 20, 10)
     assert watchlist_quotes.quote_ttl(us_market_status(settling), settling) == watchlist_quotes.LIVE_TTL
+    # The delayed feed still drifts with after-hours prints 30 minutes after the bell.
+    drifting = utc(2026, 10, 6, 20, 40)
+    assert watchlist_quotes.quote_ttl(us_market_status(drifting), drifting) == watchlist_quotes.LIVE_TTL
+    settled = utc(2026, 10, 6, 20, 46)
+    assert watchlist_quotes.quote_ttl(us_market_status(settled), settled) == watchlist_quotes.IDLE_TTL
     night = utc(2026, 10, 7, 2, 0)
     assert watchlist_quotes.quote_ttl(us_market_status(night), night) == watchlist_quotes.IDLE_TTL
 

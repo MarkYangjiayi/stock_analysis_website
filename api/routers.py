@@ -932,7 +932,7 @@ async def live_quote(
     ticker: str = Query(..., max_length=24, description="One ticker, e.g. MELI.US"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Analysis header price: real-time trade in the regular session, else the 15-minute delayed quote; after the close, the session's closing price until its daily bar lands."""
+    """Analysis header price: real-time trade in the regular session, else the 15-minute delayed quote; after the close, the session's last trade until its official close is published, then that close until its daily bar lands."""
     value = ticker.strip()
     if not WATCHLIST_TICKER_PATTERN.fullmatch(value):
         raise HTTPException(status_code=422, detail=f"Invalid ticker: {value[:24]}")

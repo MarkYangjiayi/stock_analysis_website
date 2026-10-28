@@ -6,8 +6,8 @@ import { fetchLiveQuote, type LiveQuoteResponse, type MarketStatusResponse } fro
 const LIVE_POLL_MS = 3_000;
 const SETTLE_POLL_MS = 30_000;
 const IDLE_POLL_MS = 10 * 60_000;
-// The delayed feed settles on the closing price about 15 minutes after the bell.
-const CLOSE_SETTLE_MS = 30 * 60_000;
+// The official close is published about 20 minutes after the bell (35 at worst, from the delayed feed).
+const CLOSE_SETTLE_MS = 45 * 60_000;
 
 /** Every 3 s in the session, every 30 s while the close settles, otherwise until the next open (at most 10 min). */
 export const livePollInterval = (market: MarketStatusResponse | null, now = Date.now()) => {
