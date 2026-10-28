@@ -334,6 +334,27 @@ async def _company_names(db: AsyncSession, tickers: Iterable[str], as_of: date) 
     return names
 
 
+async def _market_caps(db: AsyncSession, tickers: Iterable[str], as_of: date) -> dict[str, float]:
+    """Market caps from the screener snapshot <= as_of; tickers without one are omitted."""
+    wanted = sorted({ticker for ticker in tickers if ticker})
+    snapshot_date = await latest_screener_publication_on_or_before(db, as_of)
+    if not wanted or snapshot_date is None:
+        return {}
+    caps: dict[str, float] = {}
+    for chunk in _chunks(wanted):
+        rows = await db.execute(
+            select(StockScreenerSnapshot.ticker, StockScreenerSnapshot.market_cap).where(
+                StockScreenerSnapshot.date == snapshot_date,
+                StockScreenerSnapshot.ticker.in_(chunk),
+            )
+        )
+        for ticker, market_cap in rows.all():
+            value = _finite(market_cap)
+            if value is not None and value > 0:
+                caps[ticker] = value
+    return caps
+
+
 # ---------------------------------------------------------------------------
 # Theme rows
 # ---------------------------------------------------------------------------
@@ -701,12 +722,14 @@ async def _theme_members(db: AsyncSession, theme: Theme, run_id: int, as_of: dat
         for interval in result.scalars():
             intervals[interval.ticker].append(interval)
     names = await _company_names(db, tickers, as_of)
+    market_caps = await _market_caps(db, tickers, as_of)
     members = []
     for row in member_rows:
         interval = _interval_for(intervals.get(row.ticker, []), as_of)
         members.append({
             "ticker": row.ticker,
             "name": names.get(row.ticker),
+            "market_cap": market_caps.get(row.ticker),
             "tier": row.tier,
             "weight": float(row.weight),
             # A scored member without any interval cannot happen in a consistent DB.

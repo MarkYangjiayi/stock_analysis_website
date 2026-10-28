@@ -1578,6 +1578,7 @@ export interface ThemeListResponse {
 export interface ThemeMemberRow {
     ticker: string;
     name: string | null;
+    market_cap: number | null;
     tier: "core" | "peripheral";
     weight: number;
     exposure: number;

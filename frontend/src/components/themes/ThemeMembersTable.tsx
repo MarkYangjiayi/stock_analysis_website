@@ -1,9 +1,12 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Flame } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Flame } from "lucide-react";
 
 import { Sparkline } from "@/components/ui/Sparkline";
 import type { ThemeMemberRow } from "@/lib/api";
-import { formatSignedPercent } from "@/lib/format";
+import { formatCompactNumber, formatSignedPercent } from "@/lib/format";
 import { displayTicker, formatMultiple, formatShare, formatSigned, seriesChange, sparkValues, tickerHref, toneClass } from "./themeFormat";
 
 const HEAD = "border-b px-3 py-2 font-medium";
@@ -27,7 +30,52 @@ const sourceLabel = (source: string) => {
     return source.replace(/_/g, " ");
 };
 
+type SortKey = "market_cap" | "excess_5d" | "excess_21d";
+type Sort = { key: SortKey; direction: "desc" | "asc" } | null;
+
+// Missing values sink to the bottom in both directions; ties keep the leader order.
+const sortMembers = (members: ThemeMemberRow[], sort: Sort) => {
+    if (!sort) return members;
+    const sign = sort.direction === "desc" ? -1 : 1;
+    return [...members].sort((a, b) => {
+        const left = a[sort.key];
+        const right = b[sort.key];
+        if (left == null || right == null) return (left == null ? 1 : 0) - (right == null ? 1 : 0);
+        return sign * (left - right);
+    });
+};
+
+function SortHeader({ label, title, sortKey, sort, onSort }: {
+    label: string;
+    title: string;
+    sortKey: SortKey;
+    sort: Sort;
+    onSort: (key: SortKey) => void;
+}) {
+    const direction = sort?.key === sortKey ? sort.direction : null;
+    const Icon = direction === "desc" ? ArrowDown : direction === "asc" ? ArrowUp : ArrowUpDown;
+    return (
+        <th className={`${HEAD} text-right`} title={title} aria-sort={direction === "desc" ? "descending" : direction === "asc" ? "ascending" : "none"}>
+            <button
+                type="button"
+                onClick={() => onSort(sortKey)}
+                className={`inline-flex items-center gap-1 uppercase tracking-[0.08em] hover:text-fg ${direction ? "text-accent-strong" : ""}`}
+            >
+                {label}
+                <Icon size={12} aria-hidden className={direction ? "" : "opacity-50"} />
+            </button>
+        </th>
+    );
+}
+
 export default function ThemeMembersTable({ members }: { members: ThemeMemberRow[] }) {
+    const [sort, setSort] = useState<Sort>(null);
+    const rows = useMemo(() => sortMembers(members, sort), [members, sort]);
+    // Highest first, then lowest first, then back to the leader order.
+    const onSort = (key: SortKey) => setSort((current) => {
+        if (current?.key !== key) return { key, direction: "desc" };
+        return current.direction === "desc" ? { key, direction: "asc" } : null;
+    });
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm" aria-label="Theme members">
@@ -36,10 +84,11 @@ export default function ThemeMembersTable({ members }: { members: ThemeMemberRow
                         <th className={HEAD}>Tier</th>
                         <th className={HEAD}>Ticker</th>
                         <th className={HEAD}>Company</th>
+                        <SortHeader label="Mkt cap" title="Market cap at the screener snapshot" sortKey="market_cap" sort={sort} onSort={onSort} />
                         <th className={`${HEAD} text-right`} title="Capped, normalized basket weight">Weight</th>
                         <th className={HEAD}>Why in theme</th>
-                        <th className={`${HEAD} text-right`} title="Excess return vs SPY">5D</th>
-                        <th className={`${HEAD} text-right`} title="Excess return vs SPY">21D</th>
+                        <SortHeader label="5D" title="Excess return vs SPY" sortKey="excess_5d" sort={sort} onSort={onSort} />
+                        <SortHeader label="21D" title="Excess return vs SPY" sortKey="excess_21d" sort={sort} onSort={onSort} />
                         <th className={`${HEAD} text-right`} title="Close as a share of the 52-week high">Near high</th>
                         <th className={`${HEAD} text-right`} title="5-day volume vs the 60-day median">RVOL</th>
                         <th className={`${HEAD} text-right`} title="Abnormal news attention (robust z)">News z</th>
@@ -50,8 +99,8 @@ export default function ThemeMembersTable({ members }: { members: ThemeMemberRow
                 </thead>
                 <tbody className="divide-y divide-line">
                     {members.length === 0 ? (
-                        <tr><td colSpan={13} className="px-6 py-16 text-center text-sm text-fg-muted">No active members for this session.</td></tr>
-                    ) : members.map((member) => {
+                        <tr><td colSpan={14} className="px-6 py-16 text-center text-sm text-fg-muted">No active members for this session.</td></tr>
+                    ) : rows.map((member) => {
                         const review = REVIEW_LABELS[member.review_status];
                         return (
                             <tr key={member.ticker} className="align-top transition-colors hover:bg-surface-muted">
@@ -65,6 +114,7 @@ export default function ThemeMembersTable({ members }: { members: ThemeMemberRow
                                     {member.ignited && <Flame size={13} className="ml-1 inline text-accent" aria-label="Ignited today" />}
                                 </td>
                                 <td className="max-w-48 truncate px-3 py-2 font-medium text-fg" title={member.name ?? undefined}>{member.name ?? "—"}</td>
+                                <td className={`${NUM} text-fg`}>{member.market_cap != null ? `$${formatCompactNumber(member.market_cap, 1)}` : "—"}</td>
                                 <td className={`${NUM} text-fg`}>{formatShare(member.weight, 1)}</td>
                                 <td className="min-w-72 max-w-md px-3 py-2">
                                     {member.evidence_quote ? (

@@ -237,7 +237,7 @@ async def _seed_history_publication(db) -> dict:
 
     screener_run = await _add_run(db, s[5], pipeline_name="screener")
     _publish(db, screener_run, s[5], dataset="screener")
-    db.add(StockScreenerSnapshot(ticker="NVDA.US", date=s[5], name="NVIDIA Corporation"))
+    db.add(StockScreenerSnapshot(ticker="NVDA.US", date=s[5], name="NVIDIA Corporation", market_cap=3_000_000_000_000))
 
     member = {"theme_id": theme.id, "source_run_id": daily_5.id, "date": s[5]}
     db.add_all([
@@ -797,6 +797,7 @@ async def test_theme_detail_members_brief_and_conversions(db_session, monkeypatc
     assert [member["ticker"] for member in members] == ["AMD.US", "NVDA.US", "MRVL.US", "ALAB.US", "ARM.US"]
     nvda = members[1]
     assert nvda["name"] == "NVIDIA Corporation"
+    assert nvda["market_cap"] == pytest.approx(3e12)
     assert nvda["tier"] == "core" and nvda["weight"] == pytest.approx(0.30)
     assert nvda["exposure"] == 3 and nvda["role"] == "pure_play"
     assert nvda["review_status"] == "verified"
@@ -821,7 +822,7 @@ async def test_theme_detail_members_brief_and_conversions(db_session, monkeypatc
     assert amd["name"] == "Advanced Micro Devices"
     assert amd["excess_5d"] is None and amd["relative_volume_5d"] is None
     mrvl = members[2]
-    assert mrvl["sources"] == ["keyword"] and mrvl["name"] is None
+    assert mrvl["sources"] == ["keyword"] and mrvl["name"] is None and mrvl["market_cap"] is None
 
     brief_calls = []
 
