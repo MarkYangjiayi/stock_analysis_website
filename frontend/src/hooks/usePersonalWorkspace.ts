@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
     ApiError,
+    addPersonalWatchlistItem,
     fetchPersonalWatchlist,
     importPersonalWatchlist,
-    replacePersonalWatchlist,
+    removePersonalWatchlistItem,
 } from "@/lib/api";
 
 export const PERSONAL_SESSION_KEY = "personal_workspace_api_key";
@@ -47,6 +48,7 @@ export function usePersonalWorkspace() {
     const confirmedWatchlistRef = useRef<string[]>([]);
     const watchlistMutationVersionRef = useRef(0);
     const watchlistRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const watchlistRefreshPendingRef = useRef(false);
 
     const applyWatchlist = useCallback((next: string[]) => {
         setWatchlist(next);
@@ -113,19 +115,52 @@ export function usePersonalWorkspace() {
         void authenticate(savedKey, true).finally(() => setRestoring(false));
     }, [applyWatchlist, authenticate]);
 
-    const replaceWatchlist = useCallback(async (next: string[]) => {
+    useEffect(() => {
+        if (!adminKey) return;
+        // Pick up edits made from another tab or the command line when the page comes back into view.
+        const refresh = () => {
+            if (document.visibilityState !== "visible" || watchlistRefreshPendingRef.current) return;
+            watchlistRefreshPendingRef.current = true;
+            const mutationVersion = watchlistMutationVersionRef.current;
+            watchlistRequestQueueRef.current = watchlistRequestQueueRef.current.then(async () => {
+                try {
+                    const result = await fetchPersonalWatchlist(adminKey);
+                    if (mutationVersion !== watchlistMutationVersionRef.current) return;
+                    confirmedWatchlistRef.current = result.tickers;
+                    applyWatchlist(result.tickers);
+                } catch (caught) {
+                    if (caught instanceof ApiError && caught.status === 401) handleUnauthorized();
+                } finally {
+                    watchlistRefreshPendingRef.current = false;
+                }
+            });
+        };
+        window.addEventListener("focus", refresh);
+        document.addEventListener("visibilitychange", refresh);
+        return () => {
+            window.removeEventListener("focus", refresh);
+            document.removeEventListener("visibilitychange", refresh);
+        };
+    }, [adminKey, applyWatchlist, handleUnauthorized]);
+
+    const mutateWatchlist = useCallback(async (
+        ticker: string,
+        optimistic: (current: string[], symbol: string) => string[],
+        send: (symbol: string, key: string) => Promise<{ tickers: string[] }>,
+    ) => {
         if (!adminKey) {
             setError("Unlock the personal workspace to edit the watchlist.");
             return false;
         }
-        const normalized = [...new Set(next.map(canonicalizeForDisplay).filter(Boolean))].slice(0, 100);
+        const symbol = canonicalizeForDisplay(ticker);
+        if (!symbol) return false;
         const mutationVersion = watchlistMutationVersionRef.current + 1;
         watchlistMutationVersionRef.current = mutationVersion;
-        applyWatchlist(normalized);
+        setWatchlist((current) => optimistic(current, symbol));
         setError("");
         const request = watchlistRequestQueueRef.current.then(async () => {
             try {
-                const result = await replacePersonalWatchlist(normalized, adminKey);
+                const result = await send(symbol, adminKey);
                 confirmedWatchlistRef.current = result.tickers;
                 if (mutationVersion === watchlistMutationVersionRef.current) {
                     applyWatchlist(result.tickers);
@@ -145,6 +180,18 @@ export function usePersonalWorkspace() {
         return request;
     }, [adminKey, applyWatchlist, handleUnauthorized]);
 
+    const addToWatchlist = useCallback((ticker: string) => mutateWatchlist(
+        ticker,
+        (current, symbol) => (current.includes(symbol) ? current : [symbol, ...current]),
+        addPersonalWatchlistItem,
+    ), [mutateWatchlist]);
+
+    const removeFromWatchlist = useCallback((ticker: string) => mutateWatchlist(
+        ticker,
+        (current, symbol) => current.filter((item) => item !== symbol),
+        removePersonalWatchlistItem,
+    ), [mutateWatchlist]);
+
     return {
         adminKey,
         watchlist,
@@ -155,6 +202,7 @@ export function usePersonalWorkspace() {
         unlock: authenticate,
         lock,
         handleUnauthorized,
-        replaceWatchlist,
+        addToWatchlist,
+        removeFromWatchlist,
     };
 }

@@ -498,7 +498,7 @@ function AnalysisPage() {
             setUnlockOpen(true);
             return;
         }
-        if (!watchlist.includes(symbol)) void personal.replaceWatchlist([symbol, ...watchlist]);
+        if (!watchlist.includes(symbol)) void personal.addToWatchlist(symbol);
     };
 
     const removeFromWatchlist = (symbol: string) => {
@@ -506,7 +506,7 @@ function AnalysisPage() {
             setUnlockOpen(true);
             return;
         }
-        void personal.replaceWatchlist(watchlist.filter((item) => item !== symbol));
+        void personal.removeFromWatchlist(symbol);
     };
 
     const refreshDecision = useCallback(async () => {

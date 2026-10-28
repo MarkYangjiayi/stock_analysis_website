@@ -453,6 +453,10 @@ class PersonalWatchlistRequest(BaseModel):
     tickers: List[str] = Field(default_factory=list, max_length=100)
 
 
+class PersonalWatchlistItemRequest(BaseModel):
+    ticker: str = Field(max_length=24)
+
+
 class MarketOverviewMeta(BaseModel):
     universe: Literal["SP500", "RUSSELL2000", "SP500_RUSSELL2000"]
     period: Literal["3m", "6m", "1y"]
