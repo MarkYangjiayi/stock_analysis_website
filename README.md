@@ -175,6 +175,16 @@ python worker.py
 `GET /api/stocks/{ticker}/decision-support` 在没有该请求头时只返回默认估值情景，
 不会暴露保存的个人假设。
 
+watchlist 单只增删用 `POST /api/personal/watchlist/items`（`{"ticker": "NVDA"}`，和网页一样放到最前面）
+与 `DELETE /api/personal/watchlist/items/{ticker}`；整份替换的 `PUT` 会用调用方手里的旧列表覆盖其他客户端的改动，
+网页和本地命令都不再用它。本地终端用 `scripts/watchlist.py`（只依赖标准库，从 `FINBRAIN_ADMIN_API_KEY` 读 key）：
+
+```bash
+python scripts/watchlist.py ls
+python scripts/watchlist.py add NVDA AMD   # NVDA 排在最前
+python scripts/watchlist.py rm NVDA
+```
+
 Earnings-quality 的 `GET /api/stocks/{ticker}/earnings-quality` 只读取本地数据；任务状态 GET
 也需要同一个 `X-API-Key`，只有带 `X-API-Key` 的
 `POST /api/personal/stocks/{ticker}/earnings-quality/analyses` 才会创建一个单期 SEC/AI

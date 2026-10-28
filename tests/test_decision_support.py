@@ -1167,6 +1167,90 @@ async def test_concurrent_first_watchlist_imports_choose_one_authoritative_list(
     assert all(tickers == authoritative for tickers, _ in results)
 
 
+def test_watchlist_item_endpoints_add_to_the_front_and_remove_one_ticker():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        assert client.post("/api/personal/watchlist/items", json={"ticker": "NVDA"}).status_code == 401
+        assert client.delete("/api/personal/watchlist/items/NVDA").status_code == 401
+
+        client.put("/api/personal/watchlist", headers=headers, json={"tickers": ["MSFT", "AAPL"]})
+        added = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": " nvda "})
+        assert added.json() == {"tickers": ["NVDA.US", "MSFT.US", "AAPL.US"], "added": True}
+
+        listed = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "AAPL.US"})
+        assert listed.json() == {"tickers": ["NVDA.US", "MSFT.US", "AAPL.US"], "added": False}
+
+        removed = client.delete("/api/personal/watchlist/items/msft", headers=headers)
+        assert removed.json() == {"tickers": ["NVDA.US", "AAPL.US"], "removed": True}
+
+        missing = client.delete("/api/personal/watchlist/items/TSLA.US", headers=headers)
+        assert missing.json() == {"tickers": ["NVDA.US", "AAPL.US"], "removed": False}
+
+        invalid = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "NVDA,AMD"})
+        assert invalid.status_code == 422
+        assert client.get("/api/personal/watchlist", headers=headers).json() == {"tickers": ["NVDA.US", "AAPL.US"]}
+
+
+def test_watchlist_item_add_rejects_a_full_watchlist():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    full = [f"T{index}" for index in range(100)]
+    with TestClient(app) as client:
+        client.put("/api/personal/watchlist", headers=headers, json={"tickers": full})
+        rejected = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "NVDA"})
+        assert rejected.status_code == 422
+        assert "at most 100" in rejected.json()["detail"]
+        assert len(client.get("/api/personal/watchlist", headers=headers).json()["tickers"]) == 100
+
+
+def test_watchlist_item_edit_on_a_new_workspace_blocks_later_browser_imports():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "NVDA"})
+        attempted_import = client.post(
+            "/api/personal/watchlist/import",
+            headers=headers,
+            json={"tickers": ["AAPL"]},
+        )
+        assert attempted_import.json() == {"tickers": ["NVDA.US"], "imported": False}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_watchlist_item_edits_keep_every_change():
+    from database import async_session_maker
+    from services.personal_workspace import (
+        add_watchlist_item,
+        get_watchlist,
+        remove_watchlist_item,
+        replace_watchlist,
+    )
+
+    async with async_session_maker() as session:
+        await replace_watchlist(session, ["MSFT", "AAPL"])
+
+    async def run(edit, ticker):
+        async with async_session_maker() as session:
+            return await edit(session, ticker)
+
+    results = await asyncio.gather(
+        run(add_watchlist_item, "NVDA"),
+        run(add_watchlist_item, "NVDA"),
+        run(add_watchlist_item, "AMD"),
+        run(remove_watchlist_item, "MSFT"),
+    )
+    async with async_session_maker() as session:
+        final = await get_watchlist(session)
+
+    assert sorted(changed for _, changed in results[:2]) == [False, True]
+    assert sorted(final) == ["AAPL.US", "AMD.US", "NVDA.US"]
+    assert final[-1] == "AAPL.US"
+
+
 def test_personal_valuation_endpoints_save_and_reset_scenarios():
     from main import app
 

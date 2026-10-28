@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.schemas import (
     AnomalyScanResponse,
     EarningsQualityAnalysisRequest,
+    PersonalWatchlistItemRequest,
     PersonalWatchlistRequest,
     ValuationScenariosRequest,
     FactorComputeRequest,
@@ -59,10 +60,12 @@ from services.decision_support import (
     validate_scenarios,
 )
 from services.personal_workspace import (
+    add_watchlist_item,
     delete_valuation_scenarios,
     get_saved_valuation_scenarios,
     get_watchlist,
     import_watchlist_if_empty,
+    remove_watchlist_item,
     replace_watchlist,
     save_valuation_scenarios,
 )
@@ -509,6 +512,43 @@ async def put_personal_watchlist(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"tickers": tickers}
+
+
+@router.post(
+    "/api/personal/watchlist/items",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def add_personal_watchlist_item(
+    request: PersonalWatchlistItemRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Add one ticker to the front of the watchlist. Unlike the whole-list PUT,
+    this cannot overwrite edits made from another client."""
+    value = request.ticker.strip()
+    if not WATCHLIST_TICKER_PATTERN.fullmatch(value):
+        raise HTTPException(status_code=422, detail=f"Invalid ticker: {value[:24]}")
+    try:
+        tickers, added = await add_watchlist_item(db, value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"tickers": tickers, "added": added}
+
+
+@router.delete(
+    "/api/personal/watchlist/items/{ticker}",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def remove_personal_watchlist_item(
+    ticker: str = Path(max_length=24),
+    db: AsyncSession = Depends(get_db),
+):
+    value = ticker.strip()
+    if not WATCHLIST_TICKER_PATTERN.fullmatch(value):
+        raise HTTPException(status_code=422, detail=f"Invalid ticker: {value[:24]}")
+    tickers, removed = await remove_watchlist_item(db, value)
+    return {"tickers": tickers, "removed": removed}
 
 
 @router.get(

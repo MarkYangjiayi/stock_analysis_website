@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +19,8 @@ from core.time_utils import utc_now
 
 
 SCENARIO_NAMES = ("bear", "base", "bull")
+WATCHLIST_LIMIT = 100
+WATCHLIST_LIMIT_MESSAGE = f"A personal watchlist can contain at most {WATCHLIST_LIMIT} tickers."
 
 
 def normalize_watchlist(tickers: Iterable[str]) -> list[str]:
@@ -31,8 +33,8 @@ def normalize_watchlist(tickers: Iterable[str]) -> list[str]:
             continue
         seen.add(ticker)
         normalized.append(ticker)
-        if len(normalized) > 100:
-            raise ValueError("A personal watchlist can contain at most 100 tickers.")
+        if len(normalized) > WATCHLIST_LIMIT:
+            raise ValueError(WATCHLIST_LIMIT_MESSAGE)
     return normalized
 
 
@@ -78,14 +80,20 @@ async def _ensure_watchlist_state(db: AsyncSession) -> None:
     await db.commit()
 
 
-async def replace_watchlist(db: AsyncSession, tickers: Iterable[str]) -> list[str]:
-    normalized = normalize_watchlist(tickers)
+async def _mark_watchlist_edited(db: AsyncSession) -> None:
+    """Record a user edit. Edits update this singleton row first, so concurrent
+    edits wait on its lock instead of interleaving."""
     await _ensure_watchlist_state(db)
     await db.execute(
         update(PersonalWorkspaceState)
         .where(PersonalWorkspaceState.id == 1)
         .values(watchlist_initialized=True, updated_at=utc_now())
     )
+
+
+async def replace_watchlist(db: AsyncSession, tickers: Iterable[str]) -> list[str]:
+    normalized = normalize_watchlist(tickers)
+    await _mark_watchlist_edited(db)
     await db.execute(delete(PersonalWatchlistItem))
     db.add_all(
         PersonalWatchlistItem(ticker=ticker, sort_order=index)
@@ -93,6 +101,36 @@ async def replace_watchlist(db: AsyncSession, tickers: Iterable[str]) -> list[st
     )
     await db.commit()
     return normalized
+
+
+async def add_watchlist_item(db: AsyncSession, ticker: str) -> tuple[list[str], bool]:
+    """Put one ticker at the front, as the web page does; a listed ticker keeps its place."""
+    canonical_ticker = canonicalize_ticker(ticker)
+    await _mark_watchlist_edited(db)
+    current = await get_watchlist(db)
+    if canonical_ticker in current:
+        await db.commit()
+        return current, False
+    if len(current) >= WATCHLIST_LIMIT:
+        await db.rollback()
+        raise ValueError(WATCHLIST_LIMIT_MESSAGE)
+    first_sort_order = await db.scalar(select(func.min(PersonalWatchlistItem.sort_order)))
+    db.add(PersonalWatchlistItem(
+        ticker=canonical_ticker,
+        sort_order=0 if first_sort_order is None else first_sort_order - 1,
+    ))
+    await db.commit()
+    return await get_watchlist(db), True
+
+
+async def remove_watchlist_item(db: AsyncSession, ticker: str) -> tuple[list[str], bool]:
+    canonical_ticker = canonicalize_ticker(ticker)
+    await _mark_watchlist_edited(db)
+    result = await db.execute(
+        delete(PersonalWatchlistItem).where(PersonalWatchlistItem.ticker == canonical_ticker)
+    )
+    await db.commit()
+    return await get_watchlist(db), result.rowcount > 0
 
 
 async def import_watchlist_if_empty(

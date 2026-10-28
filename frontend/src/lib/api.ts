@@ -1314,16 +1314,30 @@ export const fetchToday = (adminKey: string, signal?: AbortSignal) =>
         signal,
     }, 60_000);
 
-export const replacePersonalWatchlist = (
-    tickers: string[],
+/** Single-ticker edits, so a stale page cannot overwrite edits made from another client. */
+export const addPersonalWatchlistItem = (
+    ticker: string,
     adminKey: string,
     signal?: AbortSignal,
-) => apiRequest<{ tickers: string[] }>("/api/personal/watchlist", {
-    method: "PUT",
+) => apiRequest<{ tickers: string[]; added: boolean }>("/api/personal/watchlist/items", {
+    method: "POST",
     headers: personalHeaders(adminKey, true),
-    body: JSON.stringify({ tickers }),
+    body: JSON.stringify({ ticker }),
     signal,
 });
+
+export const removePersonalWatchlistItem = (
+    ticker: string,
+    adminKey: string,
+    signal?: AbortSignal,
+) => apiRequest<{ tickers: string[]; removed: boolean }>(
+    `/api/personal/watchlist/items/${encodeURIComponent(ticker)}`,
+    {
+        method: "DELETE",
+        headers: personalHeaders(adminKey),
+        signal,
+    },
+);
 
 export const importPersonalWatchlist = (
     tickers: string[],
