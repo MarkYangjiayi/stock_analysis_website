@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
     importPersonalWatchlist: vi.fn(),
     addPersonalWatchlistItem: vi.fn(),
     removePersonalWatchlistItem: vi.fn(),
+    setPersonalWatchlistCore: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -197,6 +198,49 @@ describe("usePersonalWorkspace", () => {
             await addRequest;
         });
         expect(result.current.watchlist).toEqual(["MSFT.US", "TSLA.US", "AAPL.US", "NVDA.US"]);
+    });
+
+    it("marks core tickers in watchlist order and reverts a refused change", async () => {
+        apiMocks.importPersonalWatchlist.mockResolvedValueOnce({ tickers: ["AAPL.US", "NVDA.US", "MSFT.US"], core: ["MSFT.US"], imported: false });
+        const { result } = renderHook(() => usePersonalWorkspace());
+        await waitFor(() => expect(result.current.restoring).toBe(false));
+        await act(async () => { await result.current.unlock("session-secret"); });
+        expect(result.current.core).toEqual(["MSFT.US"]);
+
+        let resolveCore!: (value: { tickers: string[]; core: string[]; changed: boolean }) => void;
+        apiMocks.setPersonalWatchlistCore.mockImplementationOnce(() => new Promise((resolve) => {
+            resolveCore = resolve;
+        }));
+        let request!: Promise<boolean>;
+        act(() => { request = result.current.setCore("aapl", true); });
+        // Watchlist order, as the server returns it, not the order of marking.
+        expect(result.current.core).toEqual(["AAPL.US", "MSFT.US"]);
+        await waitFor(() => expect(apiMocks.setPersonalWatchlistCore).toHaveBeenCalledWith("AAPL.US", true));
+        await act(async () => {
+            resolveCore({ tickers: ["AAPL.US", "NVDA.US", "MSFT.US"], core: ["AAPL.US", "MSFT.US"], changed: true });
+            await request;
+        });
+        expect(result.current.core).toEqual(["AAPL.US", "MSFT.US"]);
+
+        apiMocks.setPersonalWatchlistCore.mockRejectedValueOnce(new ApiError("At most 8 watchlist tickers can be core.", 422));
+        await act(async () => { await result.current.setCore("NVDA.US", true); });
+        expect(result.current.core).toEqual(["AAPL.US", "MSFT.US"]);
+        expect(result.current.error).toBe("At most 8 watchlist tickers can be core.");
+    });
+
+    it("drops a removed ticker from the core tier", async () => {
+        apiMocks.importPersonalWatchlist.mockResolvedValueOnce({ tickers: ["AAPL.US", "NVDA.US"], core: ["NVDA.US"], imported: false });
+        apiMocks.removePersonalWatchlistItem.mockResolvedValueOnce({ tickers: ["AAPL.US"], core: [], removed: true });
+        const { result } = renderHook(() => usePersonalWorkspace());
+        await waitFor(() => expect(result.current.restoring).toBe(false));
+        await act(async () => { await result.current.unlock("session-secret"); });
+
+        let request!: Promise<boolean>;
+        act(() => { request = result.current.removeFromWatchlist("NVDA.US"); });
+        expect(result.current.core).toEqual([]);
+        await act(async () => { await request; });
+        expect(result.current.watchlist).toEqual(["AAPL.US"]);
+        expect(result.current.core).toEqual([]);
     });
 
     it("does not re-import legacy data after the one-time migration was attempted", async () => {

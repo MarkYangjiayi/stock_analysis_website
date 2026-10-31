@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, type KeyboardEvent } from "react";
-import { BarChart3, Calculator, CalendarDays, ChartCandlestick, Landmark } from "lucide-react";
+import { BarChart3, Calculator, CalendarDays, ChartCandlestick, Landmark, NotebookPen } from "lucide-react";
 
-export type AnalysisSection = "overview" | "valuation" | "financials" | "technical" | "events";
+export type AnalysisSection = "overview" | "thesis" | "valuation" | "financials" | "technical" | "events";
 
 const SECTIONS = [
     { value: "overview", label: "Overview", icon: BarChart3 },
+    { value: "thesis", label: "Thesis", icon: NotebookPen },
     { value: "valuation", label: "Valuation", icon: Calculator },
     { value: "financials", label: "Financials", icon: Landmark },
     { value: "technical", label: "Price & Factors", icon: ChartCandlestick },

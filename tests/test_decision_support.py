@@ -1101,7 +1101,7 @@ def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
     with TestClient(app) as client:
         assert client.get("/api/personal/watchlist").status_code == 401
         assert client.get("/api/personal/watchlist", headers={"X-API-Key": "wrong"}).status_code == 401
-        assert client.get("/api/personal/watchlist", headers={"X-API-Key": "test-secret"}).json() == {"tickers": []}
+        assert client.get("/api/personal/watchlist", headers={"X-API-Key": "test-secret"}).json() == {"tickers": [], "core": []}
 
         imported = client.post(
             "/api/personal/watchlist/import",
@@ -1109,21 +1109,21 @@ def test_personal_endpoints_require_key_and_watchlist_import_is_idempotent():
             json={"tickers": ["AAPL", "NVDA", "AAPL.US"]},
         )
         assert imported.status_code == 200
-        assert imported.json() == {"tickers": ["AAPL.US", "NVDA.US"], "imported": True}
+        assert imported.json() == {"tickers": ["AAPL.US", "NVDA.US"], "core": [], "imported": True}
 
         second = client.post(
             "/api/personal/watchlist/import",
             headers={"X-API-Key": "test-secret"},
             json={"tickers": ["TSLA"]},
         )
-        assert second.json() == {"tickers": ["AAPL.US", "NVDA.US"], "imported": False}
+        assert second.json() == {"tickers": ["AAPL.US", "NVDA.US"], "core": [], "imported": False}
 
         replaced = client.put(
             "/api/personal/watchlist",
             headers={"X-API-Key": "test-secret"},
             json={"tickers": ["MSFT", "AAPL"]},
         )
-        assert replaced.json() == {"tickers": ["MSFT.US", "AAPL.US"]}
+        assert replaced.json() == {"tickers": ["MSFT.US", "AAPL.US"], "core": []}
 
 
 def test_intentionally_empty_server_watchlist_blocks_later_browser_imports():
@@ -1136,14 +1136,14 @@ def test_intentionally_empty_server_watchlist_blocks_later_browser_imports():
             headers=headers,
             json={"tickers": []},
         )
-        assert replaced.json() == {"tickers": []}
+        assert replaced.json() == {"tickers": [], "core": []}
 
         attempted_import = client.post(
             "/api/personal/watchlist/import",
             headers=headers,
             json={"tickers": ["AAPL", "NVDA"]},
         )
-        assert attempted_import.json() == {"tickers": [], "imported": False}
+        assert attempted_import.json() == {"tickers": [], "core": [], "imported": False}
 
 
 @pytest.mark.asyncio
@@ -1177,20 +1177,20 @@ def test_watchlist_item_endpoints_add_to_the_front_and_remove_one_ticker():
 
         client.put("/api/personal/watchlist", headers=headers, json={"tickers": ["MSFT", "AAPL"]})
         added = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": " nvda "})
-        assert added.json() == {"tickers": ["NVDA.US", "MSFT.US", "AAPL.US"], "added": True}
+        assert added.json() == {"tickers": ["NVDA.US", "MSFT.US", "AAPL.US"], "core": [], "added": True}
 
         listed = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "AAPL.US"})
-        assert listed.json() == {"tickers": ["NVDA.US", "MSFT.US", "AAPL.US"], "added": False}
+        assert listed.json() == {"tickers": ["NVDA.US", "MSFT.US", "AAPL.US"], "core": [], "added": False}
 
         removed = client.delete("/api/personal/watchlist/items/msft", headers=headers)
-        assert removed.json() == {"tickers": ["NVDA.US", "AAPL.US"], "removed": True}
+        assert removed.json() == {"tickers": ["NVDA.US", "AAPL.US"], "core": [], "removed": True}
 
         missing = client.delete("/api/personal/watchlist/items/TSLA.US", headers=headers)
-        assert missing.json() == {"tickers": ["NVDA.US", "AAPL.US"], "removed": False}
+        assert missing.json() == {"tickers": ["NVDA.US", "AAPL.US"], "core": [], "removed": False}
 
         invalid = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "NVDA,AMD"})
         assert invalid.status_code == 422
-        assert client.get("/api/personal/watchlist", headers=headers).json() == {"tickers": ["NVDA.US", "AAPL.US"]}
+        assert client.get("/api/personal/watchlist", headers=headers).json() == {"tickers": ["NVDA.US", "AAPL.US"], "core": []}
 
 
 def test_watchlist_item_add_rejects_a_full_watchlist():
@@ -1217,7 +1217,7 @@ def test_watchlist_item_edit_on_a_new_workspace_blocks_later_browser_imports():
             headers=headers,
             json={"tickers": ["AAPL"]},
         )
-        assert attempted_import.json() == {"tickers": ["NVDA.US"], "imported": False}
+        assert attempted_import.json() == {"tickers": ["NVDA.US"], "core": [], "imported": False}
 
 
 @pytest.mark.asyncio
@@ -1249,6 +1249,214 @@ async def test_concurrent_watchlist_item_edits_keep_every_change():
     assert sorted(changed for _, changed in results[:2]) == [False, True]
     assert sorted(final) == ["AAPL.US", "AMD.US", "NVDA.US"]
     assert final[-1] == "AAPL.US"
+
+
+def test_core_flag_endpoints_mark_and_unmark_listed_tickers():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        assert client.put("/api/personal/watchlist/items/MELI/core", json={"core": True}).status_code == 401
+
+        client.put("/api/personal/watchlist", headers=headers, json={"tickers": ["MELI", "UBER", "GOOG"]})
+        marked = client.put("/api/personal/watchlist/items/goog/core", headers=headers, json={"core": True})
+        assert marked.json() == {"tickers": ["MELI.US", "UBER.US", "GOOG.US"], "core": ["GOOG.US"], "changed": True}
+        client.put("/api/personal/watchlist/items/MELI.US/core", headers=headers, json={"core": True})
+        again = client.put("/api/personal/watchlist/items/GOOG/core", headers=headers, json={"core": True})
+        assert again.json()["changed"] is False
+        # Core tickers come back in watchlist order, not in the order they were marked.
+        assert client.get("/api/personal/watchlist", headers=headers).json() == {
+            "tickers": ["MELI.US", "UBER.US", "GOOG.US"],
+            "core": ["MELI.US", "GOOG.US"],
+        }
+
+        unlisted = client.put("/api/personal/watchlist/items/TSLA/core", headers=headers, json={"core": True})
+        assert unlisted.status_code == 404
+        assert "not in the watchlist" in unlisted.json()["detail"]
+        invalid = client.put("/api/personal/watchlist/items/NVDA,AMD/core", headers=headers, json={"core": True})
+        assert invalid.status_code == 422
+
+        unmarked = client.put("/api/personal/watchlist/items/MELI/core", headers=headers, json={"core": False})
+        assert unmarked.json()["core"] == ["GOOG.US"]
+        assert unmarked.json()["changed"] is True
+
+
+def test_core_tier_is_capped_at_eight_tickers():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    tickers = [f"T{index}" for index in range(9)]
+    with TestClient(app) as client:
+        client.put("/api/personal/watchlist", headers=headers, json={"tickers": tickers})
+        for ticker in tickers[:8]:
+            response = client.put(f"/api/personal/watchlist/items/{ticker}/core", headers=headers, json={"core": True})
+            assert response.status_code == 200
+        rejected = client.put("/api/personal/watchlist/items/T8/core", headers=headers, json={"core": True})
+        assert rejected.status_code == 422
+        assert "At most 8" in rejected.json()["detail"]
+        assert len(client.get("/api/personal/watchlist", headers=headers).json()["core"]) == 8
+
+
+def test_core_flag_survives_a_whole_list_replace_but_not_a_removal():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        client.put("/api/personal/watchlist", headers=headers, json={"tickers": ["MELI", "UBER"]})
+        client.put("/api/personal/watchlist/items/MELI/core", headers=headers, json={"core": True})
+
+        replaced = client.put("/api/personal/watchlist", headers=headers, json={"tickers": ["UBER", "MELI", "GOOG"]})
+        assert replaced.json()["core"] == ["MELI.US"]
+
+        removed = client.delete("/api/personal/watchlist/items/MELI", headers=headers)
+        assert removed.json()["core"] == []
+        re_added = client.post("/api/personal/watchlist/items", headers=headers, json={"ticker": "MELI"})
+        assert re_added.json()["core"] == []
+
+
+def _thesis_content(**overrides):
+    content = {
+        "reasons": ["  Fintech take rate keeps rising  ", "Logistics moat across Latin America"],
+        "metrics": [{"name": "Revenue growth", "threshold": "< 20% YoY for two quarters"}],
+        "conditions": [{"kind": "sell", "text": "Credit losses above 8% of the loan book"}],
+        "valuation": {"bear": 1500, "base": 2100, "bull": 2800, "note": "DCF, November 2026"},
+        "catalysts": [{"date": "2026-11-05", "event": "Q3 earnings"}],
+    }
+    content.update(overrides)
+    return content
+
+
+def test_thesis_endpoints_version_every_change_and_refuse_stale_saves():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    url = "/api/personal/stocks/meli/thesis"
+    with TestClient(app) as client:
+        assert client.get(url).status_code == 401
+        assert client.put(url, json={"content": _thesis_content(), "base_version": 0}).status_code == 401
+        assert client.get(f"{url}/versions").status_code == 401
+        assert client.get(url, headers=headers).json() == {"ticker": "MELI.US", "thesis": None}
+
+        first = client.put(url, headers=headers, json={"content": _thesis_content(), "base_version": 0, "note": " First draft "})
+        assert first.status_code == 200
+        body = first.json()
+        assert body["saved"] is True
+        assert body["thesis"]["version"] == 1
+        assert body["thesis"]["note"] == "First draft"
+        assert body["thesis"]["content"]["reasons"][0] == "Fintech take rate keeps rising"
+        assert body["thesis"]["content"]["valuation"] == {"bear": 1500.0, "base": 2100.0, "bull": 2800.0, "note": "DCF, November 2026"}
+        assert body["thesis"]["content"]["catalysts"] == [{"date": "2026-11-05", "event": "Q3 earnings"}]
+        assert body["thesis"]["created_at"].endswith("+00:00")
+
+        unchanged = client.put(url, headers=headers, json={"content": _thesis_content(), "base_version": 1})
+        assert unchanged.json()["saved"] is False
+        assert unchanged.json()["thesis"]["version"] == 1
+
+        shorter = _thesis_content(reasons=["Fintech take rate keeps rising"])
+        second = client.put(url, headers=headers, json={"content": shorter, "base_version": 1})
+        assert second.json()["thesis"]["version"] == 2
+
+        # An editor still on version 1 cannot overwrite version 2.
+        stale = client.put(url, headers=headers, json={"content": _thesis_content(), "base_version": 1})
+        assert stale.status_code == 409
+        assert "version 2" in stale.json()["detail"]
+        assert client.get(url, headers=headers).json()["thesis"]["content"]["reasons"] == ["Fintech take rate keeps rising"]
+
+        versions = client.get(f"{url}/versions", headers=headers).json()
+        assert versions["ticker"] == "MELI.US"
+        assert [item["version"] for item in versions["versions"]] == [2, 1]
+        assert versions["versions"][1]["content"]["reasons"] == ["Fintech take rate keeps rising", "Logistics moat across Latin America"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        _thesis_content(valuation={"bear": 2100, "base": 1500}),
+        _thesis_content(valuation={"bear": 0}),
+        _thesis_content(reasons=["   "]),
+        _thesis_content(reasons=[f"Reason {index}" for index in range(6)]),
+        _thesis_content(conditions=[{"kind": "buy", "text": "Add on any dip"}]),
+        _thesis_content(catalysts=[{"date": "soon", "event": "Q3 earnings"}]),
+        {**_thesis_content(), "position_size": "10%"},
+    ],
+    ids=["unordered-valuation", "zero-value", "blank-reason", "six-reasons", "unknown-condition", "bad-date", "unknown-field"],
+)
+def test_thesis_save_rejects_invalid_content(content):
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        response = client.put("/api/personal/stocks/MELI/thesis", headers=headers, json={"content": content, "base_version": 0})
+        assert response.status_code == 422
+        assert client.get("/api/personal/stocks/MELI/thesis", headers=headers).json()["thesis"] is None
+
+
+def test_thesis_endpoints_reject_an_invalid_ticker():
+    from main import app
+
+    headers = {"X-API-Key": "test-secret"}
+    with TestClient(app) as client:
+        assert client.get("/api/personal/stocks/NVDA,AMD/thesis", headers=headers).status_code == 422
+        saved = client.put(
+            "/api/personal/stocks/NVDA,AMD/thesis",
+            headers=headers,
+            json={"content": _thesis_content(), "base_version": 0},
+        )
+        assert saved.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_concurrent_thesis_saves_from_the_same_version_keep_exactly_one():
+    from database import async_session_maker
+    from services.theses import ThesisConflict, get_thesis, save_thesis
+
+    async def run(reason):
+        async with async_session_maker() as session:
+            try:
+                return await save_thesis(session, "MELI", {"reasons": [reason]}, 0)
+            except ThesisConflict as exc:
+                return exc
+
+    results = await asyncio.gather(run("first"), run("second"))
+    async with async_session_maker() as session:
+        current = await get_thesis(session, "MELI.US")
+
+    conflicts = [result for result in results if isinstance(result, ThesisConflict)]
+    assert len(conflicts) == 1
+    assert conflicts[0].current_version == 1
+    assert current["version"] == 1
+
+
+def test_core_tier_migration_adds_the_flag_to_existing_rows_and_drops_it_on_downgrade(tmp_path):
+    path = tmp_path / "old-watchlist.db"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
+        db.execute("INSERT INTO alembic_version VALUES ('0028_live_quotes')")
+        db.execute("""CREATE TABLE personal_watchlist_items (
+            id INTEGER PRIMARY KEY, ticker VARCHAR UNIQUE, sort_order INTEGER,
+            created_at DATETIME, updated_at DATETIME
+        )""")
+        db.execute("INSERT INTO personal_watchlist_items (id, ticker, sort_order) VALUES (1, 'MELI.US', 0)")
+    project_root = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{path}", "ENVIRONMENT": "test"}
+
+    def alembic(*args):
+        subprocess.run([sys.executable, "-m", "alembic", *args], cwd=project_root, env=env, check=True, capture_output=True)
+
+    def tables(db):
+        return {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+    alembic("upgrade", "head")
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT ticker, is_core FROM personal_watchlist_items").fetchall() == [("MELI.US", 0)]
+        assert "ticker_thesis_versions" in tables(db)
+
+    alembic("downgrade", "0028_live_quotes")
+    with sqlite3.connect(path) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(personal_watchlist_items)")}
+        assert "is_core" not in columns
+        assert db.execute("SELECT ticker FROM personal_watchlist_items").fetchall() == [("MELI.US",)]
+        assert "ticker_thesis_versions" not in tables(db)
 
 
 def test_personal_valuation_endpoints_save_and_reset_scenarios():

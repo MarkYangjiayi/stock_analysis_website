@@ -1241,8 +1241,14 @@ export const calculateDecisionValuation = (
     },
 );
 
+export interface PersonalWatchlistState {
+    tickers: string[];
+    /** Core-tier tickers (thesis tracking), in watchlist order. */
+    core: string[];
+}
+
 export const fetchPersonalWatchlist = (signal?: AbortSignal) =>
-    apiRequest<{ tickers: string[] }>("/api/personal/watchlist", {
+    apiRequest<PersonalWatchlistState>("/api/personal/watchlist", {
         signal,
     });
 
@@ -1328,17 +1334,18 @@ export const fetchToday = (signal?: AbortSignal) =>
 export const addPersonalWatchlistItem = (
     ticker: string,
     signal?: AbortSignal,
-) => apiRequest<{ tickers: string[]; added: boolean }>("/api/personal/watchlist/items", {
+) => apiRequest<PersonalWatchlistState & { added: boolean }>("/api/personal/watchlist/items", {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({ ticker }),
     signal,
 });
 
+/** Removing a ticker also drops its core flag. */
 export const removePersonalWatchlistItem = (
     ticker: string,
     signal?: AbortSignal,
-) => apiRequest<{ tickers: string[]; removed: boolean }>(
+) => apiRequest<PersonalWatchlistState & { removed: boolean }>(
     `/api/personal/watchlist/items/${encodeURIComponent(ticker)}`,
     {
         method: "DELETE",
@@ -1346,10 +1353,25 @@ export const removePersonalWatchlistItem = (
     },
 );
 
+/** Mark a listed ticker as core (at most 8) or move it back to rule alerts only. */
+export const setPersonalWatchlistCore = (
+    ticker: string,
+    core: boolean,
+    signal?: AbortSignal,
+) => apiRequest<PersonalWatchlistState & { changed: boolean }>(
+    `/api/personal/watchlist/items/${encodeURIComponent(ticker)}/core`,
+    {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ core }),
+        signal,
+    },
+);
+
 export const importPersonalWatchlist = (
     tickers: string[],
     signal?: AbortSignal,
-) => apiRequest<{ tickers: string[]; imported: boolean }>("/api/personal/watchlist/import", {
+) => apiRequest<PersonalWatchlistState & { imported: boolean }>("/api/personal/watchlist/import", {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({ tickers }),
@@ -1374,6 +1396,51 @@ export const resetPersonalValuationScenarios = (
     `/api/personal/stocks/${encodeURIComponent(ticker)}/valuation-scenarios`,
     { method: "DELETE" },
 );
+
+export interface ThesisContent {
+    /** Why I own it: two or three reasons. */
+    reasons: string[];
+    metrics: Array<{ name: string; threshold: string }>;
+    conditions: Array<{ kind: "sell" | "warning"; text: string }>;
+    /** Confirmed per-share values in the listing currency. */
+    valuation: { bear: number | null; base: number | null; bull: number | null; note: string };
+    catalysts: Array<{ date: string | null; event: string }>;
+}
+
+export interface ThesisVersion {
+    version: number;
+    content: ThesisContent;
+    note: string | null;
+    created_at: string;
+}
+
+export const fetchPersonalThesis = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<{ ticker: string; thesis: ThesisVersion | null }>(
+        `/api/personal/stocks/${encodeURIComponent(ticker)}/thesis`,
+        { signal },
+    );
+
+/** Saves the next version; fails with 409 when the thesis was saved elsewhere after ``baseVersion``. */
+export const savePersonalThesis = (
+    ticker: string,
+    content: ThesisContent,
+    baseVersion: number,
+    note: string,
+) => apiRequest<{ ticker: string; thesis: ThesisVersion; saved: boolean }>(
+    `/api/personal/stocks/${encodeURIComponent(ticker)}/thesis`,
+    {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ content, base_version: baseVersion, note }),
+    },
+);
+
+/** Newest first. */
+export const fetchPersonalThesisVersions = (ticker: string, signal?: AbortSignal) =>
+    apiRequest<{ ticker: string; versions: ThesisVersion[] }>(
+        `/api/personal/stocks/${encodeURIComponent(ticker)}/thesis/versions`,
+        { signal },
+    );
 
 export const fetchMarketOverview = (
     universe: MarketUniverse,

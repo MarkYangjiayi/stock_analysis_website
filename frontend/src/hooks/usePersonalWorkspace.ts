@@ -10,6 +10,8 @@ import {
     fetchPersonalWatchlist,
     importPersonalWatchlist,
     removePersonalWatchlistItem,
+    setPersonalWatchlistCore,
+    type PersonalWatchlistState,
 } from "@/lib/api";
 
 /** Where the Admin Key used to sit before the session moved to an HttpOnly cookie; cleared on load. */
@@ -42,27 +44,33 @@ export const readLegacyWatchlist = (): string[] => {
     return DEFAULT_WATCHLIST;
 };
 
+// The browser-only preview has no core tier; responses from an older server have no core list.
+const stateOf = (result: { tickers: string[]; core?: string[] }): PersonalWatchlistState => ({
+    tickers: result.tickers,
+    core: result.core ?? [],
+});
+
 export function usePersonalWorkspace() {
     const [unlocked, setUnlocked] = useState(false);
-    const [watchlist, setWatchlist] = useState<string[]>([]);
+    const [watchlistState, setWatchlistState] = useState<PersonalWatchlistState>({ tickers: [], core: [] });
     const [restoring, setRestoring] = useState(true);
     const [unlocking, setUnlocking] = useState(false);
     const [error, setError] = useState("");
     const legacyRef = useRef<string[]>([]);
-    const confirmedWatchlistRef = useRef<string[]>([]);
+    const confirmedWatchlistRef = useRef<PersonalWatchlistState>({ tickers: [], core: [] });
     const watchlistMutationVersionRef = useRef(0);
     const watchlistRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
     const watchlistRefreshPendingRef = useRef(false);
 
-    const applyWatchlist = useCallback((next: string[]) => {
-        setWatchlist(next);
+    const applyWatchlist = useCallback((next: PersonalWatchlistState) => {
+        setWatchlistState(next);
     }, []);
 
     const lock = useCallback((message = "") => {
         watchlistMutationVersionRef.current += 1;
         setUnlocked(false);
-        confirmedWatchlistRef.current = legacyRef.current;
-        applyWatchlist(legacyRef.current);
+        confirmedWatchlistRef.current = stateOf({ tickers: legacyRef.current });
+        applyWatchlist(confirmedWatchlistRef.current);
         setError(message);
         // Best effort: a cookie the server already rejects needs no clearing.
         void deleteAdminSession().catch(() => undefined);
@@ -76,13 +84,13 @@ export function usePersonalWorkspace() {
     const openWorkspace = useCallback(async () => {
         const serverWatchlist = await fetchPersonalWatchlist();
         const migrationAttempted = window.localStorage.getItem(WATCHLIST_MIGRATION_KEY) === "true";
-        const authoritative = migrationAttempted
-            ? { tickers: serverWatchlist.tickers, imported: false }
-            : await importPersonalWatchlist(legacyRef.current);
+        const authoritative = stateOf(migrationAttempted
+            ? serverWatchlist
+            : await importPersonalWatchlist(legacyRef.current));
         window.localStorage.setItem(WATCHLIST_MIGRATION_KEY, "true");
         setUnlocked(true);
-        confirmedWatchlistRef.current = authoritative.tickers;
-        applyWatchlist(authoritative.tickers);
+        confirmedWatchlistRef.current = authoritative;
+        applyWatchlist(authoritative);
     }, [applyWatchlist]);
 
     const authenticate = useCallback(async (key: string) => {
@@ -114,8 +122,8 @@ export function usePersonalWorkspace() {
 
     useEffect(() => {
         legacyRef.current = readLegacyWatchlist();
-        confirmedWatchlistRef.current = legacyRef.current;
-        applyWatchlist(legacyRef.current);
+        confirmedWatchlistRef.current = stateOf({ tickers: legacyRef.current });
+        applyWatchlist(confirmedWatchlistRef.current);
         window.sessionStorage.removeItem(PERSONAL_SESSION_KEY);
         const restore = async () => {
             try {
@@ -141,10 +149,10 @@ export function usePersonalWorkspace() {
             const mutationVersion = watchlistMutationVersionRef.current;
             watchlistRequestQueueRef.current = watchlistRequestQueueRef.current.then(async () => {
                 try {
-                    const result = await fetchPersonalWatchlist();
+                    const result = stateOf(await fetchPersonalWatchlist());
                     if (mutationVersion !== watchlistMutationVersionRef.current) return;
-                    confirmedWatchlistRef.current = result.tickers;
-                    applyWatchlist(result.tickers);
+                    confirmedWatchlistRef.current = result;
+                    applyWatchlist(result);
                 } catch (caught) {
                     if (caught instanceof ApiError && caught.status === 401) handleUnauthorized();
                 } finally {
@@ -162,8 +170,8 @@ export function usePersonalWorkspace() {
 
     const mutateWatchlist = useCallback(async (
         ticker: string,
-        optimistic: (current: string[], symbol: string) => string[],
-        send: (symbol: string) => Promise<{ tickers: string[] }>,
+        optimistic: (current: PersonalWatchlistState, symbol: string) => PersonalWatchlistState,
+        send: (symbol: string) => Promise<{ tickers: string[]; core?: string[] }>,
     ) => {
         if (!unlocked) {
             setError("Unlock the personal workspace to edit the watchlist.");
@@ -173,14 +181,14 @@ export function usePersonalWorkspace() {
         if (!symbol) return false;
         const mutationVersion = watchlistMutationVersionRef.current + 1;
         watchlistMutationVersionRef.current = mutationVersion;
-        setWatchlist((current) => optimistic(current, symbol));
+        setWatchlistState((current) => optimistic(current, symbol));
         setError("");
         const request = watchlistRequestQueueRef.current.then(async () => {
             try {
-                const result = await send(symbol);
-                confirmedWatchlistRef.current = result.tickers;
+                const result = stateOf(await send(symbol));
+                confirmedWatchlistRef.current = result;
                 if (mutationVersion === watchlistMutationVersionRef.current) {
-                    applyWatchlist(result.tickers);
+                    applyWatchlist(result);
                 }
                 return true;
             } catch (caught) {
@@ -199,18 +207,32 @@ export function usePersonalWorkspace() {
 
     const addToWatchlist = useCallback((ticker: string) => mutateWatchlist(
         ticker,
-        (current, symbol) => (current.includes(symbol) ? current : [symbol, ...current]),
+        (current, symbol) => (current.tickers.includes(symbol) ? current : { ...current, tickers: [symbol, ...current.tickers] }),
         (symbol) => addPersonalWatchlistItem(symbol),
     ), [mutateWatchlist]);
 
     const removeFromWatchlist = useCallback((ticker: string) => mutateWatchlist(
         ticker,
-        (current, symbol) => current.filter((item) => item !== symbol),
+        (current, symbol) => ({
+            tickers: current.tickers.filter((item) => item !== symbol),
+            core: current.core.filter((item) => item !== symbol),
+        }),
         (symbol) => removePersonalWatchlistItem(symbol),
     ), [mutateWatchlist]);
 
+    const setCore = useCallback((ticker: string, core: boolean) => mutateWatchlist(
+        ticker,
+        // Core tickers stay in watchlist order, as the server returns them.
+        (current, symbol) => ({
+            ...current,
+            core: current.tickers.filter((item) => (item === symbol ? core : current.core.includes(item))),
+        }),
+        (symbol) => setPersonalWatchlistCore(symbol, core),
+    ), [mutateWatchlist]);
+
     return {
-        watchlist,
+        watchlist: watchlistState.tickers,
+        core: watchlistState.core,
         restoring,
         unlocking,
         error,
@@ -220,5 +242,6 @@ export function usePersonalWorkspace() {
         handleUnauthorized,
         addToWatchlist,
         removeFromWatchlist,
+        setCore,
     };
 }

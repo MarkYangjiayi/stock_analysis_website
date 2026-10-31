@@ -183,7 +183,19 @@ watchlist 单只增删用 `POST /api/personal/watchlist/items`（`{"ticker": "NV
 python scripts/watchlist.py ls
 python scripts/watchlist.py add NVDA AMD   # NVDA 排在最前
 python scripts/watchlist.py rm NVDA
+python scripts/watchlist.py core           # 列出核心档
+python scripts/watchlist.py core add MELI  # 标为核心档，最多 8 只
+python scripts/watchlist.py core rm MELI   # 退回规则档
 ```
+
+核心档（watchlist 上的 `is_core` 标记）用 `PUT /api/personal/watchlist/items/{ticker}/core`
+（`{"core": true}`）设置，只能标已在 watchlist 里的票；删掉一只票也会去掉它的核心标记。
+所有 watchlist 接口的返回都带 `core`（按 watchlist 顺序）。
+
+每只票的投资逻辑（thesis）在分析页的 Thesis 标签页编辑，存在 `ticker_thesis_versions`，
+每次保存追加一个版本：`GET /api/personal/stocks/{ticker}/thesis` 读当前版本，
+`GET .../thesis/versions` 读历史，`PUT .../thesis` 保存时要带 `base_version`（编辑开始时的版本号，
+没有 thesis 时为 0），版本已被别处更新时返回 409，不会覆盖。
 
 Earnings-quality 的 `GET /api/stocks/{ticker}/earnings-quality` 只读取本地数据；任务状态 GET
 也需要同一个 `X-API-Key`，只有带 `X-API-Key` 的

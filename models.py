@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     JSON,
     Text,
+    false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from core.time_utils import utc_now
@@ -750,6 +751,8 @@ class PersonalWatchlistItem(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String, unique=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, index=True)
+    # Core-tier tickers get thesis tracking; the rest only get rule alerts.
+    is_core: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -874,6 +877,24 @@ class TickerValuationScenario(Base):
             "scenario",
             name="uix_ticker_valuation_scenario",
         ),
+    )
+
+
+class TickerThesisVersion(Base):
+    """One saved version of a ticker's investment thesis; the highest version is current."""
+
+    __tablename__ = "ticker_thesis_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    content: Mapped[Any] = mapped_column(JSON)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        # Two saves edited from the same version cannot both become the next one.
+        UniqueConstraint("ticker", "version", name="uix_ticker_thesis_version"),
     )
 
 
