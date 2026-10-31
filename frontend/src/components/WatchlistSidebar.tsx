@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LockKeyhole, Plus, Star, Trash2 } from "lucide-react";
+import { LockKeyhole, Plus, Star, Target, Trash2 } from "lucide-react";
 import type { WatchlistQuoteItem } from "@/lib/api";
 import { formatSignedPercent } from "@/lib/format";
 import { Sparkline } from "@/components/ui/Sparkline";
@@ -12,6 +12,9 @@ interface WatchlistSidebarProps {
     watchlist: string[];
     onAdd: (ticker: string) => void;
     onRemove: (ticker: string) => void;
+    /** Core-tier tickers get thesis tracking; the rest only rule alerts. */
+    core?: string[];
+    onToggleCore?: (ticker: string, core: boolean) => void;
     compact?: boolean;
     readOnly?: boolean;
     onUnlock?: () => void;
@@ -27,8 +30,9 @@ const quoteTitle = (item?: WatchlistQuoteItem) => {
     return `Delayed quote · ${Number.isNaN(asOf.getTime()) ? item.quote.session_date : asOf.toLocaleString()}`;
 };
 
-export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchlist, onAdd, onRemove, compact = false, readOnly = false, onUnlock, quotes = {} }: WatchlistSidebarProps) {
+export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchlist, onAdd, onRemove, core = [], onToggleCore, compact = false, readOnly = false, onUnlock, quotes = {} }: WatchlistSidebarProps) {
     const [newTicker, setNewTicker] = useState("");
+    const coreSet = new Set(core);
 
     const handleAdd = (event: React.FormEvent) => {
         event.preventDefault();
@@ -46,6 +50,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                     {watchlist.map((ticker) => (
                         <div key={ticker} className={`flex shrink-0 items-center rounded-full border ${ticker === currentTicker ? "border-accent bg-accent-soft text-accent-strong" : "bg-surface text-fg-muted hover:border-line-strong hover:text-fg"}`}>
                             <button type="button" onClick={() => onSelectTicker(ticker)} className="min-h-11 py-1.5 pl-3 pr-1 font-mono text-xs font-semibold" title={quoteTitle(quotes[ticker])}>
+                                {coreSet.has(ticker) && <><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-hidden="true" /><span className="sr-only">Core: </span></>}
                                 {ticker.replace(".US", "")}
                                 {quotes[ticker]?.quote && <span className={`ml-1.5 font-medium ${toneClass(quotes[ticker].quote?.change)}`}>{formatSignedPercent(quotes[ticker].quote?.change_pct)}</span>}
                             </button>
@@ -69,7 +74,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
         <aside className="flex h-full w-52 shrink-0 flex-col border-r bg-surface" aria-label="Watchlist">
             <div className="border-b p-3">
                 <div className="flex items-center justify-between gap-2"><span className="eyebrow flex items-center gap-1.5"><Star className="text-accent" size={13} /> Watchlist</span>{readOnly && <button type="button" onClick={onUnlock} className="rounded-md p-1 text-fg-muted hover:bg-surface-muted hover:text-fg" aria-label="Unlock personal workspace"><LockKeyhole size={15} /></button>}</div>
-                <p className="mt-1 text-xs text-fg-muted">{readOnly ? "Preview from this browser · locked" : "Synced to personal workspace"}</p>
+                <p className="mt-1 text-xs text-fg-muted">{readOnly ? "Preview from this browser · locked" : `Synced to personal workspace${core.length ? ` · ${core.length} core` : ""}`}</p>
                 {readOnly ? <button type="button" className="secondary-button mt-3 w-full min-h-9 px-3 text-xs" onClick={onUnlock}><LockKeyhole size={14} /> Unlock to edit</button> : <form onSubmit={handleAdd} className="mt-3 flex gap-2">
                     <label className="sr-only" htmlFor="watchlist-ticker">Add ticker to watchlist</label>
                     <input id="watchlist-ticker" className="control-field min-w-0 py-1.5 font-mono" value={newTicker} onChange={(event) => setNewTicker(event.target.value)} placeholder="Add ticker" />
@@ -81,11 +86,15 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                     const selected = ticker === currentTicker;
                     const item = quotes[ticker];
                     const quote = item?.quote;
+                    const isCore = coreSet.has(ticker);
                     return (
                         <div key={ticker} className={`group flex items-center gap-1 border-b ${selected ? "bg-accent-soft shadow-[inset_2px_0_0_var(--brand)]" : "hover:bg-surface-muted"}`}>
                             <button type="button" onClick={() => onSelectTicker(ticker)} aria-current={selected ? "true" : undefined} title={quoteTitle(item)} className={`min-h-9 min-w-0 flex-1 px-3 py-2 text-left font-mono text-xs ${selected ? "font-semibold text-fg" : "font-medium text-fg-muted group-hover:text-fg"}`}>
                                 <span className="flex items-baseline justify-between gap-2">
-                                    <span className="truncate">{ticker}</span>
+                                    <span className="flex min-w-0 items-center gap-1.5">
+                                        {isCore && <><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" /><span className="sr-only">Core: </span></>}
+                                        <span className="truncate">{ticker}</span>
+                                    </span>
                                     {quote && <span className={`shrink-0 font-medium ${toneClass(quote.change)}`}>{formatSignedPercent(quote.change_pct)}</span>}
                                 </span>
                                 {item && <span className="mt-1 flex items-center gap-2">
@@ -93,6 +102,7 @@ export default function WatchlistSidebar({ currentTicker, onSelectTicker, watchl
                                     <Sparkline values={item.sparkline.map((point) => point.close)} className={`min-w-0 flex-1 ${toneClass(quote?.change)}`} height={16} />
                                 </span>}
                             </button>
+                            {!readOnly && onToggleCore && <button type="button" onClick={() => onToggleCore(ticker, !isCore)} aria-pressed={isCore} className={`rounded-md p-1 transition-opacity hover:bg-accent-soft hover:text-accent focus:opacity-100 group-hover:opacity-100 ${isCore ? "text-accent opacity-100" : "text-fg-muted opacity-0"}`} aria-label={isCore ? `Move ${ticker} back to rule alerts` : `Mark ${ticker} as core`} title={isCore ? "Core: thesis tracking. Click to move back to rule alerts." : "Mark as core for thesis tracking"}><Target size={14} /></button>}
                             {!readOnly && <button type="button" onClick={() => onRemove(ticker)} className="mr-1.5 rounded-md p-1 text-fg-muted opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus:opacity-100 group-hover:opacity-100" aria-label={`Remove ${ticker} from watchlist`}><Trash2 size={14} /></button>}
                         </div>
                     );

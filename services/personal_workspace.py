@@ -21,6 +21,9 @@ from core.time_utils import utc_now
 SCENARIO_NAMES = ("bear", "base", "bull")
 WATCHLIST_LIMIT = 100
 WATCHLIST_LIMIT_MESSAGE = f"A personal watchlist can contain at most {WATCHLIST_LIMIT} tickers."
+# Core-tier tickers get thesis tracking; every core event can start a paid analysis run.
+CORE_LIMIT = 8
+CORE_LIMIT_MESSAGE = f"At most {CORE_LIMIT} watchlist tickers can be core."
 
 
 def normalize_watchlist(tickers: Iterable[str]) -> list[str]:
@@ -44,6 +47,16 @@ async def get_watchlist(db: AsyncSession) -> list[str]:
         .order_by(PersonalWatchlistItem.sort_order, PersonalWatchlistItem.id)
     )
     return [row.ticker for row in result.scalars().all()]
+
+
+async def get_core_tickers(db: AsyncSession) -> list[str]:
+    """Core-tier tickers, in watchlist order."""
+    result = await db.execute(
+        select(PersonalWatchlistItem.ticker)
+        .where(PersonalWatchlistItem.is_core.is_(True))
+        .order_by(PersonalWatchlistItem.sort_order, PersonalWatchlistItem.id)
+    )
+    return list(result.scalars().all())
 
 
 async def _ensure_watchlist_state(db: AsyncSession) -> None:
@@ -94,9 +107,11 @@ async def _mark_watchlist_edited(db: AsyncSession) -> None:
 async def replace_watchlist(db: AsyncSession, tickers: Iterable[str]) -> list[str]:
     normalized = normalize_watchlist(tickers)
     await _mark_watchlist_edited(db)
+    # Tickers that stay on the list keep their core flag.
+    core = set(await get_core_tickers(db))
     await db.execute(delete(PersonalWatchlistItem))
     db.add_all(
-        PersonalWatchlistItem(ticker=ticker, sort_order=index)
+        PersonalWatchlistItem(ticker=ticker, sort_order=index, is_core=ticker in core)
         for index, ticker in enumerate(normalized)
     )
     await db.commit()
@@ -131,6 +146,28 @@ async def remove_watchlist_item(db: AsyncSession, ticker: str) -> tuple[list[str
     )
     await db.commit()
     return await get_watchlist(db), result.rowcount > 0
+
+
+async def set_watchlist_core(db: AsyncSession, ticker: str, core: bool) -> tuple[list[str], bool]:
+    """Mark or unmark one listed ticker as core. Returns the core tickers and
+    whether the flag changed; a ticker that is not listed raises LookupError."""
+    canonical_ticker = canonicalize_ticker(ticker)
+    await _mark_watchlist_edited(db)
+    item = await db.scalar(
+        select(PersonalWatchlistItem).where(PersonalWatchlistItem.ticker == canonical_ticker)
+    )
+    if item is None:
+        await db.rollback()
+        raise LookupError(f"{canonical_ticker} is not in the watchlist.")
+    if item.is_core == core:
+        await db.commit()
+        return await get_core_tickers(db), False
+    if core and len(await get_core_tickers(db)) >= CORE_LIMIT:
+        await db.rollback()
+        raise ValueError(CORE_LIMIT_MESSAGE)
+    item.is_core = core
+    await db.commit()
+    return await get_core_tickers(db), True
 
 
 async def import_watchlist_if_empty(

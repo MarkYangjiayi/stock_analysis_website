@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import Annotated, Any, Dict, List, Optional, Literal
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from datetime import date, datetime
+from datetime import date as dt_date
 
 class StockProfileModel(BaseModel):
     ticker: str
@@ -455,6 +456,65 @@ class PersonalWatchlistRequest(BaseModel):
 
 class PersonalWatchlistItemRequest(BaseModel):
     ticker: str = Field(max_length=24)
+
+
+class PersonalWatchlistCoreRequest(BaseModel):
+    core: bool
+
+
+ThesisName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+ThesisLine = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
+ThesisParagraph = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
+class ThesisMetric(BaseModel):
+    name: ThesisName
+    # Numbers where a program could check them, e.g. "< 15% YoY for two quarters".
+    threshold: ThesisLine
+
+
+class ThesisCondition(BaseModel):
+    kind: Literal["sell", "warning"]
+    text: ThesisParagraph
+
+
+class ThesisCatalyst(BaseModel):
+    # dt_date: a field named ``date`` would shadow the type in its own annotation.
+    date: Optional[dt_date] = None
+    event: ThesisLine
+
+
+class ThesisValuation(BaseModel):
+    """Confirmed per-share values in the listing currency."""
+
+    bear: Optional[float] = Field(default=None, gt=0)
+    base: Optional[float] = Field(default=None, gt=0)
+    bull: Optional[float] = Field(default=None, gt=0)
+    note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        values = [value for value in (self.bear, self.base, self.bull) if value is not None]
+        if values != sorted(values):
+            raise ValueError("Valuation values must run bear ≤ base ≤ bull.")
+        return self
+
+
+class ThesisContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reasons: List[ThesisParagraph] = Field(default_factory=list, max_length=5)
+    metrics: List[ThesisMetric] = Field(default_factory=list, max_length=12)
+    conditions: List[ThesisCondition] = Field(default_factory=list, max_length=12)
+    valuation: ThesisValuation = Field(default_factory=ThesisValuation)
+    catalysts: List[ThesisCatalyst] = Field(default_factory=list, max_length=12)
+
+
+class ThesisSaveRequest(BaseModel):
+    content: ThesisContent
+    # The version the edit started from; 0 for a first thesis.
+    base_version: int = Field(ge=0)
+    note: str = Field(default="", max_length=300)
 
 
 class MarketOverviewMeta(BaseModel):

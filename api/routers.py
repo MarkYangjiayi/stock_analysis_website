@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.schemas import (
     AnomalyScanResponse,
     EarningsQualityAnalysisRequest,
+    PersonalWatchlistCoreRequest,
     PersonalWatchlistItemRequest,
     PersonalWatchlistRequest,
+    ThesisSaveRequest,
     ValuationScenariosRequest,
     FactorComputeRequest,
     EventsExpectationsResponse,
@@ -62,13 +64,16 @@ from services.decision_support import (
 from services.personal_workspace import (
     add_watchlist_item,
     delete_valuation_scenarios,
+    get_core_tickers,
     get_saved_valuation_scenarios,
     get_watchlist,
     import_watchlist_if_empty,
     remove_watchlist_item,
     replace_watchlist,
     save_valuation_scenarios,
+    set_watchlist_core,
 )
+from services.theses import ThesisConflict, get_thesis, list_thesis_versions, save_thesis
 from services.news_fetcher import NewsFetchError, fetch_yahoo_news
 from services.anomaly_scans import (
     enqueue_manual_anomaly_scan,
@@ -489,6 +494,70 @@ async def remove_personal_valuation_scenarios(
     }
 
 
+def _personal_ticker(value: str) -> str:
+    """One ticker from a path or body; a list or junk never reaches the database."""
+    ticker = value.strip()
+    if not WATCHLIST_TICKER_PATTERN.fullmatch(ticker):
+        raise HTTPException(status_code=422, detail=f"Invalid ticker: {ticker[:24]}")
+    return ticker
+
+
+@router.get(
+    "/api/personal/stocks/{ticker}/thesis",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def read_personal_thesis(
+    ticker: str = Path(max_length=24),
+    db: AsyncSession = Depends(get_db),
+):
+    """The current thesis; ``thesis`` is null until one is written."""
+    value = _personal_ticker(ticker)
+    return {"ticker": canonicalize_ticker(value), "thesis": await get_thesis(db, value)}
+
+
+@router.put(
+    "/api/personal/stocks/{ticker}/thesis",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def put_personal_thesis(
+    request: ThesisSaveRequest,
+    ticker: str = Path(max_length=24),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save a new version. ``base_version`` must be the current version, so an
+    editor opened before another save is refused instead of overwriting it."""
+    value = _personal_ticker(ticker)
+    try:
+        thesis, saved = await save_thesis(
+            db,
+            value,
+            request.content.model_dump(mode="json"),
+            request.base_version,
+            request.note.strip(),
+        )
+    except ThesisConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"The thesis was saved elsewhere and is now at version {exc.current_version}. Reload it before saving.",
+        ) from exc
+    return {"ticker": canonicalize_ticker(value), "thesis": thesis, "saved": saved}
+
+
+@router.get(
+    "/api/personal/stocks/{ticker}/thesis/versions",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def read_personal_thesis_versions(
+    ticker: str = Path(max_length=24),
+    db: AsyncSession = Depends(get_db),
+):
+    value = _personal_ticker(ticker)
+    return {"ticker": canonicalize_ticker(value), "versions": await list_thesis_versions(db, value)}
+
+
 @router.post("/api/auth/session", tags=["Personal Workspace"])
 async def create_admin_session(
     request: Request,
@@ -525,7 +594,7 @@ async def delete_admin_session(response: Response):
     dependencies=[Depends(require_admin_api_key)],
 )
 async def read_personal_watchlist(db: AsyncSession = Depends(get_db)):
-    return {"tickers": await get_watchlist(db)}
+    return {"tickers": await get_watchlist(db), "core": await get_core_tickers(db)}
 
 
 @router.put(
@@ -541,7 +610,7 @@ async def put_personal_watchlist(
         tickers = await replace_watchlist(db, request.tickers)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"tickers": tickers}
+    return {"tickers": tickers, "core": await get_core_tickers(db)}
 
 
 @router.post(
@@ -555,14 +624,12 @@ async def add_personal_watchlist_item(
 ):
     """Add one ticker to the front of the watchlist. Unlike the whole-list PUT,
     this cannot overwrite edits made from another client."""
-    value = request.ticker.strip()
-    if not WATCHLIST_TICKER_PATTERN.fullmatch(value):
-        raise HTTPException(status_code=422, detail=f"Invalid ticker: {value[:24]}")
+    value = _personal_ticker(request.ticker)
     try:
         tickers, added = await add_watchlist_item(db, value)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"tickers": tickers, "added": added}
+    return {"tickers": tickers, "core": await get_core_tickers(db), "added": added}
 
 
 @router.delete(
@@ -574,11 +641,30 @@ async def remove_personal_watchlist_item(
     ticker: str = Path(max_length=24),
     db: AsyncSession = Depends(get_db),
 ):
-    value = ticker.strip()
-    if not WATCHLIST_TICKER_PATTERN.fullmatch(value):
-        raise HTTPException(status_code=422, detail=f"Invalid ticker: {value[:24]}")
+    value = _personal_ticker(ticker)
     tickers, removed = await remove_watchlist_item(db, value)
-    return {"tickers": tickers, "removed": removed}
+    return {"tickers": tickers, "core": await get_core_tickers(db), "removed": removed}
+
+
+@router.put(
+    "/api/personal/watchlist/items/{ticker}/core",
+    tags=["Personal Workspace"],
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def set_personal_watchlist_core(
+    request: PersonalWatchlistCoreRequest,
+    ticker: str = Path(max_length=24),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a listed ticker as core (thesis tracking) or back to the rule tier."""
+    value = _personal_ticker(ticker)
+    try:
+        core, changed = await set_watchlist_core(db, value, request.core)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"tickers": await get_watchlist(db), "core": core, "changed": changed}
 
 
 @router.get(
@@ -605,7 +691,7 @@ async def import_personal_watchlist(
         tickers, imported = await import_watchlist_if_empty(db, request.tickers)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"tickers": tickers, "imported": imported}
+    return {"tickers": tickers, "core": await get_core_tickers(db), "imported": imported}
 
 @router.post(
     "/api/stocks/{ticker}/sync",

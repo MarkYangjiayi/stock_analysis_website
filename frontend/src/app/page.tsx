@@ -43,6 +43,7 @@ import AnalysisNavigation, { isAnalysisSection, type AnalysisSection } from "@/c
 import FinancialSnapshot from "@/components/analysis/FinancialSnapshot";
 import PriceHeadline, { resolveHeadlinePrice } from "@/components/analysis/PriceHeadline";
 import QualityScorecardPanel from "@/components/analysis/QualityScorecardPanel";
+import ThesisPanel from "@/components/analysis/ThesisPanel";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 const StockValuationChart = dynamic(() => import("@/components/StockValuationChart"), {
@@ -509,6 +510,14 @@ function AnalysisPage() {
         void personal.removeFromWatchlist(symbol);
     };
 
+    const toggleCore = (symbol: string, core: boolean) => {
+        if (!personal.isUnlocked) {
+            setUnlockOpen(true);
+            return;
+        }
+        void personal.setCore(symbol, core);
+    };
+
     const refreshDecision = useCallback(async () => {
         if (!ticker) return;
         await loadDecision(ticker, personal.isUnlocked);
@@ -617,12 +626,12 @@ function AnalysisPage() {
     return (
         <div className="flex h-full w-full overflow-hidden bg-canvas">
             <div className="hidden h-full xl:block">
-                <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} quotes={watchlistQuotes} />
+                <WatchlistSidebar currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} core={personal.core} onToggleCore={toggleCore} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} quotes={watchlistQuotes} />
             </div>
 
             <div className="app-page analysis-workspace min-w-0 flex-1">
                 <div className="page-container">
-                    <WatchlistSidebar compact currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} quotes={watchlistQuotes} />
+                    <WatchlistSidebar compact currentTicker={ticker} onSelectTicker={selectTicker} watchlist={watchlist} onAdd={addToWatchlist} onRemove={removeFromWatchlist} core={personal.core} readOnly={!personal.isUnlocked} onUnlock={() => setUnlockOpen(true)} quotes={watchlistQuotes} />
 
                     {!ticker && personal.restoring && (
                         <div className="surface-panel h-40 animate-pulse bg-surface-muted" aria-label="Restoring workspace" />
@@ -775,6 +784,19 @@ function AnalysisPage() {
                                 </>}
 
                                 {activeSection === "events" && <div className="min-h-[420px]"><NewsFeed ticker={stockData.profile.ticker} /></div>}
+
+                                {activeSection === "thesis" && <ThesisPanel
+                                    key={stockData.profile.ticker}
+                                    ticker={stockData.profile.ticker}
+                                    currency={stockData.profile.currency || "USD"}
+                                    price={headline.price}
+                                    unlocked={personal.isUnlocked}
+                                    inWatchlist={watchlist.includes(stockData.profile.ticker)}
+                                    isCore={personal.core.includes(stockData.profile.ticker)}
+                                    onUnlock={() => setUnlockOpen(true)}
+                                    onUnauthorized={personal.handleUnauthorized}
+                                    onToggleCore={(core) => toggleCore(stockData.profile.ticker, core)}
+                                />}
                             </div>
 
                             <footer className="flex flex-wrap items-center gap-2 px-1 py-2 text-xs text-fg-muted">

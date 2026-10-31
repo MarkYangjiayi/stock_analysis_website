@@ -5,6 +5,9 @@ Usage:
   python scripts/watchlist.py ls
   python scripts/watchlist.py add NVDA AMD    # NVDA ends up first, like adding on the page
   python scripts/watchlist.py rm NVDA
+  python scripts/watchlist.py core            # list the core tier (thesis tracking)
+  python scripts/watchlist.py core add MELI   # a listed ticker; at most 8 are core
+  python scripts/watchlist.py core rm MELI    # back to rule alerts only
 
 Reads the Admin Key from FINBRAIN_ADMIN_API_KEY. FINBRAIN_API_URL overrides
 https://finbrain.icu, e.g. http://127.0.0.1:8000 for a local backend.
@@ -73,10 +76,11 @@ def _position(tickers: list[str], ticker: str) -> str:
 
 
 def list_tickers(_: list[str]) -> None:
-    tickers = _call("GET", "/api/personal/watchlist")["tickers"]
-    for index, ticker in enumerate(tickers, start=1):
-        print(f"{index:>3}  {ticker}")
-    print(f"{len(tickers)} tickers")
+    state = _call("GET", "/api/personal/watchlist")
+    core = set(state.get("core", []))
+    for index, ticker in enumerate(state["tickers"], start=1):
+        print(f"{index:>3}  {ticker:<12}{'core' if ticker in core else ''}".rstrip())
+    print(f"{len(state['tickers'])} tickers, {len(core)} core")
 
 
 def add_tickers(tickers: list[str]) -> None:
@@ -92,10 +96,35 @@ def add_tickers(tickers: list[str]) -> None:
 
 
 def remove_tickers(tickers: list[str]) -> None:
+    # Removing a ticker drops its core flag; say so, since adding it back does not restore it.
+    core = set(_call("GET", "/api/personal/watchlist").get("core", []))
     for symbol in dict.fromkeys(_canonical(ticker) for ticker in tickers):
         result = _call("DELETE", f"/api/personal/watchlist/items/{parse.quote(symbol, safe='')}")
         status = "removed" if result["removed"] else "was not listed"
+        if result["removed"] and symbol in core:
+            status += ", and is no longer core"
         print(f"{symbol}: {status} ({len(result['tickers'])} tickers left)")
+
+
+def list_core(_: list[str]) -> None:
+    core = _call("GET", "/api/personal/watchlist").get("core", [])
+    for ticker in core:
+        print(ticker)
+    print(f"{len(core)} core")
+
+
+def set_core(tickers: list[str], core: bool) -> None:
+    for symbol in dict.fromkeys(_canonical(ticker) for ticker in tickers):
+        result = _call(
+            "PUT",
+            f"/api/personal/watchlist/items/{parse.quote(symbol, safe='')}/core",
+            {"core": core},
+        )
+        if core:
+            status = "marked core" if result["changed"] else "already core"
+        else:
+            status = "back to the rule tier" if result["changed"] else "was not core"
+        print(f"{symbol}: {status} ({len(result['core'])} core)")
 
 
 def main() -> None:
@@ -108,6 +137,15 @@ def main() -> None:
     remove = commands.add_parser("rm", help="remove tickers")
     remove.add_argument("tickers", nargs="+")
     remove.set_defaults(run=remove_tickers)
+    core = commands.add_parser("core", help="list the core tier, or mark and unmark tickers")
+    core.set_defaults(run=list_core, tickers=[])
+    core_commands = core.add_subparsers(dest="core_command")
+    core_add = core_commands.add_parser("add", help="mark listed tickers as core")
+    core_add.add_argument("tickers", nargs="+")
+    core_add.set_defaults(run=lambda tickers: set_core(tickers, True))
+    core_remove = core_commands.add_parser("rm", help="move tickers back to the rule tier")
+    core_remove.add_argument("tickers", nargs="+")
+    core_remove.set_defaults(run=lambda tickers: set_core(tickers, False))
     args = parser.parse_args()
     args.run(args.tickers)
 
