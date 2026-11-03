@@ -519,7 +519,8 @@ def start_scheduler():
         id="weekly_sqlite_backup",
         replace_existing=True,
     )
-    # The delayed feed needs 15-20 minutes before the open is observable.
+    # 5 minutes after the open. The delayed feed needs 15-20 minutes before the
+    # open is observable, so quotes still pre-open are labelled as such in the report.
     scheduler.add_job(
         scheduled_morning_briefing,
         'cron',
