@@ -66,11 +66,11 @@ python scripts/qa_daily_report_delivery.py --case weekly --output-dir /path/to/n
 
 ## 调度与配置
 
-默认美股交易日 America/New_York 10:00 和 16:30 触发。夏令时随时区切换，US 非交易日不发送。提前收盘日仍在配置的盘后时间触发。原有股票异动上限仍为开盘5只、盘后10只。
+默认美股交易日 America/New_York 09:35（开盘后5分钟）和 16:30 触发。开盘报告含个股异动扫描；延迟行情约需 15–20 分钟才反映开盘，09:35 时尚未更新的报价会标注为“盘前报价（非开盘后行情）”。夏令时随时区切换，US 非交易日不发送。提前收盘日仍在配置的盘后时间触发。原有股票异动上限仍为开盘5只、盘后10只。
 
 | 配置 | 默认 | 含义 |
 | --- | --- | --- |
-| DAILY_REPORT_MORNING_HOUR / MINUTE | 10 / 0 | 开盘报告时间 |
+| DAILY_REPORT_MORNING_HOUR / MINUTE | 9 / 35 | 开盘报告时间 |
 | DAILY_REPORT_CLOSE_HOUR / MINUTE | 16 / 30 | 盘后报告时间 |
 | DAILY_REPORT_CORE_SYMBOLS | AAPL.US,MSFT.US,NVDA.US,AMZN.US,0700.HK,9988.HK,2330.TW,ASML.AS | 最多30只固定核心资产，必须带交易所后缀 |
 | DAILY_REPORT_INCLUDE_WATCHLIST | true | 加入服务器自选股 |

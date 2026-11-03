@@ -180,6 +180,12 @@ async def test_core_configuration_and_watchlist_are_bounded_and_deduplicated(mon
     assert len(warnings) == 3
 
 
+def test_morning_report_defaults_to_five_minutes_after_the_open():
+    from core.config import Settings
+    fields = Settings.model_fields
+    assert (fields["DAILY_REPORT_MORNING_HOUR"].default, fields["DAILY_REPORT_MORNING_MINUTE"].default) == (9, 35)
+
+
 def test_scheduler_uses_configured_new_york_times(monkeypatch):
     from core import scheduler
     calls = {}
