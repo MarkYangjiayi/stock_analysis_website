@@ -141,6 +141,22 @@ def _latest_trend_row(trend: Any, period: str, as_of: Optional[date]) -> Optiona
     return period_end, row
 
 
+def consensus_fiscal_years(payload: Any, as_of: Optional[date]) -> list[dict[str, Any]]:
+    """Consensus revenue and EPS for the current and next fiscal year, when both are published."""
+    trend = ((payload if isinstance(payload, dict) else {}).get("Earnings") or {}).get("Trend")
+    rows = [_latest_trend_row(trend, period, as_of) for period in (TREND_PERIOD, NEXT_TREND_PERIOD)]
+    if None in rows:
+        return []
+    return [
+        {
+            "period_end": period_end,
+            "revenue": _positive(row.get("revenueEstimateAvg")),
+            "eps": _eps(row.get("epsTrendCurrent")) or _eps(row.get("earningsEstimateAvg")),
+        }
+        for period_end, row in rows
+    ]
+
+
 def extract_expectation_signals(
     payload: Any,
     *,
