@@ -22,7 +22,14 @@ from models import (
 )
 from services.personal_workspace import get_saved_valuation_scenarios
 from services.earnings_quality import get_earnings_quality
-from services.expectation_signals import load_expectation_signals, signal_warnings
+from services.events_expectations import load_latest_fundamentals_snapshot
+from services.expectation_signals import build_expectation_context, consensus_fiscal_years, signal_warnings
+from services.implied_expectations import (
+    HISTORY_YEARS,
+    build_implied_expectations,
+    consensus_references,
+    history_references,
+)
 from services.screener_normalization import normalize_multiple
 from services.security_master import canonicalize_ticker
 from services.dcf import MODEL_VERSION, FORECAST_YEARS, INITIAL_GROWTH_YEARS, calculate_dcf_value, operating_forecast_cash_flows
@@ -1792,6 +1799,10 @@ async def _load_price_and_financial_context(
     return price_row, current_price, financial
 
 
+def _near_market_cap(value: float, market_cap: float) -> bool:
+    return abs(value / market_cap - 1) <= 0.25
+
+
 def build_company_valuation_assumptions(
     financial: dict[str, Any],
     snapshot: StockScreenerSnapshot | None,
@@ -1880,6 +1891,13 @@ def build_company_valuation_assumptions(
     usable_snapshot_shares = (snapshot_shares is not None and snapshot_shares > 0
                               and snapshot_date is not None and reference_date is not None
                               and snapshot_date == reference_date)
+    published_market_cap = _safe_float(getattr(snapshot, "market_cap", None))
+    # The provider counts one listed class for multi-class companies (GOOG,
+    # GOOGL); the statement count covers them all.
+    if (usable_snapshot_shares and published_market_cap and current_price and statement_shares
+            and not _near_market_cap(current_price * snapshot_shares, published_market_cap)
+            and _near_market_cap(current_price * statement_shares, published_market_cap)):
+        usable_snapshot_shares = False
     share_basis = {
         "value": snapshot_shares if usable_snapshot_shares else statement_shares,
         "source": "published_screener_shares_outstanding" if usable_snapshot_shares else "split_adjusted_statement_shares",
@@ -1888,7 +1906,7 @@ def build_company_valuation_assumptions(
         "statement_shares": statement_shares,
         "price_times_shares": current_price * (snapshot_shares if usable_snapshot_shares else statement_shares)
         if current_price is not None and (snapshot_shares if usable_snapshot_shares else statement_shares) is not None else None,
-        "published_market_cap": _safe_float(getattr(snapshot, "market_cap", None)),
+        "published_market_cap": published_market_cap,
         "future_dilution": "not_separately_projected; denominator uses the disclosed current/share-proxy basis",
     }
     return {
@@ -1944,6 +1962,43 @@ def _valuation_inputs(
         "model_input_reasons": model_input_reasons,
         "historical_cash_flow_reasons": [cash_flow["reason"]] if cash_flow.get("reason") else [],
     }
+
+
+def _implied_expectations(
+    financial: dict[str, Any],
+    inputs: dict[str, Any],
+    current_price: float | None,
+    tax_rate: float,
+    yearly_records: Sequence[FinancialStatement],
+    expectation_signals: dict[str, Any],
+    fundamentals_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    current = financial["current_ttm"]
+    history = history_references([_statement_point(record) for record in yearly_records])
+    consensus = None
+    if (expectation_signals["available"] and current.get("revenue") and inputs.get("shares")
+            and financial["latest_statement_date"]):
+        consensus = consensus_references(
+            consensus_fiscal_years(fundamentals_payload, date.fromisoformat(expectation_signals["as_of"])),
+            trailing_revenue=current["revenue"],
+            trailing_period_end=financial["latest_statement_date"],
+            shares=inputs["shares"],
+            tax_rate=tax_rate,
+        )
+    return build_implied_expectations(
+        current_price=current_price,
+        shares=inputs.get("shares"),
+        cash=inputs.get("cash"),
+        debt=inputs.get("debt"),
+        equity_adjustment=inputs.get("equity_adjustment", 0),
+        equity=financial["latest_balance"].get("equity"),
+        revenue=current.get("revenue"),
+        operating_margin=current.get("operating_margin"),
+        tax_rate=tax_rate,
+        terminal_growth=settings.VALUATION_TERMINAL_GROWTH_RATE,
+        history=history,
+        consensus=consensus,
+    )
 
 
 async def get_default_ticker_valuation(
@@ -2119,7 +2174,23 @@ async def get_decision_support(
         earnings_quality=earnings_quality,
     )
     summary = _deterministic_summary(valuation, peers, risks, factors, financial)
-    expectation_signals = await load_expectation_signals(canonical_ticker, db, utc_now().date())
+    fundamentals_snapshot, fundamentals_payload = await load_latest_fundamentals_snapshot(canonical_ticker, db)
+    expectation_signals = build_expectation_context(fundamentals_snapshot, fundamentals_payload, utc_now().date())
+    yearly_result = await db.execute(
+        select(FinancialStatement)
+        .where(FinancialStatement.ticker == canonical_ticker, FinancialStatement.period == "Yearly")
+        .order_by(FinancialStatement.fiscal_date.desc())
+        .limit(HISTORY_YEARS + 1)
+    )
+    implied_expectations = _implied_expectations(
+        financial,
+        valuation["inputs"],
+        current_price,
+        assumption_basis["wacc"]["tax_rate"],
+        list(yearly_result.scalars().all()),
+        expectation_signals,
+        fundamentals_payload,
+    )
     return {
         "metadata": {
             "ticker": canonical_ticker,
@@ -2136,6 +2207,7 @@ async def get_decision_support(
         },
         "summary": summary,
         "valuation": valuation,
+        "implied_expectations": implied_expectations,
         "peer_comparison": peers,
         "risks": with_signal_warnings(risks, expectation_signals),
         "expectation_signals": expectation_signals,
