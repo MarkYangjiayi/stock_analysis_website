@@ -397,6 +397,49 @@ export interface DecisionValuationScenarioResult {
     upside_downside?: number | null;
 }
 
+export interface ImpliedExpectationsHurdle {
+    required_return: number;
+    growth_by_margin: Array<{
+        basis: "trailing" | "consensus" | "five_year_high";
+        target_margin: number;
+        revenue_growth: number | null;
+    }>;
+    margin_at_consensus_growth: number | null;
+    sales_to_capital_at_consensus: number | null;
+}
+
+/** What the price requires of the business (rules in docs/implied_expectations.md). */
+export interface DecisionImpliedExpectations {
+    available: boolean;
+    reasons: string[];
+    model: { forecast_years: number; terminal_growth: number };
+    required_returns: number[];
+    default_required_return: number;
+    references: {
+        history: {
+            revenue_growth?: number | null;
+            revenue_growth_years?: number | null;
+            operating_margin_low?: number | null;
+            operating_margin_high?: number | null;
+        };
+        consensus: {
+            next_year_growth: number;
+            following_year_growth: number;
+            operating_margin: number | null;
+        } | null;
+    };
+    // Absent when the model's inputs are missing.
+    inputs?: { operating_margin_ttm: number; sales_to_capital: number };
+    hurdles?: ImpliedExpectationsHurdle[];
+    implied_return?: {
+        status: "solved" | "below_range" | "unavailable";
+        rate: number | null;
+        minimum_rate: number;
+        margin_basis: "trailing" | "consensus";
+        target_margin: number;
+    };
+}
+
 export interface DecisionImpliedGrowth {
     available: boolean;
     implied_fcf_growth_rate: number | null;
@@ -835,6 +878,7 @@ export interface DecisionSupportResponse {
         };
     };
     valuation: DecisionValuation;
+    implied_expectations: DecisionImpliedExpectations;
     peer_comparison: {
         ticker_in_screener: boolean;
         industry: string | null;

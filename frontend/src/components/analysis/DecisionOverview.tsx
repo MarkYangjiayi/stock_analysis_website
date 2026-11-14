@@ -15,6 +15,7 @@ export default function DecisionOverview({
 }) {
     const money = (value?: number | null) => formatMoney(value, decision.metadata.currency);
     const scenarios = valuation.scenarios;
+    const impliedReturn = decision.implied_expectations.implied_return;
     const values = scenarios.flatMap((scenario) => scenario.available && Number.isFinite(scenario.intrinsic_value_per_share) ? [scenario.intrinsic_value_per_share!] : []);
     const price = valuation.current_price;
     const plotValues = price != null && Number.isFinite(price) ? [...values, price] : values;
@@ -60,6 +61,10 @@ export default function DecisionOverview({
                 )}
                 <p className="mt-1 text-xs leading-5 text-fg-muted">{valuation.position.text}</p>
                 {!valuation.available && <ul className="mt-2 space-y-1 text-xs text-caution">{valuation.unavailable_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+                {impliedReturn?.rate != null && <p className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-xs text-fg-muted">
+                    <span>Return if consensus holds</span>
+                    <span className="font-mono text-sm font-medium tabular-nums text-fg">{(impliedReturn.rate * 100).toFixed(1)}% a year</span>
+                </p>}
             </section>
 
             <section className="research-panel flex flex-col p-4" aria-labelledby="key-risks-title">

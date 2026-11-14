@@ -7,7 +7,10 @@ misleading one. This model starts from revenue and asks what the current
 price requires of the business.
 
 `/api/stocks/{ticker}/decision-support` returns it as `implied_expectations`.
-All logic lives in `services/implied_expectations.py`.
+All logic lives in `services/implied_expectations.py`. The Analysis page shows
+it at the top of the Valuation tab (`ImpliedExpectationsPanel`), where it
+replaced the reverse-DCF block, and shows the implied return in the Overview's
+valuation outlook.
 
 ## Model
 
