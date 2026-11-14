@@ -22,6 +22,7 @@ import {
 import AIReport from "@/components/AIReport";
 import EarningsQualityPanel from "@/components/EarningsQualityPanel";
 import EventsExpectationsPanel from "@/components/EventsExpectationsPanel";
+import ImpliedExpectationsPanel from "@/components/analysis/ImpliedExpectationsPanel";
 import PeerMultipleDistribution from "@/components/PeerMultipleDistribution";
 import DecisionOverview from "@/components/analysis/DecisionOverview";
 import {
@@ -327,7 +328,7 @@ export default function DecisionCockpit({
     }, [decision]);
 
     const valuation = workingValuation;
-    const impliedGrowth = valuation?.implied_growth;
+    const impliedReturn = decision?.implied_expectations.implied_return;
     const formatMoney = (value?: number | null) => money(
         value,
         decision?.metadata.currency,
@@ -593,7 +594,7 @@ export default function DecisionCockpit({
                                     {(valuation?.scenarios || decision.valuation.scenarios).map((scenario) => <div key={scenario.scenario} className="rounded-md border bg-surface p-3"><p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{scenario.scenario}</p><p className="mt-1 font-mono text-base font-semibold">{scenario.available ? formatMoney(scenario.intrinsic_value_per_share) : "—"}</p></div>)}
                                 </div>
                                 <p className="mt-3 text-xs text-fg-muted">Current price {formatMoney(valuation?.current_price ?? decision.valuation.current_price)} · assumptions {valuation?.scenario_source || decision.valuation.scenario_source}</p>
-                                {impliedGrowth?.available && <div className="mt-3 rounded-md border bg-surface px-3 py-2.5"><p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Market-implied 5Y FCF growth</p><p className="mt-1 font-mono text-lg font-semibold text-info">{(impliedGrowth.implied_fcf_growth_rate! * 100).toFixed(1)}%</p><p className="mt-1 font-mono text-xs text-fg-muted">Base WACC {(impliedGrowth.wacc * 100).toFixed(1)}% · terminal {(impliedGrowth.perpetual_growth * 100).toFixed(1)}%</p></div>}
+                                {impliedReturn?.rate != null && <div className="mt-3 rounded-md border bg-surface px-3 py-2.5"><p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Return if consensus holds</p><p className="mt-1 font-mono text-lg font-semibold tabular-nums">{(impliedReturn.rate * 100).toFixed(1)}%</p><p className="mt-1 text-xs text-fg-muted">What the price requires is under Valuation.</p></div>}
                             </article>
                             <article className="surface-subtle rounded-lg border p-5">
                                 <p className="eyebrow">Coverage facts</p>
@@ -625,24 +626,7 @@ export default function DecisionCockpit({
 
                     {activeTab === "valuation" && valuation && <div className="space-y-6">
                         <p className="text-xs text-fg-muted">Model {valuation.model_version || "legacy"} · {valuation.formula.forecast_years} forecast years · Values are conditional scenarios, not confidence intervals.</p>
-                        <section className="overflow-hidden rounded-lg border">
-                            <div className="surface-subtle grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                                <div>
-                                    <p className="eyebrow">Reverse DCF growth hurdle</p>
-                                    <h3 className="mt-1 text-base font-semibold">Market-implied initial FCF growth</h3>
-                                    {impliedGrowth?.available ? <p className="mt-2 max-w-2xl text-sm leading-6 text-fg-muted">The current price is matched when TTM free cash flow grows at this rate for the first five years, then fades toward mature growth in years 6–10, holding the Base discount and terminal assumptions fixed. This is a market hurdle, not a forecast, and inherits the scenario DCF&apos;s FCF, currency, and share-unit limits.</p> : <p className="mt-2 max-w-2xl text-sm leading-6 text-fg-muted">The growth hurdle cannot be reverse-solved from the current DCF inputs.</p>}
-                                </div>
-                                <div className="min-w-[220px] rounded-lg border bg-surface p-4">
-                                    <p className="font-mono text-3xl font-semibold text-info">{impliedGrowth?.available ? `${(impliedGrowth.implied_fcf_growth_rate! * 100).toFixed(1)}%` : "—"}</p>
-                                    <p className="mt-1 text-xs font-medium text-fg-muted">Initial 5-year implied FCF CAGR</p>
-                                </div>
-                            </div>
-                            {impliedGrowth?.available ? <dl className="grid gap-px border-t bg-line text-xs sm:grid-cols-3">
-                                <div className="bg-surface p-3.5"><dt className="text-fg-muted">Base WACC</dt><dd className="mt-1 font-mono font-semibold">{(impliedGrowth.wacc * 100).toFixed(1)}%</dd></div>
-                                <div className="bg-surface p-3.5"><dt className="text-fg-muted">Terminal growth</dt><dd className="mt-1 font-mono font-semibold">{(impliedGrowth.perpetual_growth * 100).toFixed(1)}%</dd></div>
-                                <div className="bg-surface p-3.5"><dt className="text-fg-muted">Gap vs Base growth</dt><dd className={`mt-1 font-mono font-semibold ${(impliedGrowth.growth_gap_to_base ?? 0) > 0 ? "text-down" : (impliedGrowth.growth_gap_to_base ?? 0) < 0 ? "text-up" : ""}`}>{(impliedGrowth.growth_gap_to_base ?? 0) > 0 ? "+" : ""}{((impliedGrowth.growth_gap_to_base ?? 0) * 100).toFixed(1)} pp</dd></div>
-                            </dl> : <ul className="space-y-1 border-t p-4 text-xs text-caution">{impliedGrowth?.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
-                        </section>
+                        <ImpliedExpectationsPanel key={decision.metadata.ticker} data={decision.implied_expectations} />
                         <section className="rounded-lg border p-4">
                             <div className="flex flex-wrap items-start justify-between gap-4">
                                 <div>

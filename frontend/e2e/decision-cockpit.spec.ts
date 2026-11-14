@@ -134,6 +134,12 @@ function decisionFixture(ticker: string, kind: "complete" | "sparse" | "outside"
             },
         },
         valuation,
+        implied_expectations: {
+            available: false, reasons: ["The model needs stockholders' equity."],
+            model: { forecast_years: 10, terminal_growth: 0.025 },
+            required_returns: [0.08, 0.1, 0.12], default_required_return: 0.1,
+            references: { history: {}, consensus: null },
+        },
         peer_comparison: {
             ticker_in_screener: !outside,
             industry: "Software", sector: "Technology", industry_member_count: 12, sector_member_count: 40,

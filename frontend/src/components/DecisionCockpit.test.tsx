@@ -1,8 +1,8 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DecisionCockpit from "@/components/DecisionCockpit";
-import type { DecisionSupportResponse, DecisionValuation } from "@/lib/api";
+import type { DecisionImpliedExpectations, DecisionSupportResponse, DecisionValuation } from "@/lib/api";
 
 const apiMocks = vi.hoisted(() => ({
     calculateDecisionValuation: vi.fn(),
@@ -139,6 +139,30 @@ const peerMultiples = {
     peers: [{ ticker: "BBB.US", name: "Beta", value: 8, market_cap: 9_000_000_000, sales_growth_ttm: 0.15 }],
 };
 
+const impliedExpectations: DecisionImpliedExpectations = {
+    available: true,
+    reasons: [],
+    model: { forecast_years: 10, terminal_growth: 0.025 },
+    required_returns: [0.08, 0.1, 0.12],
+    default_required_return: 0.1,
+    references: {
+        history: { revenue_growth: 0.361, revenue_growth_years: 5, operating_margin_low: -0.22, operating_margin_high: 0.107 },
+        consensus: { next_year_growth: 0.143, following_year_growth: 0.158, operating_margin: 0.18 },
+    },
+    inputs: { operating_margin_ttm: 0.128, sales_to_capital: 1.6 },
+    hurdles: [0.08, 0.1, 0.12].map((required_return, index) => ({
+        required_return,
+        growth_by_margin: [
+            { basis: "trailing" as const, target_margin: 0.128, revenue_growth: 0.211 + index * 0.1 },
+            { basis: "consensus" as const, target_margin: 0.18, revenue_growth: 0.11 + index * 0.075 },
+            { basis: "five_year_high" as const, target_margin: 0.107, revenue_growth: index === 2 ? null : 0.279 + index * 0.13 },
+        ],
+        margin_at_consensus_growth: 0.168 + index * 0.05,
+        sales_to_capital_at_consensus: index === 2 ? null : 1.18 + index * 13,
+    })),
+    implied_return: { status: "solved", rate: 0.085, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.18 },
+};
+
 const decision: DecisionSupportResponse = {
     metadata: {
         ticker: "AAA.US", company_name: "Alpha", currency: "USD", industry: "Software", sector: "Technology",
@@ -153,6 +177,7 @@ const decision: DecisionSupportResponse = {
         coverage: { quarterly_statements: 8, peer_metrics_available: 1, peer_metrics_total: 20, published_factor_count: 5, missing_data_reasons: [], data_quality_notes: [] },
     },
     valuation,
+    implied_expectations: impliedExpectations,
     peer_comparison: {
         ticker_in_screener: true, industry: "Software", sector: "Technology", industry_member_count: 12, sector_member_count: 40,
         metrics: [metric], strongest: [summaryMetric], weakest: [], available_metric_count: 1, total_metric_count: 20,
@@ -243,17 +268,16 @@ describe("DecisionCockpit", () => {
         expect(screen.queryByText("$80.00")).not.toBeInTheDocument();
     });
 
-    it("shows the market-implied FCF growth hurdle and its fixed assumptions", async () => {
+    it("shows what the price requires in place of the reverse DCF", async () => {
         const user = userEvent.setup();
         render(<DecisionCockpit {...props()} />);
 
-        expect(screen.getByText("Market-implied 5Y FCF growth")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Valuation" }));
 
-        expect(screen.getByText("Reverse DCF growth hurdle")).toBeInTheDocument();
-        expect(screen.getByText("12.5%")).toBeInTheDocument();
-        expect(screen.getByText("+2.5 pp")).toBeInTheDocument();
-        expect(screen.getByText(/market hurdle, not a forecast/i)).toBeInTheDocument();
+        const panel = within(screen.getByRole("region", { name: "Implied expectations" }));
+        expect(panel.getByText("8.5%")).toBeInTheDocument();
+        expect(panel.getByText("−1.5 pp vs 10% required")).toBeInTheDocument();
+        expect(screen.queryByText("Reverse DCF growth hurdle")).not.toBeInTheDocument();
     });
 
     it("shows unavailable warning coverage instead of a clean result", async () => {
