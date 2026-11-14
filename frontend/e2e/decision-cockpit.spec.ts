@@ -181,6 +181,31 @@ function marketSnapshotFixture(ticker: string) {
     };
 }
 
+function qualityScorecardFixture(ticker: string) {
+    return {
+        ticker,
+        available: true,
+        template: "standard",
+        industry: "Software",
+        score: 72,
+        grade: "良",
+        pillars: [
+            { key: "profitability", label: "盈利能力", score: 80, metrics: ["roic_avg"], applicable: true },
+            { key: "growth", label: "增长持续性", score: 64, metrics: ["revenue_cagr"], applicable: true },
+        ],
+        metrics: {
+            roic_avg: { label: "ROIC 均值", value: 0.18, score: 80, unit: "percent", weak: 0.05, strong: 0.2 },
+            revenue_cagr: { label: "收入复合增速", value: 0.09, score: 64, unit: "percent", weak: 0, strong: 0.15 },
+        },
+        piotroski: { score: 7, available: 9, checks: [{ key: "roa_positive", label: "资产收益率为正", passed: true }] },
+        altman: { z: 4.2, zone: "safe", zone_label: "安全", fiscal_year: "2025-12-31" },
+        fiscal_years: ["2020-12-31", "2025-12-31"],
+        source: "fixture",
+        fetched_at: "2026-01-02T00:00:00",
+        notes: [],
+    };
+}
+
 type MockLifecycle = {
     onDecisionRequest?: () => void;
     beforeStockResponse?: () => Promise<void> | void;
@@ -211,6 +236,10 @@ async function mockTicker(
         }
         if (url.pathname.endsWith("/market-snapshot")) {
             await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(marketSnapshotFixture(ticker)) });
+            return;
+        }
+        if (url.pathname.endsWith("/quality")) {
+            await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(qualityScorecardFixture(ticker)) });
             return;
         }
         if (url.pathname.endsWith("/news")) {
@@ -474,7 +503,7 @@ test("keeps keyboard focus on the selected research tab", async ({ page }) => {
     await mockTicker(page, "KEYS.US", "complete");
     await page.goto("/?ticker=KEYS.US");
     await page.getByRole("tab", { name: "Overview" }).focus();
-    for (const [key, name] of [["ArrowRight", "Valuation"], ["End", "Events & Brief"], ["ArrowRight", "Overview"], ["ArrowLeft", "Events & Brief"], ["Home", "Overview"]]) {
+    for (const [key, name] of [["ArrowRight", "Thesis"], ["End", "Events & Brief"], ["ArrowRight", "Overview"], ["ArrowLeft", "Events & Brief"], ["Home", "Overview"]]) {
         await page.keyboard.press(key);
         const tab = page.getByRole("tab", { name });
         await expect(tab).toBeFocused();
