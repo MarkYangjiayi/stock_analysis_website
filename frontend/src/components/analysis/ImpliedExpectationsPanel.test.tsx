@@ -47,7 +47,7 @@ const data: DecisionImpliedExpectations = {
             sales_to_capital_at_consensus: 0.7,
         },
     ],
-    implied_return: { status: "solved", rate: 0.087, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.3 },
+    implied_return: { status: "solved", rate: 0.087, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.3, revenue_multiple: 9.31 },
 };
 
 const lever = (label: string) => within(screen.getByText(label).closest("div")!.parentElement!);
@@ -58,6 +58,8 @@ describe("ImpliedExpectationsPanel", () => {
 
         expect(screen.getByText("8.7%")).toBeInTheDocument();
         expect(screen.getByText("−1.3 pp vs 10% required")).toBeInTheDocument();
+        // The return is shown with the ten-year revenue its path assumes.
+        expect(screen.getByText("×9.3").parentElement).toHaveTextContent("Assumes revenue ×9.3 in 10 years");
         expect(screen.getByRole("heading", { name: "To earn 10% a year" })).toBeInTheDocument();
 
         const growth = lever("Revenue growth, 5 years");
@@ -89,10 +91,11 @@ describe("ImpliedExpectationsPanel", () => {
         render(<ImpliedExpectationsPanel data={{
             ...data,
             references: { ...data.references, consensus: null },
-            implied_return: { status: "unavailable", rate: null, minimum_rate: 0.03, margin_basis: "trailing", target_margin: 0.324 },
+            implied_return: { status: "unavailable", rate: null, minimum_rate: 0.03, margin_basis: "trailing", target_margin: 0.324, revenue_multiple: null },
         }} />);
 
         expect(screen.getByText("No current consensus")).toBeInTheDocument();
+        expect(screen.queryByText(/Assumes revenue/)).not.toBeInTheDocument();
         expect(lever("Revenue growth, 5 years").getByText("43.5%")).toBeInTheDocument();
         expect(lever("Revenue growth, 5 years").getByText("5Y history 10.7%")).toBeInTheDocument();
         expect(screen.queryByText("Operating margin")).not.toBeInTheDocument();
@@ -101,11 +104,12 @@ describe("ImpliedExpectationsPanel", () => {
     it("says when the return is below the lowest rate solved", () => {
         render(<ImpliedExpectationsPanel data={{
             ...data,
-            implied_return: { status: "below_range", rate: null, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.3 },
+            implied_return: { status: "below_range", rate: null, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.3, revenue_multiple: 24.7 },
         }} />);
 
         expect(screen.getByText("< 3%")).toBeInTheDocument();
         expect(screen.getByText("Below the lowest rate solved")).toBeInTheDocument();
+        expect(screen.getByText("×25")).toBeInTheDocument();
     });
 
     it("lists the reasons when the model has no inputs", () => {

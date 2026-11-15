@@ -336,6 +336,9 @@ def build_implied_expectations(
         "status": return_status,
         "rate": implied_return,
         "minimum_rate": MIN_RETURN,
+        # Consensus covers two years; the fade after it is the model's. This
+        # is the revenue the whole path assumes, as a multiple of today's.
+        "revenue_multiple": math.prod(1 + growth for growth in consensus_path) if consensus_path else None,
         "margin_basis": return_margin_basis,
         "target_margin": return_margin,
         "growth_rates": consensus_path,

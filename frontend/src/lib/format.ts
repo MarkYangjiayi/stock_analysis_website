@@ -28,3 +28,6 @@ export const formatCompactNumber = (value?: number | null, digits = 2) =>
     value == null || !Number.isFinite(value)
         ? "—"
         : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: digits }).format(value);
+
+/** A multiple of today's value, e.g. ×9.3 or ×25. */
+export const formatTimes = (value: number) => `×${value >= 10 ? value.toFixed(0) : value.toFixed(1)}`;

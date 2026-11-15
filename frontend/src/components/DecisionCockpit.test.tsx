@@ -160,7 +160,7 @@ const impliedExpectations: DecisionImpliedExpectations = {
         margin_at_consensus_growth: 0.168 + index * 0.05,
         sales_to_capital_at_consensus: index === 2 ? null : 1.18 + index * 13,
     })),
-    implied_return: { status: "solved", rate: 0.085, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.18 },
+    implied_return: { status: "solved", rate: 0.085, minimum_rate: 0.03, margin_basis: "consensus", target_margin: 0.18, revenue_multiple: 2.5 },
 };
 
 const decision: DecisionSupportResponse = {

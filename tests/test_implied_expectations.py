@@ -91,6 +91,12 @@ def test_implied_return_discounts_the_consensus_path_back_to_the_price():
     assert implied["margin_basis"] == "consensus"
     assert implied["growth_rates"][:3] == pytest.approx([0.18, 0.15, 0.15 + (TERMINAL_GROWTH - 0.15) / 8])
     assert implied["growth_rates"][-1] == pytest.approx(TERMINAL_GROWTH)
+    # The ten-year revenue the path assumes, so a high return can be read against it.
+    expected_multiple = 1.0
+    for growth in implied["growth_rates"]:
+        expected_multiple *= 1 + growth
+    assert implied["revenue_multiple"] == pytest.approx(expected_multiple)
+    assert 2.4 < implied["revenue_multiple"] < 2.6
     assert _value(
         result, target_margin=0.24, growth_rates=implied["growth_rates"], discount_rate=implied["rate"],
     ) == pytest.approx(result["inputs"]["target_enterprise_value"], rel=1e-6)
@@ -122,6 +128,7 @@ def test_without_consensus_only_the_growth_hurdles_are_solved():
 
     assert result["available"] is True
     assert result["implied_return"]["rate"] is None
+    assert result["implied_return"]["revenue_multiple"] is None
     assert result["assessment"]["return_vs_required"] is None
     assert result["assessment"]["growth_margin_basis"] == "trailing"
     assert [item["basis"] for item in result["hurdles"][0]["growth_by_margin"]] == ["trailing", "five_year_high"]

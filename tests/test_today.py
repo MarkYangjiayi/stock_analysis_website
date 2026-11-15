@@ -81,7 +81,7 @@ def _fake_sources(monkeypatch, calls, *, events_error=None):
 
     async def implied_expectations(ticker, db):
         calls.setdefault("implied", []).append(ticker)
-        solved = {"status": "solved", "rate": 0.085, "minimum_rate": 0.03, "margin_basis": "consensus"}
+        solved = {"status": "solved", "rate": 0.085, "minimum_rate": 0.03, "revenue_multiple": 2.5, "margin_basis": "consensus"}
         return {"available": True, "implied_return": solved} if ticker == "ASTS.US" else {"available": False}
 
     monkeypatch.setattr(today, "price_signals", price_signals)
@@ -109,7 +109,9 @@ async def test_today_tags_the_whole_watchlist_and_reuses_the_cache(monkeypatch):
     assert calls["events"] == [(["AAPL.US", "0700.HK", "ASTS.US", "UNH.US"], date(2026, 10, 19), date(2026, 10, 25))]
     assert first["events"]["window_days"] == 7 and first["events"]["items"][0]["name"] == "ASTS.US"
     # A ticker the model cannot solve is left out rather than shown as zero.
-    assert first["implied_returns"] == {"items": {"ASTS.US": {"status": "solved", "rate": 0.085, "minimum_rate": 0.03}}}
+    assert first["implied_returns"] == {
+        "items": {"ASTS.US": {"status": "solved", "rate": 0.085, "minimum_rate": 0.03, "revenue_multiple": 2.5}},
+    }
     assert second["watchlist"] == first["watchlist"] and len(calls["price"]) == 1
     assert calls["implied"] == ["ASTS.US", "UNH.US"]
 

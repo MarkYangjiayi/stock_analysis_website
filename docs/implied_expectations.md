@@ -39,7 +39,11 @@ One price fits many combinations of these, so each answer fixes the others.
   Revenue follows consensus for two years and then fades; the margin moves to
   the consensus-implied margin (trailing margin when there is no EPS
   consensus). It needs no discount rate. `status` is `below_range` when even a
-  3% rate values consensus below the price.
+  3% rate values consensus below the price. `revenue_multiple` is the ten-year
+  revenue that path assumes, as a multiple of today's. Consensus covers only
+  two years and the fade after it is the model's, so a high return on a
+  hyper-growth company (NVDA: 30% on 25x revenue) says the market does not
+  believe the fade, not that the return is on offer. Read the two together.
 - `hurdles`, one per required return (8%, 10%, 12%; 10% is the default):
   - `growth_by_margin`: the five-year revenue growth the price needs at the
     trailing margin, the consensus margin and the five-year-high margin.
