@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { DecisionImpliedExpectations } from "@/lib/api";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { formatTimes } from "@/lib/format";
 
 const pct = (value: number, digits = 1) => `${(value * 100).toFixed(digits)}%`;
 const multiple = (value: number) => `${value.toFixed(2)}×`;
@@ -109,6 +110,11 @@ export default function ImpliedExpectationsPanel({ data }: { data: DecisionImpli
                         {gap != null ? `${gap >= 0 ? "+" : "−"}${Math.abs(gap * 100).toFixed(1)} pp vs ${pct(required, 0)} required`
                             : impliedReturn.status === "below_range" ? "Below the lowest rate solved" : "No current consensus"}
                     </p>
+                    {impliedReturn.revenue_multiple != null && (
+                        <p className="mt-2 border-t pt-2 text-xs text-fg-muted">
+                            Assumes revenue <span className="font-mono font-medium text-fg">{formatTimes(impliedReturn.revenue_multiple)}</span> in {data.model.forecast_years} years
+                        </p>
+                    )}
                 </div>
             </div>
 

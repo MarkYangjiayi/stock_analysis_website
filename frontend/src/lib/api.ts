@@ -437,6 +437,8 @@ export interface DecisionImpliedExpectations {
         minimum_rate: number;
         margin_basis: "trailing" | "consensus";
         target_margin: number;
+        /** Ten-year revenue the consensus-then-fade path assumes, as a multiple of today's. */
+        revenue_multiple: number | null;
     };
 }
 
@@ -1359,7 +1361,7 @@ export interface TodayResponse {
     } | null;
     /** Annual return each watchlist price offers if consensus is met; tickers without consensus are absent. */
     implied_returns: {
-        items: Record<string, { status: "solved" | "below_range"; rate: number | null; minimum_rate: number }>;
+        items: Record<string, { status: "solved" | "below_range"; rate: number | null; minimum_rate: number; revenue_multiple: number | null }>;
     } | null;
     events: {
         from: string;

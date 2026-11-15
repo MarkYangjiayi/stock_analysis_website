@@ -100,13 +100,14 @@ async def _watchlist_tags(tickers: list[str], now: datetime) -> dict[str, Any]:
 
 
 async def _implied_returns(tickers: list[str]) -> dict[str, Any]:
-    """The annual return each price offers if consensus is met; tickers without consensus are left out."""
+    """The annual return each price offers if consensus is met, with the ten-year revenue
+    multiple that path assumes; tickers without consensus are left out."""
     items = {}
     async with async_session_maker() as db:
         for ticker in tickers:
             implied = (await get_ticker_implied_expectations(ticker, db)).get("implied_return")
             if implied and implied["status"] != "unavailable":
-                items[ticker] = {key: implied[key] for key in ("status", "rate", "minimum_rate")}
+                items[ticker] = {key: implied[key] for key in ("status", "rate", "minimum_rate", "revenue_multiple")}
     return {"items": items}
 
 

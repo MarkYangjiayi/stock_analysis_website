@@ -15,7 +15,7 @@ import {
     type TodayResponse,
     type WatchlistQuoteItem,
 } from "@/lib/api";
-import { formatSignedPercent } from "@/lib/format";
+import { formatSignedPercent, formatTimes } from "@/lib/format";
 import { useQuoteFeed, type QuoteFeed } from "@/hooks/useWatchlistQuotes";
 import { DataState } from "@/components/ui/DataState";
 import { Panel, SectionHeader } from "@/components/ui/Panel";
@@ -182,7 +182,7 @@ function WatchlistPanel({ data, impliedReturns, watchlist, quotes, earnings, onS
             <SectionHeader
                 eyebrow="Watchlist"
                 title="自选股"
-                description="Delayed quotes with the report's RSI, 52-week, estimate-revision and short-interest tags, and the annual return each price offers if consensus holds."
+                description="Delayed quotes with the report's RSI, 52-week, estimate-revision and short-interest tags, and the annual return each price offers if consensus holds, with the 10-year revenue multiple that assumes."
                 action={data?.target ? <DataState label={`Tags as of ${data.target}`} tone="ready" /> : undefined}
             />
             {watchlist.length === 0 ? (
@@ -219,6 +219,7 @@ function WatchlistPanel({ data, impliedReturns, watchlist, quotes, earnings, onS
                                         </td>
                                         <td className="num px-2 py-2 text-right">
                                             {implied?.rate != null ? `${(implied.rate * 100).toFixed(1)}%` : implied ? `< ${(implied.minimum_rate * 100).toFixed(0)}%` : <span className="text-fg-muted">—</span>}
+                                            {implied?.revenue_multiple != null && <span className="ml-2 inline-block w-9 text-left text-xs text-fg-muted">{formatTimes(implied.revenue_multiple)}</span>}
                                         </td>
                                         <td className="px-2 py-2" title={row?.as_of || undefined}>
                                             <div className="flex flex-wrap gap-1">

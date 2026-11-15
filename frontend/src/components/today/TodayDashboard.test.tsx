@@ -47,7 +47,7 @@ const today = (overrides: Partial<TodayResponse> = {}): TodayResponse => ({
             { ticker: "UNH.US", tags: [], as_of: "" },
         ],
     },
-    implied_returns: { items: { "ASTS.US": { status: "below_range", rate: null, minimum_rate: 0.03 }, "UNH.US": { status: "solved", rate: 0.085, minimum_rate: 0.03 } } },
+    implied_returns: { items: { "ASTS.US": { status: "below_range", rate: null, minimum_rate: 0.03, revenue_multiple: 24.7 }, "UNH.US": { status: "solved", rate: 0.085, minimum_rate: 0.03, revenue_multiple: 2.46 } } },
     events: {
         from: "2026-10-19",
         to: "2026-10-25",
@@ -132,6 +132,9 @@ describe("TodayDashboard", () => {
         // The return consensus offers: below the solved range for one, a rate for the other.
         expect(within(asts).getByText("< 3%")).toBeInTheDocument();
         expect(within(within(table).getByText("UNH").closest("tr") as HTMLElement).getByText("8.5%")).toBeInTheDocument();
+        // Each return carries the ten-year revenue multiple it assumes.
+        expect(within(asts).getByText("×25")).toBeInTheDocument();
+        expect(within(within(table).getByText("UNH").closest("tr") as HTMLElement).getByText("×2.5")).toBeInTheDocument();
 
         const events = screen.getByRole("region", { name: "Next seven days" });
         expect(within(events).getByText("Retail Sales MoM")).toBeInTheDocument();
