@@ -4,7 +4,12 @@ from types import SimpleNamespace
 import pytest
 
 from models import DailyPrice, FinancialStatement, Ticker
-from services.decision_support import build_company_valuation_assumptions, build_financial_context, get_decision_support
+from services.decision_support import (
+    build_company_valuation_assumptions,
+    build_financial_context,
+    get_decision_support,
+    get_ticker_implied_expectations,
+)
 from services.expectation_signals import consensus_fiscal_years
 from services.implied_expectations import (
     DEFAULT_REQUIRED_RETURN,
@@ -280,6 +285,9 @@ async def test_decision_support_solves_a_company_whose_free_cash_flow_is_negativ
     assert implied["references"]["consensus"]["following_year_growth"] == pytest.approx(1_180 / 1_020 - 1)
     assert implied["implied_return"]["rate"] is not None
     assert all(item["revenue_growth"] is not None for item in implied["hurdles"][1]["growth_by_margin"])
+    # The watchlist path reaches the same answer without building the rest of decision support.
+    assert await get_ticker_implied_expectations("CAPEX", db_session) == implied
+    assert (await get_ticker_implied_expectations("NONE.US", db_session))["available"] is False
 
 
 def test_statement_shares_replace_a_single_class_provider_count():

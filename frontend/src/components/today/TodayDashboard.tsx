@@ -168,8 +168,9 @@ function RegimePanel({ report, indexFeed }: { report: NonNullable<TodayResponse[
     );
 }
 
-function WatchlistPanel({ data, watchlist, quotes, earnings, onSelectTicker }: {
+function WatchlistPanel({ data, impliedReturns, watchlist, quotes, earnings, onSelectTicker }: {
     data: TodayResponse["watchlist"];
+    impliedReturns: TodayResponse["implied_returns"];
     watchlist: string[];
     quotes: Record<string, WatchlistQuoteItem>;
     earnings: Map<string, TodayEvent>;
@@ -181,20 +182,21 @@ function WatchlistPanel({ data, watchlist, quotes, earnings, onSelectTicker }: {
             <SectionHeader
                 eyebrow="Watchlist"
                 title="自选股"
-                description="Delayed quotes with the report's RSI, 52-week, estimate-revision and short-interest tags."
+                description="Delayed quotes with the report's RSI, 52-week, estimate-revision and short-interest tags, and the annual return each price offers if consensus holds."
                 action={data?.target ? <DataState label={`Tags as of ${data.target}`} tone="ready" /> : undefined}
             />
             {watchlist.length === 0 ? (
                 <p className="px-4 pb-4 text-sm text-fg-muted">The watchlist is empty.</p>
             ) : (
                 <div className="overflow-x-auto border-t">
-                    <table className="w-full min-w-[640px] text-sm" aria-label="Watchlist signals">
+                    <table className="w-full min-w-[720px] text-sm" aria-label="Watchlist signals">
                         <thead className="text-left text-xs text-fg-muted">
                             <tr>
                                 <th className="px-4 py-2 font-medium">Ticker</th>
                                 <th className="px-2 py-2 text-right font-medium">Price</th>
                                 <th className="px-2 py-2 text-right font-medium">Change</th>
                                 <th className="w-24 px-2 py-2 font-medium">30d</th>
+                                <th className="px-2 py-2 text-right font-medium">Implied return</th>
                                 <th className="px-2 py-2 font-medium">Signals</th>
                                 <th className="px-4 py-2 font-medium">Earnings</th>
                             </tr>
@@ -204,6 +206,7 @@ function WatchlistPanel({ data, watchlist, quotes, earnings, onSelectTicker }: {
                                 const quote = quotes[ticker]?.quote;
                                 const row = tags.get(ticker);
                                 const upcoming = earnings.get(ticker);
+                                const implied = impliedReturns?.items[ticker];
                                 return (
                                     <tr key={ticker} className="border-t hover:bg-surface-muted">
                                         <td className="px-4 py-2">
@@ -213,6 +216,9 @@ function WatchlistPanel({ data, watchlist, quotes, earnings, onSelectTicker }: {
                                         <td className={`num px-2 py-2 text-right ${changeClass(quote?.change)}`}>{formatSignedPercent(quote?.change_pct)}</td>
                                         <td className={`px-2 py-2 ${changeClass(quote?.change)}`}>
                                             <Sparkline values={(quotes[ticker]?.sparkline || []).map((point) => point.close)} />
+                                        </td>
+                                        <td className="num px-2 py-2 text-right">
+                                            {implied?.rate != null ? `${(implied.rate * 100).toFixed(1)}%` : implied ? `< ${(implied.minimum_rate * 100).toFixed(0)}%` : <span className="text-fg-muted">—</span>}
                                         </td>
                                         <td className="px-2 py-2" title={row?.as_of || undefined}>
                                             <div className="flex flex-wrap gap-1">
@@ -425,7 +431,7 @@ export default function TodayDashboard({ watchlist, quotes, onSelectTicker, onUn
             <RegimePanel report={report} indexFeed={indexFeed} />
             {/* minmax(0, …) keeps the wide watchlist table scrolling inside its panel on phones. */}
             <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                <WatchlistPanel data={data?.watchlist ?? null} watchlist={watchlist} quotes={quotes} earnings={earnings} onSelectTicker={onSelectTicker} />
+                <WatchlistPanel data={data?.watchlist ?? null} impliedReturns={data?.implied_returns ?? null} watchlist={watchlist} quotes={quotes} earnings={earnings} onSelectTicker={onSelectTicker} />
                 <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-5">
                     <MoversPanel report={report} onSelectTicker={onSelectTicker} />
                     <EventsPanel events={data?.events ?? null} watchlist={new Set(watchlist)} />

@@ -12,6 +12,10 @@ it at the top of the Valuation tab (`ImpliedExpectationsPanel`), where it
 replaced the reverse-DCF block, and shows the implied return in the Overview's
 valuation outlook.
 
+The Today view lists the implied return for every watchlist ticker
+(`implied_returns` on `/api/personal/today`, computed with the other watchlist
+sections and cached with them). Tickers without current consensus are left out.
+
 ## Model
 
 Ten forecast years, valued by the same kernel as the scenario DCF

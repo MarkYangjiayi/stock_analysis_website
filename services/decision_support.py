@@ -1964,17 +1964,24 @@ def _valuation_inputs(
     }
 
 
-def _implied_expectations(
+async def _implied_expectations(
+    ticker: str,
+    db: AsyncSession,
     financial: dict[str, Any],
     inputs: dict[str, Any],
     current_price: float | None,
     tax_rate: float,
-    yearly_records: Sequence[FinancialStatement],
     expectation_signals: dict[str, Any],
     fundamentals_payload: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    yearly_result = await db.execute(
+        select(FinancialStatement)
+        .where(FinancialStatement.ticker == ticker, FinancialStatement.period == "Yearly")
+        .order_by(FinancialStatement.fiscal_date.desc())
+        .limit(HISTORY_YEARS + 1)
+    )
     current = financial["current_ttm"]
-    history = history_references([_statement_point(record) for record in yearly_records])
+    history = history_references([_statement_point(record) for record in yearly_result.scalars().all()])
     consensus = None
     if (expectation_signals["available"] and current.get("revenue") and inputs.get("shares")
             and financial["latest_statement_date"]):
@@ -2027,6 +2034,33 @@ async def get_default_ticker_valuation(
                                  assumption_basis=assumption_basis, default_scenarios=assumption_basis["default_scenarios"])
     result["scenario_source"] = "default"
     return result
+
+
+async def get_ticker_implied_expectations(ticker: str, db: AsyncSession) -> dict[str, Any]:
+    """Implied expectations alone, for views that list many tickers."""
+    canonical_ticker = canonicalize_ticker(ticker)
+    _, current_price, financial = await _load_price_and_financial_context(canonical_ticker, db)
+    publication = await _latest_publication(db, "screener")
+    snapshot = None
+    if publication is not None:
+        snapshot = await db.scalar(
+            select(StockScreenerSnapshot).where(
+                StockScreenerSnapshot.ticker == canonical_ticker,
+                StockScreenerSnapshot.date == publication.as_of_date,
+            )
+        )
+    assumption_basis = build_company_valuation_assumptions(financial, snapshot, current_price)
+    fundamentals_snapshot, fundamentals_payload = await load_latest_fundamentals_snapshot(canonical_ticker, db)
+    return await _implied_expectations(
+        canonical_ticker,
+        db,
+        financial,
+        _valuation_inputs(financial, assumption_basis),
+        current_price,
+        assumption_basis["wacc"]["tax_rate"],
+        build_expectation_context(fundamentals_snapshot, fundamentals_payload, utc_now().date()),
+        fundamentals_payload,
+    )
 
 
 async def get_default_ticker_valuation_scenarios(ticker: str, db: AsyncSession) -> list[dict[str, Any]]:
@@ -2176,18 +2210,13 @@ async def get_decision_support(
     summary = _deterministic_summary(valuation, peers, risks, factors, financial)
     fundamentals_snapshot, fundamentals_payload = await load_latest_fundamentals_snapshot(canonical_ticker, db)
     expectation_signals = build_expectation_context(fundamentals_snapshot, fundamentals_payload, utc_now().date())
-    yearly_result = await db.execute(
-        select(FinancialStatement)
-        .where(FinancialStatement.ticker == canonical_ticker, FinancialStatement.period == "Yearly")
-        .order_by(FinancialStatement.fiscal_date.desc())
-        .limit(HISTORY_YEARS + 1)
-    )
-    implied_expectations = _implied_expectations(
+    implied_expectations = await _implied_expectations(
+        canonical_ticker,
+        db,
         financial,
         valuation["inputs"],
         current_price,
         assumption_basis["wacc"]["tax_rate"],
-        list(yearly_result.scalars().all()),
         expectation_signals,
         fundamentals_payload,
     )
