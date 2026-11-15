@@ -3,8 +3,9 @@
 The market regime, theme clusters and movers come from the most recent daily
 report's saved evidence, so the page shows exactly what the Feishu push showed.
 The report only carries the core assets, the first watchlist names and the
-next session's events, so watchlist tags (same rules as the report tags) and a
-seven-day calendar are computed on request and cached for a few minutes.
+next session's events, so watchlist tags (same rules as the report tags), a
+seven-day calendar and each watchlist price's implied return are computed on
+request and cached for a few minutes.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from core.config import settings
 from core.trading_calendar import latest_completed_us_session
 from database import async_session_maker
 from models import DailyReportRun
+from services.decision_support import get_ticker_implied_expectations
 from services.report_market import NY, Instrument, collect_events
 from services.watchlist_signals import expectation_signals, price_signals, signal_as_of, signal_tags
 
@@ -32,6 +34,7 @@ EVENT_WINDOW_DAYS = 7
 CACHE_SECONDS = 15 * 60
 SIGNALS_TIMEOUT_SECONDS = 30
 EVENTS_TIMEOUT_SECONDS = 25
+IMPLIED_TIMEOUT_SECONDS = 30
 
 _cache: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _cache_lock = asyncio.Lock()
@@ -96,6 +99,17 @@ async def _watchlist_tags(tickers: list[str], now: datetime) -> dict[str, Any]:
     }
 
 
+async def _implied_returns(tickers: list[str]) -> dict[str, Any]:
+    """The annual return each price offers if consensus is met; tickers without consensus are left out."""
+    items = {}
+    async with async_session_maker() as db:
+        for ticker in tickers:
+            implied = (await get_ticker_implied_expectations(ticker, db)).get("implied_return")
+            if implied and implied["status"] != "unavailable":
+                items[ticker] = {key: implied[key] for key in ("status", "rate", "minimum_rate")}
+    return {"items": items}
+
+
 async def _upcoming_events(tickers: list[str], now: datetime) -> dict[str, Any]:
     start = now.astimezone(NY).date()
     events = await collect_events(
@@ -124,11 +138,12 @@ async def _personal_sections(watchlist: list[str], now: datetime) -> dict[str, A
         if cached and time.monotonic() - cached[0] < CACHE_SECONDS:
             return cached[1]
         warnings: list[str] = []
-        tags, events = await asyncio.gather(
+        tags, events, implied_returns = await asyncio.gather(
             _bounded("自选股标签", _watchlist_tags(watchlist, now), SIGNALS_TIMEOUT_SECONDS, warnings),
             _bounded("未来 7 天日历", _upcoming_events(event_symbols, now), EVENTS_TIMEOUT_SECONDS, warnings),
+            _bounded("隐含回报", _implied_returns(watchlist), IMPLIED_TIMEOUT_SECONDS, warnings),
         )
-        sections = {"watchlist": tags, "events": events, "unavailable": warnings}
+        sections = {"watchlist": tags, "events": events, "implied_returns": implied_returns, "unavailable": warnings}
         # Cache only complete results so a provider hiccup is retried on the next load.
         _cache.clear()
         if not warnings:
@@ -144,5 +159,6 @@ async def build_today(watchlist: list[str], *, now: Optional[datetime] = None) -
         "report": report,
         "watchlist": sections["watchlist"],
         "events": sections["events"],
+        "implied_returns": sections["implied_returns"],
         "unavailable": sections["unavailable"],
     }

@@ -1357,6 +1357,10 @@ export interface TodayResponse {
         target: string | null;
         items: Array<{ ticker: string; tags: Array<{ text: string; color: ReportTagColor }>; as_of: string }>;
     } | null;
+    /** Annual return each watchlist price offers if consensus is met; tickers without consensus are absent. */
+    implied_returns: {
+        items: Record<string, { status: "solved" | "below_range"; rate: number | null; minimum_rate: number }>;
+    } | null;
     events: {
         from: string;
         to: string;
